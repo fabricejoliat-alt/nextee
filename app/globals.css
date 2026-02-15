@@ -782,3 +782,8 @@ input[type="radio"] {
     -webkit-overflow-scrolling: touch;
   }
 }
+.btn-danger {
+  border-color: #f1b3b3 !important;
+  background: #ffe5e5 !important;
+  color: #8a0f0f !important;
+}

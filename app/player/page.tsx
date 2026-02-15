@@ -33,6 +33,46 @@ type Item = {
   club_id: string;
 };
 
+type TrainingSessionRow = {
+  id: string;
+  start_at: string;
+  total_minutes: number;
+  motivation: number | null;
+  difficulty: number | null;
+  satisfaction: number | null;
+};
+
+type TrainingItemRow = {
+  session_id: string;
+  category:
+    | "warmup_mobility"
+    | "long_game"
+    | "putting"
+    | "wedging"
+    | "pitching"
+    | "chipping"
+    | "bunker"
+    | "course"
+    | "mental"
+    | "fitness"
+    | "other";
+  minutes: number;
+};
+
+const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
+  warmup_mobility: "Échauffement / mobilité",
+  long_game: "Long jeu",
+  putting: "Putting",
+  wedging: "Wedging",
+  pitching: "Pitching",
+  chipping: "Chipping",
+  bunker: "Bunker",
+  course: "Parcours",
+  mental: "Préparation mentale",
+  fitness: "Fitness / musculation",
+  other: "Autre activité",
+};
+
 function displayHello(p?: Profile | null) {
   const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
@@ -56,6 +96,23 @@ function compactMeta(it: Item) {
   return parts.join(" • ");
 }
 
+function avg(values: Array<number | null>) {
+  const v = values.filter((x): x is number => typeof x === "number");
+  if (v.length === 0) return null;
+  const sum = v.reduce((a, b) => a + b, 0);
+  return Math.round((sum / v.length) * 10) / 10;
+}
+
+function monthRangeLocal(now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function fmtMonthTitle(d = new Date()) {
+  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(d);
+}
+
 export default function PlayerHomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +122,10 @@ export default function PlayerHomePage() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [latestItems, setLatestItems] = useState<Item[]>([]);
   const [thumbByItemId, setThumbByItemId] = useState<Record<string, string>>({});
+
+  // Trainings (month summary)
+  const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
+  const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
   const bucket = "marketplace";
 
@@ -79,18 +140,39 @@ export default function PlayerHomePage() {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  const subtitle = useMemo(() => {
-    const hc = profile?.handicap;
-    if (typeof hc === "number") return `Ton espace joueur`;
-    return "Ton espace joueur";
-  }, [profile]);
+  const monthTitle = useMemo(() => fmtMonthTitle(new Date()), []);
 
-  const handicapText = useMemo(() => {
-    const hc = profile?.handicap;
-    if (typeof hc !== "number") return null;
-    // format simple
-    return `HCP ${hc}`;
-  }, [profile]);
+  const trainingsSummary = useMemo(() => {
+    const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+    const count = monthSessions.length;
+
+    const motivationAvg = avg(monthSessions.map((s) => s.motivation));
+    const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
+    const satisfactionAvg = avg(monthSessions.map((s) => s.satisfaction));
+
+    const byCat: Record<string, number> = {};
+    for (const it of monthItems) {
+      byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
+    }
+
+    const topCats = Object.entries(byCat)
+      .map(([cat, minutes]) => ({
+        cat: cat as TrainingItemRow["category"],
+        label: TRAINING_CAT_LABEL[cat as TrainingItemRow["category"]] ?? cat,
+        minutes,
+      }))
+      .sort((a, b) => b.minutes - a.minutes)
+      .slice(0, 4);
+
+    return {
+      totalMinutes,
+      count,
+      motivationAvg,
+      difficultyAvg,
+      satisfactionAvg,
+      topCats,
+    };
+  }, [monthSessions, monthItems]);
 
   async function load() {
     setLoading(true);
@@ -131,6 +213,8 @@ export default function PlayerHomePage() {
       setClubs([]);
       setLatestItems([]);
       setThumbByItemId({});
+      setMonthSessions([]);
+      setMonthItems([]);
       setLoading(false);
       return;
     }
@@ -143,15 +227,14 @@ export default function PlayerHomePage() {
       setClubs([]);
       setLatestItems([]);
       setThumbByItemId({});
+      setMonthSessions([]);
+      setMonthItems([]);
       setLoading(false);
       return;
     }
 
     // 3) Fetch clubs names (sans FK)
-    const clubsRes = await supabase
-      .from("clubs")
-      .select("id,name")
-      .in("id", clubIds);
+    const clubsRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
 
     if (clubsRes.error) {
       setError(clubsRes.error.message);
@@ -160,7 +243,7 @@ export default function PlayerHomePage() {
       setClubs((clubsRes.data ?? []) as Club[]);
     }
 
-    // 4) 3 dernières annonces de TOUS ses clubs actifs
+    // 4) 3 dernières annonces (tous ses clubs actifs)
     const itemsRes = await supabase
       .from("marketplace_items")
       .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
@@ -203,6 +286,41 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
     }
 
+    // 6) Trainings month summary
+    const { start, end } = monthRangeLocal(new Date());
+
+    const sRes = await supabase
+      .from("training_sessions")
+      .select("id,start_at,total_minutes,motivation,difficulty,satisfaction")
+      .gte("start_at", start.toISOString())
+      .lt("start_at", end.toISOString())
+      .order("start_at", { ascending: false });
+
+    if (sRes.error) {
+      // On n’empêche pas le reste de fonctionner
+      setMonthSessions([]);
+      setMonthItems([]);
+    } else {
+      const sess = (sRes.data ?? []) as TrainingSessionRow[];
+      setMonthSessions(sess);
+
+      const sIds = sess.map((s) => s.id);
+      if (sIds.length > 0) {
+        const iRes = await supabase
+          .from("training_session_items")
+          .select("session_id,category,minutes")
+          .in("session_id", sIds);
+
+        if (!iRes.error) {
+          setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
+        } else {
+          setMonthItems([]);
+        }
+      } else {
+        setMonthItems([]);
+      }
+    }
+
     setLoading(false);
   }
 
@@ -218,43 +336,87 @@ export default function PlayerHomePage() {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {/* Hero */}
-      {/* Hero */}
-<div className="card" style={{ padding: 18 }}>
-  {loading ? (
-    <div>Chargement…</div>
-  ) : (
-    <>
-      <div style={{ display: "grid", gap: 6 }}>
-        <div style={{ fontSize: 22, fontWeight: 900 }}>
-          {displayHello(profile)}
-        </div>
+      <div className="card" style={{ padding: 18 }}>
+        {loading ? (
+          <div>Chargement…</div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 22, fontWeight: 900 }}>{displayHello(profile)}</div>
 
-        <div style={{ color: "var(--muted)", fontWeight: 800 }}>
-          Ton espace joueur
-          {typeof profile?.handicap === "number" && (
-            <> • Handicap {profile.handicap}</>
-          )}
-        </div>
+              <div style={{ color: "var(--muted)", fontWeight: 800 }}>
+                Ton espace joueur
+                {typeof profile?.handicap === "number" && <> • Handicap {profile.handicap}</>}
+              </div>
 
-        {clubs.length > 0 && (
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            {clubs.map((c) => c.name ?? "Club").join(" • ")}
-          </div>
+              {clubs.length > 0 && (
+                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
+                  {clubs.map((c) => c.name ?? "Club").join(" • ")}
+                </div>
+              )}
+            </div>
+
+            {error && <div style={{ marginTop: 12, color: "#a00" }}>{error}</div>}
+          </>
         )}
       </div>
 
-      {error && <div style={{ marginTop: 12, color: "#a00" }}>{error}</div>}
-    </>
-  )}
-</div>
+      {/* Résumé du mois + cartouche "Mes entraînements" */}
+      <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 900 }}>Résumé — {monthTitle}</div>
+            <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
+              Volume : {trainingsSummary.totalMinutes} min • Séances : {trainingsSummary.count}
+            </div>
+          </div>
 
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link className="btn" href="/player/trainings/new">
+              Ajouter un entraînement
+            </Link>
+            <Link className="btn" href="/player/trainings">
+              Mes entraînements
+            </Link>
+          </div>
+        </div>
 
-      {/* Actions */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12 }}>
+            <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 12 }}>Sensations</div>
+            <div style={{ marginTop: 8, display: "grid", gap: 6, color: "var(--muted)", fontWeight: 800, fontSize: 13 }}>
+              <div>Motivation : {trainingsSummary.motivationAvg ?? "—"} / 6</div>
+              <div>Difficulté : {trainingsSummary.difficultyAvg ?? "—"} / 6</div>
+              <div>Satisfaction : {trainingsSummary.satisfactionAvg ?? "—"} / 6</div>
+            </div>
+          </div>
+
+          <div style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12 }}>
+            <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 12 }}>Top catégories</div>
+            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+              {trainingsSummary.topCats.length === 0 ? (
+                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
+                  Ajoute des postes pour voir la répartition.
+                </div>
+              ) : (
+                trainingsSummary.topCats.map((c) => (
+                  <div key={c.cat} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>{c.label}</div>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>{c.minutes} min</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions (tes raccourcis) */}
       <div className="card" style={{ padding: 18 }}>
         <div style={{ fontWeight: 900, marginBottom: 10 }}>Raccourcis</div>
 
         <div className="dash-grid">
-          <DashCard title="Mon Golf" desc="Stats & entraînements" href="/player/golf" disabled />
+          <DashCard title="Mon Golf" desc="Résumé & entraînements" href="/player/golf" />
           <DashCard title="Calendrier" desc="Tournois & entraînements" href="/player/calendar" disabled />
           <DashCard title="Marketplace" desc="Annonces de tes clubs" href="/player/marketplace" />
           <DashCard title="Mon profil" desc="Mettre à jour tes infos" href="/player/profile" />

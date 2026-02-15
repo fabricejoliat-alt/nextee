@@ -9,8 +9,9 @@ type NavItem = { href: string; label: string };
 
 const NAV: NavItem[] = [
   { href: "/player", label: "Accueil" },
-  { href: "/player/profile", label: "Mon profil" },
+  { href: "/player/golf", label: "Mon Golf" },
   { href: "/player/marketplace", label: "Marketplace" },
+  { href: "/player/profile", label: "Mon profil" },
 ];
 
 export default function PlayerMobileMenu() {
@@ -46,7 +47,6 @@ export default function PlayerMobileMenu() {
 
       {open && (
         <>
-          {/* overlay */}
           <div
             onClick={() => setOpen(false)}
             style={{
@@ -57,7 +57,6 @@ export default function PlayerMobileMenu() {
             }}
           />
 
-          {/* panel */}
           <div
             style={{
               position: "fixed",
@@ -75,7 +74,7 @@ export default function PlayerMobileMenu() {
             }}
           >
             {NAV.map((item) => {
-              const active = pathname === item.href;
+              const active = pathname === item.href || pathname.startsWith(item.href + "/");
               return (
                 <Link
                   key={item.href}

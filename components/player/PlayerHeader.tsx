@@ -19,16 +19,23 @@ export default function PlayerHeader() {
             </Link>
           </div>
 
-          {/* CENTER */}
-          <div className="header-center" />
+          {/* CENTER (reste vide, mais ne doit pas pousser le logo) */}
+          <div className="header-center" aria-hidden="true" />
 
-          {/* RIGHT (desktop burger) */}
+          {/* RIGHT (desktop burger only) */}
           <div className="header-right desktop-only">
             <button
               className="btn"
               type="button"
               aria-label="Ouvrir le menu"
               onClick={() => setOpen(true)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                display: "grid",
+                placeItems: "center",
+              }}
             >
               ☰
             </button>

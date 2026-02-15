@@ -3,103 +3,152 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-function isActive(pathname: string, href: string) {
-  if (href === "/player") return pathname === "/player";
-  return pathname.startsWith(href);
+type Tab = { href: string; label: string; disabled?: boolean };
+
+const TABS: Tab[] = [
+  { href: "/player", label: "Accueil" },
+  { href: "/player/calendar", label: "Calendrier", disabled: true },
+  { href: "/player/golf", label: "Mon Golf" },
+  { href: "/player/marketplace", label: "Marketplace" },
+  { href: "/player/profile", label: "Profil" },
+];
+
+function Icon({ name, active }: { name: Tab["label"]; active: boolean }) {
+  const stroke = active ? "var(--text)" : "var(--muted)";
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke,
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  // Icônes ultra simples, sans style iOS
+  if (name === "Accueil") {
+    return (
+      <svg {...common}>
+        <path d="M3 10.5L12 3l9 7.5" />
+        <path d="M5 10v10h14V10" />
+      </svg>
+    );
+  }
+
+  if (name === "Calendrier") {
+    return (
+      <svg {...common}>
+        <path d="M7 3v3M17 3v3" />
+        <path d="M4 7h16" />
+        <rect x="4" y="6" width="16" height="15" rx="2" />
+      </svg>
+    );
+  }
+
+  if (name === "Mon Golf") {
+    return (
+      <svg {...common}>
+        <path d="M12 3v12" />
+        <path d="M12 3l7 3-7 3" />
+        <path d="M6 21h12" />
+        <path d="M8 21c0-3 1.8-5 4-5s4 2 4 5" />
+      </svg>
+    );
+  }
+
+  if (name === "Marketplace") {
+    return (
+      <svg {...common}>
+        <path d="M6 7l1-3h10l1 3" />
+        <path d="M5 7h14l-1 14H6L5 7z" />
+        <path d="M9 10v1a3 3 0 006 0v-1" />
+      </svg>
+    );
+  }
+
+  // Profil
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="8" r="3" />
+      <path d="M4 21c1.5-4 14.5-4 16 0" />
+    </svg>
+  );
 }
 
 export default function PlayerMobileNav() {
   const pathname = usePathname();
 
-  const items = [
-    { href: "/player", label: "Accueil", icon: HomeIcon, enabled: true },
-    { href: "/player/calendar", label: "Calendrier", icon: CalendarIcon, enabled: false },
-    { href: "/player/golf", label: "Mon Golf", icon: GolfIcon, enabled: false },
-    { href: "/player/marketplace", label: "Marketplace", icon: TagIcon, enabled: true },
-    { href: "/player/profile", label: "Mon profil", icon: UserIcon, enabled: true },
-  ] as const;
-
   return (
-    <nav className="mobile-nav" aria-label="Navigation principale">
-      {items.map((it) => {
-        const active = isActive(pathname, it.href);
-        const Icon = it.icon;
-
-        if (!it.enabled) {
-          return (
-            <button
-              key={it.href}
-              className={`mobile-nav-item ${active ? "active" : ""}`}
-              type="button"
-              disabled
-              aria-disabled="true"
-              title="Bientôt disponible"
-            >
-              <Icon />
-              <span className="mobile-nav-label">{it.label}</span>
-            </button>
-          );
+    <nav
+      aria-label="Navigation principale"
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 64,
+        background: "white",
+        borderTop: "1px solid var(--border)",
+        zIndex: 60,
+        display: "grid",
+        gridTemplateColumns: "repeat(5, 1fr)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        // ✅ visible uniquement mobile
+        maxWidth: 900,
+        margin: "0 auto",
+      }}
+    >
+      {/* wrapper qui masque en desktop */}
+      <style>{`
+        @media (min-width: 901px) {
+          nav[aria-label="Navigation principale"] { display: none !important; }
         }
+      `}</style>
+
+      {TABS.map((t) => {
+        const active = pathname === t.href || pathname.startsWith(t.href + "/");
+
+        const inner = (
+          <div
+            style={{
+              height: 64,
+              display: "grid",
+              placeItems: "center",
+              gap: 3,
+              opacity: t.disabled ? 0.45 : 1,
+              pointerEvents: t.disabled ? "none" : "auto",
+            }}
+          >
+            <Icon name={t.label as any} active={active} />
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: active ? 900 : 700,
+                color: active ? "var(--text)" : "var(--muted)",
+              }}
+            >
+              {t.label}
+            </div>
+          </div>
+        );
+
+        if (t.disabled) return <div key={t.href}>{inner}</div>;
 
         return (
           <Link
-            key={it.href}
-            href={it.href}
-            className={`mobile-nav-item ${active ? "active" : ""}`}
+            key={t.href}
+            href={t.href}
+            style={{
+              textDecoration: "none",
+              color: "inherit",
+              background: active ? "rgba(0,0,0,0.04)" : "transparent",
+            }}
           >
-            <Icon />
-            <span className="mobile-nav-label">{it.label}</span>
+            {inner}
           </Link>
         );
       })}
     </nav>
-  );
-}
-
-/* Icons (inline SVG) */
-function HomeIcon() {
-  return (
-    <svg className="mobile-nav-ico" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 3 3 10v11h6v-6h6v6h6V10L12 3z" fill="currentColor" />
-    </svg>
-  );
-}
-function CalendarIcon() {
-  return (
-    <svg className="mobile-nav-ico" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm12 8H5v10h14V10z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-function GolfIcon() {
-  return (
-    <svg className="mobile-nav-ico" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2v12l6-3-6-3V2z" fill="currentColor" />
-      <path d="M6 21c2.5-2 9.5-2 12 0v-2c-2.5-2-9.5-2-12 0v2z" fill="currentColor" />
-      <path d="M12 14c-2.2 0-4 1.3-4 3s1.8 3 4 3 4-1.3 4-3-1.8-3-4-3z" fill="currentColor" opacity="0.18" />
-    </svg>
-  );
-}
-function TagIcon() {
-  return (
-    <svg className="mobile-nav-ico" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M20.6 13.4 12 4.8V3H4v8h1.8l8.6 8.6a2 2 0 0 0 2.8 0l3.4-3.4a2 2 0 0 0 0-2.8zM7.5 9A1.5 1.5 0 1 1 9 7.5 1.5 1.5 0 0 1 7.5 9z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-function UserIcon() {
-  return (
-    <svg className="mobile-nav-ico" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 16 16.4 14 12 14z"
-        fill="currentColor"
-      />
-    </svg>
   );
 }

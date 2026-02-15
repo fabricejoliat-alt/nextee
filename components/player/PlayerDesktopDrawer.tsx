@@ -33,9 +33,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const items = [
     { href: "/player", label: "Accueil", enabled: true },
     { href: "/player/calendar", label: "Calendrier", enabled: false },
-    { href: "/player/golf", label: "Mon Golf", enabled: false },
+    { href: "/player/golf", label: "Mon Golf", enabled: true }, // ✅ activé
     { href: "/player/marketplace", label: "Marketplace", enabled: true },
-    { href: "/player/profile", label: "Mon profil", enabled: true },
+    { href: "/player/profile", label: "Profil", enabled: true },
   ] as const;
 
   return (
@@ -52,9 +52,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       <aside className="drawer-panel" aria-label="Menu principal">
         <div className="drawer-head">
           <div className="drawer-title">Menu</div>
-          <button className="btn" type="button" onClick={onClose}>
-            Fermer
-          </button>
+          {/* ✅ plus de bouton Fermer */}
         </div>
 
         <nav className="drawer-nav">
