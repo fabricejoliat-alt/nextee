@@ -372,6 +372,7 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link className="btn" href="/player/golf/rounds">Mes parcours</Link>
             <Link className="btn" href="/player/trainings/new">
               Ajouter un entraînement
             </Link>
