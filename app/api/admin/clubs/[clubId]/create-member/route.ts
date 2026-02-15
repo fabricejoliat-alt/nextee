@@ -24,7 +24,8 @@ export async function POST(req: NextRequest, ctx: any) {
       auth: { persistSession: false },
     });
 
-    const clubId: string | undefined = ctx?.params?.clubId;
+    const params = await Promise.resolve(ctx?.params);
+const clubId: string | undefined = params?.clubId;
     if (!clubId) {
       return NextResponse.json({ error: "Missing clubId in route params" }, { status: 400 });
     }

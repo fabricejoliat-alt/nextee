@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
