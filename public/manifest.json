@@ -1,0 +1,89 @@
+/* ========================= */
+/* MOBILE APP PREMIUM MODE   */
+/* ========================= */
+
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%; /* empêche iOS d'agrandir le texte */
+  }
+
+  /* Empêche les scrollbars “fantômes” et le bounce trop agressif */
+  body {
+    margin: 0;
+    background: #fff;
+    touch-action: manipulation; /* limite double-tap zoom sur boutons/liens */
+  }
+
+  /* Container “app” qui remplit l’écran (fix Safari) */
+  .app-container {
+    min-height: 100vh;
+    min-height: 100dvh; /* ✅ iOS Safari correct */
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  /* Header fixe + safe-area */
+  .app-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: calc(56px + var(--safe-top));
+    padding-top: var(--safe-top);
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    padding-right: 16px;
+    z-index: 1000;
+  }
+
+  /* Footer fixe + safe-area */
+  .app-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: calc(65px + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+    background: #fff;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  /* Zone scrollable au milieu */
+  .app-content {
+    flex: 1;
+    padding: 16px;
+    padding-top: calc(70px + var(--safe-top));
+    padding-bottom: calc(80px + var(--safe-bottom));
+  }
+
+  /* Typo plus “app” */
+  h1 { font-size: 20px; }
+  h2 { font-size: 18px; }
+  p, label, input, select, textarea, button { font-size: 14px; }
+
+  /* Empêche l’input zoom iOS (iOS zoom si font-size < 16px) */
+  input, select, textarea {
+    font-size: 16px; /* ✅ important iOS */
+  }
+
+  /* iOS momentum scroll sur certains conteneurs (si tu en as) */
+  .app-content {
+    -webkit-overflow-scrolling: touch;
+  }
+}
