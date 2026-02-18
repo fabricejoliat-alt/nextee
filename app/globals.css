@@ -166,7 +166,7 @@ input[type="radio"] {
   right: 0;
   height: 60px;
 
-  background: transparent !important;
+  background: transparent;
   border-bottom: none !important;
   box-shadow: none !important;
 
@@ -1285,4 +1285,17 @@ input[type="radio"] {
   .header-right{
     transform: translateY(-16px); /* ajuste: -2px à -8px */
   }
+}
+@media (max-width: 768px){
+
+  .app-header{
+    background: transparent;
+    transition: background 220ms ease, box-shadow 220ms ease;
+  }
+
+  .app-header.scrolled{
+    background: var(--green-dark);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+
 }
