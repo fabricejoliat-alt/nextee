@@ -1283,6 +1283,6 @@ input[type="radio"] {
 
   /* ✅ remonter uniquement la cloche (et autres icônes à droite) */
   .header-right{
-    transform: translateY(-8px); /* ajuste: -2px à -8px */
+    transform: translateY(-16px); /* ajuste: -2px à -8px */
   }
 }
