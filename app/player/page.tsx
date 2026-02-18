@@ -127,11 +127,32 @@ function Donut({ percent }: { percent: number }) {
   const p = clamp(percent, 0, 100);
   const r = 54;
   const c = 2 * Math.PI * r;
-  const dash = (p / 100) * c;
+
+  // Animation: au premier rendu, on part de 0 puis on "remplit"
+  const [animatedP, setAnimatedP] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimatedP(p), 60);
+    return () => clearTimeout(t);
+  }, [p]);
+
+  const dash = (animatedP / 100) * c;
+
+  const done = p >= 100;
 
   return (
     <svg width="150" height="150" viewBox="0 0 140 140" aria-label={`Progression ${p}%`}>
-      <circle cx="70" cy="70" r={r} strokeWidth="14" className="donut-bg" fill="rgba(255,255,255,0.28)" />
+      <defs>
+        {/* Gradient clair -> foncé dans le sens horaire :
+            - on démarre en haut (0°) et on va vers la droite (90°) etc.
+            - gradient dans l'espace utilisateur, sur tout le cercle */}
+        <linearGradient id="donutGrad" x1="70" y1="16" x2="124" y2="124" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="var(--green-light)" />
+          <stop offset="100%" stopColor="var(--green-dark)" />
+        </linearGradient>
+      </defs>
+
+      <circle cx="70" cy="70" r={r} strokeWidth="14" className="donut-bg" fill="rgba(255,255,255,0.22)" />
+
       <circle
         cx="70"
         cy="70"
@@ -143,12 +164,20 @@ function Donut({ percent }: { percent: number }) {
         strokeDasharray={`${dash} ${c}`}
         transform="rotate(-90 70 70)"
       />
+
       <text x="70" y="79" textAnchor="middle" className="donut-label">
         {Math.round(p)}%
       </text>
+
+      {/* Check en bas si 100% atteint */}
+      <g className={`donut-check-wrap ${done ? "on" : ""}`}>
+        <circle className="donut-check-circle" cx="70" cy="124" r="12" />
+        <path className="donut-check" d="M64 124 l4 4 l9 -10" />
+      </g>
     </svg>
   );
 }
+
 
 export default function PlayerHomePage() {
   const [loading, setLoading] = useState(true);
