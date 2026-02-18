@@ -171,8 +171,13 @@ function Donut({ percent }: { percent: number }) {
 
       {/* Check en bas si 100% atteint */}
       <g className={`donut-check-wrap ${done ? "on" : ""}`}>
-        <circle className="donut-check-circle" cx="70" cy="124" r="12" />
-        <path className="donut-check" d="M64 124 l4 4 l9 -10" />
+        <circle
+  className="donut-check-circle"
+  cx="70"
+  cy="108"
+  r={done ? 16 : 12}  /* ⬅️ plus grand à 100% */
+/>
+        <path className="donut-check" d="M64 110 l4 4 l9 -10" />
       </g>
     </svg>
   );

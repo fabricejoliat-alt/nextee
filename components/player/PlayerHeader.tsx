@@ -3,16 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
+import { Bell } from "lucide-react";
+
 
 function BellIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 22a2.4 2.4 0 0 0 2.35-2h-4.7A2.4 2.4 0 0 0 12 22Zm7-6V11a7 7 0 1 0-14 0v5l-2 2v1h18v-1l-2-2Z"
-        opacity="0.95"
-      />
-    </svg>
+    <button className="icon-btn">
+  <Bell size={22} strokeWidth={2} />
+</button>
+
   );
 }
 
