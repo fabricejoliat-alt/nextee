@@ -26,45 +26,26 @@ export default function PlayerHeader() {
 
   useEffect(() => {
   const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
-  const content = document.querySelector(".app-content") as HTMLElement | null;
 
-  const getY = () => {
-    // si .app-content scroll vraiment, on prend lui
-    if (content && content.scrollHeight > content.clientHeight) return content.scrollTop;
-    // sinon on prend le scroll global (PWA iOS-friendly)
-    return scroller.scrollTop || window.scrollY || 0;
-  };
-
-  lastY.current = getY();
+  const getY = () => scroller.scrollTop || window.pageYOffset || window.scrollY || 0;
 
   const onScroll = () => {
     const y = getY();
-
     setScrolled(y > 6);
-
-    const goingDown = y > lastY.current;
-    const delta = Math.abs(y - lastY.current);
-
-    if (delta > 8) {
-      setHidden(goingDown && y > 80);
-      lastY.current = y;
-    }
   };
-
-  // écoute les 2, au cas où
-  window.addEventListener("scroll", onScroll, { passive: true });
-  scroller.addEventListener("scroll", onScroll, { passive: true });
-  content?.addEventListener("scroll", onScroll, { passive: true });
 
   // init
   onScroll();
 
+  window.addEventListener("scroll", onScroll, { passive: true });
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+
   return () => {
     window.removeEventListener("scroll", onScroll);
     scroller.removeEventListener("scroll", onScroll);
-    content?.removeEventListener("scroll", onScroll);
   };
 }, []);
+
 
 
   return (
