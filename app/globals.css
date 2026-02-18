@@ -1201,7 +1201,6 @@ input[type="radio"] {
 
 /* ===== Marketplace rows (player) ===== */
 .market-row{
-  position: relative;           /* ✅ nécessaire */
   display: flex;
   gap: 12px;
   background: rgba(255,255,255,0.78);
@@ -1209,11 +1208,9 @@ input[type="radio"] {
   -webkit-backdrop-filter: blur(14px);
   border-radius: 16px;
   padding: 12px;
-  padding-right: 88px;          /* ✅ réserve de la place pour le prix */
   text-decoration: none;
   color: #111;
 }
-
 
 .market-thumb{
   width: 70px;
@@ -1243,25 +1240,25 @@ input[type="radio"] {
   margin-top: 2px;
 }
 
+/* ✅ vendeur à gauche, prix à droite sur la même ligne */
 .market-bottom{
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 6px;
   font-size: 12px;
   font-weight: 900;
 }
 
-
-.market-price{
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-
-  font-size: 15px;              /* ✅ plus grand */
-  font-weight: 950;
-  color: var(--green-dark);
-
-  white-space: nowrap;
+.market-seller{
+  min-width: 0; /* permet le truncate */
+  opacity: 0.8;
 }
 
+.market-price{
+  font-size: 14px;      /* un peu plus grand */
+  font-weight: 950;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
