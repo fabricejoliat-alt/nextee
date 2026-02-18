@@ -835,8 +835,8 @@ input[type="radio"] {
 
   /* Header fixe + safe-area */
 .app-header {
-  background: transparent !important;
-  border-bottom: none !important;
+    background: transparent; /* ✅ sans !important */
+    border-bottom: none;
 }
 
 
