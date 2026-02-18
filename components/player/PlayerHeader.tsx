@@ -67,10 +67,6 @@ export default function PlayerHeader() {
 }, []);
 
 
-  target.addEventListener("scroll", onScroll, { passive: true });
-  return () => target.removeEventListener("scroll", onScroll);
-}, []);
-
   return (
     <>
       <header className={`app-header ${scrolled ? "scrolled" : ""} ${hidden ? "hidden" : ""}`}>
