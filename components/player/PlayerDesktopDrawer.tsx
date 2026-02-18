@@ -19,11 +19,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return;
-
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -33,14 +31,13 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const items = [
     { href: "/player", label: "Accueil", enabled: true },
     { href: "/player/calendar", label: "Calendrier", enabled: false },
-    { href: "/player/golf", label: "Mon Golf", enabled: true }, // ✅ activé
+    { href: "/player/golf", label: "Mon Golf", enabled: true },
     { href: "/player/marketplace", label: "Marketplace", enabled: true },
-    { href: "/player/profile", label: "Profil", enabled: true },
+    { href: "/player/profile", label: "Mon profil", enabled: true },
   ] as const;
 
   return (
     <>
-      {/* Overlay */}
       <button
         type="button"
         className="drawer-overlay"
@@ -48,11 +45,12 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         onClick={onClose}
       />
 
-      {/* Panel */}
       <aside className="drawer-panel" aria-label="Menu principal">
         <div className="drawer-head">
           <div className="drawer-title">Menu</div>
-          {/* ✅ plus de bouton Fermer */}
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="Fermer">
+            ✕
+          </button>
         </div>
 
         <nav className="drawer-nav">

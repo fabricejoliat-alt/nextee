@@ -11,14 +11,8 @@ type Profile = {
   handicap: number | null;
 };
 
-type ClubMember = {
-  club_id: string;
-};
-
-type Club = {
-  id: string;
-  name: string | null;
-};
+type ClubMember = { club_id: string };
+type Club = { id: string; name: string | null };
 
 type Item = {
   id: string;
@@ -36,7 +30,7 @@ type Item = {
 type TrainingSessionRow = {
   id: string;
   start_at: string;
-  total_minutes: number;
+  total_minutes: number | null;
   motivation: number | null;
   difficulty: number | null;
   satisfaction: number | null;
@@ -60,7 +54,7 @@ type TrainingItemRow = {
 };
 
 const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
-  warmup_mobility: "Échauffement / mobilité",
+  warmup_mobility: "Échauffement",
   long_game: "Long jeu",
   putting: "Putting",
   wedging: "Wedging",
@@ -68,17 +62,23 @@ const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
   chipping: "Chipping",
   bunker: "Bunker",
   course: "Parcours",
-  mental: "Préparation mentale",
-  fitness: "Fitness / musculation",
-  other: "Autre activité",
+  mental: "Mental",
+  fitness: "Fitness",
+  other: "Autre",
 };
 
 function displayHello(p?: Profile | null) {
   const f = (p?.first_name ?? "").trim();
+  if (!f) return "Salut";
+  return `Salut ${f}`;
+}
+
+function initialsName(p?: Profile | null) {
+  const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
-  if (!f && !l) return "Bienvenue";
-  if (f) return `Salut ${f}`;
-  return `Salut`;
+  if (!f && !l) return "Utilisateur";
+  if (f && l) return `${f} ${l[0].toUpperCase()}.`;
+  return f || l;
 }
 
 function priceLabel(it: Item) {
@@ -87,13 +87,14 @@ function priceLabel(it: Item) {
   return `${it.price} CHF`;
 }
 
-function compactMeta(it: Item) {
-  const parts: string[] = [];
-  if (it.category) parts.push(it.category);
-  if (it.condition) parts.push(it.condition);
-  const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
-  if (bm) parts.push(bm);
-  return parts.join(" • ");
+function fmtDateChip(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" }).format(d);
+}
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
 }
 
 function avg(values: Array<number | null>) {
@@ -109,8 +110,35 @@ function monthRangeLocal(now = new Date()) {
   return { start, end };
 }
 
-function fmtMonthTitle(d = new Date()) {
-  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(d);
+function monthTitle(now = new Date()) {
+  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(now).toUpperCase();
+}
+
+function Donut({ percent }: { percent: number }) {
+  const p = clamp(percent, 0, 100);
+  const r = 54;
+  const c = 2 * Math.PI * r;
+  const dash = (p / 100) * c;
+
+  return (
+    <svg width="150" height="150" viewBox="0 0 140 140" aria-label={`Progression ${p}%`}>
+      <circle cx="70" cy="70" r={r} strokeWidth="14" className="donut-bg" fill="rgba(255,255,255,0.28)" />
+      <circle
+        cx="70"
+        cy="70"
+        r={r}
+        strokeWidth="14"
+        className="donut-fg"
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c}`}
+        transform="rotate(-90 70 70)"
+      />
+      <text x="70" y="79" textAnchor="middle" className="donut-label">
+        {Math.round(p)}%
+      </text>
+    </svg>
+  );
 }
 
 export default function PlayerHomePage() {
@@ -120,59 +148,84 @@ export default function PlayerHomePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [clubIds, setClubIds] = useState<string[]>([]);
+
   const [latestItems, setLatestItems] = useState<Item[]>([]);
   const [thumbByItemId, setThumbByItemId] = useState<Record<string, string>>({});
 
-  // Trainings (month summary)
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
+  // Parcours (si tables dispo)
+  const [roundsMonthCount, setRoundsMonthCount] = useState<number>(0);
+  const [holesMonthCount, setHolesMonthCount] = useState<number>(0);
+
   const bucket = "marketplace";
 
-  const placeholderSvg = useMemo(() => {
+  const placeholderThumb = useMemo(() => {
     const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="240" height="180">
-        <rect width="100%" height="100%" fill="#f3f4f6"/>
-        <path d="M70 118l28-28 26 26 18-18 28 28" fill="none" stroke="#9ca3af" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="92" cy="78" r="10" fill="#9ca3af"/>
+      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="140">
+        <rect width="100%" height="100%" fill="#e9eceb"/>
+        <path d="M50 88l20-20 18 18 14-14 20 20" fill="none" stroke="#8aa09a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="66" cy="56" r="8" fill="#8aa09a"/>
       </svg>
     `;
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  const monthTitle = useMemo(() => fmtMonthTitle(new Date()), []);
+  const thisMonthTitle = useMemo(() => monthTitle(new Date()), []);
+
+  const heroClubLine = useMemo(() => {
+    const names = clubs.map((c) => c.name).filter(Boolean) as string[];
+    if (names.length === 0) return "—";
+    return names.join(" • ");
+  }, [clubs]);
+
+  // mock delta (plus tard: calcul réel)
+  const handicapDelta = -0.4;
 
   const trainingsSummary = useMemo(() => {
     const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
     const count = monthSessions.length;
 
     const motivationAvg = avg(monthSessions.map((s) => s.motivation));
-    const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
     const satisfactionAvg = avg(monthSessions.map((s) => s.satisfaction));
+    const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
+
+    // “Forme” approx (moins difficile => meilleure forme)
+    const formeApprox = difficultyAvg == null ? null : Math.round((6.2 - difficultyAvg) * 10) / 10;
 
     const byCat: Record<string, number> = {};
-    for (const it of monthItems) {
-      byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
-    }
+    for (const it of monthItems) byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
 
-    const topCats = Object.entries(byCat)
+    const top = Object.entries(byCat)
       .map(([cat, minutes]) => ({
         cat: cat as TrainingItemRow["category"],
         label: TRAINING_CAT_LABEL[cat as TrainingItemRow["category"]] ?? cat,
         minutes,
       }))
       .sort((a, b) => b.minutes - a.minutes)
-      .slice(0, 4);
+      .slice(0, 3);
+
+    const objective = 500; // comme la maquette
+    const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
     return {
       totalMinutes,
       count,
+      objective,
+      percent,
+      top,
       motivationAvg,
-      difficultyAvg,
       satisfactionAvg,
-      topCats,
+      formeApprox,
     };
   }, [monthSessions, monthItems]);
+
+  const topMax = useMemo(() => {
+    const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
+    return m || 1;
+  }, [trainingsSummary.top]);
 
   async function load() {
     setLoading(true);
@@ -184,10 +237,9 @@ export default function PlayerHomePage() {
       setLoading(false);
       return;
     }
-
     const uid = userRes.user.id;
 
-    // 1) Profile
+    // Profile
     const profRes = await supabase
       .from("profiles")
       .select("id,first_name,last_name,handicap")
@@ -201,7 +253,7 @@ export default function PlayerHomePage() {
     }
     setProfile((profRes.data ?? null) as Profile | null);
 
-    // 2) Club memberships (sans FK)
+    // Memberships
     const memRes = await supabase
       .from("club_members")
       .select("club_id")
@@ -211,6 +263,7 @@ export default function PlayerHomePage() {
     if (memRes.error) {
       setError(memRes.error.message);
       setClubs([]);
+      setClubIds([]);
       setLatestItems([]);
       setThumbByItemId({});
       setMonthSessions([]);
@@ -219,76 +272,64 @@ export default function PlayerHomePage() {
       return;
     }
 
-    const clubIds = ((memRes.data ?? []) as ClubMember[])
-      .map((m) => m.club_id)
-      .filter(Boolean);
+    const cids = ((memRes.data ?? []) as ClubMember[]).map((m) => m.club_id).filter(Boolean);
+    setClubIds(cids);
 
-    if (clubIds.length === 0) {
-      setClubs([]);
-      setLatestItems([]);
-      setThumbByItemId({});
-      setMonthSessions([]);
-      setMonthItems([]);
-      setLoading(false);
-      return;
-    }
-
-    // 3) Fetch clubs names (sans FK)
-    const clubsRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
-
-    if (clubsRes.error) {
-      setError(clubsRes.error.message);
-      setClubs(clubIds.map((id) => ({ id, name: null })));
+    // Clubs names
+    if (cids.length > 0) {
+      const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
+      if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
+      else setClubs(cids.map((id) => ({ id, name: null })));
     } else {
-      setClubs((clubsRes.data ?? []) as Club[]);
+      setClubs([]);
     }
 
-    // 4) 3 dernières annonces (tous ses clubs actifs)
-    const itemsRes = await supabase
-      .from("marketplace_items")
-      .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
-      .in("club_id", clubIds)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(3);
+    // Marketplace latest 3 (all clubs)
+    if (cids.length > 0) {
+      const itemsRes = await supabase
+        .from("marketplace_items")
+        .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
+        .in("club_id", cids)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(3);
 
-    if (itemsRes.error) {
-      setError(itemsRes.error.message);
-      setLatestItems([]);
-      setThumbByItemId({});
-      setLoading(false);
-      return;
-    }
-
-    const list = (itemsRes.data ?? []) as Item[];
-    setLatestItems(list);
-
-    // 5) thumbnails (sort_order 0)
-    const ids = list.map((x) => x.id);
-    if (ids.length > 0) {
-      const imgRes = await supabase
-        .from("marketplace_images")
-        .select("item_id,path,sort_order")
-        .in("item_id", ids)
-        .eq("sort_order", 0);
-
-      if (!imgRes.error) {
-        const map: Record<string, string> = {};
-        (imgRes.data ?? []).forEach((r: any) => {
-          const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
-          if (data?.publicUrl) map[r.item_id] = data.publicUrl;
-        });
-        setThumbByItemId(map);
-      } else {
+      if (itemsRes.error) {
+        setLatestItems([]);
         setThumbByItemId({});
+      } else {
+        const list = (itemsRes.data ?? []) as Item[];
+        setLatestItems(list);
+
+        const ids = list.map((x) => x.id);
+        if (ids.length > 0) {
+          const imgRes = await supabase
+            .from("marketplace_images")
+            .select("item_id,path,sort_order")
+            .in("item_id", ids)
+            .eq("sort_order", 0);
+
+          if (!imgRes.error) {
+            const map: Record<string, string> = {};
+            (imgRes.data ?? []).forEach((r: any) => {
+              const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
+              if (data?.publicUrl) map[r.item_id] = data.publicUrl;
+            });
+            setThumbByItemId(map);
+          } else {
+            setThumbByItemId({});
+          }
+        } else {
+          setThumbByItemId({});
+        }
       }
     } else {
+      setLatestItems([]);
       setThumbByItemId({});
     }
 
-    // 6) Trainings month summary
+    // Trainings month
     const { start, end } = monthRangeLocal(new Date());
-
     const sRes = await supabase
       .from("training_sessions")
       .select("id,start_at,total_minutes,motivation,difficulty,satisfaction")
@@ -296,11 +337,7 @@ export default function PlayerHomePage() {
       .lt("start_at", end.toISOString())
       .order("start_at", { ascending: false });
 
-    if (sRes.error) {
-      // On n’empêche pas le reste de fonctionner
-      setMonthSessions([]);
-      setMonthItems([]);
-    } else {
+    if (!sRes.error) {
       const sess = (sRes.data ?? []) as TrainingSessionRow[];
       setMonthSessions(sess);
 
@@ -311,14 +348,42 @@ export default function PlayerHomePage() {
           .select("session_id,category,minutes")
           .in("session_id", sIds);
 
-        if (!iRes.error) {
-          setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
-        } else {
-          setMonthItems([]);
-        }
+        setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
       } else {
         setMonthItems([]);
       }
+    } else {
+      setMonthSessions([]);
+      setMonthItems([]);
+    }
+
+    // Rounds month (optional)
+    try {
+      const { start, end } = monthRangeLocal(new Date());
+      const rRes = await supabase
+        .from("golf_rounds")
+        .select("id,start_at")
+        .gte("start_at", start.toISOString())
+        .lt("start_at", end.toISOString())
+        .order("start_at", { ascending: false });
+
+      const rounds = (rRes.data ?? []) as Array<{ id: string }>;
+      setRoundsMonthCount(rounds.length);
+
+      if (rounds.length > 0) {
+        const roundIds = rounds.map((r) => r.id);
+        const hRes = await supabase
+          .from("golf_round_holes")
+          .select("round_id,hole_no")
+          .in("round_id", roundIds);
+
+        setHolesMonthCount((hRes.data ?? []).length);
+      } else {
+        setHolesMonthCount(0);
+      }
+    } catch {
+      setRoundsMonthCount(0);
+      setHolesMonthCount(0);
     }
 
     setLoading(false);
@@ -328,203 +393,272 @@ export default function PlayerHomePage() {
     load();
   }, []);
 
-  function clubNameById(id: string) {
-    const c = clubs.find((x) => x.id === id);
-    return c?.name ?? "Club";
-  }
+  // very simple avatar: could later be profile picture
+  const avatarUrl = useMemo(() => {
+    // placeholder: you can replace with profile storage later
+    return "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=240&q=60";
+  }, []);
+
+  // Marketplace seller placeholder (we don’t have seller in this query)
+  const sellerLabel = useMemo(() => initialsName(profile), [profile]);
+
+  // For display only (Mon Golf section) — placeholders until real stats exist
+  const focusGIR = 57;
+  const focusFairway = 72;
+  const focusPuttingAvg = 43;
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      {/* Hero */}
-      <div className="card" style={{ padding: 18 }}>
-        {loading ? (
-          <div>Chargement…</div>
-        ) : (
-          <>
-            <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 22, fontWeight: 900 }}>{displayHello(profile)}</div>
+    <div className="player-dashboard-bg">
+      <div className="app-shell">
+        {/* HERO */}
+        <div className="player-hero">
+          <div className="avatar" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={avatarUrl} alt="" />
+          </div>
 
-              <div style={{ color: "var(--muted)", fontWeight: 800 }}>
-                Ton espace joueur
-                {typeof profile?.handicap === "number" && <> • Handicap {profile.handicap}</>}
+          <div style={{ minWidth: 0 }}>
+            <div className="hero-title">
+              {loading ? "Salut…" : `${displayHello(profile)} 👋`}
+            </div>
+
+            <div className="hero-sub">
+              <div>
+                Handicap{" "}
+                {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}
+              </div>
+              <div className="delta-pill">{handicapDelta >= 0 ? `+${handicapDelta}` : `${handicapDelta}`}</div>
+            </div>
+
+            <div className="hero-club truncate">{heroClubLine}</div>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>
+            {error}
+          </div>
+        )}
+
+        {/* ===== Volume d’entrainement ===== */}
+        <section className="glass-section" style={{ marginTop: 14 }}>
+          <div className="section-title">Volume d’entraînement</div>
+
+          <div className="glass-card">
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12, alignItems: "center" }}>
+              <div>
+                <div className="muted-uc">{thisMonthTitle}</div>
+
+                <div style={{ marginTop: 6 }}>
+                  <span className="big-number">{trainingsSummary.totalMinutes}</span>
+                  <span className="unit">MINUTES</span>
+                </div>
+
+                <div className="hr-soft" />
+
+                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
+                  Objectif : {trainingsSummary.objective} min
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <span className="pill-soft">⛳ {trainingsSummary.count} séances</span>
+                </div>
               </div>
 
-              {clubs.length > 0 && (
-                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-                  {clubs.map((c) => c.name ?? "Club").join(" • ")}
-                </div>
-              )}
-            </div>
-
-            {error && <div style={{ marginTop: 12, color: "#a00" }}>{error}</div>}
-          </>
-        )}
-      </div>
-
-      {/* Résumé du mois + cartouche "Mes entraînements" */}
-      <div className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 900 }}>Résumé — {monthTitle}</div>
-            <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-              Volume : {trainingsSummary.totalMinutes} min • Séances : {trainingsSummary.count}
+              <div className="donut-wrap">
+                <Donut percent={trainingsSummary.percent} />
+              </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link className="btn" href="/player/golf/rounds">Mes parcours</Link>
-            <Link className="btn" href="/player/trainings/new">
-              Ajouter un entraînement
-            </Link>
-            <Link className="btn" href="/player/trainings">
-              Mes entraînements
-            </Link>
-          </div>
-        </div>
+          <div className="grid-2" style={{ marginTop: 12 }}>
+            {/* Top secteurs */}
+            <div className="glass-card">
+              <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 10, color: "rgba(0,0,0,0.78)" }}>
+                Top Secteurs
+              </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12 }}>
-            <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 12 }}>Sensations</div>
-            <div style={{ marginTop: 8, display: "grid", gap: 6, color: "var(--muted)", fontWeight: 800, fontSize: 13 }}>
-              <div>Motivation : {trainingsSummary.motivationAvg ?? "—"} / 6</div>
-              <div>Difficulté : {trainingsSummary.difficultyAvg ?? "—"} / 6</div>
-              <div>Satisfaction : {trainingsSummary.satisfactionAvg ?? "—"} / 6</div>
-            </div>
-          </div>
-
-          <div style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12 }}>
-            <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 12 }}>Top catégories</div>
-            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-              {trainingsSummary.topCats.length === 0 ? (
-                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-                  Ajoute des postes pour voir la répartition.
+              {trainingsSummary.top.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                  Pas encore de données ce mois-ci.
                 </div>
               ) : (
-                trainingsSummary.topCats.map((c) => (
-                  <div key={c.cat} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ fontWeight: 900, fontSize: 13 }}>{c.label}</div>
-                    <div style={{ fontWeight: 900, fontSize: 13 }}>{c.minutes} min</div>
-                  </div>
-                ))
+                <div style={{ display: "grid", gap: 12 }}>
+                  {trainingsSummary.top.map((x) => {
+                    const w = Math.round((x.minutes / topMax) * 100);
+                    return (
+                      <div key={x.cat}>
+                        <div className="bar-row">
+                          <div>{x.label}</div>
+                          <div>{x.minutes}min</div>
+                        </div>
+                        <div className="bar">
+                          <span style={{ width: `${w}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Actions (tes raccourcis) */}
-      <div className="card" style={{ padding: 18 }}>
-        <div style={{ fontWeight: 900, marginBottom: 10 }}>Raccourcis</div>
+            {/* Sensations */}
+            <div className="glass-card">
+              <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 10, color: "rgba(0,0,0,0.78)" }}>
+                Sensations
+              </div>
 
-        <div className="dash-grid">
-          <DashCard title="Mon Golf" desc="Résumé & entraînements" href="/player/golf" />
-          <DashCard title="Calendrier" desc="Tournois & entraînements" href="/player/calendar" disabled />
-          <DashCard title="Marketplace" desc="Annonces de tes clubs" href="/player/marketplace" />
-          <DashCard title="Mon profil" desc="Mettre à jour tes infos" href="/player/profile" />
-        </div>
-      </div>
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <div className="sense-row">
+                    <div>Motivation</div>
+                    <div className="sense-val up">▲ {trainingsSummary.motivationAvg ?? "—"}</div>
+                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
+                </div>
 
-      {/* Dernières annonces */}
-      <div className="card" style={{ padding: 18 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 900 }}>Dernières annonces</div>
-            <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-              Les 3 plus récentes (tous tes clubs)
+                <div>
+                  <div className="sense-row">
+                    <div>Satisfaction</div>
+                    <div className="sense-val up">▲ {trainingsSummary.satisfactionAvg ?? "—"}</div>
+                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
+                </div>
+
+                <div>
+                  <div className="sense-row">
+                    <div>Forme</div>
+                    <div className="sense-val down">▼ {trainingsSummary.formeApprox ?? "—"}</div>
+                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.formeApprox ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link href="/player/trainings/new" className="cta-green">
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
+            Ajouter un entraînement
+          </Link>
+        </section>
+
+        {/* ===== Mes parcours ===== */}
+        <section className="glass-section">
+          <div className="section-title">Mes parcours</div>
+
+          <div className="grid-2">
+            <div className="glass-card">
+              <div className="muted-uc">{thisMonthTitle}</div>
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                <div>
+                  <span className="big-number">{roundsMonthCount}</span>
+                  <span className="unit">PARCOURS</span>
+                </div>
+                <div>
+                  <span className="big-number">{holesMonthCount}</span>
+                  <span className="unit">TROUS</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="muted-uc">FOCUS</div>
+              <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                <div className="sense-row">
+                  <div>GIR</div>
+                  <div className="sense-val up">▲ {focusGIR}%</div>
+                </div>
+                <div className="sense-row">
+                  <div>Putting Avg</div>
+                  <div className="sense-val down">▲ {focusPuttingAvg}</div>
+                </div>
+                <div className="sense-row">
+                  <div>FAIRWAY</div>
+                  <div className="sense-val up">▲ {focusFairway}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Link href="/player/golf/rounds/new" className="cta-green">
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
+            Ajouter un parcours
+          </Link>
+        </section>
+
+        {/* ===== Marketplace ===== */}
+        <section className="glass-section">
+          <div className="section-title">Marketplace</div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {loading ? (
+              <div style={{ opacity: 0.8, fontWeight: 800 }}>Chargement…</div>
+            ) : latestItems.length === 0 ? (
+              <div style={{ opacity: 0.8, fontWeight: 800 }}>Aucune annonce pour le moment.</div>
+            ) : (
+              latestItems.map((it) => {
+                const img = thumbByItemId[it.id] || placeholderThumb;
+                const meta = [
+                  fmtDateChip(it.created_at),
+                  it.category ?? "Matériel",
+                  it.condition ?? "",
+                ].filter(Boolean).join(" • ");
+
+                return (
+                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="market-row">
+                    <div className="market-thumb" aria-hidden="true">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img} alt="" />
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                      <div className="market-meta truncate">{meta}</div>
+                      <div className="market-title truncate">{it.title}</div>
+
+                      <div className="market-bottom">
+                        <div className="market-seller truncate">{sellerLabel}</div>
+                        <div className="market-price">{priceLabel(it)}</div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+            <Link className="btn" href="/player/marketplace">
+              Voir tout
+            </Link>
             <Link className="btn" href="/player/marketplace/mine">
               Mes annonces
             </Link>
-            <Link className="btn" href="/player/marketplace/new">
-              Publier
-            </Link>
-            <Link className="btn" href="/player/marketplace">
-              Tout voir
-            </Link>
           </div>
-        </div>
 
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-          {loading ? (
-            <div style={{ color: "var(--muted)" }}>Chargement…</div>
-          ) : latestItems.length === 0 ? (
-            <div style={{ color: "var(--muted)" }}>Aucune annonce pour le moment.</div>
-          ) : (
-            latestItems.map((it) => {
-              const img = thumbByItemId[it.id] || placeholderSvg;
-              const meta = compactMeta(it);
+          <Link href="/player/marketplace/new" className="cta-green">
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
+            Ajouter un article
+          </Link>
+        </section>
 
-              return (
-                <Link key={it.id} href={`/player/marketplace/${it.id}`} className="latest-item">
-                  <div className="latest-thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img} alt={it.title} />
-                  </div>
-
-                  <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ fontWeight: 900, minWidth: 0 }} className="truncate">
-                        {it.title}
-                      </div>
-                      <div style={{ fontWeight: 900 }}>{priceLabel(it)}</div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <span className="pill">{clubNameById(it.club_id)}</span>
-                      {meta && (
-                        <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }} className="truncate">
-                          {meta}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              );
-            })
-          )}
-        </div>
+        {/* little spacer */}
+        <div style={{ height: 12 }} />
       </div>
     </div>
-  );
-}
-
-function DashCard({
-  title,
-  desc,
-  href,
-  disabled,
-}: {
-  title: string;
-  desc: string;
-  href: string;
-  disabled?: boolean;
-}) {
-  const inner = (
-    <div className={`dash-card ${disabled ? "disabled" : ""}`}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontWeight: 900 }}>{title}</div>
-        {disabled && <span className="dash-badge soon">Bientôt</span>}
-      </div>
-      <div style={{ color: "var(--muted)", fontWeight: 700, marginTop: 6, fontSize: 13 }}>{desc}</div>
-    </div>
-  );
-
-  if (disabled) return <div>{inner}</div>;
-
-  return (
-    <Link href={href} style={{ textDecoration: "none", color: "inherit" }}>
-      {inner}
-    </Link>
   );
 }

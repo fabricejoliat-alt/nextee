@@ -3,75 +3,63 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type Tab = { href: string; label: string; disabled?: boolean };
+function isActive(pathname: string, href: string) {
+  if (href === "/player") return pathname === "/player";
+  return pathname.startsWith(href);
+}
 
-const TABS: Tab[] = [
-  { href: "/player", label: "Accueil" },
-  { href: "/player/calendar", label: "Calendrier", disabled: true },
-  { href: "/player/golf", label: "Mon Golf" },
-  { href: "/player/marketplace", label: "Marketplace" },
-  { href: "/player/profile", label: "Profil" },
-];
-
-function Icon({ name, active }: { name: Tab["label"]; active: boolean }) {
-  const stroke = active ? "var(--text)" : "var(--muted)";
-  const common = {
-    width: 22,
-    height: 22,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke,
-    strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-
-  // Icônes ultra simples, sans style iOS
-  if (name === "Accueil") {
-    return (
-      <svg {...common}>
-        <path d="M3 10.5L12 3l9 7.5" />
-        <path d="M5 10v10h14V10" />
-      </svg>
-    );
-  }
-
-  if (name === "Calendrier") {
-    return (
-      <svg {...common}>
-        <path d="M7 3v3M17 3v3" />
-        <path d="M4 7h16" />
-        <rect x="4" y="6" width="16" height="15" rx="2" />
-      </svg>
-    );
-  }
-
-  if (name === "Mon Golf") {
-    return (
-      <svg {...common}>
-        <path d="M12 3v12" />
-        <path d="M12 3l7 3-7 3" />
-        <path d="M6 21h12" />
-        <path d="M8 21c0-3 1.8-5 4-5s4 2 4 5" />
-      </svg>
-    );
-  }
-
-  if (name === "Marketplace") {
-    return (
-      <svg {...common}>
-        <path d="M6 7l1-3h10l1 3" />
-        <path d="M5 7h14l-1 14H6L5 7z" />
-        <path d="M9 10v1a3 3 0 006 0v-1" />
-      </svg>
-    );
-  }
-
-  // Profil
+function IconHome() {
   return (
-    <svg {...common}>
-      <circle cx="12" cy="8" r="3" />
-      <path d="M4 21c1.5-4 14.5-4 16 0" />
+    <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 3 3 10v11h6v-7h6v7h6V10l-9-7Z"
+      />
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M7 2h2v2h6V2h2v2h3v18H2V4h5V2Zm13 8H4v10h16V10Z"
+      />
+    </svg>
+  );
+}
+
+function IconGolf() {
+  return (
+    <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M8 3v18H6v2h6v-2H10V7.2l8-2.6L8 3Zm7 15a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        opacity="0.95"
+      />
+    </svg>
+  );
+}
+
+function IconShop() {
+  return (
+    <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M7 4h10l1 4H6l1-4Zm-2 6h14v10H5V10Zm4 3v2h6v-2H9Z"
+      />
+    </svg>
+  );
+}
+
+function IconUser() {
+  return (
+    <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-5 0-9 2.7-9 6v2h18v-2c0-3.3-4-6-9-6Z"
+      />
     </svg>
   );
 }
@@ -79,76 +67,27 @@ function Icon({ name, active }: { name: Tab["label"]; active: boolean }) {
 export default function PlayerMobileNav() {
   const pathname = usePathname();
 
+  const items = [
+    { href: "/player", label: "Accueil", icon: <IconHome /> },
+    { href: "/player/calendar", label: "Calendrier", icon: <IconCalendar /> },
+    { href: "/player/golf", label: "Mon Golf", icon: <IconGolf /> },
+    { href: "/player/marketplace", label: "Marketplace", icon: <IconShop /> },
+    { href: "/player/profile", label: "Profil", icon: <IconUser /> },
+  ] as const;
+
   return (
-    <nav
-      aria-label="Navigation principale"
-      style={{
-        position: "fixed",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 64,
-        background: "white",
-        borderTop: "1px solid var(--border)",
-        zIndex: 60,
-        display: "grid",
-        gridTemplateColumns: "repeat(5, 1fr)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        // ✅ visible uniquement mobile
-        maxWidth: 900,
-        margin: "0 auto",
-      }}
-    >
-      {/* wrapper qui masque en desktop */}
-      <style>{`
-        @media (min-width: 901px) {
-          nav[aria-label="Navigation principale"] { display: none !important; }
-        }
-      `}</style>
-
-      {TABS.map((t) => {
-        const active = pathname === t.href || pathname.startsWith(t.href + "/");
-
-        const inner = (
-          <div
-            style={{
-              height: 64,
-              display: "grid",
-              placeItems: "center",
-              gap: 3,
-              opacity: t.disabled ? 0.45 : 1,
-              pointerEvents: t.disabled ? "none" : "auto",
-            }}
-          >
-            <Icon name={t.label as any} active={active} />
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: active ? 900 : 700,
-                color: active ? "var(--text)" : "var(--muted)",
-              }}
-            >
-              {t.label}
-            </div>
-          </div>
-        );
-
-        if (t.disabled) return <div key={t.href}>{inner}</div>;
-
-        return (
-          <Link
-            key={t.href}
-            href={t.href}
-            style={{
-              textDecoration: "none",
-              color: "inherit",
-              background: active ? "rgba(0,0,0,0.04)" : "transparent",
-            }}
-          >
-            {inner}
-          </Link>
-        );
-      })}
+    <nav className="mobile-nav" aria-label="Navigation principale">
+      <div className="mobile-nav-inner">
+        {items.map((it) => {
+          const active = isActive(pathname, it.href);
+          return (
+            <Link key={it.href} href={it.href} className={active ? "active" : ""}>
+              {it.icon}
+              <div>{it.label}</div>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }
