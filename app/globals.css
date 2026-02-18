@@ -281,10 +281,11 @@ input[type="radio"] {
 }
 
 @media (max-width: 768px){
-  .app-header-inner{
-    padding-top: calc(var(--safe-top) + 4px);
+  .brand{
+    margin-top: 60px;   /* ajuste entre 4px et 10px selon ton goût */
   }
 }
+
 
 
 
