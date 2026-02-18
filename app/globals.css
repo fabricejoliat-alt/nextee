@@ -172,6 +172,26 @@ input[type="radio"] {
 
   z-index: 1000;
 }
+/* Header states (mobile) */
+.app-header {
+  transition: transform 220ms ease, background 220ms ease, box-shadow 220ms ease;
+  will-change: transform, background;
+}
+
+.app-header.scrolled {
+  background: #35483b !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+}
+
+.app-header.hidden {
+  transform: translateY(-110%);
+}
+
+
+/* Option: icônes/logo plus lisibles sur fond vert */
+.app-header.scrolled .brand {
+  text-shadow: none;
+}
 
 
 /* Full-width inner container (NOT centered) */
@@ -705,9 +725,19 @@ input[type="radio"] {
     background: transparent;
   }
 .app-header {
-  background: transparent !important;
-  border-bottom: none !important;
+  transition: transform 220ms ease, background 220ms ease, box-shadow 220ms ease;
+  will-change: transform, background;
 }
+
+.app-header.scrolled {
+    background: var(--green-dark) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+  }
+
+  .app-header.hidden {
+    transform: translateY(-110%);
+  }
+
 
 
   .app-content {
