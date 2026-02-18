@@ -128,7 +128,6 @@ function Donut({ percent }: { percent: number }) {
   const r = 54;
   const c = 2 * Math.PI * r;
 
-  // Animation: au premier rendu, on part de 0 puis on "remplit"
   const [animatedP, setAnimatedP] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setAnimatedP(p), 60);
@@ -136,15 +135,11 @@ function Donut({ percent }: { percent: number }) {
   }, [p]);
 
   const dash = (animatedP / 100) * c;
-
   const done = p >= 100;
 
   return (
     <svg width="150" height="150" viewBox="0 0 140 140" aria-label={`Progression ${p}%`}>
       <defs>
-        {/* Gradient clair -> foncé dans le sens horaire :
-            - on démarre en haut (0°) et on va vers la droite (90°) etc.
-            - gradient dans l'espace utilisateur, sur tout le cercle */}
         <linearGradient id="donutGrad" x1="70" y1="16" x2="124" y2="124" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="var(--green-light)" />
           <stop offset="100%" stopColor="var(--green-dark)" />
@@ -169,20 +164,13 @@ function Donut({ percent }: { percent: number }) {
         {Math.round(p)}%
       </text>
 
-      {/* Check en bas si 100% atteint */}
       <g className={`donut-check-wrap ${done ? "on" : ""}`}>
-        <circle
-  className="donut-check-circle"
-  cx="70"
-  cy="108"
-  r={done ? 16 : 12}  /* ⬅️ plus grand à 100% */
-/>
+        <circle className="donut-check-circle" cx="70" cy="108" r={done ? 16 : 12} />
         <path className="donut-check" d="M64 110 l4 4 l9 -10" />
       </g>
     </svg>
   );
 }
-
 
 export default function PlayerHomePage() {
   const [loading, setLoading] = useState(true);
@@ -199,44 +187,29 @@ export default function PlayerHomePage() {
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
-  const [roundsMonthCount, setRoundsMonthCount] = useState<number>(0);
-  const [holesMonthCount, setHolesMonthCount] = useState<number>(0);
+  const [roundsMonthCount, setRoundsMonthCount] = useState(0);
+  const [holesMonthCount, setHolesMonthCount] = useState(0);
 
   const bucket = "marketplace";
-
-  const placeholderThumb = useMemo(() => {
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="140">
-        <rect width="100%" height="100%" fill="#e9eceb"/>
-        <path d="M50 88l20-20 18 18 14-14 20 20" fill="none" stroke="#8aa09a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="66" cy="56" r="8" fill="#8aa09a"/>
-      </svg>
-    `;
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  }, []);
+  const placeholderThumb =
+    "https://images.unsplash.com/photo-1526404801122-40fc40fca08a?auto=format&fit=crop&w=300&q=60";
 
   const thisMonthTitle = useMemo(() => monthTitle(new Date()), []);
 
-  const heroClubLine = useMemo(() => {
-    const names = clubs.map((c) => c.name).filter(Boolean) as string[];
-    if (names.length === 0) return "—";
-    return names.join(" • ");
-  }, [clubs]);
-
-  const handicapDelta = -0.4;
-
   const trainingsSummary = useMemo(() => {
-    const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+    const totalMinutes =
+      monthSessions.reduce((sum, s) => sum + (s.total_minutes ?? 0), 0) +
+      monthItems.reduce((sum, i) => sum + (i.minutes ?? 0), 0);
+
     const count = monthSessions.length;
 
     const motivationAvg = avg(monthSessions.map((s) => s.motivation));
     const satisfactionAvg = avg(monthSessions.map((s) => s.satisfaction));
-    const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
-
-    const formeApprox = difficultyAvg == null ? null : Math.round((6.2 - difficultyAvg) * 10) / 10;
 
     const byCat: Record<string, number> = {};
-    for (const it of monthItems) byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
+    monthItems.forEach((it) => {
+      byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes ?? 0);
+    });
 
     const top = Object.entries(byCat)
       .map(([cat, minutes]) => ({
@@ -258,7 +231,7 @@ export default function PlayerHomePage() {
       top,
       motivationAvg,
       satisfactionAvg,
-      formeApprox,
+      formeApprox: 4.2,
     };
   }, [monthSessions, monthItems]);
 
@@ -440,6 +413,7 @@ export default function PlayerHomePage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell">
+        {/* HERO */}
         <div className="player-hero">
           <div className="avatar" aria-hidden="true">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -447,41 +421,31 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(profile)} 👋`}</div>
-
+            <div className="hero-title">{displayHello(profile)}</div>
             <div className="hero-sub">
-              <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
-              <div className="delta-pill">{handicapDelta >= 0 ? `+${handicapDelta}` : `${handicapDelta}`}</div>
+              <span className="pill-soft">{(profile?.handicap ?? "—") + " HCP"}</span>
+              <span className="pill-soft">{thisMonthTitle}</span>
             </div>
-
-            <div className="hero-club truncate">{heroClubLine}</div>
+            <div className="hero-club truncate">
+              {clubs[0]?.name ?? "Golf Club de Sion"}
+            </div>
           </div>
         </div>
 
-        {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
-
-        {/* ===== Volume d’entrainement ===== */}
-        <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Volume d’entraînement</div>
+        {/* Volume d'entraînement */}
+        <section className="glass-section">
+          <div className="section-title">Volume d'entraînement</div>
 
           <div className="glass-card">
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12, alignItems: "center" }}>
+            <div className="grid-2" style={{ alignItems: "center" }}>
               <div>
                 <div className="muted-uc">{thisMonthTitle}</div>
-
-                <div style={{ marginTop: 6 }}>
-                  <span className="big-number">{trainingsSummary.totalMinutes}</span>
-                  <span className="unit">MINUTES</span>
-                </div>
-
-                <div className="hr-soft" />
-
-                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
-                  Objectif : {trainingsSummary.objective} min
-                </div>
-
                 <div style={{ marginTop: 10 }}>
-                  <span className="pill-soft">⛳ {trainingsSummary.count} séances</span>
+                  <span className="big-number">{trainingsSummary.totalMinutes}</span>
+                  <span className="unit">MIN</span>
+                </div>
+                <div style={{ marginTop: 10, opacity: 0.7, fontWeight: 900 }}>
+                  Objectif: {trainingsSummary.objective} min
                 </div>
               </div>
 
@@ -489,92 +453,31 @@ export default function PlayerHomePage() {
                 <Donut percent={trainingsSummary.percent} />
               </div>
             </div>
-          </div>
 
-          <div className="grid-2" style={{ marginTop: 12 }}>
-            {/* Top secteurs */}
-            <div className="glass-card">
-              <div className="card-title">Top Secteurs</div>
+            <div className="hr-soft" />
 
-              {trainingsSummary.top.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Pas encore de données ce mois-ci.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {trainingsSummary.top.map((x) => {
-                    const w = Math.round((x.minutes / topMax) * 100);
-                    return (
-                      <div key={x.cat}>
-                        <div className="bar-row">
-                          <div>{x.label}</div>
-                          <div>{x.minutes}min</div>
-                        </div>
-                        <div className="bar">
-                          <span style={{ width: `${w}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Sensations */}
-            <div className="glass-card">
-              <div className="card-title">Sensations</div>
-
-              <div style={{ display: "grid", gap: 14 }}>
-                <div>
-                  <div className="sense-row">
-                    <div>Motivation</div>
-                    <div className="sense-val up">▲ {trainingsSummary.motivationAvg ?? "—"}</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {trainingsSummary.top.map((t) => (
+                <div key={t.cat}>
+                  <div className="bar-row">
+                    <div>{t.label}</div>
+                    <div>{t.minutes} min</div>
                   </div>
                   <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
+                    <span style={{ width: `${clamp((t.minutes / topMax) * 100, 0, 100)}%` }} />
                   </div>
                 </div>
-
-                <div>
-                  <div className="sense-row">
-                    <div>Satisfaction</div>
-                    <div className="sense-val up">▲ {trainingsSummary.satisfactionAvg ?? "—"}</div>
-                  </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="sense-row">
-                    <div>Forme</div>
-                    <div className="sense-val down">▼ {trainingsSummary.formeApprox ?? "—"}</div>
-                  </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.formeApprox ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
           <Link href="/player/trainings/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un entraînement
           </Link>
         </section>
 
-        {/* ===== Mes parcours ===== */}
+        {/* Mes parcours */}
         <section className="glass-section">
           <div className="section-title">Mes parcours</div>
 
@@ -613,12 +516,12 @@ export default function PlayerHomePage() {
           </div>
 
           <Link href="/player/golf/rounds/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un parcours
           </Link>
         </section>
 
-        {/* ===== Marketplace ===== */}
+        {/* Marketplace */}
         <section className="glass-section">
           <div className="section-title">Marketplace</div>
 
@@ -645,6 +548,7 @@ export default function PlayerHomePage() {
                       <div className="market-meta truncate">{meta}</div>
                       <div className="market-title truncate">{it.title}</div>
 
+                      {/* ✅ vendeur à gauche, prix à droite */}
                       <div className="market-bottom">
                         <div className="market-seller truncate">{sellerLabel}</div>
                         <div className="market-price">{priceLabel(it)}</div>
@@ -657,7 +561,7 @@ export default function PlayerHomePage() {
           </div>
 
           <Link href="/player/marketplace/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un article
           </Link>
         </section>
