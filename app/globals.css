@@ -351,12 +351,14 @@ input[type="radio"] {
   stroke-width: 2;
 }
 
-.mobile-nav-label {
-  font-size: 11px;
-  font-weight: 800;
+.mobile-nav-label{
+  font-size: 10px;        /* un tout petit peu plus petit */
+  font-weight: 600;       /* plus fin */
   line-height: 1;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
+  white-space: nowrap;    /* évite le retour à la ligne */
 }
+
 
 /* On cache le footer mobile sur desktop */
 @media (min-width: 900px) {
