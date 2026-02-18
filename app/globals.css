@@ -151,6 +151,10 @@ input[type="radio"] {
   padding-top: 40px; /* hauteur réelle du header */
   padding-bottom: 86px;
 }
+.app-shell {
+  padding-left: 8px;
+  padding-right: 8px;
+}
 
 /* ===== Header ===== */
 .app-header {
