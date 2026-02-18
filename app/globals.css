@@ -1278,7 +1278,7 @@ input[type="radio"] {
 
   /* ✅ descendre uniquement le logo */
   .header-left .brand{
-    transform: translateY(12px); /* ajuste: 6px à 16px */
+    transform: translateY(16px); /* ajuste: 6px à 16px */
   }
 
   /* ✅ remonter uniquement la cloche (et autres icônes à droite) */
