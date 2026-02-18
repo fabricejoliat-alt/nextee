@@ -20,48 +20,52 @@ function BurgerIcon() {
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
 
-  // Scroll behavior (web + PWA)
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const lastY = useRef(0);
 
   useEffect(() => {
-    const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
-    const content = document.querySelector(".app-content") as HTMLElement | null;
+  const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
+  const content = document.querySelector(".app-content") as HTMLElement | null;
 
-    const getY = () => {
-      if (content && content.scrollHeight > content.clientHeight) return content.scrollTop;
-      return scroller.scrollTop || window.scrollY || 0;
-    };
+  const getY = () => {
+    // si .app-content scroll vraiment, on prend lui
+    if (content && content.scrollHeight > content.clientHeight) return content.scrollTop;
+    // sinon on prend le scroll global (PWA iOS-friendly)
+    return scroller.scrollTop || window.scrollY || 0;
+  };
 
-    lastY.current = getY();
+  lastY.current = getY();
 
-    const onScroll = () => {
-      const y = getY();
+  const onScroll = () => {
+    const y = getY();
 
-      setScrolled(y > 6);
+    setScrolled(y > 6);
 
-      const goingDown = y > lastY.current;
-      const delta = Math.abs(y - lastY.current);
+    const goingDown = y > lastY.current;
+    const delta = Math.abs(y - lastY.current);
 
-      if (delta > 8) {
-        setHidden(goingDown && y > 80);
-        lastY.current = y;
-      }
-    };
+    if (delta > 8) {
+      setHidden(goingDown && y > 80);
+      lastY.current = y;
+    }
+  };
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    content?.addEventListener("scroll", onScroll, { passive: true });
+  // écoute les 2, au cas où
+  window.addEventListener("scroll", onScroll, { passive: true });
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+  content?.addEventListener("scroll", onScroll, { passive: true });
 
-    onScroll();
+  // init
+  onScroll();
 
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      scroller.removeEventListener("scroll", onScroll);
-      content?.removeEventListener("scroll", onScroll);
-    };
-  }, []);
+  return () => {
+    window.removeEventListener("scroll", onScroll);
+    scroller.removeEventListener("scroll", onScroll);
+    content?.removeEventListener("scroll", onScroll);
+  };
+}, []);
+
 
   return (
     <>
@@ -77,6 +81,7 @@ export default function PlayerHeader() {
           <div className="header-center" />
 
           <div className="header-right">
+            {/* Bell */}
             <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
               <Bell size={22} strokeWidth={2} aria-hidden="true" />
             </button>
