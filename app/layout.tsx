@@ -1,46 +1,29 @@
-import type { Metadata } from "next";
 import "./globals.css";
+import type { ReactNode } from "react";
+import { Inter } from "next/font/google";
 
-export const metadata: Metadata = {
-  title: "NexTee",
-  description: "Junior Golf Platform",
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: "cover",
-  },
-  icons: {
-    icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
-  },
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+/**
+ * Empêche le zoom/dézoom sur mobile (Safari/Chrome) et en PWA ("Ajouter à l'écran")
+ * + viewport-fit=cover pour les iPhones avec encoche
+ */
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr">
-      <head>
-        {/* PWA */}
-        <link rel="manifest" href="/manifest.json" />
-
-        {/* iOS App Feel */}
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="format-detection" content="telephone=no" />
-      </head>
-      <body>
-        {children}
-      </body>
+    <html lang="fr" className={inter.className}>
+      <body>{children}</body>
     </html>
   );
 }

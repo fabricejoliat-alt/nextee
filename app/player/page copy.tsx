@@ -90,11 +90,7 @@ function priceLabel(it: Item) {
 function fmtDateChip(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
+  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -115,12 +111,7 @@ function monthRangeLocal(now = new Date()) {
 }
 
 function monthTitle(now = new Date()) {
-  return new Intl.DateTimeFormat("fr-CH", {
-    month: "long",
-    year: "numeric",
-  })
-    .format(now)
-    .toUpperCase();
+  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(now).toUpperCase();
 }
 
 function Donut({ percent }: { percent: number }) {
@@ -165,6 +156,7 @@ export default function PlayerHomePage() {
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
+  // Parcours (si tables dispo)
   const [roundsMonthCount, setRoundsMonthCount] = useState<number>(0);
   const [holesMonthCount, setHolesMonthCount] = useState<number>(0);
 
@@ -189,6 +181,7 @@ export default function PlayerHomePage() {
     return names.join(" • ");
   }, [clubs]);
 
+  // mock delta (plus tard: calcul réel)
   const handicapDelta = -0.4;
 
   const trainingsSummary = useMemo(() => {
@@ -199,6 +192,7 @@ export default function PlayerHomePage() {
     const satisfactionAvg = avg(monthSessions.map((s) => s.satisfaction));
     const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
 
+    // “Forme” approx (moins difficile => meilleure forme)
     const formeApprox = difficultyAvg == null ? null : Math.round((6.2 - difficultyAvg) * 10) / 10;
 
     const byCat: Record<string, number> = {};
@@ -213,7 +207,7 @@ export default function PlayerHomePage() {
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 3);
 
-    const objective = 500;
+    const objective = 500; // comme la maquette
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
     return {
@@ -245,6 +239,7 @@ export default function PlayerHomePage() {
     }
     const uid = userRes.user.id;
 
+    // Profile
     const profRes = await supabase
       .from("profiles")
       .select("id,first_name,last_name,handicap")
@@ -258,6 +253,7 @@ export default function PlayerHomePage() {
     }
     setProfile((profRes.data ?? null) as Profile | null);
 
+    // Memberships
     const memRes = await supabase
       .from("club_members")
       .select("club_id")
@@ -279,6 +275,7 @@ export default function PlayerHomePage() {
     const cids = ((memRes.data ?? []) as ClubMember[]).map((m) => m.club_id).filter(Boolean);
     setClubIds(cids);
 
+    // Clubs names
     if (cids.length > 0) {
       const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
       if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
@@ -287,6 +284,7 @@ export default function PlayerHomePage() {
       setClubs([]);
     }
 
+    // Marketplace latest 3 (all clubs)
     if (cids.length > 0) {
       const itemsRes = await supabase
         .from("marketplace_items")
@@ -330,6 +328,7 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
     }
 
+    // Trainings month
     const { start, end } = monthRangeLocal(new Date());
     const sRes = await supabase
       .from("training_sessions")
@@ -358,6 +357,7 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
+    // Rounds month (optional)
     try {
       const { start, end } = monthRangeLocal(new Date());
       const rRes = await supabase
@@ -393,12 +393,16 @@ export default function PlayerHomePage() {
     load();
   }, []);
 
+  // very simple avatar: could later be profile picture
   const avatarUrl = useMemo(() => {
+    // placeholder: you can replace with profile storage later
     return "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=240&q=60";
   }, []);
 
+  // Marketplace seller placeholder (we don’t have seller in this query)
   const sellerLabel = useMemo(() => initialsName(profile), [profile]);
 
+  // For display only (Mon Golf section) — placeholders until real stats exist
   const focusGIR = 57;
   const focusFairway = 72;
   const focusPuttingAvg = 43;
@@ -406,6 +410,7 @@ export default function PlayerHomePage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell">
+        {/* HERO */}
         <div className="player-hero">
           <div className="avatar" aria-hidden="true">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -413,10 +418,15 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(profile)} 👋`}</div>
+            <div className="hero-title">
+              {loading ? "Salut…" : `${displayHello(profile)} 👋`}
+            </div>
 
             <div className="hero-sub">
-              <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
+              <div>
+                Handicap{" "}
+                {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}
+              </div>
               <div className="delta-pill">{handicapDelta >= 0 ? `+${handicapDelta}` : `${handicapDelta}`}</div>
             </div>
 
@@ -424,7 +434,11 @@ export default function PlayerHomePage() {
           </div>
         </div>
 
-        {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
+        {error && (
+          <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>
+            {error}
+          </div>
+        )}
 
         {/* ===== Volume d’entrainement ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
@@ -460,10 +474,14 @@ export default function PlayerHomePage() {
           <div className="grid-2" style={{ marginTop: 12 }}>
             {/* Top secteurs */}
             <div className="glass-card">
-              <div className="card-title">Top Secteurs</div>
+              <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 10, color: "rgba(0,0,0,0.78)" }}>
+                Top Secteurs
+              </div>
 
               {trainingsSummary.top.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Pas encore de données ce mois-ci.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                  Pas encore de données ce mois-ci.
+                </div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   {trainingsSummary.top.map((x) => {
@@ -486,7 +504,9 @@ export default function PlayerHomePage() {
 
             {/* Sensations */}
             <div className="glass-card">
-              <div className="card-title">Sensations</div>
+              <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 10, color: "rgba(0,0,0,0.78)" }}>
+                Sensations
+              </div>
 
               <div style={{ display: "grid", gap: 14 }}>
                 <div>
@@ -494,13 +514,12 @@ export default function PlayerHomePage() {
                     <div>Motivation</div>
                     <div className="sense-val up">▲ {trainingsSummary.motivationAvg ?? "—"}</div>
                   </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
                 </div>
 
                 <div>
@@ -508,13 +527,12 @@ export default function PlayerHomePage() {
                     <div>Satisfaction</div>
                     <div className="sense-val up">▲ {trainingsSummary.satisfactionAvg ?? "—"}</div>
                   </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
                 </div>
 
                 <div>
@@ -522,20 +540,19 @@ export default function PlayerHomePage() {
                     <div>Forme</div>
                     <div className="sense-val down">▼ {trainingsSummary.formeApprox ?? "—"}</div>
                   </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.formeApprox ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
+                  <div className="bar"><span
+  style={{
+    width: `${clamp(((trainingsSummary.formeApprox ?? 0) / 6) * 100, 0, 100)}%`,
+  }}
+/>
+</div>
                 </div>
               </div>
             </div>
           </div>
 
           <Link href="/player/trainings/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un entraînement
           </Link>
         </section>
@@ -579,7 +596,7 @@ export default function PlayerHomePage() {
           </div>
 
           <Link href="/player/golf/rounds/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un parcours
           </Link>
         </section>
@@ -596,9 +613,11 @@ export default function PlayerHomePage() {
             ) : (
               latestItems.map((it) => {
                 const img = thumbByItemId[it.id] || placeholderThumb;
-                const meta = [fmtDateChip(it.created_at), it.category ?? "Matériel", it.condition ?? ""]
-                  .filter(Boolean)
-                  .join(" • ");
+                const meta = [
+                  fmtDateChip(it.created_at),
+                  it.category ?? "Matériel",
+                  it.condition ?? "",
+                ].filter(Boolean).join(" • ");
 
                 return (
                   <Link key={it.id} href={`/player/marketplace/${it.id}`} className="market-row">
@@ -622,12 +641,22 @@ export default function PlayerHomePage() {
             )}
           </div>
 
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+            <Link className="btn" href="/player/marketplace">
+              Voir tout
+            </Link>
+            <Link className="btn" href="/player/marketplace/mine">
+              Mes annonces
+            </Link>
+          </div>
+
           <Link href="/player/marketplace/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <span style={{ fontSize: 22, lineHeight: 0 }}>＋</span>
             Ajouter un article
           </Link>
         </section>
 
+        {/* little spacer */}
         <div style={{ height: 12 }} />
       </div>
     </div>
