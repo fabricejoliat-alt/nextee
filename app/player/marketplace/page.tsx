@@ -29,17 +29,6 @@ type Profile = {
   last_name: string | null;
 };
 
-function authorLabel(p?: Profile | null) {
-  const first = (p?.first_name ?? "").trim();
-  const last = (p?.last_name ?? "").trim();
-
-  if (!first && !last) return "Sans nom";
-  if (first && !last) return first;
-  if (!first && last) return `${last.charAt(0).toUpperCase()}.`;
-
-  return `${first} ${last.charAt(0).toUpperCase()}.`;
-}
-
 function truncate(s: string, max: number) {
   const t = (s ?? "").trim();
   if (t.length <= max) return t;
@@ -71,6 +60,9 @@ export default function PlayerMarketplaceHome() {
   const [items, setItems] = useState<Item[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
+
+  // ✅ Filtre catégorie
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
 
   const bucket = "marketplace";
 
@@ -133,6 +125,7 @@ export default function PlayerMarketplaceHome() {
     const list = (itemsRes.data ?? []) as Item[];
     setItems(list);
 
+    // Profils (si tu ne les utilises plus, tu peux retirer, mais je laisse tel quel)
     const authorIds = Array.from(new Set(list.map((x) => x.user_id)));
     if (authorIds.length > 0) {
       const profRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", authorIds);
@@ -143,6 +136,7 @@ export default function PlayerMarketplaceHome() {
       }
     }
 
+    // Images principales (sort_order = 0)
     const itemIds = list.map((x) => x.id);
     if (itemIds.length > 0) {
       const imgRes = await supabase
@@ -168,15 +162,31 @@ export default function PlayerMarketplaceHome() {
     load();
   }, []);
 
+  // ✅ Liste des catégories (depuis les items chargés)
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) {
+      const c = (it.category ?? "").trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [items]);
+
+  // ✅ Items filtrés
+  const filteredItems = useMemo(() => {
+    const c = selectedCategory.trim();
+    if (!c) return items;
+    return items.filter((it) => (it.category ?? "").trim() === c);
+  }, [items, selectedCategory]);
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        {/* ✅ Header (sans sous-mention) */}
+        {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title">Marketplace</div>
 
-            {/* ✅ boutons côte à côte */}
             <div className="marketplace-actions">
               <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
                 Mes annonces
@@ -188,73 +198,78 @@ export default function PlayerMarketplaceHome() {
             </div>
           </div>
 
+          {/* ✅ Filtre catégorie */}
+          <div className="marketplace-filter-row">
+            <label className="marketplace-filter-label" htmlFor="cat">
+              Par catégorie
+            </label>
+            <select
+              id="cat"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="marketplace-filter-select"
+            >
+              <option value="">Toutes</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+
+            {/* reset rapide */}
+            {selectedCategory && (
+              <button className="btn marketplace-filter-clear" onClick={() => setSelectedCategory("")}>
+                Réinitialiser
+              </button>
+            )}
+          </div>
+
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {/* ✅ Liste (sans titre "ANNONCES") */}
+        {/* Liste */}
         <div className="glass-section">
-  {loading ? (
-    <div className="glass-card">Chargement…</div>
-  ) : items.length === 0 ? (
-    <div className="glass-card marketplace-empty">
-      Aucune annonce pour le moment.
-    </div>
-  ) : (
-    <div className="marketplace-list">
-      {items.map((it) => {
-        const mine = it.user_id === userId;
-        const badge = mine ? "Moi" : authorLabel(profilesById[it.user_id]);
-        const img = mainImageByItemId[it.id] || placeholderSvg;
-        const meta = compactMeta(it);
-
-        return (
-          <Link
-            key={it.id}
-            href={`/player/marketplace/${it.id}`}
-            className="marketplace-link"
-          >
-            <div className="marketplace-item">
-              <div className="marketplace-row">
-                <div className="marketplace-thumb">
-                  <img src={img} alt={it.title} />
-                </div>
-
-                <div className="marketplace-body">
-
-  {/* Ligne 1 — Titre */}
-  <div className="marketplace-item-title">
-    {it.title}
-  </div>
-
-  {/* Ligne 2 — Variables */}
-  {meta && (
-    <div className="marketplace-meta">
-      {meta}
-    </div>
-  )}
-
-  {/* Ligne 3 — Prix dans mini card */}
-  <div className="marketplace-price-row">
-    <div className="marketplace-price-pill">
-      {priceLabel(it)}
-    </div>
-  </div>
-
-</div>
-
-
-
-
-
-              </div>
+          {loading ? (
+            <div className="glass-card">Chargement…</div>
+          ) : filteredItems.length === 0 ? (
+            <div className="glass-card marketplace-empty">
+              {selectedCategory ? "Aucune annonce dans cette catégorie." : "Aucune annonce pour le moment."}
             </div>
-          </Link>
-        );
-      })}
-    </div>
-  )}
-</div>
+          ) : (
+            <div className="marketplace-list">
+              {filteredItems.map((it) => {
+                const img = mainImageByItemId[it.id] || placeholderSvg;
+                const meta = compactMeta(it);
 
+                return (
+                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
+                    <div className="marketplace-item">
+                      <div className="marketplace-row">
+                        <div className="marketplace-thumb">
+                          <img src={img} alt={it.title} />
+                        </div>
+
+                        <div className="marketplace-body">
+                          {/* Ligne 1 — Titre */}
+                          <div className="marketplace-item-title">{it.title}</div>
+
+                          {/* Ligne 2 — Variables */}
+                          {meta && <div className="marketplace-meta">{meta}</div>}
+
+                          {/* Ligne 3 — Prix à droite dans mini card */}
+                          <div className="marketplace-price-row">
+                            <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1485,22 +1485,52 @@ input[type="radio"] {
 
 /* Mini card prix */
 .marketplace-price-pill{
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 999px;
-  font-size: 14px;
-  font-weight: 950;
-  color: #fff;
 
-  background: linear-gradient(
-    180deg,
-    #3f5647 0%,
-    #35483b 60%,
-    #2d3d32 100%
-  );
+  font-size: 13px;        /* un peu plus petit */
+  font-weight: 900;
 
-  box-shadow:
-    0 6px 14px rgba(0,0,0,0.25),
-    inset 0 1px 0 rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.06);   /* fond clair doux */
+  color: #2a2a2a;                 /* anthracite */
+
+  border: 1px solid rgba(0,0,0,0.08);
+
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
 
   white-space: nowrap;
+}
+
+/* ===== Marketplace filter ===== */
+.marketplace-filter-row{
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.marketplace-filter-label{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.92);
+  letter-spacing: 0.2px;
+}
+
+.marketplace-filter-select{
+  width: 100%;
+}
+
+.marketplace-filter-clear{
+  height: 44px; /* aligné avec select iOS (16px font-size) */
+}
+
+/* Mobile: empile proprement */
+@media (max-width: 420px){
+  .marketplace-filter-row{
+    grid-template-columns: 1fr;
+  }
+  .marketplace-filter-clear{
+    width: 100%;
+  }
 }
