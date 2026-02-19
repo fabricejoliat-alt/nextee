@@ -1119,3 +1119,31 @@ input[type="radio"]{
     -webkit-text-size-adjust: 100%;
   }
 }
+/* =========================================================
+   FIX iOS PWA header vertical alignment
+   ========================================================= */
+
+.app-header {
+  align-items: stretch;
+}
+
+.app-header-inner {
+  align-items: center;
+}
+
+/* ✅ IMPORTANT: ne pas aligner le logo sur la baseline */
+.brand {
+  align-items: center !important;   /* au lieu de baseline */
+  line-height: 1 !important;
+}
+
+/* ✅ aligne aussi les colonnes gauche/droite */
+.header-left,
+.header-right {
+  align-items: center;
+}
+
+/* ✅ évite que le bouton/icône "prenne" une hauteur de ligne */
+.icon-btn {
+  line-height: 0;
+}
