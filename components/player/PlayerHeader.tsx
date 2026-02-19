@@ -22,34 +22,73 @@ export default function PlayerHeader() {
 
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
+
+  // sentinel invisible (ne casse pas le layout)
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // hide/show (optionnel) basé sur le scroll (on garde simple)
   const lastY = useRef(0);
 
   useEffect(() => {
-  const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
+    // ✅ Scrolled via IntersectionObserver (ultra fiable)
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
-  const getY = () => scroller.scrollTop || window.pageYOffset || window.scrollY || 0;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        // Si le sentinel n'est plus visible => on a scroll
+        setScrolled(!entry.isIntersecting);
+      },
+      {
+        root: null,
+        // déclenche après ~8px (tu peux ajuster)
+        rootMargin: "-8px 0px 0px 0px",
+        threshold: 0,
+      }
+    );
 
-  const onScroll = () => {
-    const y = getY();
-    setScrolled(y > 6);
-  };
+    obs.observe(sentinel);
 
-  // init
-  onScroll();
+    return () => obs.disconnect();
+  }, []);
 
-  window.addEventListener("scroll", onScroll, { passive: true });
-  scroller.addEventListener("scroll", onScroll, { passive: true });
+  useEffect(() => {
+    // ✅ Hidden basé sur le scroll (fallback simple)
+    const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
 
-  return () => {
-    window.removeEventListener("scroll", onScroll);
-    scroller.removeEventListener("scroll", onScroll);
-  };
-}, []);
+    const getY = () => scroller.scrollTop || window.scrollY || 0;
 
+    lastY.current = getY();
 
+    const onScroll = () => {
+      const y = getY();
+      const goingDown = y > lastY.current;
+      const delta = Math.abs(y - lastY.current);
+
+      if (delta > 8) {
+        setHidden(goingDown && y > 80);
+        lastY.current = y;
+      }
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   return (
     <>
+      {/* ✅ sentinel tout en haut de la page */}
+      <div
+        ref={sentinelRef}
+        style={{ position: "absolute", top: 0, left: 0, width: 1, height: 1, pointerEvents: "none" }}
+        aria-hidden="true"
+      />
+
       <header className={`app-header ${scrolled ? "scrolled" : ""} ${hidden ? "hidden" : ""}`}>
         <div className="app-header-inner app-header-grid">
           <div className="header-left">
@@ -62,19 +101,12 @@ export default function PlayerHeader() {
           <div className="header-center" />
 
           <div className="header-right">
-            {/* Bell */}
             <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
               <Bell size={22} strokeWidth={2} aria-hidden="true" />
             </button>
 
-            {/* Burger (desktop only) */}
             <div className="desktop-only">
-              <button
-                className="icon-btn"
-                type="button"
-                aria-label="Ouvrir le menu"
-                onClick={() => setOpen(true)}
-              >
+              <button className="icon-btn" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
                 <BurgerIcon />
               </button>
             </div>
