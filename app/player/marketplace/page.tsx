@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
-
-
 type Item = {
   id: string;
   created_at: string;
@@ -62,6 +60,9 @@ export default function PlayerMarketplaceHome() {
   const [items, setItems] = useState<Item[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
+
+  // ✅ Ancre pour remonter en haut de la liste sans cacher la 1ère annonce (header fixed)
+  const listTopRef = useRef<HTMLDivElement | null>(null);
 
   // Filtre catégorie
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -205,20 +206,19 @@ export default function PlayerMarketplaceHome() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  function scrollToListTop() {
+    // ✅ scroll avec offset via CSS scroll-margin-top (voir .marketplace-list-top)
+    listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function goPrev() {
-    setPage((p) => {
-      const next = Math.max(1, p - 1);
-      return next;
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+    setPage((p) => Math.max(1, p - 1));
+    scrollToListTop();
   }
 
   function goNext() {
-    setPage((p) => {
-      const next = Math.min(totalPages, p + 1);
-      return next;
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+    setPage((p) => Math.min(totalPages, p + 1));
+    scrollToListTop();
   }
 
   return (
@@ -280,6 +280,9 @@ export default function PlayerMarketplaceHome() {
             </div>
           ) : (
             <>
+              {/* ✅ Ancre: évite que le header fixed masque la 1ère annonce lors du scroll */}
+              <div ref={listTopRef} className="marketplace-list-top" />
+
               <div className="marketplace-list">
                 {pagedItems.map((it) => {
                   const img = mainImageByItemId[it.id] || placeholderSvg;
