@@ -46,19 +46,6 @@ function compactMeta(it: Item) {
   return parts.join(" • ");
 }
 
-function scrollTopFix() {
-  // 1) tout de suite
-  window.scrollTo({ top: 0, behavior: "smooth" });
-
-  // 2) après le rendu + images/layout (PWA iOS friendly)
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-  });
-}
-
-
 function priceLabel(it: Item) {
   if (it.is_free) return "À donner";
   if (it.price == null) return "—";
@@ -74,7 +61,7 @@ export default function PlayerMarketplaceHome() {
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
 
-  // ✅ Ancre pour remonter en haut de la liste sans cacher la 1ère annonce (header fixed)
+  // ✅ Ancre au-dessus de la liste (plus fiable que window.scrollTo(0) avec header fixed)
   const listTopRef = useRef<HTMLDivElement | null>(null);
 
   // Filtre catégorie
@@ -219,21 +206,35 @@ export default function PlayerMarketplaceHome() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  function scrollToListTop() {
-    // ✅ scroll avec offset via CSS scroll-margin-top (voir .marketplace-list-top)
-    listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // ✅ Scroll stable iOS/PWA: double RAF (corrige le cas "Suivant" => images/layout shift)
+  function scrollToListTopStable() {
+    const el = listTopRef.current;
+    if (!el) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    const doScroll = () => {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    doScroll();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        doScroll();
+      });
+    });
   }
 
- function goPrev() {
-  setPage((p) => Math.max(1, p - 1));
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
+  function goPrev() {
+    setPage((p) => Math.max(1, p - 1));
+    scrollToListTopStable(); // ✅ OK aussi
+  }
 
-function goNext() {
-  setPage((p) => Math.min(totalPages, p + 1));
-  scrollTopFix();
-}
-
+  function goNext() {
+    setPage((p) => Math.min(totalPages, p + 1));
+    scrollToListTopStable(); // ✅ corrige surtout le cas "Suivant"
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -294,7 +295,7 @@ function goNext() {
             </div>
           ) : (
             <>
-              {/* ✅ Ancre: évite que le header fixed masque la 1ère annonce lors du scroll */}
+              {/* ✅ Ancre au-dessus de la liste */}
               <div ref={listTopRef} className="marketplace-list-top" />
 
               <div className="marketplace-list">
@@ -307,7 +308,7 @@ function goNext() {
                       <div className="marketplace-item">
                         <div className="marketplace-row">
                           <div className="marketplace-thumb">
-                            <img src={img} alt={it.title} />
+                            <img src={img} alt={it.title} loading="lazy" />
                           </div>
 
                           <div className="marketplace-body">

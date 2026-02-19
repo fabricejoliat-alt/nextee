@@ -1563,6 +1563,7 @@ input[type="radio"] {
 }
 /* ✅ Laisse une marge au scroll pour éviter que le header fixe masque le haut */
 .marketplace-list-top{
-  scroll-margin-top: calc(80px + env(safe-area-inset-top));
+  scroll-margin-top: calc(110px + env(safe-area-inset-top));
 }
+
 
