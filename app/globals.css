@@ -1534,3 +1534,30 @@ input[type="radio"] {
     width: 100%;
   }
 }
+.marketplace-pagination{
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.marketplace-page-indicator{
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.92);
+}
+
+/* mobile: boutons full width si besoin */
+@media (max-width: 420px){
+  .marketplace-pagination{
+    grid-template-columns: 1fr;
+  }
+  .marketplace-page-indicator{
+    order: -1;
+  }
+  .marketplace-pagination .btn{
+    width: 100%;
+  }
+}

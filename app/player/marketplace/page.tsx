@@ -61,8 +61,12 @@ export default function PlayerMarketplaceHome() {
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
 
-  // ✅ Filtre catégorie
+  // Filtre catégorie
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+
+  // Pagination
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
 
   const bucket = "marketplace";
 
@@ -125,7 +129,7 @@ export default function PlayerMarketplaceHome() {
     const list = (itemsRes.data ?? []) as Item[];
     setItems(list);
 
-    // Profils (si tu ne les utilises plus, tu peux retirer, mais je laisse tel quel)
+    // Profils (laissé tel quel si tu en as besoin ailleurs)
     const authorIds = Array.from(new Set(list.map((x) => x.user_id)));
     if (authorIds.length > 0) {
       const profRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", authorIds);
@@ -162,7 +166,12 @@ export default function PlayerMarketplaceHome() {
     load();
   }, []);
 
-  // ✅ Liste des catégories (depuis les items chargés)
+  // Reset page quand on change de catégorie
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCategory]);
+
+  // Liste des catégories (depuis les items chargés)
   const categories = useMemo(() => {
     const set = new Set<string>();
     for (const it of items) {
@@ -172,12 +181,43 @@ export default function PlayerMarketplaceHome() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
   }, [items]);
 
-  // ✅ Items filtrés
+  // Items filtrés (catégorie)
   const filteredItems = useMemo(() => {
     const c = selectedCategory.trim();
     if (!c) return items;
     return items.filter((it) => (it.category ?? "").trim() === c);
   }, [items, selectedCategory]);
+
+  // Pagination (sur la liste filtrée)
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  }, [filteredItems]);
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredItems.slice(start, start + PAGE_SIZE);
+  }, [filteredItems, page]);
+
+  // Sécurité si la page dépasse après filtre/suppression
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  function goPrev() {
+    setPage((p) => {
+      const next = Math.max(1, p - 1);
+      return next;
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+  }
+
+  function goNext() {
+    setPage((p) => {
+      const next = Math.min(totalPages, p + 1);
+      return next;
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -198,11 +238,12 @@ export default function PlayerMarketplaceHome() {
             </div>
           </div>
 
-          {/* ✅ Filtre catégorie */}
+          {/* Filtre catégorie */}
           <div className="marketplace-filter-row">
             <label className="marketplace-filter-label" htmlFor="cat">
               Par catégorie
             </label>
+
             <select
               id="cat"
               value={selectedCategory}
@@ -217,7 +258,6 @@ export default function PlayerMarketplaceHome() {
               ))}
             </select>
 
-            {/* reset rapide */}
             {selectedCategory && (
               <button className="btn marketplace-filter-clear" onClick={() => setSelectedCategory("")}>
                 Réinitialiser
@@ -232,42 +272,61 @@ export default function PlayerMarketplaceHome() {
         <div className="glass-section">
           {loading ? (
             <div className="glass-card">Chargement…</div>
-          ) : filteredItems.length === 0 ? (
+          ) : pagedItems.length === 0 ? (
             <div className="glass-card marketplace-empty">
               {selectedCategory ? "Aucune annonce dans cette catégorie." : "Aucune annonce pour le moment."}
             </div>
           ) : (
-            <div className="marketplace-list">
-              {filteredItems.map((it) => {
-                const img = mainImageByItemId[it.id] || placeholderSvg;
-                const meta = compactMeta(it);
+            <>
+              <div className="marketplace-list">
+                {pagedItems.map((it) => {
+                  const img = mainImageByItemId[it.id] || placeholderSvg;
+                  const meta = compactMeta(it);
 
-                return (
-                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
-                    <div className="marketplace-item">
-                      <div className="marketplace-row">
-                        <div className="marketplace-thumb">
-                          <img src={img} alt={it.title} />
-                        </div>
+                  return (
+                    <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
+                      <div className="marketplace-item">
+                        <div className="marketplace-row">
+                          <div className="marketplace-thumb">
+                            <img src={img} alt={it.title} />
+                          </div>
 
-                        <div className="marketplace-body">
-                          {/* Ligne 1 — Titre */}
-                          <div className="marketplace-item-title">{it.title}</div>
+                          <div className="marketplace-body">
+                            {/* Ligne 1 — Titre */}
+                            <div className="marketplace-item-title">{it.title}</div>
 
-                          {/* Ligne 2 — Variables */}
-                          {meta && <div className="marketplace-meta">{meta}</div>}
+                            {/* Ligne 2 — Variables */}
+                            {meta && <div className="marketplace-meta">{meta}</div>}
 
-                          {/* Ligne 3 — Prix à droite dans mini card */}
-                          <div className="marketplace-price-row">
-                            <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                            {/* Ligne 3 — Prix à droite dans mini card */}
+                            <div className="marketplace-price-row">
+                              <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              {/* ✅ Pagination uniquement en bas */}
+              {filteredItems.length > PAGE_SIZE && (
+                <div className="marketplace-pagination">
+                  <button className="btn" onClick={goPrev} disabled={page === 1}>
+                    Précédent
+                  </button>
+
+                  <div className="marketplace-page-indicator">
+                    Page <strong>{page}</strong> / {totalPages}
+                  </div>
+
+                  <button className="btn" onClick={goNext} disabled={page === totalPages}>
+                    Suivant
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
