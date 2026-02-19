@@ -2,10 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { Home, CalendarDays, Flag, ShoppingBag, User } from "lucide-react";
 
 export default function MobileFooter() {
   const pathname = usePathname();
+
+  useEffect(() => {
+    // Force la page à revenir en haut à chaque navigation
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+  }, [pathname]);
 
   const items = [
     { href: "/player", label: "Accueil", Icon: Home },
@@ -20,7 +26,11 @@ export default function MobileFooter() {
       {items.map(({ href, label, Icon }) => {
         const active = pathname === href || pathname.startsWith(href + "/");
         return (
-          <Link key={href} href={href} className={`mobile-nav-item ${active ? "active" : ""}`}>
+          <Link
+            key={href}
+            href={href}
+            className={`mobile-nav-item ${active ? "active" : ""}`}
+          >
             <Icon aria-hidden="true" />
             <div className="mobile-nav-label">{label}</div>
           </Link>
