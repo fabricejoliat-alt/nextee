@@ -74,7 +74,7 @@ a { color: inherit; text-decoration: none; }
   padding-top: calc(var(--header-h) + var(--safe-top) + 4px);
 
   /* place pour footer mobile + safe-area */
-  padding-bottom: calc(var(--footer-h) + var(--safe-bottom) + 4px);
+  padding-bottom: calc(var(--footer-h) + var(--safe-bottom) + 0px);
 }
 
 @media (min-width: 900px){
