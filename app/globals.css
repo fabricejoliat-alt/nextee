@@ -1275,58 +1275,71 @@ input[type="radio"]{
 .icon-btn svg{ stroke: rgba(255,255,255,0.96); }
 
 /* =========================================================
-   PWA iOS — FIX ALIGN HEADER (logo vs cloche)
-   Mets ce bloc TOUT EN BAS du fichier
+   iOS PWA (standalone) — FIX HARD : logo + cloche centrés
+   Mettre ce bloc TOUT EN BAS du fichier
    ========================================================= */
 
 @supports (-webkit-touch-callout: none) {
-  /* iOS (Safari + PWA) */
-  .app-header{
-    padding-top: 0 !important; /* ✅ on évite double safe-area */
-    height: calc(var(--header-h) + var(--safe-top)) !important;
-    display: flex !important;
-    align-items: stretch !important;
-  }
+  @media (display-mode: standalone), (display-mode: fullscreen) {
 
-  .app-header-inner{
-    height: 100% !important;                 /* ✅ prend safe-top + header */
-    padding: 0 14px !important;
-    padding-top: var(--safe-top) !important; /* ✅ safe-area appliquée ICI */
-    box-sizing: border-box !important;
+    /* Le header garde sa hauteur safe-area */
+    .app-header{
+      height: calc(var(--header-h) + var(--safe-top)) !important;
+      padding-top: 0 !important;
+    }
 
-    display: flex !important;
-    align-items: center !important;          /* ✅ centre verticalement */
-  }
+    /* Zone interne = référence pour le centrage */
+    .app-header-inner{
+      position: relative !important;
+      height: 100% !important;
+      padding: 0 14px !important;
+      padding-top: var(--safe-top) !important; /* safe-area appliquée ici */
+      box-sizing: border-box !important;
+    }
 
-  .app-header-grid{
-    width: 100% !important;
-    height: 100% !important;                /* ✅ important */
-    display: grid !important;
-    align-items: center !important;
-  }
+    /* On neutralise grid pour éviter les comportements bizarres */
+    .app-header-grid{
+      display: block !important;
+      height: 100% !important;
+    }
 
-  .header-left,
-  .header-right{
-    display: flex !important;
-    align-items: center !important;
-    height: 100% !important;
-  }
+    /* On centre verticalement via absolute (ultra fiable) */
+    .header-left{
+      position: absolute !important;
+      left: 14px !important;
+      top: calc(var(--safe-top) + (var(--header-h) / 2)) !important;
+      transform: translateY(-50%) !important;
+      display: flex !important;
+      align-items: center !important;
+    }
 
-  /* ✅ supprime l’effet baseline iOS */
-  .brand{
-    display: inline-flex !important;
-    align-items: center !important;
-    line-height: 1 !important;
-  }
+    .header-right{
+      position: absolute !important;
+      right: 14px !important;
+      top: calc(var(--safe-top) + (var(--header-h) / 2)) !important;
+      transform: translateY(-50%) !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+    }
 
-  /* ✅ évite le “descend” du svg */
-  .icon-btn{
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    line-height: 1 !important;
-  }
-  .icon-btn svg{
-    display: block !important;
+    /* Le center ne sert plus */
+    .header-center{ display: none !important; }
+
+    /* Nettoyage baseline iOS */
+    .brand{
+      display: inline-flex !important;
+      align-items: center !important;
+      line-height: 1 !important;
+    }
+
+    .icon-btn{
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      line-height: 1 !important;
+    }
+
+    .icon-btn svg{ display: block !important; }
   }
 }
