@@ -1343,3 +1343,10 @@ input[type="radio"]{
     .icon-btn svg{ display: block !important; }
   }
 }
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    .header-left .brand{
+      transform: translateY(20px); /* mets 1px, 2px, 3px selon ton goût */
+    }
+  }
+}
