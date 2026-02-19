@@ -1167,3 +1167,23 @@ input[type="radio"]{
   display: block;
 }
 
+/* =========================================================
+   iOS PWA (standalone) — ajustement logo / cloche uniquement en APP
+   ========================================================= */
+
+/* iOS only */
+@supports (-webkit-touch-callout: none) {
+  /* PWA / standalone (Add to Home Screen) */
+  @media (display-mode: standalone) {
+
+    /* ajuste ces valeurs (px) selon ton rendu */
+    .header-left .brand{
+      transform: translateY(10px);  /* ↓ logo */
+    }
+
+    .header-right{
+      transform: translateY(-10px); /* ↑ cloche + burger */
+    }
+
+  }
+}
