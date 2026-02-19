@@ -40,7 +40,12 @@ export default function PlayerHeader() {
               </button>
 
               <div className="desktop-only">
-                <button className="icon-btn" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-label="Ouvrir le menu"
+                  onClick={() => setOpen(true)}
+                >
                   <BurgerIcon />
                 </button>
               </div>

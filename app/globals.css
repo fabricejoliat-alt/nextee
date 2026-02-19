@@ -1210,3 +1210,66 @@ input[type="radio"]{
     }
   }
 }
+/* Header */
+.app-header{
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
+
+  background: var(--green-dark);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+}
+
+/* Inner = barre de 60px centrée verticalement */
+.app-header-inner{
+  height: var(--header-h);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;      /* ✅ centre verticalement */
+}
+
+/* Grid à l’intérieur */
+.app-header-grid{
+  width: 100%;
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  align-items: center;      /* ✅ centre verticalement dans les cellules */
+}
+
+@media (max-width: 768px){
+  .app-header-grid{ grid-template-columns: 1fr auto; }
+  .header-center{ display: none; }
+}
+
+/* ✅ très important : aligner explicitement les deux côtés */
+.header-left,
+.header-right{
+  display: flex;
+  align-items: center;      /* ✅ évite logo haut / cloche bas */
+}
+
+.header-right{
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.header-left{ justify-content: flex-start; }
+.header-center{ display: flex; justify-content: center; }
+
+/* Boutons/icônes */
+.icon-btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  line-height: 1;
+}
+
+.icon-btn svg{ stroke: rgba(255,255,255,0.96); }
