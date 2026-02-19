@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
 import { Bell } from "lucide-react";
 
@@ -19,39 +19,10 @@ function BurgerIcon() {
 
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
-  const [hidden, setHidden] = useState(false);
-
-  const lastY = useRef(0);
-
-  useEffect(() => {
-    const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
-
-    const getY = () => scroller.scrollTop || window.scrollY || 0;
-    lastY.current = getY();
-
-    const onScroll = () => {
-      const y = getY();
-      const goingDown = y > lastY.current;
-      const delta = Math.abs(y - lastY.current);
-
-      if (delta > 8) {
-        setHidden(goingDown && y > 80);
-        lastY.current = y;
-      }
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      scroller.removeEventListener("scroll", onScroll);
-    };
-  }, []);
 
   return (
     <>
-      <header className={`app-header ${hidden ? "hidden" : ""}`}>
+      <header className="app-header">
         <div className="app-header-inner app-header-grid">
           <div className="header-left">
             <Link href="/player" className="brand" aria-label="NexTee - Accueil">
