@@ -19,45 +19,14 @@ function BurgerIcon() {
 
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
-
-  const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
 
-  // sentinel invisible (ne casse pas le layout)
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // hide/show (optionnel) basé sur le scroll (on garde simple)
   const lastY = useRef(0);
 
   useEffect(() => {
-    // ✅ Scrolled via IntersectionObserver (ultra fiable)
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        // Si le sentinel n'est plus visible => on a scroll
-        setScrolled(!entry.isIntersecting);
-      },
-      {
-        root: null,
-        // déclenche après ~8px (tu peux ajuster)
-        rootMargin: "-8px 0px 0px 0px",
-        threshold: 0,
-      }
-    );
-
-    obs.observe(sentinel);
-
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    // ✅ Hidden basé sur le scroll (fallback simple)
     const scroller = (document.scrollingElement || document.documentElement) as HTMLElement;
 
     const getY = () => scroller.scrollTop || window.scrollY || 0;
-
     lastY.current = getY();
 
     const onScroll = () => {
@@ -82,14 +51,7 @@ export default function PlayerHeader() {
 
   return (
     <>
-      {/* ✅ sentinel tout en haut de la page */}
-      <div
-        ref={sentinelRef}
-        style={{ position: "absolute", top: 0, left: 0, width: 1, height: 1, pointerEvents: "none" }}
-        aria-hidden="true"
-      />
-
-      <header className={`app-header ${scrolled ? "scrolled" : ""} ${hidden ? "hidden" : ""}`}>
+      <header className={`app-header ${hidden ? "hidden" : ""}`}>
         <div className="app-header-inner app-header-grid">
           <div className="header-left">
             <Link href="/player" className="brand" aria-label="NexTee - Accueil">

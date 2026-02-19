@@ -87,14 +87,21 @@ function priceLabel(it: Item) {
   return `${it.price} CHF`;
 }
 
-function fmtDateChip(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(d);
+function compactMeta(it: Item) {
+  const parts: string[] = [];
+  if (it.category) parts.push(it.category);
+  if (it.condition) parts.push(it.condition);
+
+  const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
+  if (bm) parts.push(bm);
+
+  return parts.join(" • ");
+}
+
+function truncate(s: string, max: number) {
+  const t = (s ?? "").trim();
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1) + "…";
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -128,7 +135,6 @@ function Donut({ percent }: { percent: number }) {
   const r = 54;
   const c = 2 * Math.PI * r;
 
-  // Animation: au premier rendu, on part de 0 puis on "remplit"
   const [animatedP, setAnimatedP] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setAnimatedP(p), 60);
@@ -136,15 +142,11 @@ function Donut({ percent }: { percent: number }) {
   }, [p]);
 
   const dash = (animatedP / 100) * c;
-
   const done = p >= 100;
 
   return (
     <svg width="150" height="150" viewBox="0 0 140 140" aria-label={`Progression ${p}%`}>
       <defs>
-        {/* Gradient clair -> foncé dans le sens horaire :
-            - on démarre en haut (0°) et on va vers la droite (90°) etc.
-            - gradient dans l'espace utilisateur, sur tout le cercle */}
         <linearGradient id="donutGrad" x1="70" y1="16" x2="124" y2="124" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="var(--green-light)" />
           <stop offset="100%" stopColor="var(--green-dark)" />
@@ -169,20 +171,13 @@ function Donut({ percent }: { percent: number }) {
         {Math.round(p)}%
       </text>
 
-      {/* Check en bas si 100% atteint */}
       <g className={`donut-check-wrap ${done ? "on" : ""}`}>
-        <circle
-  className="donut-check-circle"
-  cx="70"
-  cy="108"
-  r={done ? 16 : 12}  /* ⬅️ plus grand à 100% */
-/>
+        <circle className="donut-check-circle" cx="70" cy="108" r={done ? 16 : 12} />
         <path className="donut-check" d="M64 110 l4 4 l9 -10" />
       </g>
     </svg>
   );
 }
-
 
 export default function PlayerHomePage() {
   const [loading, setLoading] = useState(true);
@@ -206,10 +201,10 @@ export default function PlayerHomePage() {
 
   const placeholderThumb = useMemo(() => {
     const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="200" height="140">
-        <rect width="100%" height="100%" fill="#e9eceb"/>
-        <path d="M50 88l20-20 18 18 14-14 20 20" fill="none" stroke="#8aa09a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="66" cy="56" r="8" fill="#8aa09a"/>
+      <svg xmlns="http://www.w3.org/2000/svg" width="240" height="180">
+        <rect width="100%" height="100%" fill="#f3f4f6"/>
+        <path d="M70 118l28-28 26 26 18-18 28 28" fill="none" stroke="#9ca3af" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="92" cy="78" r="10" fill="#9ca3af"/>
       </svg>
     `;
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -321,6 +316,7 @@ export default function PlayerHomePage() {
       setClubs([]);
     }
 
+    // Latest marketplace items
     if (cids.length > 0) {
       const itemsRes = await supabase
         .from("marketplace_items")
@@ -364,6 +360,7 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
     }
 
+    // Trainings month
     const { start, end } = monthRangeLocal(new Date());
     const sRes = await supabase
       .from("training_sessions")
@@ -378,11 +375,10 @@ export default function PlayerHomePage() {
 
       const sIds = sess.map((s) => s.id);
       if (sIds.length > 0) {
-        const iRes = await supabase
-          .from("training_session_items")
-          .select("session_id,category,minutes")
-          .in("session_id", sIds);
-
+        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in(
+          "session_id",
+          sIds
+        );
         setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
       } else {
         setMonthItems([]);
@@ -392,6 +388,7 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
+    // Rounds month
     try {
       const { start, end } = monthRangeLocal(new Date());
       const rRes = await supabase
@@ -406,11 +403,7 @@ export default function PlayerHomePage() {
 
       if (rounds.length > 0) {
         const roundIds = rounds.map((r) => r.id);
-        const hRes = await supabase
-          .from("golf_round_holes")
-          .select("round_id,hole_no")
-          .in("round_id", roundIds);
-
+        const hRes = await supabase.from("golf_round_holes").select("round_id,hole_no").in("round_id", roundIds);
         setHolesMonthCount((hRes.data ?? []).length);
       } else {
         setHolesMonthCount(0);
@@ -430,8 +423,6 @@ export default function PlayerHomePage() {
   const avatarUrl = useMemo(() => {
     return "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=240&q=60";
   }, []);
-
-  const sellerLabel = useMemo(() => initialsName(profile), [profile]);
 
   const focusGIR = 57;
   const focusFairway = 72;
@@ -622,43 +613,45 @@ export default function PlayerHomePage() {
         <section className="glass-section">
           <div className="section-title">Marketplace</div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>Chargement…</div>
-            ) : latestItems.length === 0 ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>Aucune annonce pour le moment.</div>
-            ) : (
-              latestItems.map((it) => {
+          {loading ? (
+            <div style={{ opacity: 0.8, fontWeight: 800 }}>Chargement…</div>
+          ) : latestItems.length === 0 ? (
+            <div style={{ opacity: 0.8, fontWeight: 800 }}>Aucune annonce pour le moment.</div>
+          ) : (
+            <div className="marketplace-list" style={{ marginTop: 10 }}>
+              {latestItems.map((it) => {
                 const img = thumbByItemId[it.id] || placeholderThumb;
-                const meta = [fmtDateChip(it.created_at), it.category ?? "Matériel", it.condition ?? ""]
-                  .filter(Boolean)
-                  .join(" • ");
+                const meta = compactMeta(it);
 
                 return (
-                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="market-row">
-                    <div className="market-thumb" aria-hidden="true">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img} alt="" />
-                    </div>
+                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
+                    <div className="marketplace-item">
+                      <div className="marketplace-row">
+                        <div className="marketplace-thumb">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img} alt={it.title} loading="lazy" />
+                        </div>
 
-                    <div style={{ minWidth: 0 }}>
-                      <div className="market-meta truncate">{meta}</div>
-                      <div className="market-title truncate">{it.title}</div>
+                        <div className="marketplace-body">
+                          <div className="marketplace-item-title">{truncate(it.title, 80)}</div>
 
-                      <div className="market-bottom">
-                        <div className="market-seller truncate">{sellerLabel}</div>
-                        <div className="market-price">{priceLabel(it)}</div>
+                          {meta && <div className="marketplace-meta">{meta}</div>}
+
+                          <div className="marketplace-price-row">
+                            <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </Link>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          )}
 
           <Link href="/player/marketplace/new" className="cta-green">
             <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
-            Ajouter un article
+            Publier une annonce
           </Link>
         </section>
 
