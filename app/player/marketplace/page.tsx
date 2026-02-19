@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -68,6 +68,9 @@ export default function PlayerMarketplaceHome() {
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
 
+  // Scroll anchor (PWA-safe)
+  const topRef = useRef<HTMLDivElement | null>(null);
+
   const bucket = "marketplace";
 
   const placeholderSvg = useMemo(() => {
@@ -80,6 +83,23 @@ export default function PlayerMarketplaceHome() {
     `;
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
+
+  function scrollToTop() {
+    // 1) Anchor (works even when scroll is inside a container in PWA)
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // 2) If your app scrolls inside a container, try to scroll it too
+    const el =
+      document.querySelector(".app-shell") ||
+      document.querySelector(".app-content");
+
+    if (el) {
+      (el as HTMLElement).scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      // 3) Fallback for normal web scrolling
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -169,6 +189,9 @@ export default function PlayerMarketplaceHome() {
   // Reset page quand on change de catégorie
   useEffect(() => {
     setPage(1);
+    // optionnel: remonter quand on change de filtre
+    scrollToTop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory]);
 
   // Liste des catégories (depuis les items chargés)
@@ -204,24 +227,21 @@ export default function PlayerMarketplaceHome() {
   }, [page, totalPages]);
 
   function goPrev() {
-    setPage((p) => {
-      const next = Math.max(1, p - 1);
-      return next;
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+    setPage((p) => Math.max(1, p - 1));
+    scrollToTop(); // ✅ PWA-safe
   }
 
   function goNext() {
-    setPage((p) => {
-      const next = Math.min(totalPages, p + 1);
-      return next;
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" }); // ✅ bonus
+    setPage((p) => Math.min(totalPages, p + 1));
+    scrollToTop(); // ✅ PWA-safe
   }
 
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        {/* Top anchor for scrollIntoView */}
+        <div ref={topRef} />
+
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
@@ -310,7 +330,7 @@ export default function PlayerMarketplaceHome() {
                 })}
               </div>
 
-              {/* ✅ Pagination uniquement en bas */}
+              {/* Pagination uniquement en bas */}
               {filteredItems.length > PAGE_SIZE && (
                 <div className="marketplace-pagination">
                   <button className="btn" onClick={goPrev} disabled={page === 1}>
