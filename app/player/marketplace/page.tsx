@@ -46,6 +46,19 @@ function compactMeta(it: Item) {
   return parts.join(" • ");
 }
 
+function scrollTopFix() {
+  // 1) tout de suite
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // 2) après le rendu + images/layout (PWA iOS friendly)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+}
+
+
 function priceLabel(it: Item) {
   if (it.is_free) return "À donner";
   if (it.price == null) return "—";
@@ -211,15 +224,16 @@ export default function PlayerMarketplaceHome() {
     listTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function goPrev() {
-    setPage((p) => Math.max(1, p - 1));
-    scrollToListTop();
-  }
+ function goPrev() {
+  setPage((p) => Math.max(1, p - 1));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
-  function goNext() {
-    setPage((p) => Math.min(totalPages, p + 1));
-    scrollToListTop();
-  }
+function goNext() {
+  setPage((p) => Math.min(totalPages, p + 1));
+  scrollTopFix();
+}
+
 
   return (
     <div className="player-dashboard-bg">
