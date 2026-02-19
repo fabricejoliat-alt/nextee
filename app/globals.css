@@ -1307,3 +1307,149 @@ input[type="radio"] {
   }
 }
 
+/* ======================================================================
+   Marketplace (player) — dans le thème glass
+   ====================================================================== */
+
+.marketplace-page{
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.marketplace-hero{
+  display: grid;
+  gap: 10px;
+}
+
+.marketplace-hero-left{
+  display: grid;
+  gap: 6px;
+}
+
+.marketplace-title{
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: -0.4px;
+  color: rgba(0,0,0,0.82);
+}
+
+.marketplace-sub{
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(0,0,0,0.58);
+}
+
+.marketplace-hero-actions{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.marketplace-error{
+  margin-top: 8px;
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.marketplace-empty{
+  color: rgba(0,0,0,0.55);
+  font-weight: 800;
+}
+
+.marketplace-list{
+  display: grid;
+  gap: 12px;
+}
+
+.marketplace-link{
+  text-decoration: none;
+  color: inherit;
+}
+
+.marketplace-item{
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255,255,255,0.70);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.marketplace-item:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.14);
+  background: rgba(255,255,255,0.78);
+}
+
+.marketplace-row{
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.marketplace-thumb{
+  width: 120px;
+  height: 90px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.10);
+  background: rgba(255,255,255,0.35);
+}
+
+.marketplace-thumb img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.marketplace-body{
+  display: grid;
+  gap: 6px;
+}
+
+.marketplace-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.marketplace-item-title{
+  font-weight: 950;
+  color: rgba(0,0,0,0.80);
+}
+
+.marketplace-price{
+  font-weight: 950;
+  color: rgba(0,0,0,0.80);
+}
+
+.marketplace-badge{
+  margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.12);
+  font-size: 12px;
+  font-weight: 900;
+  background: rgba(0,0,0,0.05);
+  color: rgba(0,0,0,0.70);
+}
+
+.marketplace-meta,
+.marketplace-delivery{
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(0,0,0,0.55);
+}
+
+.marketplace-desc{
+  color: rgba(0,0,0,0.55);
+  font-weight: 700;
+}
+.marketplace-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;
+  align-items: center;
+}

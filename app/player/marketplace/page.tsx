@@ -29,13 +29,6 @@ type Profile = {
   last_name: string | null;
 };
 
-type ImageRow = {
-  id: string;
-  item_id: string;
-  path: string;
-  sort_order: number;
-};
-
 function authorLabel(p?: Profile | null) {
   const first = (p?.first_name ?? "").trim();
   const last = (p?.last_name ?? "").trim();
@@ -75,8 +68,6 @@ export default function PlayerMarketplaceHome() {
   const [error, setError] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
-  const [clubId, setClubId] = useState("");
-
   const [items, setItems] = useState<Item[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
@@ -123,7 +114,6 @@ export default function PlayerMarketplaceHome() {
     }
 
     const cid = memRes.data.club_id as string;
-    setClubId(cid);
 
     const itemsRes = await supabase
       .from("marketplace_items")
@@ -143,27 +133,17 @@ export default function PlayerMarketplaceHome() {
     const list = (itemsRes.data ?? []) as Item[];
     setItems(list);
 
-    // Profils
     const authorIds = Array.from(new Set(list.map((x) => x.user_id)));
-
     if (authorIds.length > 0) {
-      const profRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name")
-        .in("id", authorIds);
-
+      const profRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", authorIds);
       if (!profRes.error) {
         const map: Record<string, Profile> = {};
-        (profRes.data ?? []).forEach((p: any) => {
-          map[p.id] = p;
-        });
+        (profRes.data ?? []).forEach((p: any) => (map[p.id] = p));
         setProfilesById(map);
       }
     }
 
-    // Images principales
     const itemIds = list.map((x) => x.id);
-
     if (itemIds.length > 0) {
       const imgRes = await supabase
         .from("marketplace_images")
@@ -189,140 +169,77 @@ export default function PlayerMarketplaceHome() {
   }, []);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ marginTop: 0, fontSize: 26, fontWeight: 900 }}>Marketplace</h1>
-            <p style={{ color: "var(--muted)", marginTop: 6 }}>
-              Toutes les annonces du club
-            </p>
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        {/* ✅ Header (sans sous-mention) */}
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div className="section-title">Marketplace</div>
+
+            {/* ✅ boutons côte à côte */}
+            <div className="marketplace-actions">
+              <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
+                Mes annonces
+              </Link>
+
+              <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
+                Publier une annonce
+              </Link>
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <Link className="btn" href="/player/marketplace/mine">
-              Mes annonces
-            </Link>
-            <Link className="btn" href="/player/marketplace/new">
-              Publier
-            </Link>
-          </div>
+          {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {error && (
-          <div style={{ marginTop: 12, color: "red" }}>
-            {error}
-          </div>
-        )}
-      </div>
+        {/* ✅ Liste (sans titre "ANNONCES") */}
+        <div className="glass-section">
+          <div className="glass-card">
+            {loading ? (
+              <div>Chargement…</div>
+            ) : items.length === 0 ? (
+              <div className="marketplace-empty">Aucune annonce pour le moment.</div>
+            ) : (
+              <div className="marketplace-list">
+                {items.map((it) => {
+                  const mine = it.user_id === userId;
+                  const badge = mine ? "Moi" : authorLabel(profilesById[it.user_id]);
+                  const img = mainImageByItemId[it.id] || placeholderSvg;
+                  const meta = compactMeta(it);
 
-      <div className="card">
-        {loading ? (
-          <div>Chargement…</div>
-        ) : items.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>
-            Aucune annonce pour le moment.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {items.map((it) => {
-              const mine = it.user_id === userId;
-              const badge = mine ? "Moi" : authorLabel(profilesById[it.user_id]);
-              const img = mainImageByItemId[it.id] || placeholderSvg;
-              const meta = compactMeta(it);
-
-              return (
-                <Link
-                  key={it.id}
-                  href={`/player/marketplace/${it.id}`}
-                  style={{ textDecoration: "none", color: "inherit" }}
-                >
-                  <div
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: 14,
-                      padding: 12,
-                      display: "grid",
-                      gap: 10,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "120px 1fr",
-                        gap: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 120,
-                          height: 90,
-                          borderRadius: 12,
-                          overflow: "hidden",
-                          border: "1px solid var(--border)",
-                        }}
-                      >
-                        <img
-                          src={img}
-                          alt={it.title}
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                      </div>
-
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            flexWrap: "wrap",
-                            gap: 8,
-                          }}
-                        >
-                          <div style={{ fontWeight: 900 }}>
-                            {it.title} <span style={badgeStyle}>{badge}</span>
+                  return (
+                    <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
+                      <div className="marketplace-item">
+                        <div className="marketplace-row">
+                          <div className="marketplace-thumb">
+                            <img src={img} alt={it.title} />
                           </div>
-                          <div style={{ fontWeight: 900 }}>
-                            {priceLabel(it)}
+
+                          <div className="marketplace-body">
+                            <div className="marketplace-top">
+                              <div className="marketplace-item-title">
+                                {it.title} <span className="marketplace-badge">{badge}</span>
+                              </div>
+                              <div className="marketplace-price">{priceLabel(it)}</div>
+                            </div>
+
+                            {meta && <div className="marketplace-meta">{meta}</div>}
+
+                            {it.delivery && (
+                              <div className="marketplace-delivery">Remise : {truncate(it.delivery, 60)}</div>
+                            )}
+
+                            {it.description && <div className="marketplace-desc">{truncate(it.description, 120)}</div>}
                           </div>
                         </div>
-
-                        {meta && (
-                          <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                            {meta}
-                          </div>
-                        )}
-
-                        {it.delivery && (
-                          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                            Remise : {truncate(it.delivery, 60)}
-                          </div>
-                        )}
-
-                        {it.description && (
-                          <div style={{ color: "var(--muted)" }}>
-                            {truncate(it.description, 120)}
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
-
-const badgeStyle: React.CSSProperties = {
-  marginLeft: 8,
-  padding: "2px 8px",
-  borderRadius: 999,
-  border: "1px solid var(--border)",
-  fontSize: 12,
-  fontWeight: 800,
-  background: "rgba(0,0,0,0.05)",
-};
