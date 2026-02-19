@@ -1168,28 +1168,45 @@ input[type="radio"]{
 }
 
 /* =========================================================
-   iOS PWA (standalone) — ajustement logo / cloche uniquement en APP
+   FIX iOS PWA: alignement logo + cloche dans le header
+   (standalone/fullscreen uniquement)
    ========================================================= */
-
-/* iOS only */
 @supports (-webkit-touch-callout: none) {
-  /* PWA / standalone (Add to Home Screen) */
-  @media (display-mode: standalone) {
-
-    /* ajuste ces valeurs (px) selon ton rendu */
-    .header-left .brand{
-      transform: translateY(30px);  /* ↓ logo */
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    /* Le header garde la hauteur safe-area, mais on centre le contenu dans 100% */
+    .app-header {
+      padding-top: 0 !important;
+      height: calc(var(--header-h) + var(--safe-top)) !important;
+      display: flex !important;
+      align-items: stretch !important;
     }
 
-    .header-right{
-      transform: translateY(-30px); /* ↑ cloche + burger */
+    /* Inner prend toute la hauteur et applique le safe-top */
+    .app-header-inner {
+      height: 100% !important;
+      padding-top: var(--safe-top) !important;
+      display: flex !important;
+      align-items: center !important;
     }
 
-  }
-}
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: minimal-ui) {
-    .header-left .brand{ transform: translateY(30px); }
-    .header-right{ transform: translateY(-30px); }
+    /* Ton inner a aussi la classe app-header-grid (grid) => on force une seule logique */
+    .app-header-inner.app-header-grid {
+      display: grid !important;
+      align-items: center !important;
+    }
+
+    /* Force centrage vertical des colonnes */
+    .header-left,
+    .header-right {
+      display: flex !important;
+      align-items: center !important;
+      height: 100% !important;
+    }
+
+    /* Evite les effets baseline/line-height en iOS PWA */
+    .brand,
+    .icon-btn {
+      line-height: 1 !important;
+    }
   }
 }
