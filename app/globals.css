@@ -1187,3 +1187,9 @@ input[type="radio"]{
 
   }
 }
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: minimal-ui) {
+    .header-left .brand{ transform: translateY(10px); }
+    .header-right{ transform: translateY(-10px); }
+  }
+}
