@@ -1350,3 +1350,10 @@ input[type="radio"]{
     }
   }
 }
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone), (display-mode: fullscreen) {
+    .header-left{
+      top: calc(var(--safe-top) + (var(--header-h) / 2) + 20px) !important;
+    }
+  }
+}
