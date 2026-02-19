@@ -1461,20 +1461,7 @@ input[type="radio"] {
   gap: 6px;
 }
 
-/* Ligne 1 — Prix */
-.marketplace-price-row{
-  display: flex;
-  justify-content: flex-end;
-}
-
-.marketplace-price{
-  font-size: 18px;   /* dominant */
-  font-weight: 950;
-  color: var(--green-dark);
-  white-space: nowrap;
-}
-
-/* Ligne 2 — Titre */
+/* Ligne 1 */
 .marketplace-item-title{
   font-size: 14px;
   font-weight: 900;
@@ -1482,9 +1469,38 @@ input[type="radio"] {
   line-height: 1.25;
 }
 
-/* Ligne 3 — Meta */
+/* Ligne 2 */
 .marketplace-meta{
   font-size: 12px;
   font-weight: 700;
   color: rgba(0,0,0,0.55);
+}
+
+/* Ligne 3 */
+.marketplace-price-row{
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* Mini card prix */
+.marketplace-price-pill{
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 950;
+  color: #fff;
+
+  background: linear-gradient(
+    180deg,
+    #3f5647 0%,
+    #35483b 60%,
+    #2d3d32 100%
+  );
+
+  box-shadow:
+    0 6px 14px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+
+  white-space: nowrap;
 }

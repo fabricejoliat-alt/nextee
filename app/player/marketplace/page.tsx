@@ -221,26 +221,27 @@ export default function PlayerMarketplaceHome() {
 
                 <div className="marketplace-body">
 
-  {/* Ligne 1 : Prix */}
-  <div className="marketplace-price-row">
-    <div className="marketplace-price">
-      {priceLabel(it)}
-    </div>
-  </div>
-
-  {/* Ligne 2 : Titre */}
+  {/* Ligne 1 — Titre */}
   <div className="marketplace-item-title">
     {it.title}
   </div>
 
-  {/* Ligne 3 : Meta */}
+  {/* Ligne 2 — Variables */}
   {meta && (
     <div className="marketplace-meta">
       {meta}
     </div>
   )}
 
+  {/* Ligne 3 — Prix dans mini card */}
+  <div className="marketplace-price-row">
+    <div className="marketplace-price-pill">
+      {priceLabel(it)}
+    </div>
+  </div>
+
 </div>
+
 
 
 
