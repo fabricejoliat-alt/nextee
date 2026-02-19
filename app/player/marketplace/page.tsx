@@ -221,18 +221,19 @@ export default function PlayerMarketplaceHome() {
 
                 <div className="marketplace-body">
 
-  {/* Ligne 1 : Titre + Prix */}
-  <div className="marketplace-top-row">
-    <div className="marketplace-item-title">
-      {it.title}
-    </div>
-
+  {/* Ligne 1 : Prix */}
+  <div className="marketplace-price-row">
     <div className="marketplace-price">
       {priceLabel(it)}
     </div>
   </div>
 
-  {/* Ligne 2 : Meta */}
+  {/* Ligne 2 : Titre */}
+  <div className="marketplace-item-title">
+    {it.title}
+  </div>
+
+  {/* Ligne 3 : Meta */}
   {meta && (
     <div className="marketplace-meta">
       {meta}
@@ -240,6 +241,7 @@ export default function PlayerMarketplaceHome() {
   )}
 
 </div>
+
 
 
 
