@@ -1120,30 +1120,50 @@ input[type="radio"]{
   }
 }
 /* =========================================================
-   FIX iOS PWA header vertical alignment
+   FIX iOS/PWA header alignment
    ========================================================= */
 
-.app-header {
+/* Le header gère la safe-area, inner reste à 60px */
+.app-header{
+  display: flex;
   align-items: stretch;
 }
 
-.app-header-inner {
+.app-header-inner{
+  width: 100%;
+  height: var(--header-h);
+  display: flex;
+  align-items: center; /* ✅ centre tout */
+}
+
+/* Le grid doit occuper toute la hauteur et centrer son contenu */
+.app-header-grid{
+  width: 100%;
+  height: 100%;
   align-items: center;
 }
 
-/* ✅ IMPORTANT: ne pas aligner le logo sur la baseline */
-.brand {
-  align-items: center !important;   /* au lieu de baseline */
+/* Forcer les colonnes à centrer verticalement */
+.header-left,
+.header-center,
+.header-right{
+  display: flex;
+  align-items: center;
+}
+
+/* Baseline iOS = décalages */
+.brand{
+  align-items: center !important;
   line-height: 1 !important;
 }
 
-/* ✅ aligne aussi les colonnes gauche/droite */
-.header-left,
-.header-right {
-  align-items: center;
-}
-
-/* ✅ évite que le bouton/icône "prenne" une hauteur de ligne */
-.icon-btn {
+/* Les boutons icône ont parfois une line-height fantôme */
+.icon-btn{
   line-height: 0;
 }
+
+/* Bonus: éviter que le svg "descende" */
+.icon-btn svg{
+  display: block;
+}
+

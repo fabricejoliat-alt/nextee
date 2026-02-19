@@ -23,25 +23,27 @@ export default function PlayerHeader() {
   return (
     <>
       <header className="app-header">
-        <div className="app-header-inner app-header-grid">
-          <div className="header-left">
-            <Link href="/player" className="brand" aria-label="NexTee - Accueil">
-              <span className="brand-nex">Nex</span>
-              <span className="brand-tee">Tee</span>
-            </Link>
-          </div>
+        <div className="app-header-inner">
+          <div className="app-header-grid">
+            <div className="header-left">
+              <Link href="/player" className="brand" aria-label="NexTee - Accueil">
+                <span className="brand-nex">Nex</span>
+                <span className="brand-tee">Tee</span>
+              </Link>
+            </div>
 
-          <div className="header-center" />
+            <div className="header-center" />
 
-          <div className="header-right">
-            <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
-              <Bell size={22} strokeWidth={2} aria-hidden="true" />
-            </button>
-
-            <div className="desktop-only">
-              <button className="icon-btn" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
-                <BurgerIcon />
+            <div className="header-right">
+              <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
+                <Bell size={22} strokeWidth={2} aria-hidden="true" />
               </button>
+
+              <div className="desktop-only">
+                <button className="icon-btn" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
+                  <BurgerIcon />
+                </button>
+              </div>
             </div>
           </div>
         </div>
