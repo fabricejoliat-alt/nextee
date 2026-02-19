@@ -1273,3 +1273,60 @@ input[type="radio"]{
 }
 
 .icon-btn svg{ stroke: rgba(255,255,255,0.96); }
+
+/* =========================================================
+   PWA iOS — FIX ALIGN HEADER (logo vs cloche)
+   Mets ce bloc TOUT EN BAS du fichier
+   ========================================================= */
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS (Safari + PWA) */
+  .app-header{
+    padding-top: 0 !important; /* ✅ on évite double safe-area */
+    height: calc(var(--header-h) + var(--safe-top)) !important;
+    display: flex !important;
+    align-items: stretch !important;
+  }
+
+  .app-header-inner{
+    height: 100% !important;                 /* ✅ prend safe-top + header */
+    padding: 0 14px !important;
+    padding-top: var(--safe-top) !important; /* ✅ safe-area appliquée ICI */
+    box-sizing: border-box !important;
+
+    display: flex !important;
+    align-items: center !important;          /* ✅ centre verticalement */
+  }
+
+  .app-header-grid{
+    width: 100% !important;
+    height: 100% !important;                /* ✅ important */
+    display: grid !important;
+    align-items: center !important;
+  }
+
+  .header-left,
+  .header-right{
+    display: flex !important;
+    align-items: center !important;
+    height: 100% !important;
+  }
+
+  /* ✅ supprime l’effet baseline iOS */
+  .brand{
+    display: inline-flex !important;
+    align-items: center !important;
+    line-height: 1 !important;
+  }
+
+  /* ✅ évite le “descend” du svg */
+  .icon-btn{
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+  }
+  .icon-btn svg{
+    display: block !important;
+  }
+}
