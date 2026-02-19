@@ -1403,10 +1403,7 @@ input[type="radio"] {
   display: block;
 }
 
-.marketplace-body{
-  display: grid;
-  gap: 6px;
-}
+
 
 .marketplace-top{
   display: flex;
@@ -1415,10 +1412,7 @@ input[type="radio"] {
   flex-wrap: wrap;
 }
 
-.marketplace-item-title{
-  font-weight: 950;
-  color: rgba(0,0,0,0.80);
-}
+
 
 .marketplace-price{
   font-weight: 950;
@@ -1450,6 +1444,54 @@ input[type="radio"] {
 .marketplace-actions{
   display: flex;
   gap: 10px;
-  flex-wrap: nowrap;
-  align-items: center;
+  width: 100%;              /* ✅ prend toute la largeur */
+}
+
+.marketplace-actions .cta-green-inline{
+  flex: 1;                   /* ✅ chaque bouton prend 50% */
+  text-align: center;
+}
+
+
+/* ===== Nouvelle structure interne annonce ===== */
+
+.marketplace-body{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Ligne 1 */
+.marketplace-top-row{
+  display: flex;
+  align-items: baseline;   /* ✅ aligne les lignes de base */
+  justify-content: space-between;
+  gap: 12px;
+}
+
+
+/* Titre */
+.marketplace-item-title{
+  font-size: 14px;
+  font-weight: 900;
+  color: rgba(0,0,0,0.88);
+  line-height: 1.25;
+
+  flex: 1;
+  min-width: 0; /* permet wrap correct */
+}
+
+/* Prix plus grand */
+.marketplace-price{
+  font-size: 18px;   /* 👈 plus dominant */
+  font-weight: 950;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+/* Ligne 2 */
+.marketplace-meta{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(0,0,0,0.55);
 }

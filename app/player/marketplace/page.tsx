@@ -193,52 +193,65 @@ export default function PlayerMarketplaceHome() {
 
         {/* ✅ Liste (sans titre "ANNONCES") */}
         <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div>Chargement…</div>
-            ) : items.length === 0 ? (
-              <div className="marketplace-empty">Aucune annonce pour le moment.</div>
-            ) : (
-              <div className="marketplace-list">
-                {items.map((it) => {
-                  const mine = it.user_id === userId;
-                  const badge = mine ? "Moi" : authorLabel(profilesById[it.user_id]);
-                  const img = mainImageByItemId[it.id] || placeholderSvg;
-                  const meta = compactMeta(it);
+  {loading ? (
+    <div className="glass-card">Chargement…</div>
+  ) : items.length === 0 ? (
+    <div className="glass-card marketplace-empty">
+      Aucune annonce pour le moment.
+    </div>
+  ) : (
+    <div className="marketplace-list">
+      {items.map((it) => {
+        const mine = it.user_id === userId;
+        const badge = mine ? "Moi" : authorLabel(profilesById[it.user_id]);
+        const img = mainImageByItemId[it.id] || placeholderSvg;
+        const meta = compactMeta(it);
 
-                  return (
-                    <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
-                      <div className="marketplace-item">
-                        <div className="marketplace-row">
-                          <div className="marketplace-thumb">
-                            <img src={img} alt={it.title} />
-                          </div>
+        return (
+          <Link
+            key={it.id}
+            href={`/player/marketplace/${it.id}`}
+            className="marketplace-link"
+          >
+            <div className="marketplace-item">
+              <div className="marketplace-row">
+                <div className="marketplace-thumb">
+                  <img src={img} alt={it.title} />
+                </div>
 
-                          <div className="marketplace-body">
-                            <div className="marketplace-top">
-                              <div className="marketplace-item-title">
-                                {it.title} <span className="marketplace-badge">{badge}</span>
-                              </div>
-                              <div className="marketplace-price">{priceLabel(it)}</div>
-                            </div>
+                <div className="marketplace-body">
 
-                            {meta && <div className="marketplace-meta">{meta}</div>}
+  {/* Ligne 1 : Titre + Prix */}
+  <div className="marketplace-top-row">
+    <div className="marketplace-item-title">
+      {it.title}
+    </div>
 
-                            {it.delivery && (
-                              <div className="marketplace-delivery">Remise : {truncate(it.delivery, 60)}</div>
-                            )}
+    <div className="marketplace-price">
+      {priceLabel(it)}
+    </div>
+  </div>
 
-                            {it.description && <div className="marketplace-desc">{truncate(it.description, 120)}</div>}
-                          </div>
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
+  {/* Ligne 2 : Meta */}
+  {meta && (
+    <div className="marketplace-meta">
+      {meta}
+    </div>
+  )}
+
+</div>
+
+
+
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  )}
+</div>
+
       </div>
     </div>
   );
