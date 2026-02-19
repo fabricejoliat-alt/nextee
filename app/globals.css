@@ -71,10 +71,10 @@ a { color: inherit; text-decoration: none; }
   padding-right: 8px;
 
   /* place pour header + safe-area */
-  padding-top: calc(var(--header-h) + var(--safe-top) + 12px);
+  padding-top: calc(var(--header-h) + var(--safe-top) + 4px);
 
   /* place pour footer mobile + safe-area */
-  padding-bottom: calc(var(--footer-h) + var(--safe-bottom) + 14px);
+  padding-bottom: calc(var(--footer-h) + var(--safe-bottom) + 4px);
 }
 
 @media (min-width: 900px){
