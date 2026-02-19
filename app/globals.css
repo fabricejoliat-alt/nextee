@@ -1178,11 +1178,11 @@ input[type="radio"]{
 
     /* ajuste ces valeurs (px) selon ton rendu */
     .header-left .brand{
-      transform: translateY(10px);  /* ↓ logo */
+      transform: translateY(30px);  /* ↓ logo */
     }
 
     .header-right{
-      transform: translateY(-10px); /* ↑ cloche + burger */
+      transform: translateY(-30px); /* ↑ cloche + burger */
     }
 
   }
