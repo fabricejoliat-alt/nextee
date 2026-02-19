@@ -1343,17 +1343,30 @@ input[type="radio"]{
     .icon-btn svg{ display: block !important; }
   }
 }
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone), (display-mode: fullscreen) {
-    .header-left .brand{
-      transform: translateY(20px)!important; /* mets 1px, 2px, 3px selon ton goût */
-    }
+@media (max-width: 768px){
+
+  .app-header{
+    height: calc(60px + var(--safe-top));
   }
+
+  .app-header-inner{
+    height: 60px;
+    padding-top: var(--safe-top);
+    display: flex;
+    align-items: center; /* ✅ aligne verticalement */
+  }
+
+  .header-left,
+  .header-right{
+    display: flex;
+    align-items: center; /* ✅ même ligne verticale */
+  }
+
 }
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone), (display-mode: fullscreen) {
-    .header-left{
-      top: calc(var(--safe-top) + (var(--header-h) / 2) + 20px) !important;
-    }
-  }
+.header-left .brand {
+  transform: translateY(16px);
+}
+
+.header-right {
+  transform: translateY(-16px);
 }
