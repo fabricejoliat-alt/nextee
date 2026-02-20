@@ -528,13 +528,19 @@ input[type="radio"]{
   z-index: 1;
 }
 
-/* centre sans casser le background du html */
 .auth-shell{
-  min-height: 100vh;
+  position: fixed;        /* ✅ ne scroll plus */
+  inset: 0;               /* prend tout l’écran */
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 18px;
+}
+
+/* Important pour éviter micro scroll mobile */
+.auth-bg{
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* card glass */
@@ -552,6 +558,8 @@ input[type="radio"]{
 
   box-shadow: 0 14px 34px rgba(0,0,0,0.28);
   border: 1px solid rgba(255,255,255,0.22);
+  transform: translateZ(0);        /* force layer GPU */
+  will-change: transform;
 }
 
 @media (min-width: 480px){
