@@ -503,84 +503,144 @@ input[type="radio"]{
   opacity: 0.6;
   cursor: not-allowed;
 }
-
 /* =========================================================
-   9) LOGIN
+   9) AUTH / LOGIN (GLASS, cohérent Player)
    ========================================================= */
 
-.login-page{
+.auth-bg{
+  min-height: 100vh;
+  position: relative;
+  color: #fff;
+}
+
+/* voile sombre pour lisibilité, comme player-dashboard-bg */
+.auth-bg::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.35));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-bg > *{
+  position: relative;
+  z-index: 1;
+}
+
+/* centre sans casser le background du html */
+.auth-shell{
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-
-  background: radial-gradient(circle at top, #f7faf7 0%, #ffffff 60%);
+  padding: 18px;
 }
 
-.login-card{
+/* card glass */
+.auth-card{
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 
-  padding: 32px;
-  border: 1px solid #e8e8e8;
+  background: rgba(255,255,255,0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
   border-radius: 18px;
-  background: #ffffff;
+  padding: 18px;
+  color: #111;
 
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.28);
+  border: 1px solid rgba(255,255,255,0.22);
 }
 
-.login-brand-wrapper{
+@media (min-width: 480px){
+  .auth-card{ padding: 22px; }
+}
+
+.auth-brand-wrapper{
   text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.login-brand{
-  font-weight: 900;
-  font-size: 38px;
-  letter-spacing: -0.6px;
-  line-height: 1;
-}
-
-.login-tagline{
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: #6b7280;
-}
-
-.login-form{
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.field{
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 6px;
+  margin-bottom: 10px;
 }
 
-.field label{
+.auth-brand{
+  font-weight: 950;
+  font-size: 36px;
+  letter-spacing: -0.8px;
+  line-height: 1;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.18);
+}
+
+.auth-tagline{
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: rgba(0,0,0,0.55);
+}
+
+.auth-form{
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.auth-field label{
+  color: rgba(0,0,0,0.55);
+}
+
+/* inputs un peu plus “premium” sur le glass */
+.auth-card input{
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.85);
+}
+
+.auth-card input:focus{
+  border-color: rgba(0,0,0,0.22);
+}
+
+.auth-error{
+  border: 1px solid rgba(185,28,28,0.25);
+  background: rgba(255, 235, 235, 0.75);
+  padding: 10px;
+  border-radius: 12px;
+  color: #8f1111;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-submit{
+  width: 100%;
+  border: 0;
+}
+
+.auth-footnote{
+  margin-top: 6px;
   font-size: 12px;
   font-weight: 800;
-  color: #666;
+  color: rgba(0,0,0,0.55);
+  text-align: center;
+  line-height: 1.35;
 }
 
-.login-error{
-  border: 1px solid #ffcccc;
-  background: #fff5f5;
-  padding: 10px;
-  border-radius: 10px;
-  color: #a00;
-  font-size: 13px;
+/* Logo lisible sur card claire */
+.auth-brand--dark{
+  text-shadow: 0 1px 0 rgba(255,255,255,0.65);
+}
+
+.auth-brand--dark .auth-brand-nex{
+  color: var(--green-dark);
+}
+
+.auth-brand--dark .auth-brand-tee{
+  color: rgba(0,0,0,0.55);
+}
+
+/* petit “trait” visuel optionnel */
+.auth-brand--dark .auth-brand-tee{
+  margin-left: 1px;
 }
 
 /* =========================================================

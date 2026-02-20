@@ -28,64 +28,70 @@ export default function LoginPage() {
       return;
     }
 
-    // ✅ Demande au serveur (service role) où rediriger
     const res = await fetch("/api/auth", {
-  method: "POST",
-  headers: {
-    Authorization: `Bearer ${data.session.access_token}`, // <- A majuscule (plus robuste)
-  },
-});
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.session.access_token}`,
+      },
+    });
 
-const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => ({}));
 
-if (!res.ok) {
-  setError(json?.error ?? `Erreur serveur auth (${res.status})`);
-  setLoading(false);
-  return;
-}
+    if (!res.ok) {
+      setError(json?.error ?? `Erreur serveur auth (${res.status})`);
+      setLoading(false);
+      return;
+    }
 
-router.push(json?.redirectTo || "/player");
-
+    router.push(json?.redirectTo || "/player");
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-brand-wrapper">
-          <div className="login-brand">
-            <span className="brand-nex">Nex</span>
-            <span className="brand-tee">Tee</span>
+    <div className="auth-bg">
+      <div className="auth-shell">
+        <div className="auth-card">
+          <div className="auth-brand-wrapper">
+            <div className="auth-brand auth-brand--dark">
+              <span className="auth-brand-nex">Nex</span>
+              <span className="auth-brand-tee">Tee</span>
+            </div>
+            <div className="auth-tagline">Junior Golf Platform</div>
           </div>
-          <div className="login-tagline">Junior Golf Platform</div>
+
+          <form onSubmit={handleLogin} className="auth-form">
+            <div className="field auth-field">
+              <label>Email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="field auth-field">
+              <label>Mot de passe</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+
+            {error && <div className="auth-error">{error}</div>}
+
+            <button className="cta-green auth-submit" type="submit" disabled={loading}>
+              {loading ? "Connexion…" : "Se connecter"}
+            </button>
+
+            <div className="auth-footnote">
+              En cas de souci, contacte ton coach/club pour réinitialiser l’accès.
+            </div>
+          </form>
         </div>
-
-        <form onSubmit={handleLogin} className="login-form">
-          <div className="field">
-            <label>Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-
-          <div className="field">
-            <label>Mot de passe</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-
-          {error && <div className="login-error">{error}</div>}
-
-          <button className="btn" type="submit" disabled={loading}>
-            {loading ? "Connexion…" : "Se connecter"}
-          </button>
-        </form>
       </div>
     </div>
   );
