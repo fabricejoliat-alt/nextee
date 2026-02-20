@@ -78,7 +78,6 @@ function monthRangeLocal(now = new Date()) {
 }
 
 function last3MonthsRangeLocal(now = new Date()) {
-  // from first day of month (M-2) to end of current month (exclusive tomorrow if you prefer)
   const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
   return { start, end };
@@ -106,29 +105,60 @@ function avg(values: Array<number | null | undefined>) {
 }
 
 function weekStartMonday(d: Date) {
-  // local week, Monday as start
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   const day = x.getDay(); // 0=Sun..6=Sat
-  const diff = (day === 0 ? -6 : 1) - day; // move to Monday
+  const diff = (day === 0 ? -6 : 1) - day; // to Monday
   x.setDate(x.getDate() + diff);
   return x;
 }
 
-function typeLabel(t: SessionType) {
+function typeLabelShort(t: SessionType) {
   if (t === "club") return "Club";
   if (t === "private") return "Privé";
   return "Individuel";
+}
+
+function typeLabelLong(t: SessionType) {
+  if (t === "club") return "Entraînement en club";
+  if (t === "private") return "Entraînement privé";
+  return "Entraînement individuel";
+}
+
+function deltaPill(delta: number | null, suffix = "") {
+  if (delta == null || !Number.isFinite(delta)) return null;
+  const up = delta > 0;
+  const down = delta < 0;
+  const sign = up ? "▲" : down ? "▼" : "•";
+  const val = Math.abs(delta);
+
+  return (
+    <span
+      className="pill-soft"
+      style={{
+        background: "rgba(0,0,0,0.06)",
+        fontSize: 12,
+        fontWeight: 950,
+        color: up ? "rgba(47,125,79,1)" : down ? "rgba(185,28,28,1)" : "rgba(0,0,0,0.55)",
+      }}
+      title="Comparatif période précédente"
+    >
+      {sign} {val}
+      {suffix}
+    </span>
+  );
 }
 
 function RatingBar({
   icon,
   label,
   value,
+  delta,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number | null;
+  delta?: number | null;
 }) {
   const v = typeof value === "number" ? value : 0;
   const pct = clamp((v / 6) * 100, 0, 100);
@@ -140,10 +170,13 @@ function RatingBar({
           <span style={{ display: "inline-flex" }}>{icon}</span>
           <span style={{ fontWeight: 950, fontSize: 12, color: "rgba(0,0,0,0.65)" }}>{label}</span>
         </div>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
+
+        <div style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
+          {deltaPill(delta ?? null)}
+        </div>
       </div>
 
-      {/* bar verte (dégradé) via globals.css .bar */}
       <div className="bar">
         <span style={{ width: `${pct}%` }} />
       </div>
@@ -171,8 +204,23 @@ const chipActive: React.CSSProperties = {
   background: "rgba(53,72,59,0.10)",
 };
 
+function diffDaysInclusive(fromYmd: string, toYmd: string) {
+  const a = new Date(`${fromYmd}T00:00:00`).getTime();
+  const b = new Date(`${toYmd}T00:00:00`).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const days = Math.round((b - a) / (24 * 3600 * 1000)) + 1;
+  return days > 0 ? days : null;
+}
+
+function shiftYmd(ymd: string, days: number) {
+  const d = new Date(`${ymd}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return isoToYMD(d);
+}
+
 export default function GolfDashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [loadingPrev, setLoadingPrev] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [preset, setPreset] = useState<Preset>("month");
@@ -181,18 +229,21 @@ export default function GolfDashboardPage() {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
 
-  // data
+  // data (current)
   const [sessions, setSessions] = useState<TrainingSessionRow[]>([]);
   const [items, setItems] = useState<TrainingItemRow[]>([]);
+
+  // data (previous period KPIs only)
+  const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
 
   // init preset dates
   useEffect(() => {
     const now = new Date();
     const { start, end } = monthRangeLocal(now);
-    setFromDate(isoToYMD(start));
-    // toDate inclusive for UI, but query uses next day start => end-1day
     const endInclusive = new Date(end);
     endInclusive.setDate(endInclusive.getDate() - 1);
+
+    setFromDate(isoToYMD(start));
     setToDate(isoToYMD(endInclusive));
     setPreset("month");
   }, []);
@@ -240,7 +291,48 @@ export default function GolfDashboardPage() {
     setPreset("all");
   }
 
-  // load sessions + items for period
+  const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate), [fromDate, toDate]);
+
+  // compute previous period range (for KPIs compare)
+  const prevRange = useMemo(() => {
+    if (preset === "all") return null;
+
+    // month: previous calendar month
+    if (preset === "month") {
+      const now = new Date();
+      const cur = monthRangeLocal(now);
+      const prevMonthStart = new Date(cur.start.getFullYear(), cur.start.getMonth() - 1, 1, 0, 0, 0, 0);
+      const prevMonthEnd = new Date(cur.start.getFullYear(), cur.start.getMonth(), 1, 0, 0, 0, 0);
+      const prevEndInclusive = new Date(prevMonthEnd);
+      prevEndInclusive.setDate(prevEndInclusive.getDate() - 1);
+      return { from: isoToYMD(prevMonthStart), to: isoToYMD(prevEndInclusive) };
+    }
+
+    // last3: previous 3 months block
+    if (preset === "last3") {
+      const now = new Date();
+      const cur = last3MonthsRangeLocal(now);
+      // cur.start is 1st day of (M-2). previous block = 3 months before that
+      const prevStart = new Date(cur.start.getFullYear(), cur.start.getMonth() - 3, 1, 0, 0, 0, 0);
+      const prevEnd = new Date(cur.start.getFullYear(), cur.start.getMonth(), 1, 0, 0, 0, 0);
+      const prevEndInclusive = new Date(prevEnd);
+      prevEndInclusive.setDate(prevEndInclusive.getDate() - 1);
+      return { from: isoToYMD(prevStart), to: isoToYMD(prevEndInclusive) };
+    }
+
+    // custom: only if both from/to are present
+    if (preset === "custom" && fromDate && toDate) {
+      const days = diffDaysInclusive(fromDate, toDate);
+      if (!days) return null;
+      const prevTo = shiftYmd(fromDate, -1);
+      const prevFrom = shiftYmd(prevTo, -(days - 1));
+      return { from: prevFrom, to: prevTo };
+    }
+
+    return null;
+  }, [preset, fromDate, toDate]);
+
+  // load current sessions + items for period
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -258,7 +350,7 @@ export default function GolfDashboardPage() {
         if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
         if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
 
-        // sécurité: évite de charger 50k lignes si “Toute l’activité”
+        // cap safety
         q = q.limit(2000);
 
         const sRes = await q;
@@ -274,11 +366,7 @@ export default function GolfDashboardPage() {
           return;
         }
 
-        const iRes = await supabase
-          .from("training_session_items")
-          .select("session_id,category,minutes")
-          .in("session_id", ids);
-
+        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
         if (iRes.error) throw new Error(iRes.error.message);
 
         setItems((iRes.data ?? []) as TrainingItemRow[]);
@@ -292,17 +380,46 @@ export default function GolfDashboardPage() {
     })();
   }, [fromDate, toDate]);
 
-  // aggregates
-  const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate), [fromDate, toDate]);
+  // load previous period sessions (KPIs only)
+  useEffect(() => {
+    (async () => {
+      if (!prevRange) {
+        setPrevSessions([]);
+        return;
+      }
 
-  const totalMinutes = useMemo(
-    () => sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0),
-    [sessions]
-  );
+      setLoadingPrev(true);
+      try {
+        let q = supabase
+          .from("training_sessions")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type")
+          .order("start_at", { ascending: true });
 
+        q = q.gte("start_at", startOfDayISO(prevRange.from)).lt("start_at", nextDayStartISO(prevRange.to)).limit(2000);
+
+        const res = await q;
+        if (res.error) throw new Error(res.error.message);
+
+        setPrevSessions((res.data ?? []) as TrainingSessionRow[]);
+      } catch {
+        setPrevSessions([]);
+      } finally {
+        setLoadingPrev(false);
+      }
+    })();
+  }, [prevRange?.from, prevRange?.to]);
+
+  // aggregates (current)
+  const totalMinutes = useMemo(() => sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0), [sessions]);
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
+
+  const byType = useMemo(() => {
+    const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
+    for (const s of sessions) m[s.session_type] += 1;
+    return m;
+  }, [sessions]);
 
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};
@@ -311,14 +428,9 @@ export default function GolfDashboardPage() {
   }, [items]);
 
   const topCats = useMemo(() => {
-    const entries = Object.entries(minutesByCat)
-      .map(([cat, minutes]) => ({
-        cat,
-        label: TRAINING_CAT_LABEL[cat] ?? cat,
-        minutes,
-      }))
+    return Object.entries(minutesByCat)
+      .map(([cat, minutes]) => ({ cat, label: TRAINING_CAT_LABEL[cat] ?? cat, minutes }))
       .sort((a, b) => b.minutes - a.minutes);
-    return entries;
   }, [minutesByCat]);
 
   const catMax = useMemo(() => {
@@ -326,14 +438,33 @@ export default function GolfDashboardPage() {
     return m || 1;
   }, [topCats]);
 
-  // by type
-  const byType = useMemo(() => {
-    const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
-    for (const s of sessions) m[s.session_type] += 1;
-    return m;
-  }, [sessions]);
+  // aggregates (previous)
+  const prevTotalMinutes = useMemo(() => prevSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0), [prevSessions]);
+  const prevCount = useMemo(() => prevSessions.length, [prevSessions]);
+  const prevAvgMotivation = useMemo(() => avg(prevSessions.map((s) => s.motivation)), [prevSessions]);
+  const prevAvgDifficulty = useMemo(() => avg(prevSessions.map((s) => s.difficulty)), [prevSessions]);
+  const prevAvgSatisfaction = useMemo(() => avg(prevSessions.map((s) => s.satisfaction)), [prevSessions]);
 
-  // weekly series
+  // deltas
+  const deltaMinutes = useMemo(() => (prevRange ? totalMinutes - prevTotalMinutes : null), [prevRange, totalMinutes, prevTotalMinutes]);
+  const deltaCount = useMemo(() => (prevRange ? sessions.length - prevCount : null), [prevRange, sessions.length, prevCount]);
+  const deltaMot = useMemo(() => {
+    if (!prevRange) return null;
+    if (avgMotivation == null || prevAvgMotivation == null) return null;
+    return Math.round((avgMotivation - prevAvgMotivation) * 10) / 10;
+  }, [prevRange, avgMotivation, prevAvgMotivation]);
+  const deltaDif = useMemo(() => {
+    if (!prevRange) return null;
+    if (avgDifficulty == null || prevAvgDifficulty == null) return null;
+    return Math.round((avgDifficulty - prevAvgDifficulty) * 10) / 10;
+  }, [prevRange, avgDifficulty, prevAvgDifficulty]);
+  const deltaSat = useMemo(() => {
+    if (!prevRange) return null;
+    if (avgSatisfaction == null || prevAvgSatisfaction == null) return null;
+    return Math.round((avgSatisfaction - prevAvgSatisfaction) * 10) / 10;
+  }, [prevRange, avgSatisfaction, prevAvgSatisfaction]);
+
+  // weekly series (current)
   const weekSeries = useMemo(() => {
     const map: Record<
       string,
@@ -397,7 +528,6 @@ export default function GolfDashboardPage() {
         satisfaction: w.satN ? Math.round((w.satSum / w.satN) * 10) / 10 : null,
       }));
 
-    // label court semaine
     return list.map((x) => {
       const d = new Date(`${x.week}T00:00:00`);
       const label = new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "2-digit" }).format(d);
@@ -405,54 +535,69 @@ export default function GolfDashboardPage() {
     });
   }, [sessions]);
 
-  // simple insights (règles)
+  // insights (simple rules)
   const insights = useMemo(() => {
     const lines: string[] = [];
 
     if (sessions.length === 0) return ["Aucune donnée sur la période sélectionnée."];
 
-    // régularité
-    if (weekSeries.length >= 2) {
-      const last = weekSeries[weekSeries.length - 1];
-      const prev = weekSeries[weekSeries.length - 2];
-      const delta = last.minutes - prev.minutes;
-      const sign = delta >= 0 ? "▲" : "▼";
-      lines.push(`Volume hebdo : ${sign} ${Math.abs(delta)} min vs semaine précédente.`);
+    if (prevRange && !loadingPrev) {
+      const label = preset === "month" ? "mois précédent" : "période précédente";
+      if (deltaMinutes != null) {
+        const sign = deltaMinutes > 0 ? "▲" : deltaMinutes < 0 ? "▼" : "•";
+        lines.push(`Minutes : ${sign} ${Math.abs(deltaMinutes)} vs ${label}.`);
+      }
+      if (deltaCount != null) {
+        const sign = deltaCount > 0 ? "▲" : deltaCount < 0 ? "▼" : "•";
+        lines.push(`Séances : ${sign} ${Math.abs(deltaCount)} vs ${label}.`);
+      }
     }
 
-    // répartition
     if (topCats.length > 0) {
       const total = Object.values(minutesByCat).reduce((a, b) => a + b, 0) || 1;
       const top = topCats[0];
       const pct = Math.round((top.minutes / total) * 100);
-      lines.push(`Ton poste principal : ${top.label} (${pct}%).`);
+      lines.push(`Poste principal : ${top.label} (${pct}%).`);
     }
 
     // type dominance
     const totalS = sessions.length || 1;
-    const indPct = Math.round((byType.individual / totalS) * 100);
-    const clubPct = Math.round((byType.club / totalS) * 100);
-    const privPct = Math.round((byType.private / totalS) * 100);
-    const maxType: { t: SessionType; p: number } = [
-      { t: "individual", p: indPct },
-      { t: "club", p: clubPct },
-      { t: "private", p: privPct },
-    ].sort((a, b) => b.p - a.p)[0];
-    lines.push(`Répartition : ${typeLabel(maxType.t)} dominant (${maxType.p}%).`);
+    const typeStats: Array<{ t: SessionType; p: number }> = [
+      { t: "individual", p: Math.round((byType.individual / totalS) * 100) },
+      { t: "club", p: Math.round((byType.club / totalS) * 100) },
+      { t: "private", p: Math.round((byType.private / totalS) * 100) },
+    ];
+    const maxType = typeStats.reduce((best, cur) => (cur.p > best.p ? cur : best), typeStats[0]);
+    lines.push(`Répartition : ${typeLabelShort(maxType.t)} dominant (${maxType.p}%).`);
 
-    // sensations
-    if (avgMotivation != null && avgSatisfaction != null) {
-      if (avgMotivation >= 4.5 && avgSatisfaction >= 4.5) {
-        lines.push("Très bonne dynamique : motivation et satisfaction élevées.");
-      } else if (avgMotivation < 3 && avgSatisfaction < 3) {
-        lines.push("Dynamique faible : attention à la fatigue / objectifs trop élevés.");
-      } else {
-        lines.push("Sensations stables : continue la régularité et ajuste tes postes clés.");
-      }
+    if (weekSeries.length >= 2) {
+      const last = weekSeries[weekSeries.length - 1];
+      const prev = weekSeries[weekSeries.length - 2];
+      const delta = (last.minutes ?? 0) - (prev.minutes ?? 0);
+      const sign = delta >= 0 ? "▲" : "▼";
+      lines.push(`Semaine dernière vs précédente : ${sign} ${Math.abs(delta)} min.`);
     }
 
     return lines.slice(0, 5);
-  }, [sessions.length, weekSeries, topCats, minutesByCat, byType, avgMotivation, avgSatisfaction]);
+  }, [
+    sessions.length,
+    prevRange,
+    loadingPrev,
+    deltaMinutes,
+    deltaCount,
+    preset,
+    topCats,
+    minutesByCat,
+    byType,
+    weekSeries,
+  ]);
+
+  const compareLabel = useMemo(() => {
+    if (!prevRange) return null;
+    if (preset === "month") return "vs mois précédent";
+    if (preset === "last3") return "vs 3 mois précédents";
+    return "vs période précédente";
+  }, [prevRange, preset]);
 
   return (
     <div className="player-dashboard-bg">
@@ -517,9 +662,6 @@ export default function GolfDashboardPage() {
               >
                 Toute l’activité
               </button>
-              <div style={{ ...chipStyle, ...(preset === "custom" ? chipActive : {}) }}>
-                Personnalisé
-              </div>
             </div>
 
             <div className="hr-soft" style={{ margin: "12px 0" }} />
@@ -582,7 +724,7 @@ export default function GolfDashboardPage() {
         {/* ===== KPIs ===== */}
         <div className="glass-section">
           <div className="grid-2">
-            {/* Volume */}
+            {/* Volume (reworked) */}
             <div className="glass-card">
               <div className="card-title">Volume</div>
 
@@ -591,27 +733,59 @@ export default function GolfDashboardPage() {
               ) : sessions.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
               ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div>
-                    <span className="big-number">{totalMinutes}</span>
-                    <span className="unit">MIN</span>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {/* minutes + séances */}
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                      <div>
+                        <span className="big-number">{totalMinutes}</span>
+                        <span className="unit">MIN</span>
+                      </div>
+                      {deltaMinutes != null && (
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}>{deltaPill(deltaMinutes, " min")}</div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <span className="pill-soft">⛳ {sessions.length} séances</span>
+                      {deltaCount != null && <div>{deltaPill(deltaCount, " séances")}</div>}
+                    </div>
+
+                    {compareLabel && (
+                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>
+                    )}
                   </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span className="pill-soft">⛳ {sessions.length} séances</span>
-                    <span className="pill-soft">Club {byType.club}</span>
-                    <span className="pill-soft">Privé {byType.private}</span>
-                    <span className="pill-soft">Individuel {byType.individual}</span>
+                  <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                  {/* list types */}
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Répartition</div>
+
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={typeRowStyle}>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("club")}</div>
+                        <div style={typeRowRightStyle}>{byType.club}</div>
+                      </div>
+                      <div style={typeRowStyle}>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("private")}</div>
+                        <div style={typeRowRightStyle}>{byType.private}</div>
+                      </div>
+                      <div style={typeRowStyle}>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("individual")}</div>
+                        <div style={typeRowRightStyle}>{byType.individual}</div>
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                    (Graphes ci-dessous regroupés par semaine)
+                    (Graphes regroupés par semaine)
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Sensations moyennes */}
+            {/* Sensations moyennes (avec comparatif) */}
             <div className="glass-card">
               <div className="card-title">Sensations (moyennes)</div>
 
@@ -619,9 +793,13 @@ export default function GolfDashboardPage() {
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
               ) : (
                 <div style={{ display: "grid", gap: 14 }}>
-                  <RatingBar icon={<Flame size={16} />} label="Motivation" value={avgMotivation} />
-                  <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={avgDifficulty} />
-                  <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={avgSatisfaction} />
+                  <RatingBar icon={<Flame size={16} />} label="Motivation" value={avgMotivation} delta={deltaMot} />
+                  <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={avgDifficulty} delta={deltaDif} />
+                  <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={avgSatisfaction} delta={deltaSat} />
+
+                  {compareLabel && (
+                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -752,3 +930,26 @@ export default function GolfDashboardPage() {
     </div>
   );
 }
+
+const typeRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  border: "1px solid rgba(0,0,0,0.08)",
+  background: "rgba(255,255,255,0.55)",
+  borderRadius: 12,
+  padding: "10px 12px",
+};
+
+const typeRowLeftStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "rgba(0,0,0,0.68)",
+};
+
+const typeRowRightStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 950,
+  color: "rgba(0,0,0,0.78)",
+};
