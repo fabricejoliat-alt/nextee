@@ -177,6 +177,7 @@ export default function MarketplaceMine() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
@@ -184,7 +185,6 @@ export default function MarketplaceMine() {
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Mes annonces
               </div>
-
               <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
                 Active/désactive, modifie ou supprime tes annonces.
               </div>
@@ -208,7 +208,9 @@ export default function MarketplaceMine() {
           {loading ? (
             <div className="glass-card">Chargement…</div>
           ) : items.length === 0 ? (
-            <div className="glass-card marketplace-empty">Tu n’as pas encore d’annonce.</div>
+            <div className="glass-card marketplace-empty">
+              Tu n’as pas encore d’annonce.
+            </div>
           ) : (
             <div className="marketplace-list">
               {items.map((it) => {
@@ -216,76 +218,52 @@ export default function MarketplaceMine() {
                 const meta = compactMeta(it);
 
                 return (
-                  <div
-                    key={it.id}
-                    className="marketplace-item"
-                    style={{
-                      opacity: it.is_active ? 1 : 0.75,
-                    }}
-                  >
+                  <div key={it.id} className="marketplace-item" style={{ opacity: it.is_active ? 1 : 0.75 }}>
                     <div className="marketplace-row">
+
                       <div className="marketplace-thumb">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={img} alt={it.title} loading="lazy" />
                       </div>
 
                       <div className="marketplace-body">
-                        {/* Ligne 1 — Titre + badge actif */}
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
-                          <div className="marketplace-item-title" style={{ paddingRight: 6 }}>
-                            {it.title}
-                          </div>
 
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <div className="marketplace-item-title">{it.title}</div>
                           {!it.is_active && (
-                            <div
-                              style={{
-                                padding: "5px 10px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 900,
-                                background: "rgba(0,0,0,0.06)",
-                                color: "#2a2a2a",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
+                            <div style={{
+                              padding: "5px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 900,
+                              background: "rgba(0,0,0,0.06)",
+                              border: "1px solid rgba(0,0,0,0.08)"
+                            }}>
                               Inactif
                             </div>
                           )}
                         </div>
 
-                        {/* Ligne 2 — variables */}
                         {meta && <div className="marketplace-meta">{meta}</div>}
 
-                        {it.delivery && (
-                          <div className="marketplace-meta" style={{ fontWeight: 800 }}>
-                            Remise : {truncate(it.delivery, 70)}
-                          </div>
-                        )}
-
                         {it.description && (
-                          <div className="marketplace-meta" style={{ fontWeight: 700 }}>
+                          <div className="marketplace-meta">
                             {truncate(it.description, 120)}
                           </div>
                         )}
 
-                        {/* Ligne 3 — prix à droite */}
                         <div className="marketplace-price-row">
                           <div className="marketplace-price-pill">{priceLabel(it)}</div>
                         </div>
 
                         <div className="hr-soft" style={{ marginTop: 10, marginBottom: 10 }} />
 
-                        {/* ✅ Actions alignées à droite */}
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                            justifyContent: "flex-end",
-                          }}
-                        >
+                        {/* Ligne 1 — Toggle seul */}
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginBottom: 8
+                        }}>
                           <label className={`toggle ${it.is_active ? "on" : ""}`}>
                             <input
                               type="checkbox"
@@ -296,9 +274,19 @@ export default function MarketplaceMine() {
                             <span className="toggle-track">
                               <span className="toggle-thumb" />
                             </span>
-                            <span className="toggle-label">{it.is_active ? "Actif" : "Inactif"}</span>
+                            <span className="toggle-label">
+                              {it.is_active ? "Actif" : "Inactif"}
+                            </span>
                           </label>
+                        </div>
 
+                        {/* Ligne 2 — Boutons */}
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          gap: 10,
+                          flexWrap: "wrap"
+                        }}>
                           <Link className="btn" href={`/player/marketplace/edit/${it.id}`}>
                             Modifier
                           </Link>
@@ -312,6 +300,7 @@ export default function MarketplaceMine() {
                             Supprimer
                           </button>
                         </div>
+
                       </div>
                     </div>
                   </div>
