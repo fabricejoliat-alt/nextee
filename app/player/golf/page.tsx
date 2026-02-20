@@ -79,7 +79,7 @@ function monthRangeLocal(now = new Date()) {
 
 function last3MonthsRangeLocal(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
   return { start, end };
 }
 
