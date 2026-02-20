@@ -308,56 +308,66 @@ export default function TrainingsListPage() {
           </div>
 
           {/* ✅ Container glass: uniquement les filtres (safe mobile, ne dépasse pas) */}
-          <div className="glass-card" style={{ marginTop: 12, padding: 14 }}>
-            <div style={{ display: "grid", gap: 10 }}>
-              <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => onChangeFrom(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                  }}
-                />
-              </label>
+<div className="glass-card" style={{ marginTop: 12, padding: 14, overflow: "hidden" }}>
+  <div style={{ display: "grid", gap: 10 }}>
+    <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+      <input
+        type="date"
+        value={fromDate}
+        onChange={(e) => onChangeFrom(e.target.value)}
+        disabled={loading}
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
+          background: "rgba(255,255,255,0.90)",
+          border: "1px solid rgba(0,0,0,0.10)",
+          borderRadius: 10,
+          padding: "10px 12px",
+          WebkitAppearance: "none",
+          appearance: "none",
+        }}
+      />
+    </label>
 
-              <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => onChangeTo(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                  }}
-                />
-              </label>
+    <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+      <input
+        type="date"
+        value={toDate}
+        onChange={(e) => onChangeTo(e.target.value)}
+        disabled={loading}
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
+          background: "rgba(255,255,255,0.90)",
+          border: "1px solid rgba(0,0,0,0.10)",
+          borderRadius: 10,
+          padding: "10px 12px",
+          WebkitAppearance: "none",
+          appearance: "none",
+        }}
+      />
+    </label>
 
-              <button
-                className="btn"
-                type="button"
-                onClick={clearFilters}
-                disabled={loading || !hasDateFilter}
-                title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
-                style={{ width: "100%", height: 44 }}
-              >
-                Effacer les dates
-              </button>
-            </div>
-          </div>
+    <button
+      className="btn"
+      type="button"
+      onClick={clearFilters}
+      disabled={loading || !hasDateFilter}
+      title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
+      style={{ width: "100%", height: 44 }}
+    >
+      Effacer les dates
+    </button>
+  </div>
+</div>
 
           {error && <div className="marketplace-error">{error}</div>}
         </div>
