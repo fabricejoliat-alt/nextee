@@ -9,6 +9,7 @@ type Profile = {
   first_name: string | null;
   last_name: string | null;
   handicap: number | null;
+  avatar_url: string | null; // ✅
 };
 
 type ClubMember = { club_id: string };
@@ -71,6 +72,15 @@ function displayHello(p?: Profile | null) {
   const f = (p?.first_name ?? "").trim();
   if (!f) return "Salut";
   return `Salut ${f}`;
+}
+
+function getInitials(p?: Profile | null) {
+  const f = (p?.first_name ?? "").trim();
+  const l = (p?.last_name ?? "").trim();
+  const fi = f ? f[0].toUpperCase() : "";
+  const li = l ? l[0].toUpperCase() : "";
+  if (!fi && !li) return "👤";
+  return `${fi}${li}`;
 }
 
 function initialsName(p?: Profile | null) {
@@ -276,7 +286,7 @@ export default function PlayerHomePage() {
 
     const profRes = await supabase
       .from("profiles")
-      .select("id,first_name,last_name,handicap")
+      .select("id,first_name,last_name,handicap,avatar_url")
       .eq("id", uid)
       .maybeSingle();
 
@@ -421,8 +431,10 @@ export default function PlayerHomePage() {
   }, []);
 
   const avatarUrl = useMemo(() => {
-    return "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=240&q=60";
-  }, []);
+  const base = profile?.avatar_url?.trim() || "";
+  if (!base) return null;
+  return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
+}, [profile?.avatar_url]);
 
   const focusGIR = 57;
   const focusFairway = 72;
@@ -432,9 +444,32 @@ export default function PlayerHomePage() {
     <div className="player-dashboard-bg">
       <div className="app-shell">
         <div className="player-hero">
-          <div className="avatar" aria-hidden="true">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={avatarUrl} alt="" />
+          <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 900,
+                  fontSize: 28,
+                  letterSpacing: 1,
+                  color: "white",
+                  background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
+                }}
+              >
+                {getInitials(profile)}
+              </div>
+            )}
           </div>
 
           <div style={{ minWidth: 0 }}>

@@ -34,6 +34,18 @@ function displayHello(firstName?: string | null) {
   return `Salut ${f}`;
 }
 
+function getInitials(firstName?: string | null, lastName?: string | null) {
+  const f = (firstName ?? "").trim();
+  const l = (lastName ?? "").trim();
+
+  const firstInitial = f ? f[0].toUpperCase() : "";
+  const lastInitial = l ? l[0].toUpperCase() : "";
+
+  if (!firstInitial && !lastInitial) return "👤";
+
+  return `${firstInitial}${lastInitial}`;
+}
+
 function isAllowedImage(file: File) {
   const okTypes = ["image/jpeg", "image/png", "image/webp"];
   return okTypes.includes(file.type);
@@ -360,6 +372,7 @@ export default function PlayerProfilePage() {
               title={loading ? "" : "Changer la photo"}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
+              {avatarDbUrl ? (
               <img
                 src={avatarUrl}
                 alt=""
@@ -370,6 +383,25 @@ export default function PlayerProfilePage() {
                   opacity: avatarBusy ? 0.65 : 1,
                 }}
               />
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 900,
+                  fontSize: 28,
+                  letterSpacing: 1,
+                  color: "white",
+                  background:
+                    "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
+                }}
+              >
+                {getInitials(firstName, lastName)}
+              </div>
+            )}
             </div>
 
             <button
