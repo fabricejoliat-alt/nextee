@@ -280,14 +280,26 @@ export default function MarketplaceMine() {
                           </label>
                         </div>
 
-                        {/* Ligne 2 — Boutons */}
-                        <div style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          gap: 10,
-                          flexWrap: "wrap"
-                        }}>
-                          <Link className="btn" href={`/player/marketplace/edit/${it.id}`}>
+                        {/* Ligne 2 — Boutons compacts */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <Link
+                            href={`/player/marketplace/edit/${it.id}`}
+                            className="btn"
+                            style={{
+                              height: 34,
+                              padding: "0 12px",
+                              fontSize: 13,
+                              fontWeight: 800,
+                              borderRadius: 10,
+                            }}
+                          >
                             Modifier
                           </Link>
 
@@ -296,6 +308,13 @@ export default function MarketplaceMine() {
                             onClick={() => remove(it.id)}
                             disabled={busy}
                             type="button"
+                            style={{
+                              height: 34,
+                              padding: "0 12px",
+                              fontSize: 13,
+                              fontWeight: 800,
+                              borderRadius: 10,
+                            }}
                           >
                             Supprimer
                           </button>
