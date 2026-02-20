@@ -66,7 +66,6 @@ function nextDayStartISO(dateStr: string) {
   return d.toISOString();
 }
 
-// mapping friendly labels
 function categoryLabel(cat: string) {
   const map: Record<string, string> = {
     warmup_mobility: "Échauffement / mobilité",
@@ -114,7 +113,6 @@ function RatingBar({
         <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
       </div>
 
-      {/* barre verte dégradée (réutilise .bar du global.css) */}
       <div className="bar">
         <span style={{ width: `${pct}%` }} />
       </div>
@@ -129,18 +127,14 @@ export default function TrainingsListPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
 
-  // items per session
   const [itemsBySessionId, setItemsBySessionId] = useState<Record<string, SessionItemRow[]>>({});
 
-  // date filter
-  const [fromDate, setFromDate] = useState<string>(""); // YYYY-MM-DD
-  const [toDate, setToDate] = useState<string>(""); // YYYY-MM-DD
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
-  // pagination
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // delete state
   const [deletingId, setDeletingId] = useState<string>("");
 
   const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
@@ -182,7 +176,6 @@ export default function TrainingsListPage() {
       setSessions(list);
       setTotalCount(sRes.count ?? 0);
 
-      // clubs names (only for this page)
       const clubIds = Array.from(
         new Set(
           list
@@ -206,7 +199,6 @@ export default function TrainingsListPage() {
         setClubNameById({});
       }
 
-      // items (postes) for sessions in this page
       const sessionIds = list.map((s) => s.id);
       if (sessionIds.length > 0) {
         const itRes = await supabase
@@ -318,13 +310,13 @@ export default function TrainingsListPage() {
             </div>
           </div>
 
-          {/* Date filter row */}
+          {/* ✅ Date filter row (APP): 2 lignes + bouton en dessous */}
           <div
             className="marketplace-filter-row"
             style={{
               marginTop: 12,
               display: "grid",
-              gridTemplateColumns: "1fr 1fr auto",
+              gridTemplateColumns: "1fr",
               gap: 10,
               alignItems: "end",
             }}
@@ -373,9 +365,9 @@ export default function TrainingsListPage() {
               onClick={clearFilters}
               disabled={loading || !hasDateFilter}
               title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
-              style={{ justifySelf: "end" }}
+              style={{ width: "100%" }}
             >
-              Effacer
+              Effacer les dates
             </button>
           </div>
 
@@ -405,18 +397,10 @@ export default function TrainingsListPage() {
                       <div className="marketplace-item">
                         <div style={{ display: "grid", gap: 10 }}>
                           {/* 1) Date/heure + durée */}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 10,
-                              alignItems: "baseline",
-                            }}
-                          >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                               {fmtDateTime(s.start_at)}
                             </div>
-
                             <div className="marketplace-price-pill">
                               {(s.total_minutes ?? 0) > 0 ? `${s.total_minutes} min` : "—"}
                             </div>
@@ -431,28 +415,21 @@ export default function TrainingsListPage() {
                             )}
 
                             {s.location_text && (
-                              <span
-                                className="truncate"
-                                style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}
-                              >
+                              <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
                                 📍 {s.location_text}
                               </span>
                             )}
                           </div>
 
-                          {/* Filet fin avant les postes */}
+                          {/* Filets fins autour des postes */}
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
-                          {/* 3) Postes + durée (liste simple) */}
                           {postes.length > 0 && (
                             <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                               {postes.map((p, i) => {
                                 const extra = (p.note ?? p.other_detail ?? "").trim();
                                 return (
-                                  <li
-                                    key={`${p.session_id}-${i}`}
-                                    style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}
-                                  >
+                                  <li key={`${p.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
                                     {categoryLabel(p.category)} — {p.minutes} min
                                     {extra ? (
                                       <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span>
@@ -463,27 +440,22 @@ export default function TrainingsListPage() {
                             </ul>
                           )}
 
-                          {/* Filet fin après les postes */}
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
-                          {/* 4) Sensations : pictos + barres vertes dégradées */}
+                          {/* Sensations */}
                           <div style={{ display: "grid", gap: 10 }}>
                             <RatingBar icon={<Flame size={16} />} label="Motivation" value={s.motivation} />
                             <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={s.difficulty} />
                             <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={s.satisfaction} />
                           </div>
 
-                          {/* 5) Boutons alignés à droite */}
+                          {/* Actions */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <Link className="btn" href={`/player/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
                               Voir
                             </Link>
 
-                            <Link
-                              className="btn"
-                              href={`/player/trainings/${s.id}/edit`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
+                            <Link className="btn" href={`/player/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
                               Modifier
                             </Link>
 
@@ -514,12 +486,7 @@ export default function TrainingsListPage() {
           {totalCount > 0 && (
             <div className="glass-section">
               <div className="marketplace-pagination">
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={loading || page <= 1}
-                >
+                <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
                   ← Précédent
                 </button>
 
@@ -527,12 +494,7 @@ export default function TrainingsListPage() {
                   Page {page} / {totalPages}
                 </div>
 
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={loading || page >= totalPages}
-                >
+                <button className="btn" type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={loading || page >= totalPages}>
                   Suivant →
                 </button>
               </div>
