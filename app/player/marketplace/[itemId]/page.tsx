@@ -150,7 +150,6 @@ export default function MarketplaceDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId]);
 
-  // ESC to close lightbox + arrows to navigate
   useEffect(() => {
     if (!lightboxOpen) return;
 
@@ -213,6 +212,9 @@ export default function MarketplaceDetailPage() {
   const meta = compactMeta(item);
   const mainImg = images[0] ?? placeholderSvg;
 
+  // ✅ Header title: Marketplace - Catégorie
+  const headerTitle = `Marketplace${item.category ? ` - ${item.category}` : ""}`;
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -221,11 +223,10 @@ export default function MarketplaceDetailPage() {
           <div className="marketplace-header">
             <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {item.title}
+                {headerTitle}
               </div>
               <div className="marketplace-filter-label" style={{ marginTop: 0 }}>
                 {fmtDate(item.created_at)}
-                {meta ? ` • ${meta}` : ""}
               </div>
             </div>
 
@@ -281,41 +282,45 @@ export default function MarketplaceDetailPage() {
                   WebkitOverflowScrolling: "touch",
                 }}
               >
-                {images.map((u, idx) => {
-                  const active = idx === 0;
-                  return (
-                    <button
-                      key={u + idx}
-                      type="button"
-                      onClick={() => openAt(idx)}
-                      style={{
-                        width: 92,
-                        height: 68,
-                        borderRadius: 14,
-                        overflow: "hidden",
-                        border: active ? "2px solid rgba(53,72,59,0.55)" : "1px solid rgba(0,0,0,0.10)",
-                        padding: 0,
-                        background: "transparent",
-                        flex: "0 0 auto",
-                        cursor: "zoom-in",
-                      }}
-                      aria-label={`Voir l’image ${idx + 1}`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={u} alt={`photo-${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    </button>
-                  );
-                })}
+                {images.map((u, idx) => (
+                  <button
+                    key={u + idx}
+                    type="button"
+                    onClick={() => openAt(idx)}
+                    style={{
+                      width: 92,
+                      height: 68,
+                      borderRadius: 14,
+                      overflow: "hidden",
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      padding: 0,
+                      background: "transparent",
+                      flex: "0 0 auto",
+                      cursor: "zoom-in",
+                    }}
+                    aria-label={`Voir l’image ${idx + 1}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={u} alt={`photo-${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </button>
+                ))}
               </div>
             )}
 
-            {/* Price + status */}
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div className="marketplace-price-pill" style={{ fontSize: 14, fontWeight: 950 }}>
-                {priceLabel(item)}
-              </div>
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 900, fontSize: 12 }}>
-                {item.is_active ? "Disponible" : "Annonce inactive"}
+            {/* ✅ Sous les photos: même style que cards marketplace */}
+            <div style={{ display: "grid", gap: 6 }}>
+              {/* Ligne 1: titre */}
+              <div className="marketplace-item-title">{item.title}</div>
+
+              {/* Ligne 2: meta */}
+              {meta && <div className="marketplace-meta">{meta}</div>}
+
+              {/* Ligne 3: prix à droite + disponibilité */}
+              <div className="marketplace-price-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 900, fontSize: 12 }}>
+                  {item.is_active ? "Disponible" : "Annonce inactive"}
+                </div>
+                <div className="marketplace-price-pill">{priceLabel(item)}</div>
               </div>
             </div>
 
@@ -328,20 +333,22 @@ export default function MarketplaceDetailPage() {
 
             <div className="hr-soft" />
 
-            {/* Contact */}
-            <div style={{ display: "grid", gap: 8 }}>
+            {/* ✅ Contact: titre + 2 colonnes */}
+            <div style={{ display: "grid", gap: 10 }}>
               <div className="card-title" style={{ marginBottom: 0 }}>
                 Contact
               </div>
 
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={fieldLabelStyle}>Email de contact</div>
-                <div style={fieldValueStyle}>{item.contact_email ?? "—"}</div>
-              </div>
+              <div className="grid-2">
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={fieldLabelStyle}>Email</div>
+                  <div style={fieldValueStyle}>{item.contact_email ?? "—"}</div>
+                </div>
 
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={fieldLabelStyle}>Téléphone</div>
-                <div style={fieldValueStyle}>{item.contact_phone ?? "—"}</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={fieldLabelStyle}>Téléphone</div>
+                  <div style={fieldValueStyle}>{item.contact_phone ?? "—"}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -479,7 +486,6 @@ export default function MarketplaceDetailPage() {
   );
 }
 
-/* Local helpers (no global CSS changes) */
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
