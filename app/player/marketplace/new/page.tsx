@@ -39,14 +39,14 @@ export default function MarketplaceNew() {
 
   // champs annonce
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>(""); // "-" par défaut
-  const [condition, setCondition] = useState<string>(""); // "-" par défaut
+  const [category, setCategory] = useState<string>("");
+  const [condition, setCondition] = useState<string>("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
 
   // prix
-  const [saleMode, setSaleMode] = useState<"SELL" | "GIVE">("SELL"); // À vendre / À donner
+  const [saleMode, setSaleMode] = useState<"SELL" | "GIVE">("SELL");
   const isFree = saleMode === "GIVE";
   const [price, setPrice] = useState<string>("");
 
@@ -61,9 +61,13 @@ export default function MarketplaceNew() {
   const [files, setFiles] = useState<File[]>([]);
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
 
-  // uploader plus sympa
+  // uploader
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  // ✅ DnD reorder thumbnails
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
 
   const canPublish = useMemo(() => {
     if (busy) return false;
@@ -77,7 +81,6 @@ export default function MarketplaceNew() {
       const v = Number(price);
       if (price.trim() === "" || Number.isNaN(v) || v <= 0) return false;
     }
-
     return true;
   }, [title, category, condition, isFree, price, contactEmail, busy, confirmOk]);
 
@@ -134,7 +137,6 @@ export default function MarketplaceNew() {
   function addPickedFiles(picked: File[]) {
     const images = picked.filter((f) => f.type.startsWith("image/"));
     if (images.length === 0) return;
-
     setFiles((prev) => [...prev, ...images].slice(0, 5));
   }
 
@@ -148,35 +150,6 @@ export default function MarketplaceNew() {
     setFiles((arr) => arr.filter((_, i) => i !== idx));
   }
 
-  // ✅ App-like: réordonner / définir principale
-  function setAsMain(idx: number) {
-    setFiles((arr) => {
-      if (idx <= 0 || idx >= arr.length) return arr;
-      const next = [...arr];
-      const [picked] = next.splice(idx, 1);
-      next.unshift(picked);
-      return next;
-    });
-  }
-
-  function moveLeft(idx: number) {
-    setFiles((arr) => {
-      if (idx <= 0 || idx >= arr.length) return arr;
-      const next = [...arr];
-      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-      return next;
-    });
-  }
-
-  function moveRight(idx: number) {
-    setFiles((arr) => {
-      if (idx < 0 || idx >= arr.length - 1) return arr;
-      const next = [...arr];
-      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-      return next;
-    });
-  }
-
   function setMode(next: "SELL" | "GIVE") {
     setSaleMode(next);
     if (next === "GIVE") setPrice("");
@@ -186,7 +159,8 @@ export default function MarketplaceNew() {
     fileInputRef.current?.click();
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+  // Dropzone add-images DnD
+  function onDropZoneDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
@@ -194,20 +168,81 @@ export default function MarketplaceNew() {
     if (busy) return;
     if (files.length >= 5) return;
 
-    const dropped = Array.from(e.dataTransfer.files ?? []);
-    addPickedFiles(dropped);
+    addPickedFiles(Array.from(e.dataTransfer.files ?? []));
   }
 
-  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+  function onDropZoneDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     if (!busy && files.length < 5) setDragOver(true);
   }
 
-  function onDragLeave(e: React.DragEvent<HTMLDivElement>) {
+  function onDropZoneDragLeave(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
+  }
+
+  // ✅ Thumbnails reorder DnD
+  function onThumbDragStart(idx: number, e: React.DragEvent) {
+    if (busy) return;
+    setDragIndex(idx);
+    setOverIndex(null);
+    try {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(idx));
+    } catch {
+      // ignore
+    }
+  }
+
+  function onThumbDragOver(idx: number, e: React.DragEvent) {
+    if (busy) return;
+    e.preventDefault(); // required to allow drop
+    setOverIndex(idx);
+    try {
+      e.dataTransfer.dropEffect = "move";
+    } catch {
+      // ignore
+    }
+  }
+
+  function onThumbDrop(idx: number, e: React.DragEvent) {
+    if (busy) return;
+    e.preventDefault();
+
+    let from: number | null = dragIndex;
+
+    // fallback: read from dataTransfer
+    if (from == null) {
+      const raw = e.dataTransfer.getData("text/plain");
+      const parsed = Number(raw);
+      if (!Number.isNaN(parsed)) from = parsed;
+    }
+
+    if (from == null || from === idx) {
+      setDragIndex(null);
+      setOverIndex(null);
+      return;
+    }
+
+    setFiles((arr) => {
+      if (from! < 0 || from! >= arr.length) return arr;
+      if (idx < 0 || idx >= arr.length) return arr;
+
+      const next = [...arr];
+      const [moved] = next.splice(from!, 1);
+      next.splice(idx, 0, moved);
+      return next;
+    });
+
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function onThumbDragEnd() {
+    setDragIndex(null);
+    setOverIndex(null);
   }
 
   async function publish(e: React.FormEvent) {
@@ -258,6 +293,7 @@ export default function MarketplaceNew() {
 
     const itemId = insertRes.data.id as string;
 
+    // upload images in current order: index 0 = principale
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
@@ -303,8 +339,7 @@ export default function MarketplaceNew() {
                 Publier une annonce
               </div>
 
-              {/* ✅ plus d'espace au-dessus/dessous */}
-              <div className="marketplace-filter-label" style={{ marginTop: 4, marginBottom: 6 }}>
+              <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
                 Les annonces ne sont visibles que par les juniors de ton club
               </div>
             </div>
@@ -329,7 +364,6 @@ export default function MarketplaceNew() {
               <div>Chargement…</div>
             ) : (
               <form onSubmit={publish} style={{ display: "grid", gap: 12 }}>
-                {/* Titre */}
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Titre</span>
                   <input
@@ -340,7 +374,6 @@ export default function MarketplaceNew() {
                   />
                 </label>
 
-                {/* Catégorie / État */}
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Catégorie</span>
@@ -367,7 +400,6 @@ export default function MarketplaceNew() {
                   </label>
                 </div>
 
-                {/* Marque / Modèle */}
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Marque (optionnel)</span>
@@ -380,7 +412,6 @@ export default function MarketplaceNew() {
                   </label>
                 </div>
 
-                {/* Description */}
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Description</span>
                   <textarea
@@ -394,11 +425,9 @@ export default function MarketplaceNew() {
 
                 <div className="hr-soft" />
 
-                {/* Prix */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={fieldLabelStyle}>Prix</div>
 
-                  {/* ✅ FIX: pas de spread null -> { } */}
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <label style={{ ...chipRadioStyle, ...(saleMode === "SELL" ? chipRadioActive : {}) }}>
                       <input
@@ -440,7 +469,6 @@ export default function MarketplaceNew() {
 
                 <div className="hr-soft" />
 
-                {/* Contact (sans titre) */}
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Email de contact</span>
@@ -460,7 +488,7 @@ export default function MarketplaceNew() {
 
                 <div className="hr-soft" />
 
-                {/* Images — app-like */}
+                {/* Images */}
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>
                     Images <span style={{ opacity: 0.65 }}>({files.length}/5)</span>
@@ -476,10 +504,11 @@ export default function MarketplaceNew() {
                     style={{ display: "none" }}
                   />
 
+                  {/* Dropzone pour AJOUTER */}
                   <div
-                    onDrop={onDrop}
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
+                    onDrop={onDropZoneDrop}
+                    onDragOver={onDropZoneDragOver}
+                    onDragLeave={onDropZoneDragLeave}
                     role="button"
                     tabIndex={0}
                     onClick={openFilePicker}
@@ -516,116 +545,91 @@ export default function MarketplaceNew() {
                     </div>
                   </div>
 
+                  {/* Thumbnails (réordonner) */}
                   {files.length > 0 && (
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 2 }}>
-                      {previews.map((src, idx) => (
-                        <div key={idx} style={{ position: "relative" }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={src}
-                            alt={`preview-${idx}`}
+                      {previews.map((src, idx) => {
+                        const isOver = overIndex === idx && dragIndex !== null && dragIndex !== idx;
+
+                        return (
+                          <div
+                            key={idx}
+                            draggable={!busy}
+                            onDragStart={(e) => onThumbDragStart(idx, e)}
+                            onDragOver={(e) => onThumbDragOver(idx, e)}
+                            onDrop={(e) => onThumbDrop(idx, e)}
+                            onDragEnd={onThumbDragEnd}
                             style={{
-                              width: 120,
-                              height: 90,
-                              objectFit: "cover",
+                              position: "relative",
                               borderRadius: 12,
-                              border: "1px solid rgba(0,0,0,0.10)",
+                              outline: isOver ? "2px solid rgba(53,72,59,0.55)" : "none",
+                              outlineOffset: 2,
+                              opacity: dragIndex === idx ? 0.7 : 1,
+                              cursor: busy ? "not-allowed" : "grab",
                             }}
-                          />
-
-                          {/* Badge Principale */}
-                          {idx === 0 ? (
-                            <div
+                            title="Glisse pour réordonner"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={src}
+                              alt={`preview-${idx}`}
                               style={{
-                                position: "absolute",
-                                left: 6,
-                                top: 6,
-                                padding: "4px 8px",
-                                borderRadius: 999,
-                                fontSize: 11,
-                                fontWeight: 900,
-                                background: "rgba(0,0,0,0.55)",
-                                color: "#fff",
+                                width: 120,
+                                height: 90,
+                                objectFit: "cover",
+                                borderRadius: 12,
+                                border: "1px solid rgba(0,0,0,0.10)",
+                                display: "block",
                               }}
-                            >
-                              Principale
-                            </div>
-                          ) : (
-                            // ✅ Bouton "Définir principale"
+                            />
+
+                            {/* Principale sur la première */}
+                            {idx === 0 && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  left: 6,
+                                  top: 6,
+                                  padding: "3px 7px",
+                                  borderRadius: 999,
+                                  fontSize: 10,
+                                  fontWeight: 900,
+                                  background: "rgba(0,0,0,0.55)",
+                                  color: "#fff",
+                                }}
+                              >
+                                Principale
+                              </div>
+                            )}
+
+                            {/* Supprimer */}
                             <button
                               type="button"
                               className="btn"
-                              onClick={() => setAsMain(idx)}
+                              onClick={() => removeFile(idx)}
+                              style={{
+                                position: "absolute",
+                                top: 6,
+                                right: 6,
+                                width: 34,
+                                height: 34,
+                                borderRadius: 10,
+                                cursor: "pointer",
+                              }}
                               disabled={busy}
-                              style={{
-                                position: "absolute",
-                                left: 6,
-                                top: 6,
-                                height: 30,
-                                padding: "0 10px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                                fontWeight: 900,
-                                background: "rgba(255,255,255,0.92)",
-                                borderColor: "rgba(0,0,0,0.12)",
-                              }}
+                              aria-label="Supprimer"
                             >
-                              Définir principale
-                            </button>
-                          )}
-
-                          {/* ✅ Réordre gauche/droite */}
-                          <div style={{ position: "absolute", left: 6, bottom: 6, display: "flex", gap: 6 }}>
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => moveLeft(idx)}
-                              disabled={busy || idx === 0}
-                              style={miniBtnStyle}
-                              aria-label="Déplacer à gauche"
-                            >
-                              ←
-                            </button>
-
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => moveRight(idx)}
-                              disabled={busy || idx === files.length - 1}
-                              style={miniBtnStyle}
-                              aria-label="Déplacer à droite"
-                            >
-                              →
+                              ✕
                             </button>
                           </div>
-
-                          {/* Supprimer */}
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => removeFile(idx)}
-                            style={{
-                              position: "absolute",
-                              top: 6,
-                              right: 6,
-                              width: 34,
-                              height: 34,
-                              borderRadius: 10,
-                            }}
-                            disabled={busy}
-                            aria-label="Supprimer"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
                 <div className="hr-soft" />
 
-                {/* Checkbox obligatoire */}
                 <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <input
                     type="checkbox"
@@ -639,7 +643,6 @@ export default function MarketplaceNew() {
                   </span>
                 </label>
 
-                {/* Publier en vert foncé */}
                 <button
                   className="btn"
                   type="submit"
@@ -686,12 +689,4 @@ const chipRadioStyle: React.CSSProperties = {
 const chipRadioActive: React.CSSProperties = {
   borderColor: "rgba(53,72,59,0.35)",
   background: "rgba(53,72,59,0.10)",
-};
-
-const miniBtnStyle: React.CSSProperties = {
-  width: 34,
-  height: 30,
-  padding: 0,
-  borderRadius: 10,
-  fontWeight: 900,
 };
