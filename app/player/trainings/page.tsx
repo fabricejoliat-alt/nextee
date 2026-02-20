@@ -87,7 +87,6 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-/** Notes sur 6 (comme sur /player). Ajuste si besoin. */
 const MAX_SCORE = 6;
 
 function RatingBar({
@@ -109,7 +108,6 @@ function RatingBar({
           <span style={{ display: "inline-flex" }}>{icon}</span>
           <span style={{ fontWeight: 950, fontSize: 12, color: "rgba(0,0,0,0.65)" }}>{label}</span>
         </div>
-
         <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
       </div>
 
@@ -290,14 +288,8 @@ export default function TrainingsListPage() {
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Mes entraînements
-              </div>
-
-              <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
-                {loading ? "…" : `${totalCount} séance(s) • ${totalThisPage} min (page ${page}/${totalPages})`}
-              </div>
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              Mes entraînements
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -310,65 +302,69 @@ export default function TrainingsListPage() {
             </div>
           </div>
 
-          {/* ✅ Date filter row (APP): 2 lignes + bouton en dessous */}
-          <div
-            className="marketplace-filter-row"
-            style={{
-              marginTop: 12,
-              display: "grid",
-              gridTemplateColumns: "1fr",
-              gap: 10,
-              alignItems: "end",
-            }}
-          >
-            <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
-              <span className="marketplace-filter-label" style={{ margin: 0 }}>
-                Du
-              </span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => onChangeFrom(e.target.value)}
-                disabled={loading}
-                style={{
-                  width: "100%",
-                  minWidth: 0,
-                  boxSizing: "border-box",
-                  background: "rgba(255,255,255,0.78)",
-                  border: "1px solid rgba(255,255,255,0.22)",
-                }}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
-              <span className="marketplace-filter-label" style={{ margin: 0 }}>
-                Au
-              </span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => onChangeTo(e.target.value)}
-                disabled={loading}
-                style={{
-                  width: "100%",
-                  minWidth: 0,
-                  boxSizing: "border-box",
-                  background: "rgba(255,255,255,0.78)",
-                  border: "1px solid rgba(255,255,255,0.22)",
-                }}
-              />
-            </label>
-
-            <button
-              className="btn marketplace-filter-clear"
-              type="button"
-              onClick={clearFilters}
-              disabled={loading || !hasDateFilter}
-              title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
-              style={{ width: "100%" }}
+          {/* ✅ Nouveau container glass pour stats + filtres (mobile/app safe) */}
+          <div className="glass-card" style={{ marginTop: 12, padding: 14 }}>
+            {/* Stats */}
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 900,
+                color: "rgba(0,0,0,0.65)",
+                marginBottom: 10,
+              }}
             >
-              Effacer les dates
-            </button>
+              {loading ? "…" : `${totalCount} séance(s) • ${totalThisPage} min (page ${page}/${totalPages})`}
+            </div>
+
+            {/* Filtres sur 2 lignes + bouton en dessous */}
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => onChangeFrom(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.90)",
+                    border: "1px solid rgba(0,0,0,0.10)",
+                  }}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => onChangeTo(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.90)",
+                    border: "1px solid rgba(0,0,0,0.10)",
+                  }}
+                />
+              </label>
+
+              <button
+                className="btn"
+                type="button"
+                onClick={clearFilters}
+                disabled={loading || !hasDateFilter}
+                title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
+                style={{ width: "100%", height: 44 }}
+              >
+                Effacer les dates
+              </button>
+            </div>
           </div>
 
           {error && <div className="marketplace-error">{error}</div>}
@@ -421,7 +417,7 @@ export default function TrainingsListPage() {
                             )}
                           </div>
 
-                          {/* Filets fins autour des postes */}
+                          {/* filets fins autour des postes */}
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
                           {postes.length > 0 && (
@@ -442,14 +438,14 @@ export default function TrainingsListPage() {
 
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
-                          {/* Sensations */}
+                          {/* sensations */}
                           <div style={{ display: "grid", gap: 10 }}>
                             <RatingBar icon={<Flame size={16} />} label="Motivation" value={s.motivation} />
                             <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={s.difficulty} />
                             <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={s.satisfaction} />
                           </div>
 
-                          {/* Actions */}
+                          {/* actions */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <Link className="btn" href={`/player/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
                               Voir
@@ -486,7 +482,12 @@ export default function TrainingsListPage() {
           {totalCount > 0 && (
             <div className="glass-section">
               <div className="marketplace-pagination">
-                <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={loading || page <= 1}
+                >
                   ← Précédent
                 </button>
 
@@ -494,7 +495,12 @@ export default function TrainingsListPage() {
                   Page {page} / {totalPages}
                 </div>
 
-                <button className="btn" type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={loading || page >= totalPages}>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={loading || page >= totalPages}
+                >
                   Suivant →
                 </button>
               </div>
