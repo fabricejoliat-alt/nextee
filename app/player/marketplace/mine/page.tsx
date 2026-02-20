@@ -49,9 +49,7 @@ export default function MarketplaceMine() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [userId, setUserId] = useState("");
   const [clubId, setClubId] = useState("");
-
   const [items, setItems] = useState<Item[]>([]);
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
 
@@ -80,7 +78,6 @@ export default function MarketplaceMine() {
     }
 
     const uid = userRes.user.id;
-    setUserId(uid);
 
     const memRes = await supabase
       .from("club_members")
@@ -132,6 +129,8 @@ export default function MarketplaceMine() {
           if (data?.publicUrl) map[r.item_id] = data.publicUrl;
         });
         setMainImageByItemId(map);
+      } else {
+        setMainImageByItemId({});
       }
     } else {
       setMainImageByItemId({});
@@ -163,7 +162,6 @@ export default function MarketplaceMine() {
 
   async function remove(itId: string) {
     if (!confirm("Supprimer cette annonce ?")) return;
-
     if (busy) return;
 
     setBusy(true);
@@ -177,126 +175,151 @@ export default function MarketplaceMine() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <h1 style={{ marginTop: 0, fontSize: 26, fontWeight: 900 }}>Mes annonces</h1>
-            <p style={{ color: "var(--muted)", marginTop: 6 }}>
-              Active/désactive, modifie ou supprime tes annonces.
-            </p>
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        {/* Header */}
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Mes annonces
+              </div>
+
+              <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
+                Active/désactive, modifie ou supprime tes annonces.
+              </div>
+            </div>
+
+            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              <Link className="cta-green cta-green-inline" href="/player/marketplace">
+                Toutes les annonces
+              </Link>
+              <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
+                Publier
+              </Link>
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link className="btn" href="/player/marketplace">
-              Toutes les annonces
-            </Link>
-            <Link className="btn" href="/player/marketplace/new">
-              Publier
-            </Link>
-          </div>
+          {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {error && <div style={{ marginTop: 12, color: "#a00" }}>{error}</div>}
-      </div>
+        {/* List */}
+        <div className="glass-section">
+          {loading ? (
+            <div className="glass-card">Chargement…</div>
+          ) : items.length === 0 ? (
+            <div className="glass-card marketplace-empty">Tu n’as pas encore d’annonce.</div>
+          ) : (
+            <div className="marketplace-list">
+              {items.map((it) => {
+                const img = mainImageByItemId[it.id] || placeholderSvg;
+                const meta = compactMeta(it);
 
-      <div className="card">
-        {loading ? (
-          <div>Chargement…</div>
-        ) : items.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>Tu n’as pas encore d’annonce.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {items.map((it) => {
-              const img = mainImageByItemId[it.id] || placeholderSvg;
-              const meta = compactMeta(it);
-
-              return (
-                <div
-                  key={it.id}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 14,
-                    padding: 12,
-                    display: "grid",
-                    gap: 10,
-                    opacity: it.is_active ? 1 : 0.75,
-                  }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12 }}>
-                    <div
-                      style={{
-                        width: 120,
-                        height: 90,
-                        borderRadius: 12,
-                        overflow: "hidden",
-                        border: "1px solid var(--border)",
-                        background: "white",
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={img} alt={it.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                        <div style={{ fontWeight: 900 }}>{it.title}</div>
-                        <div style={{ fontWeight: 900 }}>{priceLabel(it)}</div>
+                return (
+                  <div
+                    key={it.id}
+                    className="marketplace-item"
+                    style={{
+                      opacity: it.is_active ? 1 : 0.75,
+                    }}
+                  >
+                    <div className="marketplace-row">
+                      <div className="marketplace-thumb">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={img} alt={it.title} loading="lazy" />
                       </div>
 
-                      {meta && (
-                        <div style={{ color: "var(--muted)", fontSize: 13, fontWeight: 700 }}>
-                          {meta}
+                      <div className="marketplace-body">
+                        {/* Ligne 1 — Titre + badge actif */}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
+                          <div className="marketplace-item-title" style={{ paddingRight: 6 }}>
+                            {it.title}
+                          </div>
+
+                          {!it.is_active && (
+                            <div
+                              style={{
+                                padding: "5px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                                fontWeight: 900,
+                                background: "rgba(0,0,0,0.06)",
+                                color: "#2a2a2a",
+                                border: "1px solid rgba(0,0,0,0.08)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Inactif
+                            </div>
+                          )}
                         </div>
-                      )}
 
-                      {it.delivery && (
-                        <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                          Remise : {truncate(it.delivery, 70)}
+                        {/* Ligne 2 — variables */}
+                        {meta && <div className="marketplace-meta">{meta}</div>}
+
+                        {it.delivery && (
+                          <div className="marketplace-meta" style={{ fontWeight: 800 }}>
+                            Remise : {truncate(it.delivery, 70)}
+                          </div>
+                        )}
+
+                        {it.description && (
+                          <div className="marketplace-meta" style={{ fontWeight: 700 }}>
+                            {truncate(it.description, 120)}
+                          </div>
+                        )}
+
+                        {/* Ligne 3 — prix à droite */}
+                        <div className="marketplace-price-row">
+                          <div className="marketplace-price-pill">{priceLabel(it)}</div>
                         </div>
-                      )}
 
-                      {it.description && (
-                        <div style={{ color: "var(--muted)" }}>{truncate(it.description, 120)}</div>
-                      )}
+                        <div className="hr-soft" style={{ marginTop: 10, marginBottom: 10 }} />
 
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-                        {/* Toggle Actif/Inactif */}
-                        <label className={`toggle ${it.is_active ? "on" : ""}`}>
-                          <input
-                            type="checkbox"
-                            checked={it.is_active}
-                            onChange={() => toggleActive(it)}
-                            disabled={busy}
-                          />
-                          <span className="toggle-track">
-                            <span className="toggle-thumb" />
-                          </span>
-                          <span className="toggle-label">{it.is_active ? "Actif" : "Inactif"}</span>
-                        </label>
-
-                        <Link className="btn" href={`/player/marketplace/edit/${it.id}`}>
-                          Modifier
-                        </Link>
-
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => remove(it.id)}
-                          disabled={busy}
-                          type="button"
+                        {/* ✅ Actions alignées à droite */}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                          }}
                         >
-                          Supprimer
-                        </button>
+                          <label className={`toggle ${it.is_active ? "on" : ""}`}>
+                            <input
+                              type="checkbox"
+                              checked={it.is_active}
+                              onChange={() => toggleActive(it)}
+                              disabled={busy}
+                            />
+                            <span className="toggle-track">
+                              <span className="toggle-thumb" />
+                            </span>
+                            <span className="toggle-label">{it.is_active ? "Actif" : "Inactif"}</span>
+                          </label>
+
+                          <Link className="btn" href={`/player/marketplace/edit/${it.id}`}>
+                            Modifier
+                          </Link>
+
+                          <button
+                            className="btn btn-danger"
+                            onClick={() => remove(it.id)}
+                            disabled={busy}
+                            type="button"
+                          >
+                            Supprimer
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  <div style={{ color: "var(--muted)", fontSize: 12 }}>{clubId ? "Club OK" : "—"}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
