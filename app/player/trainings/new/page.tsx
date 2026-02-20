@@ -1,29 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-type ItemDraft = {
-  id: string; // local
-  category:
-    | "warmup_mobility"
-    | "long_game"
-    | "putting"
-    | "wedging"
-    | "pitching"
-    | "chipping"
-    | "bunker"
-    | "course"
-    | "mental"
-    | "fitness"
-    | "other";
-  minutes: number;
+type SessionType = "club" | "private" | "individual";
+
+type TrainingItemDraft = {
+  category: string; // enum value (snake_case)
+  minutes: string; // store as string for select
   note: string;
-  other_detail: string;
 };
 
-const categories: { value: ItemDraft["category"]; label: string }[] = [
+type ClubRow = { id: string; name: string | null };
+type ClubMemberRow = { club_id: string };
+
+// ✅ enum values from DB + nice labels
+const TRAINING_CATEGORIES: { value: string; label: string }[] = [
   { value: "warmup_mobility", label: "Échauffement / mobilité" },
   { value: "long_game", label: "Long jeu" },
   { value: "putting", label: "Putting" },
@@ -32,457 +26,544 @@ const categories: { value: ItemDraft["category"]; label: string }[] = [
   { value: "chipping", label: "Chipping" },
   { value: "bunker", label: "Bunker" },
   { value: "course", label: "Parcours" },
-  { value: "mental", label: "Préparation mentale" },
-  { value: "fitness", label: "Fitness / musculation" },
-  { value: "other", label: "Autre activité" },
+  { value: "mental", label: "Mental" },
+  { value: "fitness", label: "Fitness" },
+  { value: "other", label: "Autre" },
 ];
 
-function timeOptions15() {
-  const out: string[] = [];
-  for (let h = 0; h < 24; h++) {
-    for (let m = 0; m < 60; m += 15) {
-      out.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-    }
-  }
-  return out;
+function buildMinuteOptions() {
+  const opts: number[] = [];
+  for (let m = 5; m <= 120; m += 5) opts.push(m);
+  return opts;
 }
+const MINUTE_OPTIONS = buildMinuteOptions();
 
-function minutesOptions5(max = 240) {
-  const out: number[] = [];
-  for (let m = 5; m <= max; m += 5) out.push(m);
-  return out;
-}
-
-function initialDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function uuidOrNull(v: any) {
-  const s = String(v ?? "").trim();
-  if (!s || s === "undefined" || s === "null") return null;
-  return s;
-}
-
-export default function TrainingNewPage() {
+export default function PlayerTrainingNewPage() {
   const router = useRouter();
 
-  const [initLoading, setInitLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const times = useMemo(() => timeOptions15(), []);
+  const [userId, setUserId] = useState("");
 
-  const [clubs, setClubs] = useState<{ id: string; name: string }[]>([]);
-  const [coaches, setCoaches] = useState<{ id: string; label: string }[]>([]);
+  // clubs
+  const [clubIds, setClubIds] = useState<string[]>([]);
+  const [clubsById, setClubsById] = useState<Record<string, ClubRow>>({});
+  const [clubIdForTraining, setClubIdForTraining] = useState<string>("");
 
-  const [date, setDate] = useState<string>(initialDate());
-  const [time, setTime] = useState<string>("16:00");
+  // fields
+  const [startAt, setStartAt] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+      d.getMinutes()
+    )}`;
+  });
 
-  const [location, setLocation] = useState("");
-  const [sessionType, setSessionType] = useState<"club" | "private" | "individual">("individual");
+  const [place, setPlace] = useState<string>("");
+  const [sessionType, setSessionType] = useState<SessionType>("club");
 
-  const [clubId, setClubId] = useState<string>("");
-  const [coachUserId, setCoachUserId] = useState<string>("");
   const [coachName, setCoachName] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
 
-  const [motivation, setMotivation] = useState<number | "">("");
-  const [difficulty, setDifficulty] = useState<number | "">("");
-  const [satisfaction, setSatisfaction] = useState<number | "">("");
-  const [notes, setNotes] = useState("");
+  // sensations 1..6 (DB checks)
+  const [motivation, setMotivation] = useState<string>("");
+  const [difficulty, setDifficulty] = useState<string>("");
+  const [satisfaction, setSatisfaction] = useState<string>("");
 
-  const [items, setItems] = useState<ItemDraft[]>([
-    { id: crypto.randomUUID(), category: "warmup_mobility", minutes: 10, note: "", other_detail: "" },
-  ]);
+  // items
+  const [items, setItems] = useState<TrainingItemDraft[]>([]);
 
-  const totalMinutes = useMemo(
-    () => items.reduce((sum, it) => sum + (it.minutes || 0), 0),
-    [items]
-  );
+  const totalMinutes = useMemo(() => {
+    return items.reduce((sum, it) => {
+      const v = Number(it.minutes);
+      return sum + (Number.isFinite(v) && v > 0 ? v : 0);
+    }, 0);
+  }, [items]);
 
-  async function loadClubs(uid: string) {
-    const memRes = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", uid)
-      .eq("is_active", true);
+  const canSave = useMemo(() => {
+    if (busy) return false;
+    if (!userId) return false;
+    if (!startAt) return false;
 
-    if (memRes.error) throw new Error(memRes.error.message);
+    if (sessionType === "club" && !clubIdForTraining) return false;
 
-    const clubIds = (memRes.data ?? []).map((m: any) => m.club_id).filter(Boolean);
+    const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
+    if (!hasValidLine) return false;
 
-    if (clubIds.length === 0) {
-      setClubs([]);
-      setClubId("");
-      return;
+    for (const it of items) {
+      if (!it.category) return false;
+      if (!it.minutes.trim()) return false;
+      const v = Number(it.minutes);
+      if (!Number.isFinite(v) || v <= 0 || v > 120) return false;
+      if (v % 5 !== 0) return false;
     }
 
-    const clubsRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
-    if (clubsRes.error) throw new Error(clubsRes.error.message);
-
-    const mapped = (clubsRes.data ?? [])
-      .map((c: any) => ({ id: c.id as string, name: (c.name ?? "Club") as string }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    setClubs(mapped);
-    setClubId((prev) => (prev && prev !== "undefined" ? prev : mapped[0]?.id || ""));
-  }
-
-  async function loadCoachesForClub(clubIdToLoad: string) {
-    if (!clubIdToLoad) {
-      setCoaches([]);
-      setCoachUserId("");
-      return;
-    }
-
-    const cmRes = await supabase
-      .from("club_members")
-      .select("user_id")
-      .eq("club_id", clubIdToLoad)
-      .eq("role", "coach")
-      .eq("is_active", true);
-
-    if (cmRes.error) {
-      setCoaches([]);
-      setCoachUserId("");
-      return;
-    }
-
-    const coachIds = (cmRes.data ?? []).map((r: any) => r.user_id).filter(Boolean);
-
-    if (coachIds.length === 0) {
-      setCoaches([]);
-      setCoachUserId("");
-      return;
-    }
-
-    const profRes = await supabase
-      .from("profiles")
-      .select("id,first_name,last_name")
-      .in("id", coachIds);
-
-    const labelById: Record<string, string> = {};
-    if (!profRes.error) {
-      (profRes.data ?? []).forEach((p: any) => {
-        const f = (p.first_name ?? "").trim();
-        const l = (p.last_name ?? "").trim();
-        labelById[p.id] = !f && !l ? String(p.id).slice(0, 8) : `${f} ${l ? l[0] + "." : ""}`.trim();
-      });
-    }
-
-    const mapped = coachIds
-      .map((id: string) => ({ id, label: labelById[id] ?? id.slice(0, 8) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-
-    setCoaches(mapped);
-
-    // ⚠️ IMPORTANT: ne pas laisser "undefined"
-    setCoachUserId((prev) => {
-      const p = String(prev ?? "").trim();
-      if (p && p !== "undefined" && mapped.some((x) => x.id === p)) return p;
-      return mapped[0]?.id || "";
-    });
-  }
-
-  async function init() {
-    setInitLoading(true);
-    setError(null);
-    try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("Session invalide.");
-      await loadClubs(userRes.user.id);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
-    } finally {
-      setInitLoading(false);
-    }
-  }
+    return true;
+  }, [busy, userId, startAt, sessionType, clubIdForTraining, items]);
 
   useEffect(() => {
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    (async () => {
+      setLoading(true);
+      setError(null);
 
-  useEffect(() => {
-    if (sessionType === "club") loadCoachesForClub(clubId);
-    else {
-      setCoaches([]);
-      setCoachUserId("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionType, clubId]);
-
-  function setItem(id: string, patch: Partial<ItemDraft>) {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-  }
-
-  function addItem() {
-    setItems((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), category: "long_game", minutes: 10, note: "", other_detail: "" },
-    ]);
-  }
-
-  function removeItem(id: string) {
-    setItems((prev) => prev.filter((it) => it.id !== id));
-  }
-
-  async function onSave() {
-    setSaving(true);
-    setError(null);
-
-    try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("Session invalide.");
-      const uid = userRes.user.id;
-
-      if (items.length === 0) throw new Error("Ajoute au moins un exercice.");
-
-      for (const it of items) {
-        if (!it.minutes || it.minutes % 5 !== 0) throw new Error("La durée d’un poste doit être un multiple de 5 minutes.");
-        if (it.category === "other" && !it.other_detail.trim()) throw new Error("Pour 'Autre activité', merci de renseigner le détail.");
+      if (userErr || !userRes.user) {
+        setError("Session invalide. Reconnecte-toi.");
+        setLoading(false);
+        return;
       }
 
-      const startAt = new Date(`${date}T${time}:00`);
-      if (Number.isNaN(startAt.getTime())) throw new Error("Date/heure invalide.");
+      const uid = userRes.user.id;
+      setUserId(uid);
 
-      if (sessionType === "club" && !uuidOrNull(clubId)) throw new Error("Merci de sélectionner un club.");
+      const memRes = await supabase
+        .from("club_members")
+        .select("club_id")
+        .eq("user_id", uid)
+        .eq("is_active", true);
 
-      const insSession = await supabase
-        .from("training_sessions")
-        .insert({
-          user_id: uid,
-          start_at: startAt.toISOString(),
-          location_text: location.trim() || null,
-          session_type: sessionType,
-          club_id: sessionType === "club" ? uuidOrNull(clubId) : null,
-          coach_user_id: sessionType === "club" ? uuidOrNull(coachUserId) : null,
-          coach_name: sessionType === "club" ? null : (coachName.trim() || null),
-          motivation: motivation === "" ? null : motivation,
-          difficulty: difficulty === "" ? null : difficulty,
-          satisfaction: satisfaction === "" ? null : satisfaction,
-          notes: notes.trim() || null,
-          total_minutes: totalMinutes,
-        })
-        .select("id")
-        .single();
+      if (memRes.error) {
+        setError(memRes.error.message);
+        setLoading(false);
+        return;
+      }
 
-      if (insSession.error) throw new Error(insSession.error.message);
+      const ids = Array.from(new Set((memRes.data ?? []).map((r: ClubMemberRow) => r.club_id))).filter(Boolean);
+      setClubIds(ids);
 
-      const createdId = insSession.data.id as string;
+      if (ids.length > 0) {
+        const clubsRes = await supabase.from("clubs").select("id,name").in("id", ids);
+        if (clubsRes.error) {
+          setError(clubsRes.error.message);
+          setLoading(false);
+          return;
+        }
 
-      const insItems = await supabase.from("training_session_items").insert(
-        items.map((it) => ({
-          session_id: createdId,
-          category: it.category,
-          minutes: it.minutes,
-          note: it.note.trim() || null,
-          other_detail: it.category === "other" ? (it.other_detail.trim() || null) : null,
-        }))
-      );
+        const map: Record<string, ClubRow> = {};
+        for (const c of clubsRes.data ?? []) map[c.id] = c as ClubRow;
+        setClubsById(map);
 
-      if (insItems.error) throw new Error(insItems.error.message);
+        setClubIdForTraining(ids[0]);
+      } else {
+        setClubIdForTraining("");
+      }
 
-      router.push(`/player/trainings/${createdId}`);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur enregistrement.");
-    } finally {
-      setSaving(false);
+      setLoading(false);
+    })();
+  }, []);
+
+  function addLine() {
+    setItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
+  }
+
+  function removeLine(idx: number) {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateLine(idx: number, patch: Partial<TrainingItemDraft>) {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  }
+
+  function setType(next: SessionType) {
+    setSessionType(next);
+    if (next === "club" && !clubIdForTraining && clubIds.length > 0) {
+      setClubIdForTraining(clubIds[0]);
     }
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSave) return;
+
+    setBusy(true);
+    setError(null);
+
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) {
+      setError("Date/heure invalide.");
+      setBusy(false);
+      return;
+    }
+
+    const mot = motivation ? Number(motivation) : null;
+    const dif = difficulty ? Number(difficulty) : null;
+    const sat = satisfaction ? Number(satisfaction) : null;
+
+    const club_id = sessionType === "club" ? clubIdForTraining : null;
+
+    // 1) session (✅ correct columns)
+    const insertSession = await supabase
+      .from("training_sessions")
+      .insert({
+        user_id: userId,
+        start_at: dt.toISOString(),
+        location_text: place.trim() || null,
+        session_type: sessionType,
+        club_id,
+        coach_name: coachName.trim() || null,
+        motivation: mot,
+        difficulty: dif,
+        satisfaction: sat,
+        notes: notes.trim() || null,
+        total_minutes: totalMinutes,
+      })
+      .select("id")
+      .single();
+
+    if (insertSession.error) {
+      setError(insertSession.error.message);
+      setBusy(false);
+      return;
+    }
+
+    const sessionId = insertSession.data.id as string;
+
+    // 2) items (✅ correct table + enum values)
+    const payload = items.map((it) => ({
+      session_id: sessionId,
+      category: it.category, // must be enum value
+      minutes: Number(it.minutes),
+      note: it.note.trim() || null,
+    }));
+
+    const insertItems = await supabase.from("training_session_items").insert(payload);
+
+    if (insertItems.error) {
+      setError(insertItems.error.message);
+      setBusy(false);
+      return;
+    }
+
+    router.push("/player/trainings");
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>Ajouter un entraînement</div>
-        <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>Total : {totalMinutes} min</div>
-      </div>
-
-      {initLoading ? (
-        <div style={{ color: "var(--muted)" }}>Chargement…</div>
-      ) : (
-        <>
-          <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 6 }}>
-              <label>Date</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <label>Heure (par 15 minutes)</label>
-              <select value={time} onChange={(e) => setTime(e.target.value)}>
-                {times.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <label>Lieu</label>
-              <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ex: Practice, Golf de..." />
-            </div>
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <label>Type</label>
-              <select value={sessionType} onChange={(e) => setSessionType(e.target.value as any)}>
-                <option value="club">Club</option>
-                <option value="private">Privé</option>
-                <option value="individual">Individuel</option>
-              </select>
-            </div>
-
-            {sessionType === "club" && (
-              <>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label>Club</label>
-                  <select value={clubId || ""} onChange={(e) => setClubId(e.target.value || "")}>
-                    <option value="">—</option>
-                    {clubs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label>Coach principal</label>
-                  <select value={coachUserId || ""} onChange={(e) => setCoachUserId(e.target.value || "")}>
-                    <option value="">—</option>
-                    {coaches.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            {sessionType !== "club" && (
-              <div style={{ display: "grid", gap: 6 }}>
-                <label>Coach principal (champ libre)</label>
-                <input value={coachName} onChange={(e) => setCoachName(e.target.value)} placeholder="Nom du coach (optionnel)" />
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        {/* Header */}
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Ajouter un entraînement
               </div>
-            )}
+            </div>
+
+            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              <Link className="cta-green cta-green-inline" href="/player/trainings">
+                Retour
+              </Link>
+              <Link className="cta-green cta-green-inline" href="/player/trainings">
+                Mes entraînements
+              </Link>
+            </div>
           </div>
 
-          <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div style={{ fontWeight: 900 }}>Détail de l’entraînement</div>
-              <button className="btn" onClick={addItem}>
-                Ajouter un poste
-              </button>
-            </div>
+          {error && <div className="marketplace-error">{error}</div>}
 
-            <div style={{ display: "grid", gap: 10 }}>
-              {items.map((it) => (
-                <div key={it.id} style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
+          {sessionType === "club" && clubIds.length === 0 && !loading && (
+            <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
+              ⚠️ Ton compte n’est lié à aucun club actif : impossible d’enregistrer un entraînement “Club”.
+            </div>
+          )}
+        </div>
+
+        {/* Form */}
+        <div className="glass-section">
+          <div className="glass-card">
+            {loading ? (
+              <div>Chargement…</div>
+            ) : (
+              <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+                <div className="grid-2">
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Date & heure</span>
+                    <input
+                      type="datetime-local"
+                      value={startAt}
+                      onChange={(e) => setStartAt(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+
                   <div style={{ display: "grid", gap: 6 }}>
-                    <label>Exercice</label>
-                    <select value={it.category} onChange={(e) => setItem(it.id, { category: e.target.value as any })}>
-                      {categories.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                    <span style={fieldLabelStyle}>Total</span>
+                    <div
+                      style={{
+                        height: 42,
+                        borderRadius: 10,
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        background: "rgba(255,255,255,0.65)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "0 12px",
+                        fontWeight: 950,
+                        color: "rgba(0,0,0,0.78)",
+                      }}
+                    >
+                      <span>{totalMinutes}</span>
+                      <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min</span>
+                    </div>
+                  </div>
+                </div>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                  <input
+                    value={place}
+                    onChange={(e) => setPlace(e.target.value)}
+                    disabled={busy}
+                    placeholder="Ex: Practice / Putting green / Parcours"
+                  />
+                </label>
+
+                <div className="hr-soft" />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={fieldLabelStyle}>Type d’entraînement</div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <label style={{ ...chipRadioStyle, ...(sessionType === "club" ? chipRadioActive : {}) }}>
+                      <input type="radio" checked={sessionType === "club"} onChange={() => setType("club")} disabled={busy} />
+                      <span>Entraînement Club</span>
+                    </label>
+
+                    <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}) }}>
+                      <input
+                        type="radio"
+                        checked={sessionType === "private"}
+                        onChange={() => setType("private")}
+                        disabled={busy}
+                      />
+                      <span>Cours privé</span>
+                    </label>
+
+                    <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}) }}>
+                      <input
+                        type="radio"
+                        checked={sessionType === "individual"}
+                        onChange={() => setType("individual")}
+                        disabled={busy}
+                      />
+                      <span>Entraînement individuel</span>
+                    </label>
                   </div>
 
-                  {it.category === "other" && (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label>Détail (obligatoire)</label>
-                      <input value={it.other_detail} onChange={(e) => setItem(it.id, { other_detail: e.target.value })} placeholder="Ex: tennis, natation…" />
+                  {sessionType === "club" && (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Club</span>
+                      <select
+                        value={clubIdForTraining}
+                        onChange={(e) => setClubIdForTraining(e.target.value)}
+                        disabled={busy || clubIds.length === 0}
+                      >
+                        <option value="">-</option>
+                        {clubIds.map((id) => (
+                          <option key={id} value={id}>
+                            {clubsById[id]?.name ?? id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Coach (optionnel)</span>
+                    <input
+                      value={coachName}
+                      onChange={(e) => setCoachName(e.target.value)}
+                      disabled={busy}
+                      placeholder="Ex: Prénom Nom"
+                    />
+                  </label>
+                </div>
+
+                <div className="hr-soft" />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={fieldLabelStyle}>Structure de l&apos;entraînement</div>
+
+                  {items.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      Ajoute un poste pour structurer ton entraînement.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {items.map((it, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 14,
+                            background: "rgba(255,255,255,0.65)",
+                            padding: 12,
+                            display: "grid",
+                            gap: 10,
+                          }}
+                        >
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Poste</span>
+                              <select
+                                value={it.category}
+                                onChange={(e) => updateLine(idx, { category: e.target.value })}
+                                disabled={busy}
+                              >
+                                <option value="">-</option>
+                                {TRAINING_CATEGORIES.map((c) => (
+                                  <option key={c.value} value={c.value}>
+                                    {c.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Durée</span>
+                              <select
+                                value={it.minutes}
+                                onChange={(e) => updateLine(idx, { minutes: e.target.value })}
+                                disabled={busy}
+                              >
+                                <option value="">-</option>
+                                {MINUTE_OPTIONS.map((m) => (
+                                  <option key={m} value={String(m)}>
+                                    {m} min
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Note (optionnel)</span>
+                            <input
+                              value={it.note}
+                              onChange={(e) => updateLine(idx, { note: e.target.value })}
+                              disabled={busy}
+                              placeholder="Ex: focus wedging 60–80m"
+                            />
+                          </label>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                            <div className="pill-soft">Poste {idx + 1}</div>
+
+                            <button type="button" className="btn btn-danger soft" onClick={() => removeLine(idx)} disabled={busy}>
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <label>Durée (pas de 5 min)</label>
-                    <select value={it.minutes} onChange={(e) => setItem(it.id, { minutes: Number(e.target.value) })}>
-                      {minutesOptions5(240).map((m) => (
-                        <option key={m} value={m}>
-                          {m} min
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="button" className="btn" onClick={addLine} disabled={busy}>
+                      + Ajouter un poste
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hr-soft" />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Motivation avant l&apos;entraînement</span>
+                    <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={busy}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </label>
 
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <label>Note (optionnel)</label>
-                    <input value={it.note} onChange={(e) => setItem(it.id, { note: e.target.value })} placeholder="Ex: objectif atteint, bon rythme…" />
-                  </div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Difficulté de l&apos;entraînement</span>
+                    <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={busy}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>Poste : {it.minutes} min</div>
-                    {items.length > 1 && (
-                      <button className="btn btn-danger" onClick={() => removeItem(it.id)}>
-                        Supprimer
-                      </button>
-                    )}
-                  </div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Satisfaction après l&apos;entraînement</span>
+                    <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={busy}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-              ))}
-            </div>
+
+                <div className="hr-soft" />
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    disabled={busy}
+                    placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                    style={{ minHeight: 110 }}
+                  />
+                </label>
+
+                <button
+                  className="btn"
+                  type="submit"
+                  disabled={!canSave || busy}
+                  style={{
+                    width: "100%",
+                    background: "var(--green-dark)",
+                    borderColor: "var(--green-dark)",
+                    color: "#fff",
+                  }}
+                >
+                  {busy ? "Enregistrement…" : "Enregistrer"}
+                </button>
+              </form>
+            )}
           </div>
-
-          <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ fontWeight: 900 }}>Sensations</div>
-
-            <Scale label="Motivation avant l’entraînement" left="Pas motivé" right="Très motivé" value={motivation} onChange={setMotivation} />
-            <Scale label="Difficulté de l’entraînement" left="Facile" right="Très dur" value={difficulty} onChange={setDifficulty} />
-            <Scale label="Satisfaction de l’entraînement" left="Déçu" right="Très satisfait" value={satisfaction} onChange={setSatisfaction} />
-          </div>
-
-          <div className="card" style={{ padding: 16, display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 900 }}>Remarques</div>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Optionnel" />
-          </div>
-
-          {error && <div style={{ color: "#a00" }}>{error}</div>}
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" onClick={() => router.push("/player/trainings")}>
-              Annuler
-            </button>
-            <button className="btn" disabled={saving} onClick={onSave}>
-              {saving ? "Enregistrement…" : "Enregistrer"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function Scale({
-  label,
-  left,
-  right,
-  value,
-  onChange,
-}: {
-  label: string;
-  left: string;
-  right: string;
-  value: number | "";
-  onChange: (v: number | "") => void;
-}) {
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontWeight: 800 }}>{label}</div>
-      <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)", fontWeight: 700, fontSize: 12 }}>
-        <span>{left}</span>
-        <span>{right}</span>
+        </div>
       </div>
-      <select value={value === "" ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}>
-        <option value="">—</option>
-        {[1, 2, 3, 4, 5, 6].map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "rgba(0,0,0,0.70)",
+};
+
+const chipRadioStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 999,
+  padding: "8px 12px",
+  background: "rgba(255,255,255,0.70)",
+  fontWeight: 900,
+  fontSize: 13,
+  color: "rgba(0,0,0,0.78)",
+  cursor: "pointer",
+  userSelect: "none",
+};
+
+const chipRadioActive: React.CSSProperties = {
+  borderColor: "rgba(53,72,59,0.35)",
+  background: "rgba(53,72,59,0.10)",
+};
