@@ -2,16 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { Flame, Mountain, Smile } from "lucide-react";
 
-type SessionRow = {
+type SessionType = "club" | "private" | "individual";
+
+type SessionDbRow = {
   id: string;
+  user_id: string;
   start_at: string;
   location_text: string | null;
-  session_type: "club" | "private" | "individual";
+  session_type: SessionType;
   club_id: string | null;
-  coach_user_id: string | null;
   coach_name: string | null;
   motivation: number | null;
   difficulty: number | null;
@@ -21,61 +24,16 @@ type SessionRow = {
   created_at: string;
 };
 
-type ItemRow = {
-  id: string;
-  category:
-    | "warmup_mobility"
-    | "long_game"
-    | "putting"
-    | "wedging"
-    | "pitching"
-    | "chipping"
-    | "bunker"
-    | "course"
-    | "mental"
-    | "fitness"
-    | "other";
+type ItemDbRow = {
+  session_id: string;
+  category: string;
   minutes: number;
   note: string | null;
-  other_detail: string | null;
-  created_at: string;
+  other_detail?: string | null;
+  created_at?: string;
 };
 
-const CAT_LABEL: Record<ItemRow["category"], string> = {
-  warmup_mobility: "Échauffement / mobilité",
-  long_game: "Long jeu",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Préparation mentale",
-  fitness: "Fitness / musculation",
-  other: "Autre activité",
-};
-
-function uuidOrNull(v: any) {
-  const s = String(v ?? "").trim();
-  if (!s || s === "undefined" || s === "null") return null;
-  return s;
-}
-
-function getParamString(p: any): string | null {
-  if (typeof p === "string") return p;
-  if (Array.isArray(p) && typeof p[0] === "string") return p[0];
-  return null;
-}
-
-function getIdFromPathname(pathname: string): string | null {
-  // ex: /player/trainings/<id>
-  const parts = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
-  const last = parts[parts.length - 1];
-  if (!last) return null;
-  // évite de prendre "trainings" ou "edit"
-  if (last === "trainings" || last === "edit" || last === "new") return null;
-  return last;
-}
+type ClubRow = { id: string; name: string | null };
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -89,263 +47,285 @@ function fmtDateTime(iso: string) {
   }).format(d);
 }
 
-function typeLabel(t: SessionRow["session_type"]) {
-  if (t === "club") return "Entraînement en club";
+function typeLabel(t: SessionType) {
+  if (t === "club") return "Entraînement Club";
   if (t === "private") return "Cours privé";
   return "Entraînement individuel";
 }
 
-export default function TrainingDetailPage() {
-  const params = useParams();
-  const pathname = usePathname();
-  const router = useRouter();
+function categoryLabel(cat: string) {
+  const map: Record<string, string> = {
+    warmup_mobility: "Échauffement / mobilité",
+    long_game: "Long jeu",
+    putting: "Putting",
+    wedging: "Wedging",
+    pitching: "Pitching",
+    chipping: "Chipping",
+    bunker: "Bunker",
+    course: "Parcours",
+    mental: "Mental",
+    fitness: "Fitness",
+    other: "Autre",
+  };
+  return map[cat] ?? cat;
+}
 
-  // ✅ sessionId robuste : params OU URL
-  const sessionId = useMemo(() => {
-    const fromParams = uuidOrNull(getParamString((params as any)?.sessionId));
-    if (fromParams) return fromParams;
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
 
-    const fromUrl = uuidOrNull(getIdFromPathname(pathname));
-    return fromUrl;
-  }, [params, pathname]);
+const MAX_SCORE = 6;
 
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [session, setSession] = useState<SessionRow | null>(null);
-  const [items, setItems] = useState<ItemRow[]>([]);
-
-  const [clubName, setClubName] = useState<string | null>(null);
-  const [coachLabel, setCoachLabel] = useState<string | null>(null);
-
-  const totalMinutes = useMemo(() => {
-    if (typeof session?.total_minutes === "number") return session.total_minutes;
-    return items.reduce((sum, it) => sum + (it.minutes || 0), 0);
-  }, [session, items]);
-
-  const breakdown = useMemo(() => {
-    const byCat: Record<string, number> = {};
-    for (const it of items) byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
-    return Object.entries(byCat)
-      .map(([cat, minutes]) => ({
-        cat: cat as ItemRow["category"],
-        label: CAT_LABEL[cat as ItemRow["category"]] ?? cat,
-        minutes,
-      }))
-      .sort((a, b) => b.minutes - a.minutes);
-  }, [items]);
-
-  async function load(id: string) {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const sRes = await supabase
-        .from("training_sessions")
-        .select(
-          "id,start_at,location_text,session_type,club_id,coach_user_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes,created_at"
-        )
-        .eq("id", id)
-        .maybeSingle();
-
-      if (sRes.error) throw new Error(sRes.error.message);
-      if (!sRes.data) throw new Error("Entraînement introuvable.");
-
-      const s = sRes.data as SessionRow;
-      setSession(s);
-
-      const iRes = await supabase
-        .from("training_session_items")
-        .select("id,category,minutes,note,other_detail,created_at")
-        .eq("session_id", id)
-        .order("created_at", { ascending: true });
-
-      if (iRes.error) throw new Error(iRes.error.message);
-      setItems((iRes.data ?? []) as ItemRow[]);
-
-      // club name
-      if (s.session_type === "club" && uuidOrNull(s.club_id)) {
-        const cRes = await supabase.from("clubs").select("id,name").eq("id", s.club_id as string).maybeSingle();
-        setClubName(!cRes.error && cRes.data ? (cRes.data.name ?? "Club") : "Club");
-      } else {
-        setClubName(null);
-      }
-
-      // coach label
-      if (s.session_type === "club" && uuidOrNull(s.coach_user_id)) {
-        const pRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name")
-          .eq("id", s.coach_user_id as string)
-          .maybeSingle();
-
-        if (!pRes.error && pRes.data) {
-          const f = (pRes.data.first_name ?? "").trim();
-          const l = (pRes.data.last_name ?? "").trim();
-          setCoachLabel(!f && !l ? "Coach" : `${f} ${l ? l[0] + "." : ""}`.trim());
-        } else {
-          setCoachLabel("Coach");
-        }
-      } else {
-        setCoachLabel(s.coach_name ? s.coach_name : null);
-      }
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
-      setSession(null);
-      setItems([]);
-      setClubName(null);
-      setCoachLabel(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ✅ Ne pas rester en "Chargement…" si id absent
-  useEffect(() => {
-    if (!sessionId) {
-      setLoading(false);
-      setError("Identifiant d’entraînement introuvable dans l’URL.");
-      return;
-    }
-    load(sessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  async function handleDelete() {
-    if (!sessionId) return;
-    if (!confirm("Supprimer cet entraînement ?")) return;
-
-    setDeleting(true);
-    setError(null);
-
-    try {
-      const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
-      if (delItems.error) throw new Error(delItems.error.message);
-
-      const delSession = await supabase.from("training_sessions").delete().eq("id", sessionId);
-      if (delSession.error) throw new Error(delSession.error.message);
-
-      router.push("/player/trainings");
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur suppression.");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
-
-  if (!session) {
-    return (
-      <div style={{ display: "grid", gap: 12 }}>
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 900 }}>Entraînement</div>
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            {error ?? "Impossible d’afficher cet entraînement."}
-          </div>
-        </div>
-        <Link className="btn" href="/player/trainings">
-          Retour
-        </Link>
-      </div>
-    );
-  }
+function RatingBar({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | null;
+}) {
+  const v = typeof value === "number" ? value : 0;
+  const pct = clamp((v / MAX_SCORE) * 100, 0, 100);
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="card" style={{ padding: 16, display: "grid", gap: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "grid", gap: 4 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>{typeLabel(session.session_type)}</div>
-            <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 13 }}>
-              {fmtDateTime(session.start_at)} • {totalMinutes} min
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ display: "inline-flex" }}>{icon}</span>
+          <span style={{ fontWeight: 950, fontSize: 12, color: "rgba(0,0,0,0.65)" }}>{label}</span>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
+      </div>
+
+      {/* ✅ bar verte (dégradé) = classe .bar du globals.css */}
+      <div className="bar">
+        <span style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export default function PlayerTrainingDetailPage() {
+  const router = useRouter();
+  const params = useParams<{ sessionId: string }>();
+  const sessionId = String(params?.sessionId ?? "").trim();
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [session, setSession] = useState<SessionDbRow | null>(null);
+  const [items, setItems] = useState<ItemDbRow[]>([]);
+  const [clubName, setClubName] = useState<string>("");
+
+  const totalMinutes = useMemo(() => {
+    if (session?.total_minutes != null) return session.total_minutes;
+    return items.reduce((sum, it) => sum + (it.minutes || 0), 0);
+  }, [session?.total_minutes, items]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        if (!sessionId) throw new Error("ID entraînement manquant.");
+
+        const { data: userRes, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
+        const uid = userRes.user.id;
+
+        const sRes = await supabase
+          .from("training_sessions")
+          .select(
+            "id,user_id,start_at,location_text,session_type,club_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes,created_at"
+          )
+          .eq("id", sessionId)
+          .maybeSingle();
+
+        if (sRes.error) throw new Error(sRes.error.message);
+
+        const s = (sRes.data ?? null) as SessionDbRow | null;
+        if (!s) throw new Error("Entraînement introuvable.");
+
+        // protection soft UI
+        if (s.user_id !== uid) throw new Error("Tu n’as pas l’autorisation de voir cet entraînement.");
+
+        setSession(s);
+
+        const itRes = await supabase
+          .from("training_session_items")
+          .select("session_id,category,minutes,note,other_detail,created_at")
+          .eq("session_id", sessionId)
+          .order("created_at", { ascending: true });
+
+        if (itRes.error) throw new Error(itRes.error.message);
+
+        setItems((itRes.data ?? []) as ItemDbRow[]);
+
+        // club name if needed
+        if (s.session_type === "club" && s.club_id) {
+          const cRes = await supabase.from("clubs").select("id,name").eq("id", s.club_id).maybeSingle();
+          if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
+          else setClubName("Club");
+        } else {
+          setClubName("");
+        }
+
+        setLoading(false);
+      } catch (e: any) {
+        setError(e?.message ?? "Erreur chargement.");
+        setSession(null);
+        setItems([]);
+        setClubName("");
+        setLoading(false);
+      }
+    })();
+  }, [sessionId]);
+
+  return (
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        {/* Header */}
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Détail entraînement
+              </div>
+            </div>
+
+            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              <Link className="cta-green cta-green-inline" href="/player/trainings">
+                Retour
+              </Link>
+
+              <Link
+                className="cta-green cta-green-inline"
+                href={sessionId ? `/player/trainings/${sessionId}/edit` : "/player/trainings"}
+              >
+                Modifier
+              </Link>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link className="btn" href={`/player/trainings/${session.id}/edit`}>
-              Modifier
-            </Link>
-            <button className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Suppression…" : "Supprimer"}
-            </button>
-          </div>
+          {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {session.location_text && <div style={{ fontWeight: 700 }}>📍 {session.location_text}</div>}
-
-        {(clubName || coachLabel) && (
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            {clubName ? <>Club : {clubName}</> : null}
-            {clubName && coachLabel ? " • " : null}
-            {coachLabel ? <>Coach : {coachLabel}</> : null}
-          </div>
-        )}
-
-        {error && <div style={{ marginTop: 6, color: "#a00" }}>{error}</div>}
-      </div>
-
-      <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
-        <div style={{ fontWeight: 900 }}>Détail</div>
-
-        {items.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>Aucun poste enregistré.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {items.map((it) => (
-              <div key={it.id} style={{ border: "1px solid #e8e8e8", borderRadius: 14, padding: 12, display: "grid", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ fontWeight: 900 }}>
-                    {it.category === "other" ? "Autre activité" : CAT_LABEL[it.category]}
-                    {it.category === "other" && it.other_detail ? ` — ${it.other_detail}` : ""}
+        {/* Content */}
+        <div className="glass-section">
+          <div className="glass-card">
+            {loading ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            ) : !session ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 14 }}>
+                {/* Top line: date + total */}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                  <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
+                    {fmtDateTime(session.start_at)}
                   </div>
-                  <div style={{ fontWeight: 900 }}>{it.minutes} min</div>
+                  <div className="marketplace-price-pill">{totalMinutes > 0 ? `${totalMinutes} min` : "—"}</div>
                 </div>
 
-                {it.note && <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>{it.note}</div>}
+                {/* Type + club + location */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {session.session_type === "club" ? (
+                    <span className="pill-soft">{clubName || "Club"}</span>
+                  ) : (
+                    <span className="pill-soft">{typeLabel(session.session_type)}</span>
+                  )}
+
+                  {session.location_text && (
+                    <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
+                      📍 {session.location_text}
+                    </span>
+                  )}
+                </div>
+
+                {/* Coach */}
+                {session.coach_name && (
+                  <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
+                    👤 Coach : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{session.coach_name}</span>
+                  </div>
+                )}
+
+                {/* Postes */}
+                {items.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
+
+                {items.length > 0 ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Postes</div>
+
+                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                      {items.map((it, i) => {
+                        const extra = String(it.note ?? it.other_detail ?? "").trim();
+                        return (
+                          <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {categoryLabel(it.category)} — {it.minutes} min
+                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun poste enregistré.
+                  </div>
+                )}
+
+                {items.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
+
+                {/* Sensations */}
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Sensations</div>
+
+                  <RatingBar icon={<Flame size={16} />} label="Motivation" value={session.motivation} />
+                  <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={session.difficulty} />
+                  <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={session.satisfaction} />
+                </div>
+
+                {/* Notes */}
+                {session.notes && (
+                  <>
+                    <div className="hr-soft" style={{ margin: "2px 0" }} />
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Remarques</div>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 14,
+                          background: "rgba(255,255,255,0.65)",
+                          padding: 12,
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: "rgba(0,0,0,0.72)",
+                          lineHeight: 1.4,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {session.notes}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Actions bottom (optionnel, pratique sur mobile) */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" className="btn" onClick={() => router.push("/player/trainings")}>
+                    Retour liste
+                  </button>
+
+                  <Link className="btn" href={`/player/trainings/${sessionId}/edit`}>
+                    Modifier
+                  </Link>
+                </div>
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-
-      <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
-        <div style={{ fontWeight: 900 }}>Répartition</div>
-        {breakdown.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>—</div>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {breakdown.map((b) => (
-              <div key={b.cat} style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>{b.label}</div>
-                <div style={{ fontWeight: 900 }}>{b.minutes} min</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
-        <div style={{ fontWeight: 900 }}>Sensations</div>
-        <div style={{ color: "var(--muted)", fontWeight: 800, fontSize: 13, display: "grid", gap: 6 }}>
-          <div>Motivation : {session.motivation ?? "—"} / 6</div>
-          <div>Difficulté : {session.difficulty ?? "—"} / 6</div>
-          <div>Satisfaction : {session.satisfaction ?? "—"} / 6</div>
         </div>
-      </div>
-
-      {session.notes && (
-        <div className="card" style={{ padding: 16, display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 900 }}>Remarques</div>
-          <div style={{ fontWeight: 700, whiteSpace: "pre-wrap" }}>{session.notes}</div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link className="btn" href="/player/trainings">
-          Retour à la liste
-        </Link>
       </div>
     </div>
   );
