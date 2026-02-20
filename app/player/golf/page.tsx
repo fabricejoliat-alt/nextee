@@ -79,7 +79,7 @@ function monthRangeLocal(now = new Date()) {
 
 function last3MonthsRangeLocal(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0, 0);
   return { start, end };
 }
 
@@ -312,7 +312,6 @@ export default function GolfDashboardPage() {
     if (preset === "last3") {
       const now = new Date();
       const cur = last3MonthsRangeLocal(now);
-      // cur.start is 1st day of (M-2). previous block = 3 months before that
       const prevStart = new Date(cur.start.getFullYear(), cur.start.getMonth() - 3, 1, 0, 0, 0, 0);
       const prevEnd = new Date(cur.start.getFullYear(), cur.start.getMonth(), 1, 0, 0, 0, 0);
       const prevEndInclusive = new Date(prevEnd);
@@ -350,7 +349,6 @@ export default function GolfDashboardPage() {
         if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
         if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
 
-        // cap safety
         q = q.limit(2000);
 
         const sRes = await q;
@@ -366,7 +364,11 @@ export default function GolfDashboardPage() {
           return;
         }
 
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
+        const iRes = await supabase
+          .from("training_session_items")
+          .select("session_id,category,minutes")
+          .in("session_id", ids);
+
         if (iRes.error) throw new Error(iRes.error.message);
 
         setItems((iRes.data ?? []) as TrainingItemRow[]);
@@ -535,69 +537,19 @@ export default function GolfDashboardPage() {
     });
   }, [sessions]);
 
-  // insights (simple rules)
-  const insights = useMemo(() => {
-    const lines: string[] = [];
-
-    if (sessions.length === 0) return ["Aucune donnée sur la période sélectionnée."];
-
-    if (prevRange && !loadingPrev) {
-      const label = preset === "month" ? "mois précédent" : "période précédente";
-      if (deltaMinutes != null) {
-        const sign = deltaMinutes > 0 ? "▲" : deltaMinutes < 0 ? "▼" : "•";
-        lines.push(`Minutes : ${sign} ${Math.abs(deltaMinutes)} vs ${label}.`);
-      }
-      if (deltaCount != null) {
-        const sign = deltaCount > 0 ? "▲" : deltaCount < 0 ? "▼" : "•";
-        lines.push(`Séances : ${sign} ${Math.abs(deltaCount)} vs ${label}.`);
-      }
-    }
-
-    if (topCats.length > 0) {
-      const total = Object.values(minutesByCat).reduce((a, b) => a + b, 0) || 1;
-      const top = topCats[0];
-      const pct = Math.round((top.minutes / total) * 100);
-      lines.push(`Poste principal : ${top.label} (${pct}%).`);
-    }
-
-    // type dominance
-    const totalS = sessions.length || 1;
-    const typeStats: Array<{ t: SessionType; p: number }> = [
-      { t: "individual", p: Math.round((byType.individual / totalS) * 100) },
-      { t: "club", p: Math.round((byType.club / totalS) * 100) },
-      { t: "private", p: Math.round((byType.private / totalS) * 100) },
-    ];
-    const maxType = typeStats.reduce((best, cur) => (cur.p > best.p ? cur : best), typeStats[0]);
-    lines.push(`Répartition : ${typeLabelShort(maxType.t)} dominant (${maxType.p}%).`);
-
-    if (weekSeries.length >= 2) {
-      const last = weekSeries[weekSeries.length - 1];
-      const prev = weekSeries[weekSeries.length - 2];
-      const delta = (last.minutes ?? 0) - (prev.minutes ?? 0);
-      const sign = delta >= 0 ? "▲" : "▼";
-      lines.push(`Semaine dernière vs précédente : ${sign} ${Math.abs(delta)} min.`);
-    }
-
-    return lines.slice(0, 5);
-  }, [
-    sessions.length,
-    prevRange,
-    loadingPrev,
-    deltaMinutes,
-    deltaCount,
-    preset,
-    topCats,
-    minutesByCat,
-    byType,
-    weekSeries,
-  ]);
-
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
     if (preset === "month") return "vs mois précédent";
     if (preset === "last3") return "vs 3 mois précédents";
     return "vs période précédente";
   }, [prevRange, preset]);
+
+  // ✅ responsive grid: 1 colonne en dessous de 520px
+  const kpiGridStyle: React.CSSProperties = {
+    display: "grid",
+    gap: 12,
+    gridTemplateColumns: "1fr",
+  };
 
   return (
     <div className="player-dashboard-bg">
@@ -673,21 +625,12 @@ export default function GolfDashboardPage() {
                 <input
                   type="date"
                   value={fromDate}
-                  onChange={(e) => onChangeFrom(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    WebkitAppearance: "none",
-                    appearance: "none",
+                  onChange={(e) => {
+                    setFromDate(e.target.value);
+                    setPreset("custom");
                   }}
+                  disabled={loading}
+                  style={dateInputStyle}
                 />
               </label>
 
@@ -696,21 +639,12 @@ export default function GolfDashboardPage() {
                 <input
                   type="date"
                   value={toDate}
-                  onChange={(e) => onChangeTo(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    WebkitAppearance: "none",
-                    appearance: "none",
+                  onChange={(e) => {
+                    setToDate(e.target.value);
+                    setPreset("custom");
                   }}
+                  disabled={loading}
+                  style={dateInputStyle}
                 />
               </label>
 
@@ -723,8 +657,9 @@ export default function GolfDashboardPage() {
 
         {/* ===== KPIs ===== */}
         <div className="glass-section">
-          <div className="grid-2">
-            {/* Volume (reworked) */}
+          {/* ✅ 1 colonne sur mobile/PWA */}
+          <div style={kpiGridStyle}>
+            {/* Volume */}
             <div className="glass-card">
               <div className="card-title">Volume</div>
 
@@ -734,16 +669,13 @@ export default function GolfDashboardPage() {
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
-                  {/* minutes + séances */}
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                       <div>
                         <span className="big-number">{totalMinutes}</span>
                         <span className="unit">MIN</span>
                       </div>
-                      {deltaMinutes != null && (
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>{deltaPill(deltaMinutes, " min")}</div>
-                      )}
+                      {deltaMinutes != null && <div>{deltaPill(deltaMinutes, " min")}</div>}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -758,7 +690,6 @@ export default function GolfDashboardPage() {
 
                   <div className="hr-soft" style={{ margin: "2px 0" }} />
 
-                  {/* list types */}
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Répartition</div>
 
@@ -777,15 +708,11 @@ export default function GolfDashboardPage() {
                       </div>
                     </div>
                   </div>
-
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                    (Graphes regroupés par semaine)
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* Sensations moyennes (avec comparatif) */}
+            {/* Sensations */}
             <div className="glass-card">
               <div className="card-title">Sensations (moyennes)</div>
 
@@ -882,54 +809,45 @@ export default function GolfDashboardPage() {
           </div>
         </div>
 
-        {/* ===== Insights ===== */}
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">Analyse</div>
-            <div style={{ display: "grid", gap: 10 }}>
-              {insights.map((t, i) => (
-                <div
-                  key={i}
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    background: "rgba(255,255,255,0.60)",
-                    borderRadius: 14,
-                    padding: 12,
-                    fontSize: 13,
-                    fontWeight: 850,
-                    color: "rgba(0,0,0,0.72)",
-                    lineHeight: 1.35,
-                  }}
-                >
-                  {t}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ===== Parcours (placeholder) ===== */}
+        {/* Placeholder parcours */}
         <div className="glass-section">
           <div className="glass-card">
             <div className="card-title">Parcours (bientôt)</div>
             <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, lineHeight: 1.4 }}>
               Ici on ajoutera l’analyse des parcours (score, GIR, fairways, putts, eagles/birdies/bogeys, etc.)
-              et la corrélation avec tes entraînements (ex: wedging → doubles+).
-            </div>
-            <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span className="pill-soft">GIR</span>
-              <span className="pill-soft">Fairways</span>
-              <span className="pill-soft">Putts</span>
-              <span className="pill-soft">Score vs Par</span>
+              et la corrélation avec tes entraînements.
             </div>
           </div>
         </div>
 
         <div style={{ height: 12 }} />
       </div>
+
+      {/* ✅ petite règle responsive : 2 colonnes uniquement sur grand écran */}
+      <style jsx global>{`
+        @media (min-width: 900px) {
+          .golf-kpi-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
+
+const dateInputStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
+  background: "rgba(255,255,255,0.90)",
+  border: "1px solid rgba(0,0,0,0.10)",
+  borderRadius: 10,
+  padding: "10px 12px",
+  WebkitAppearance: "none",
+  appearance: "none",
+};
 
 const typeRowStyle: React.CSSProperties = {
   display: "flex",
