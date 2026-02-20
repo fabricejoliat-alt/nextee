@@ -87,6 +87,7 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+/** Notes sur 6 (comme sur /player). Ajuste si besoin. */
 const MAX_SCORE = 6;
 
 function RatingBar({
@@ -108,6 +109,7 @@ function RatingBar({
           <span style={{ display: "inline-flex" }}>{icon}</span>
           <span style={{ fontWeight: 950, fontSize: 12, color: "rgba(0,0,0,0.65)" }}>{label}</span>
         </div>
+
         <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{value ?? "—"}</div>
       </div>
 
@@ -137,6 +139,7 @@ export default function TrainingsListPage() {
 
   const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
 
+  // ⚠️ total minutes calculé sur la page courante (comme avant)
   const totalThisPage = useMemo(() => {
     return sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
   }, [sessions]);
@@ -174,6 +177,7 @@ export default function TrainingsListPage() {
       setSessions(list);
       setTotalCount(sRes.count ?? 0);
 
+      // clubs names (only for this page)
       const clubIds = Array.from(
         new Set(
           list
@@ -197,6 +201,7 @@ export default function TrainingsListPage() {
         setClubNameById({});
       }
 
+      // items (postes) for sessions in this page
       const sessionIds = list.map((s) => s.id);
       if (sessionIds.length > 0) {
         const itRes = await supabase
@@ -302,21 +307,8 @@ export default function TrainingsListPage() {
             </div>
           </div>
 
-          {/* ✅ Nouveau container glass pour stats + filtres (mobile/app safe) */}
+          {/* ✅ Container glass: uniquement les filtres (safe mobile, ne dépasse pas) */}
           <div className="glass-card" style={{ marginTop: 12, padding: 14 }}>
-            {/* Stats */}
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 900,
-                color: "rgba(0,0,0,0.65)",
-                marginBottom: 10,
-              }}
-            >
-              {loading ? "…" : `${totalCount} séance(s) • ${totalThisPage} min (page ${page}/${totalPages})`}
-            </div>
-
-            {/* Filtres sur 2 lignes + bouton en dessous */}
             <div style={{ display: "grid", gap: 10 }}>
               <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                 <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
@@ -370,6 +362,32 @@ export default function TrainingsListPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
+        {/* ✅ Statistique entre les 2 containers */}
+        <div className="glass-section" style={{ marginTop: 12 }}>
+          <div
+            className="glass-card"
+            style={{
+              padding: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+              <span style={{ fontSize: 18 }}>{loading ? "…" : totalCount}</span>
+              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
+                séance(s)
+              </span>
+            </div>
+
+            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+              <span style={{ fontSize: 18 }}>{loading ? "…" : totalThisPage}</span>
+              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>min</span>
+            </div>
+          </div>
+        </div>
+
         {/* List */}
         <div className="glass-section">
           <div className="glass-card">
@@ -393,10 +411,18 @@ export default function TrainingsListPage() {
                       <div className="marketplace-item">
                         <div style={{ display: "grid", gap: 10 }}>
                           {/* 1) Date/heure + durée */}
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              alignItems: "baseline",
+                            }}
+                          >
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                               {fmtDateTime(s.start_at)}
                             </div>
+
                             <div className="marketplace-price-pill">
                               {(s.total_minutes ?? 0) > 0 ? `${s.total_minutes} min` : "—"}
                             </div>
@@ -411,7 +437,10 @@ export default function TrainingsListPage() {
                             )}
 
                             {s.location_text && (
-                              <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
+                              <span
+                                className="truncate"
+                                style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}
+                              >
                                 📍 {s.location_text}
                               </span>
                             )}
@@ -425,7 +454,10 @@ export default function TrainingsListPage() {
                               {postes.map((p, i) => {
                                 const extra = (p.note ?? p.other_detail ?? "").trim();
                                 return (
-                                  <li key={`${p.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  <li
+                                    key={`${p.session_id}-${i}`}
+                                    style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}
+                                  >
                                     {categoryLabel(p.category)} — {p.minutes} min
                                     {extra ? (
                                       <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span>
@@ -451,7 +483,11 @@ export default function TrainingsListPage() {
                               Voir
                             </Link>
 
-                            <Link className="btn" href={`/player/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                            <Link
+                              className="btn"
+                              href={`/player/trainings/${s.id}/edit`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               Modifier
                             </Link>
 
