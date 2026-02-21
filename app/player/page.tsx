@@ -55,6 +55,9 @@ type TrainingItemRow = {
   minutes: number;
 };
 
+type GolfRoundRow = { id: string; start_at: string };
+type GolfHoleRow = { round_id: string; hole_no: number; par: number | null; score: number | null; putts: number | null; fairway_hit: boolean | null };
+
 const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
   warmup_mobility: "Échauffement",
   long_game: "Long jeu",
@@ -108,12 +111,7 @@ function monthRangeLocal(now = new Date()) {
 }
 
 function monthTitle(now = new Date()) {
-  return new Intl.DateTimeFormat("fr-CH", {
-    month: "long",
-    year: "numeric",
-  })
-    .format(now)
-    .toUpperCase();
+  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(now).toUpperCase();
 }
 
 function priceLabel(it: Item) {
@@ -180,6 +178,16 @@ function Donut({ percent }: { percent: number }) {
   );
 }
 
+/** Flèche uniquement (comme sensations) */
+function ArrowOnly({ delta }: { delta: number | null }) {
+  if (delta == null || !Number.isFinite(delta)) return <span className="sense-val">—</span>;
+  const up = delta > 0;
+  const down = delta < 0;
+  const cls = up ? "sense-val up" : down ? "sense-val down" : "sense-val";
+  const sign = up ? "▲" : down ? "▼" : "•";
+  return <span className={cls}>{sign}</span>;
+}
+
 export default function PlayerHomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,8 +203,9 @@ export default function PlayerHomePage() {
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
-  const [roundsMonthCount, setRoundsMonthCount] = useState<number>(0);
-  const [holesMonthCount, setHolesMonthCount] = useState<number>(0);
+  // ✅ Parcours du mois (liste ids) + trous (pour stats focus)
+  const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
+  const [holesMonth, setHolesMonth] = useState<GolfHoleRow[]>([]);
 
   const bucket = "marketplace";
 
@@ -242,7 +251,7 @@ export default function PlayerHomePage() {
     const objective = 500;
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
-    // ✅ Dernière entrée (pour variation vs moyenne du mois)
+    // ✅ Dernière séance (la plus récente)
     const last = monthSessions?.[0] ?? null;
 
     const deltaMotivation =
@@ -274,6 +283,81 @@ export default function PlayerHomePage() {
     return m || 1;
   }, [trainingsSummary.top]);
 
+  // ===== Focus stats calculées à partir des trous du mois + trends vs mois précédent (flèche seulement) =====
+  const { start: curStart, end: curEnd } = useMemo(() => monthRangeLocal(new Date()), []);
+  const prevRange = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    return { start, end };
+  }, []);
+
+  const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
+
+  const focus = useMemo(() => {
+    // Fairways: par4/5 où fairway_hit non null
+    let fwTot = 0;
+    let fwHit = 0;
+
+    // Putts: moyenne par trou (si renseigné)
+    const puttVals: number[] = [];
+
+    // GIR: approximation (si tu ne stockes pas "gir" par trou)
+    // => on calcule UNIQUEMENT fairways/putts ici (solide avec holes),
+    // et on laisse GIR à "—" si pas de champ fiable.
+    // Si tu veux un vrai GIR: utilise golf_rounds.gir côté API (comme sur dashboard).
+    // Ici on met GIR à null.
+    const girPct: number | null = null;
+
+    for (const h of holesMonth) {
+      if (typeof h.putts === "number") puttVals.push(h.putts);
+
+      // fairways: par4/5 + bool présent
+      if (typeof h.par === "number" && h.par >= 4 && typeof h.fairway_hit === "boolean") {
+        fwTot += 1;
+        if (h.fairway_hit) fwHit += 1;
+      }
+    }
+
+    const fwPct = fwTot ? Math.round((fwHit / fwTot) * 1000) / 10 : null;
+    const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
+
+    return { girPct, fwPct, puttAvg };
+  }, [holesMonth]);
+
+  const prevFocus = useMemo(() => {
+    let fwTot = 0;
+    let fwHit = 0;
+    const puttVals: number[] = [];
+    const girPct: number | null = null;
+
+    for (const h of prevHoles) {
+      if (typeof h.putts === "number") puttVals.push(h.putts);
+      if (typeof h.par === "number" && h.par >= 4 && typeof h.fairway_hit === "boolean") {
+        fwTot += 1;
+        if (h.fairway_hit) fwHit += 1;
+      }
+    }
+
+    const fwPct = fwTot ? Math.round((fwHit / fwTot) * 1000) / 10 : null;
+    const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
+
+    return { girPct, fwPct, puttAvg };
+  }, [prevHoles]);
+
+  const focusDelta = useMemo(() => {
+    const d = (cur: number | null, prev: number | null) => {
+      if (cur == null || prev == null) return null;
+      const v = cur - prev;
+      return v === 0 ? 0 : v;
+    };
+    return {
+      gir: d(focus.girPct, prevFocus.girPct), // null si GIR non calculé
+      fw: d(focus.fwPct, prevFocus.fwPct),
+      putt: d(focus.puttAvg, prevFocus.puttAvg),
+    };
+  }, [focus, prevFocus]);
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -286,12 +370,7 @@ export default function PlayerHomePage() {
     }
     const uid = userRes.user.id;
 
-    const profRes = await supabase
-      .from("profiles")
-      .select("id,first_name,last_name,handicap,avatar_url")
-      .eq("id", uid)
-      .maybeSingle();
-
+    const profRes = await supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", uid).maybeSingle();
     if (profRes.error) {
       setError(profRes.error.message);
       setLoading(false);
@@ -299,12 +378,7 @@ export default function PlayerHomePage() {
     }
     setProfile((profRes.data ?? null) as Profile | null);
 
-    const memRes = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", uid)
-      .eq("is_active", true);
-
+    const memRes = await supabase.from("club_members").select("club_id").eq("user_id", uid).eq("is_active", true);
     if (memRes.error) {
       setError(memRes.error.message);
       setClubs([]);
@@ -313,6 +387,8 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
       setMonthSessions([]);
       setMonthItems([]);
+      setRoundsMonth([]);
+      setHolesMonth([]);
       setLoading(false);
       return;
     }
@@ -347,11 +423,7 @@ export default function PlayerHomePage() {
 
         const ids = list.map((x) => x.id);
         if (ids.length > 0) {
-          const imgRes = await supabase
-            .from("marketplace_images")
-            .select("item_id,path,sort_order")
-            .in("item_id", ids)
-            .eq("sort_order", 0);
+          const imgRes = await supabase.from("marketplace_images").select("item_id,path,sort_order").in("item_id", ids).eq("sort_order", 0);
 
           if (!imgRes.error) {
             const map: Record<string, string> = {};
@@ -372,11 +444,12 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
     }
 
-    // Trainings month
+    // Trainings month (⚠️ tu avais oublié le filtre user_id)
     const { start, end } = monthRangeLocal(new Date());
     const sRes = await supabase
       .from("training_sessions")
       .select("id,start_at,total_minutes,motivation,difficulty,satisfaction")
+      .eq("user_id", uid)
       .gte("start_at", start.toISOString())
       .lt("start_at", end.toISOString())
       .order("start_at", { ascending: false });
@@ -397,29 +470,49 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
-    // Rounds month
+    // Rounds month + holes month + prev month holes (for trends)
     try {
-      const { start, end } = monthRangeLocal(new Date());
+      // current month rounds
       const rRes = await supabase
         .from("golf_rounds")
         .select("id,start_at")
-        .gte("start_at", start.toISOString())
-        .lt("start_at", end.toISOString())
+        .eq("user_id", uid)
+        .gte("start_at", curStart.toISOString())
+        .lt("start_at", curEnd.toISOString())
         .order("start_at", { ascending: false });
 
-      const rounds = (rRes.data ?? []) as Array<{ id: string }>;
-      setRoundsMonthCount(rounds.length);
+      const rList = (rRes.data ?? []) as GolfRoundRow[];
+      setRoundsMonth(rList);
 
-      if (rounds.length > 0) {
-        const roundIds = rounds.map((r) => r.id);
-        const hRes = await supabase.from("golf_round_holes").select("round_id,hole_no").in("round_id", roundIds);
-        setHolesMonthCount((hRes.data ?? []).length);
+      if (rList.length > 0) {
+        const roundIds = rList.map((r) => r.id);
+        const hRes = await supabase.from("golf_round_holes").select("round_id,hole_no,par,score,putts,fairway_hit").in("round_id", roundIds);
+        setHolesMonth((hRes.data ?? []) as GolfHoleRow[]);
       } else {
-        setHolesMonthCount(0);
+        setHolesMonth([]);
+      }
+
+      // previous month rounds -> holes
+      const prRes = await supabase
+        .from("golf_rounds")
+        .select("id,start_at")
+        .eq("user_id", uid)
+        .gte("start_at", prevRange.start.toISOString())
+        .lt("start_at", prevRange.end.toISOString())
+        .order("start_at", { ascending: false });
+
+      const prList = (prRes.data ?? []) as GolfRoundRow[];
+      if (prList.length > 0) {
+        const prIds = prList.map((r) => r.id);
+        const phRes = await supabase.from("golf_round_holes").select("round_id,hole_no,par,score,putts,fairway_hit").in("round_id", prIds);
+        setPrevHoles((phRes.data ?? []) as GolfHoleRow[]);
+      } else {
+        setPrevHoles([]);
       }
     } catch {
-      setRoundsMonthCount(0);
-      setHolesMonthCount(0);
+      setRoundsMonth([]);
+      setHolesMonth([]);
+      setPrevHoles([]);
     }
 
     setLoading(false);
@@ -427,6 +520,7 @@ export default function PlayerHomePage() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const avatarUrl = useMemo(() => {
@@ -435,11 +529,7 @@ export default function PlayerHomePage() {
     return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
   }, [profile?.avatar_url]);
 
-  const focusGIR = 57;
-  const focusFairway = 72;
-  const focusPuttingAvg = 43;
-
-  // helpers pour afficher ▲▼ + valeur
+  // helpers pour sensations (▲▼ + valeur) — on garde tel quel
   function deltaLabel(d: number | null) {
     if (typeof d !== "number") return "—";
     const abs = Math.abs(d).toFixed(1);
@@ -453,6 +543,9 @@ export default function PlayerHomePage() {
     if (d < 0) return "sense-val down";
     return "sense-val";
   }
+
+  const roundsMonthCount = roundsMonth.length;
+  const holesMonthCount = holesMonth.length;
 
   return (
     <div className="player-dashboard-bg">
@@ -485,7 +578,6 @@ export default function PlayerHomePage() {
           <div style={{ minWidth: 0 }}>
             <div className="hero-title">{loading ? "Salut…" : `${displayHello(profile)} 👋`}</div>
 
-            {/* ✅ Handicap sans variation */}
             <div className="hero-sub">
               <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
             </div>
@@ -552,7 +644,7 @@ export default function PlayerHomePage() {
               )}
             </div>
 
-            {/* ✅ Sensations (moyenne mois + variation vs dernière entrée) */}
+            {/* Sensations */}
             <div className="glass-card">
               <div className="card-title">Sensations</div>
 
@@ -596,40 +688,91 @@ export default function PlayerHomePage() {
           </Link>
         </section>
 
-        {/* ===== ✅ Volume de jeu ===== */}
+        {/* ===== ✅ Volume de jeu + Focus en dessous ===== */}
         <section className="glass-section">
           <div className="section-title">Volume de jeu</div>
 
-          <div className="grid-2">
-            <div className="glass-card">
-              <div className="muted-uc">{thisMonthTitle}</div>
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                <div>
+          {/* ✅ Card Volume (1 ligne) */}
+          <div className="glass-card">
+            <div className="muted-uc">{thisMonthTitle}</div>
+
+            <div
+              style={{
+                marginTop: 12,
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: "rgba(0,0,0,0.08)",
+                  background: "rgba(255,255,255,0.55)",
+                  borderRadius: 14,
+                  padding: "12px 12px",
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.62)" }}>Parcours</div>
+                <div style={{ marginTop: 6 }}>
                   <span className="big-number">{roundsMonthCount}</span>
-                  <span className="unit">PARCOURS</span>
+                  <span className="unit">MOIS</span>
                 </div>
-                <div>
+              </div>
+
+              <div
+                style={{
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: "rgba(0,0,0,0.08)",
+                  background: "rgba(255,255,255,0.55)",
+                  borderRadius: 14,
+                  padding: "12px 12px",
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.62)" }}>Trous</div>
+                <div style={{ marginTop: 6 }}>
                   <span className="big-number">{holesMonthCount}</span>
-                  <span className="unit">TROUS</span>
+                  <span className="unit">MOIS</span>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div className="glass-card">
-              <div className="muted-uc">FOCUS</div>
-              <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                <div className="sense-row">
-                  <div>Greens en régulation</div>
-                  <div className="sense-val up">▲ {focusGIR}%</div>
+          {/* ✅ Card Focus (en dessous + plus grande) */}
+          <div className="glass-card" style={{ marginTop: 12 }}>
+            <div className="card-title">Focus (tendance vs mois précédent)</div>
+
+            <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+              <div className="sense-row">
+                <div>Greens en régulation</div>
+                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                  <div className="sense-val">{focus.girPct == null ? "—" : `${focus.girPct}%`}</div>
+                  <ArrowOnly delta={focusDelta.gir} />
                 </div>
-                <div className="sense-row">
-                  <div>Moyenne de putt</div>
-                  <div className="sense-val up">▲ {focusPuttingAvg}</div>
+              </div>
+
+              <div className="sense-row">
+                <div>Moyenne de putt</div>
+                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                  <div className="sense-val">{focus.puttAvg == null ? "—" : `${focus.puttAvg}`}</div>
+                  <ArrowOnly delta={focusDelta.putt} />
                 </div>
-                <div className="sense-row">
-                  <div>Fairways touchés</div>
-                  <div className="sense-val up">▲ {focusFairway}%</div>
+              </div>
+
+              <div className="sense-row">
+                <div>Fairways touchés</div>
+                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                  <div className="sense-val">{focus.fwPct == null ? "—" : `${focus.fwPct}%`}</div>
+                  <ArrowOnly delta={focusDelta.fw} />
                 </div>
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.4 }}>
+                Les flèches comparent au mois précédent (si suffisamment de données).
+                <br />
+                GIR n’est pas calculé ici si tu ne le stockes pas par trou. Si tu veux un vrai GIR, on peut le lire depuis <code>golf_rounds.gir</code> (comme sur ton Dashboard).
               </div>
             </div>
           </div>
