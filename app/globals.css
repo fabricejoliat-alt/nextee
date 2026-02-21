@@ -1210,7 +1210,7 @@ input[type="radio"]{
 
   .mobile-nav{
     /* ⬇️ un peu plus bas uniquement en PWA */
-    height: calc(var(--footer-h) + var(--safe-bottom) - 8px);
+    height: calc(var(--footer-h) + var(--safe-bottom) - 20px);
     padding: 6px 10px calc(6px + var(--safe-bottom));
   }
 
