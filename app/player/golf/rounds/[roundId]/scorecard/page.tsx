@@ -13,6 +13,9 @@ type Round = {
   course_name: string | null;
   tee_name: string | null;
 
+  slope_rating: number | null;
+  course_rating: number | null;
+
   total_score: number | null;
   total_putts: number | null;
   gir: number | null;
@@ -40,6 +43,15 @@ function getParamString(p: any): string | null {
   return null;
 }
 
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(d);
+}
+
 // GIR rule used in your app
 function isGIR(par: number | null, score: number | null, putts: number | null) {
   if (typeof par !== "number") return false;
@@ -65,7 +77,7 @@ function ScoreShape({ value, mark }: { value: number | null; mark: ScoreMark }) 
   const txt = value == null ? "—" : String(value);
 
   const innerText = (
-    <div style={{ fontWeight: 1000, fontSize: 22, lineHeight: 1, minWidth: 22, textAlign: "center" }}>{txt}</div>
+    <div style={{ fontWeight: 1100, fontSize: 22, lineHeight: 1, minWidth: 22, textAlign: "center" }}>{txt}</div>
   );
 
   if (mark === "none") return <div style={{ padding: "6px 10px" }}>{innerText}</div>;
@@ -161,7 +173,7 @@ export default function ScorecardPage() {
     const rRes = await supabase
       .from("golf_rounds")
       .select(
-        "id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus"
+        "id,start_at,round_type,competition_name,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus"
       )
       .eq("id", roundId)
       .maybeSingle();
@@ -201,13 +213,24 @@ export default function ScorecardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
-  const stats = useMemo(() => {
+  const computed = useMemo(() => {
+    const parTotal = holes.reduce((acc, h) => acc + (typeof h.par === "number" ? h.par : 0), 0);
+
+    const scoreTotalFromHoles = holes.reduce((acc, h) => acc + (typeof h.score === "number" ? h.score : 0), 0);
+    const holesWithScore = holes.filter((h) => typeof h.score === "number").length;
+
+    const scoreTotal =
+      typeof round?.total_score === "number" ? round.total_score : holesWithScore > 0 ? scoreTotalFromHoles : null;
+
+    const diff = typeof scoreTotal === "number" && parTotal > 0 ? scoreTotal - parTotal : null;
+
     const filled = holes.filter((h) => typeof h.par === "number" && typeof h.score === "number");
 
     let eagles = 0,
       birdies = 0,
       pars = 0,
       bogeys = 0,
+      doubleBogeys = 0,
       doublesPlus = 0;
 
     let girCount = 0;
@@ -215,19 +238,44 @@ export default function ScorecardPage() {
 
     filled.forEach((h) => {
       const d = (h.score as number) - (h.par as number);
+
       if (d <= -2) eagles++;
       else if (d === -1) birdies++;
       else if (d === 0) pars++;
       else if (d === 1) bogeys++;
-      else if (d >= 2) doublesPlus++;
+      else if (d === 2) doubleBogeys++;
+      else if (d >= 3) doublesPlus++;
 
       if (isGIR(h.par, h.score, h.putts)) girCount++;
       if (typeof h.putts === "number") puttsTotal += h.putts;
     });
 
-    const holesPlayed = filled.length;
-    return { eagles, birdies, pars, bogeys, doublesPlus, girCount, holesPlayed, puttsTotal };
-  }, [holes]);
+    const gir = typeof round?.gir === "number" ? round.gir : filled.length ? girCount : null;
+    const putts = typeof round?.total_putts === "number" ? round.total_putts : puttsTotal || null;
+
+    return {
+      parTotal: parTotal || null,
+      scoreTotal,
+      diff,
+      eagles: typeof round?.eagles === "number" ? round.eagles : eagles,
+      birdies: typeof round?.birdies === "number" ? round.birdies : birdies,
+      pars: typeof round?.pars === "number" ? round.pars : pars,
+      bogeys: typeof round?.bogeys === "number" ? round.bogeys : bogeys,
+      doubleBogeys,
+      doublesPlus: typeof round?.doubles_plus === "number" ? round.doubles_plus : doublesPlus,
+      gir,
+      putts,
+    };
+  }, [holes, round]);
+
+  const configLine = useMemo(() => {
+    if (!round) return "";
+    const parts: string[] = [];
+    parts.push(round.round_type === "competition" ? "Compétition" : "Entraînement");
+    if (round.course_name) parts.push(round.course_name);
+    if (round.tee_name) parts.push(round.tee_name);
+    return parts.filter(Boolean).join(" • ");
+  }, [round]);
 
   if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
 
@@ -247,22 +295,29 @@ export default function ScorecardPage() {
     );
   }
 
+  const diffLabel =
+    typeof computed.diff === "number"
+      ? computed.diff === 0
+        ? "E"
+        : computed.diff > 0
+        ? `+${computed.diff}`
+        : String(computed.diff)
+      : null;
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Carte de scores
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link
-                className="cta-green cta-green-inline"
-                href={`/player/golf/rounds/${round.id}/edit`}
-              >
+              <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${round.id}/edit`}>
                 Modifier
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
@@ -274,13 +329,54 @@ export default function ScorecardPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
+        {/* Summary glass card */}
+        <div className="glass-section">
+          <div className="glass-card" style={{ padding: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "center" }}>
+              <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+                <div style={{ fontWeight: 1100, fontSize: 16, lineHeight: 1.15 }} className="truncate">
+                  {fmtDate(round.start_at)}
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.65)", lineHeight: 1.35 }} className="truncate">
+                  {configLine || " "}
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div style={kvRow}>
+                    <span style={kvKey}>Slope</span>
+                    <span style={kvVal}>{typeof round.slope_rating === "number" ? round.slope_rating : "—"}</span>
+                  </div>
+
+                  <div style={kvRow}>
+                    <span style={kvKey}>Course rating</span>
+                    <span style={kvVal}>{typeof round.course_rating === "number" ? round.course_rating : "—"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>Score</div>
+                <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>{computed.scoreTotal ?? "—"}</div>
+                <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
+                  {diffLabel ? `(${diffLabel})` : " "}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Holes list */}
         <div className="glass-section">
           <div className="glass-card" style={{ padding: 14 }}>
             <div style={{ display: "grid", gap: 10 }}>
               {holes.map((h) => {
                 const gir = isGIR(h.par, h.score, h.putts);
-                const fw = h.fairway_hit == null ? "—" : h.fairway_hit ? "Hit" : "Miss";
+                const girKnown = h.par != null && h.score != null && h.putts != null;
+
+                const fwKnown = h.fairway_hit !== null;
+                const fwHit = h.fairway_hit === true;
+                const fwMiss = h.fairway_hit === false;
 
                 return (
                   <Link
@@ -298,14 +394,7 @@ export default function ScorecardPage() {
                         gap: 10,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr auto",
-                          gap: 10,
-                          alignItems: "center",
-                        }}
-                      >
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
                         <div style={{ fontWeight: 1000, fontSize: 16 }}>Trou {h.hole_no}</div>
 
                         <div style={{ justifySelf: "end" }}>
@@ -313,18 +402,37 @@ export default function ScorecardPage() {
                         </div>
                       </div>
 
+                      {/* ✅ chips/pills */}
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span style={pillSm}>Par {h.par ?? "—"}</span>
-                        <span style={pillSm}>FW {fw}</span>
-                        <span style={pillSm}>
-                          GIR {h.par == null || h.score == null || h.putts == null ? "—" : gir ? "Oui" : "Non"}
+                        <span style={pillGrey}>Par {h.par ?? "—"}</span>
+
+                        <span
+                          style={
+                            !fwKnown
+                              ? pillGrey
+                              : fwHit
+                              ? pillGreen
+                              : pillRed
+                          }
+                        >
+                          FW {!fwKnown ? "—" : fwHit ? "Hit" : "Miss"}
+                        </span>
+
+                        <span
+                          style={
+                            !girKnown
+                              ? pillGrey
+                              : gir
+                              ? pillGreen
+                              : pillRed
+                          }
+                        >
+                          GIR {!girKnown ? "—" : gir ? "Oui" : "Non"}
                         </span>
                       </div>
 
                       {!!h.note?.trim() && (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {h.note.trim()}
-                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{h.note.trim()}</div>
                       )}
                     </div>
                   </Link>
@@ -342,47 +450,50 @@ export default function ScorecardPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={statBox}>
                 <div style={statLabel}>Eagles</div>
-                <div style={statValue}>{round.eagles ?? stats.eagles}</div>
+                <div style={statValue}>{computed.eagles ?? 0}</div>
               </div>
               <div style={statBox}>
                 <div style={statLabel}>Birdies</div>
-                <div style={statValue}>{round.birdies ?? stats.birdies}</div>
+                <div style={statValue}>{computed.birdies ?? 0}</div>
               </div>
               <div style={statBox}>
                 <div style={statLabel}>Pars</div>
-                <div style={statValue}>{round.pars ?? stats.pars}</div>
+                <div style={statValue}>{computed.pars ?? 0}</div>
               </div>
               <div style={statBox}>
                 <div style={statLabel}>Bogeys</div>
-                <div style={statValue}>{round.bogeys ?? stats.bogeys}</div>
+                <div style={statValue}>{computed.bogeys ?? 0}</div>
               </div>
             </div>
 
-            <div style={statBox}>
-              <div style={statLabel}>Double bogey +</div>
-              <div style={statValue}>{round.doubles_plus ?? stats.doublesPlus}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={statBox}>
+                <div style={statLabel}>Double bogey +</div>
+                <div style={statValue}>{computed.doublesPlus ?? 0}</div>
+              </div>
+
+              <div style={statBox}>
+                <div style={statLabel}>Double bogey</div>
+                <div style={statValue}>{computed.doubleBogeys ?? 0}</div>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={statBox}>
                 <div style={statLabel}>GIR</div>
-                <div style={statValue}>
-                  {typeof round.gir === "number"
-                    ? round.gir
-                    : `${stats.girCount}${stats.holesPlayed ? ` / ${stats.holesPlayed}` : ""}`}
-                </div>
+                <div style={statValue}>{typeof computed.gir === "number" ? computed.gir : "—"}</div>
               </div>
 
               <div style={statBox}>
                 <div style={statLabel}>Putts</div>
-                <div style={statValue}>{round.total_putts ?? stats.puttsTotal}</div>
+                <div style={statValue}>{typeof computed.putts === "number" ? computed.putts : "—"}</div>
               </div>
             </div>
 
-            {typeof round.total_score === "number" && (
+            {typeof computed.scoreTotal === "number" && (
               <div style={statBox}>
                 <div style={statLabel}>Score total</div>
-                <div style={statValue}>{round.total_score}</div>
+                <div style={statValue}>{computed.scoreTotal}</div>
               </div>
             )}
           </div>
@@ -392,17 +503,63 @@ export default function ScorecardPage() {
   );
 }
 
-const pillSm: React.CSSProperties = {
-  height: 30,
+/**
+ * ✅ If you prefer CSS classes instead of inline styles:
+ * - replace pillGrey/pillGreen/pillRed with className like:
+ *   className="pill pill--grey" / "pill pill--green" / "pill pill--red"
+ * and define them in globals.css.
+ */
+
+const kvRow: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "baseline",
+  gap: 8,
+  padding: "6px 10px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.10)",
+  background: "rgba(255,255,255,0.55)",
+};
+
+const kvKey: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 950,
+  color: "rgba(0,0,0,0.55)",
+};
+
+const kvVal: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 1100,
+  color: "rgba(0,0,0,0.82)",
+};
+
+const pillBase: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
+  gap: 6,
+  height: 28,
   padding: "0 10px",
   borderRadius: 999,
   border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(255,255,255,0.72)",
-  fontWeight: 900,
   fontSize: 12,
+  fontWeight: 950,
   color: "rgba(0,0,0,0.78)",
+};
+
+const pillGrey: React.CSSProperties = {
+  ...pillBase,
+  background: "rgba(0,0,0,0.06)",
+};
+
+const pillGreen: React.CSSProperties = {
+  ...pillBase,
+  background: "rgba(21,128,61,0.18)",
+  borderColor: "rgba(21,128,61,0.22)",
+};
+
+const pillRed: React.CSSProperties = {
+  ...pillBase,
+  background: "rgba(185,28,28,0.16)",
+  borderColor: "rgba(185,28,28,0.22)",
 };
 
 const statBox: React.CSSProperties = {

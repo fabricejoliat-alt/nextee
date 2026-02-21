@@ -92,14 +92,18 @@ a { color: inherit; text-decoration: none; }
   top: 0; left: 0; right: 0;
   z-index: 1000;
 
-  height: calc(var(--header-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
 
   background: var(--green-dark);
   border-bottom: 1px solid rgba(255,255,255,0.12);
   box-shadow: 0 10px 24px rgba(0,0,0,0.25);
 
   display: flex;
+}
+
+.app-header.hidden{
+  transform: translateY(-110%);
 }
 
 /* Inner = vraie barre (60px) centrée */
@@ -109,60 +113,58 @@ a { color: inherit; text-decoration: none; }
   padding: 0 14px;
 
   display: flex;
-  align-items: center; /* ✅ aligne logo + icônes */
+  align-items: center; /* ✅ aligne burger + logo + cloche */
 }
 
-.app-header.hidden{
-  transform: translateY(-110%);
-}
-
-/* Inner */
-.app-header-inner{
-  height: var(--header-h);
-  width: 100%;
-  padding: 0 14px;
-
-  display: flex;
-  align-items: center;
-}
-
-/* Grid */
+/* Grid: burger (gauche) / logo (centre) / cloche (droite) */
 .app-header-grid{
   width: 100%;
+  height: 100%;
   display: grid;
-  grid-template-columns: 220px 1fr 220px;
+  grid-template-columns: 56px 1fr 56px;
   align-items: center;
 }
 
-@media (max-width: 768px){
-  .app-header-grid{ grid-template-columns: 1fr auto; }
-  .header-center{ display: none; }
+/* zones */
+.header-left,
+.header-center,
+.header-right{
+  display: flex;
+  align-items: center;
+  height: 100%;
 }
 
-.header-left{ display: flex; justify-content: flex-start; }
-.header-center{ display: flex; justify-content: center; }
-.header-right{ display: flex; justify-content: flex-end; gap: 8px; }
+.header-left{ justify-content: flex-start; }
+.header-center{ justify-content: center; }
+.header-right{ justify-content: flex-end; gap: 8px; }
 
 .icon-btn{
   background: transparent;
   border: none;
   padding: 6px;
 
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 
   cursor: pointer;
   color: #fff;
+
+  line-height: 1;                 /* ✅ évite “baseline” iOS */
+  -webkit-tap-highlight-color: transparent;
 }
 
-.icon-btn svg{ stroke: rgba(255,255,255,0.96); }
+.icon-btn svg{
+  display: block;                 /* ✅ évite “descente” svg */
+  stroke: rgba(255,255,255,0.96);
+}
+
 .icon-btn:active{ transform: scale(0.95); }
 
 /* Brand */
 .brand{
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;            /* ✅ plus fiable qu'align-baseline */
   gap: 0;
 
   font-weight: 900;
@@ -171,6 +173,7 @@ a { color: inherit; text-decoration: none; }
   color: #fff;
   text-decoration: none;
 
+  line-height: 1;                 /* ✅ iOS/PWA */
   text-shadow: 0 2px 10px rgba(0,0,0,0.35);
 }
 
@@ -353,14 +356,14 @@ input[type="radio"]{
 }
 
 /* =========================================================
-   7) DRAWER (desktop)
+   7) DRAWER (mobile + app + desktop) — vert foncé
    ========================================================= */
 
 .drawer-overlay{
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 80;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 2000;
   border: 0;
   padding: 0;
   cursor: pointer;
@@ -370,17 +373,23 @@ input[type="radio"]{
   position: fixed;
   top: 0;
   right: 0;
-  height: 100vh;
-  width: 320px;
-  max-width: 90vw;
 
-  background: #fff;
-  border-left: 1px solid #e8e8e8;
-  z-index: 90;
+  height: 100vh;
+  height: 100dvh;
+  width: 340px;
+  max-width: 88vw;
+
+  padding-top: var(--safe-top);
+
+  background: var(--green-dark);
+  border-left: 1px solid rgba(255,255,255,0.12);
+  z-index: 2100;
 
   display: flex;
   flex-direction: column;
   padding: 14px;
+
+  color: rgba(255,255,255,0.95);
 }
 
 .drawer-head{
@@ -390,13 +399,18 @@ input[type="radio"]{
   gap: 12px;
 
   padding-bottom: 12px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
   margin-bottom: 10px;
 }
 
 .drawer-title{
   font-weight: 900;
   font-size: 16px;
+  color: rgba(255,255,255,0.95);
+}
+
+.drawer-close{
+  color: rgba(255,255,255,0.95);
 }
 
 .drawer-nav{
@@ -414,12 +428,12 @@ input[type="radio"]{
   text-align: left;
 
   padding: 12px 12px;
-  border-radius: 12px;
+  border-radius: 14px;
 
-  border: 1px solid #ddd;
-  background: #f2f2f2;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
 
-  color: #111;
+  color: rgba(255,255,255,0.92);
   text-decoration: none;
   font-weight: 800;
   font-size: 14px;
@@ -428,20 +442,20 @@ input[type="radio"]{
   cursor: pointer;
 }
 
-.drawer-link:hover{ background: #e6e6e6; }
-.drawer-link.active{ border-color: #bbb; }
-.drawer-link:disabled{ opacity: 0.55; cursor: not-allowed; }
+.drawer-link:hover{ background: rgba(255,255,255,0.10); }
+.drawer-link.active{
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.14);
+}
+.drawer-link:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 .drawer-soon{
   font-size: 12px;
   font-weight: 800;
-  color: #6b7280;
-}
-
-/* Drawer only makes sense on desktop */
-@media (max-width: 899px){
-  .drawer-overlay,
-  .drawer-panel{ display: none; }
+  color: rgba(255,255,255,0.65);
 }
 
 /* =========================================================
@@ -503,6 +517,7 @@ input[type="radio"]{
   opacity: 0.6;
   cursor: not-allowed;
 }
+
 /* =========================================================
    9) AUTH / LOGIN (GLASS, cohérent Player)
    ========================================================= */
@@ -1186,256 +1201,4 @@ input[type="radio"]{
     overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
   }
-}
-/* =========================================================
-   FIX iOS/PWA header alignment
-   ========================================================= */
-
-/* Le header gère la safe-area, inner reste à 60px */
-.app-header{
-  display: flex;
-  align-items: stretch;
-}
-
-.app-header-inner{
-  width: 100%;
-  height: var(--header-h);
-  display: flex;
-  align-items: center; /* ✅ centre tout */
-}
-
-/* Le grid doit occuper toute la hauteur et centrer son contenu */
-.app-header-grid{
-  width: 100%;
-  height: 100%;
-  align-items: center;
-}
-
-/* Forcer les colonnes à centrer verticalement */
-.header-left,
-.header-center,
-.header-right{
-  display: flex;
-  align-items: center;
-}
-
-/* Baseline iOS = décalages */
-.brand{
-  align-items: center !important;
-  line-height: 1 !important;
-}
-
-/* Les boutons icône ont parfois une line-height fantôme */
-.icon-btn{
-  line-height: 0;
-}
-
-/* Bonus: éviter que le svg "descende" */
-.icon-btn svg{
-  display: block;
-}
-
-/* =========================================================
-   FIX iOS PWA: alignement logo + cloche dans le header
-   (standalone/fullscreen uniquement)
-   ========================================================= */
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone), (display-mode: fullscreen) {
-    /* Le header garde la hauteur safe-area, mais on centre le contenu dans 100% */
-    .app-header {
-      padding-top: 0 !important;
-      height: calc(var(--header-h) + var(--safe-top)) !important;
-      display: flex !important;
-      align-items: stretch !important;
-    }
-
-    /* Inner prend toute la hauteur et applique le safe-top */
-    .app-header-inner {
-      height: 100% !important;
-      padding-top: var(--safe-top) !important;
-      display: flex !important;
-      align-items: center !important;
-    }
-
-    /* Ton inner a aussi la classe app-header-grid (grid) => on force une seule logique */
-    .app-header-inner.app-header-grid {
-      display: grid !important;
-      align-items: center !important;
-    }
-
-    /* Force centrage vertical des colonnes */
-    .header-left,
-    .header-right {
-      display: flex !important;
-      align-items: center !important;
-      height: 100% !important;
-    }
-
-    /* Evite les effets baseline/line-height en iOS PWA */
-    .brand,
-    .icon-btn {
-      line-height: 1 !important;
-    }
-  }
-}
-/* Header */
-.app-header{
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 1000;
-
-  height: calc(var(--header-h) + var(--safe-top));
-  padding-top: var(--safe-top);
-
-  background: var(--green-dark);
-  border-bottom: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
-}
-
-/* Inner = barre de 60px centrée verticalement */
-.app-header-inner{
-  height: var(--header-h);
-  padding: 0 14px;
-  display: flex;
-  align-items: center;      /* ✅ centre verticalement */
-}
-
-/* Grid à l’intérieur */
-.app-header-grid{
-  width: 100%;
-  display: grid;
-  grid-template-columns: 220px 1fr 220px;
-  align-items: center;      /* ✅ centre verticalement dans les cellules */
-}
-
-@media (max-width: 768px){
-  .app-header-grid{ grid-template-columns: 1fr auto; }
-  .header-center{ display: none; }
-}
-
-/* ✅ très important : aligner explicitement les deux côtés */
-.header-left,
-.header-right{
-  display: flex;
-  align-items: center;      /* ✅ évite logo haut / cloche bas */
-}
-
-.header-right{
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.header-left{ justify-content: flex-start; }
-.header-center{ display: flex; justify-content: center; }
-
-/* Boutons/icônes */
-.icon-btn{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  border: 0;
-  background: transparent;
-  color: #fff;
-  line-height: 1;
-}
-
-.icon-btn svg{ stroke: rgba(255,255,255,0.96); }
-
-/* =========================================================
-   iOS PWA (standalone) — FIX HARD : logo + cloche centrés
-   Mettre ce bloc TOUT EN BAS du fichier
-   ========================================================= */
-
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone), (display-mode: fullscreen) {
-
-    /* Le header garde sa hauteur safe-area */
-    .app-header{
-      height: calc(var(--header-h) + var(--safe-top)) !important;
-      padding-top: 0 !important;
-    }
-
-    /* Zone interne = référence pour le centrage */
-    .app-header-inner{
-      position: relative !important;
-      height: 100% !important;
-      padding: 0 14px !important;
-      padding-top: var(--safe-top) !important; /* safe-area appliquée ici */
-      box-sizing: border-box !important;
-    }
-
-    /* On neutralise grid pour éviter les comportements bizarres */
-    .app-header-grid{
-      display: block !important;
-      height: 100% !important;
-    }
-
-    /* On centre verticalement via absolute (ultra fiable) */
-    .header-left{
-      position: absolute !important;
-      left: 14px !important;
-      top: calc(var(--safe-top) + (var(--header-h) / 2)) !important;
-      transform: translateY(-50%) !important;
-      display: flex !important;
-      align-items: center !important;
-    }
-
-    .header-right{
-      position: absolute !important;
-      right: 14px !important;
-      top: calc(var(--safe-top) + (var(--header-h) / 2)) !important;
-      transform: translateY(-50%) !important;
-      display: flex !important;
-      align-items: center !important;
-      gap: 8px !important;
-    }
-
-    /* Le center ne sert plus */
-    .header-center{ display: none !important; }
-
-    /* Nettoyage baseline iOS */
-    .brand{
-      display: inline-flex !important;
-      align-items: center !important;
-      line-height: 1 !important;
-    }
-
-    .icon-btn{
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      line-height: 1 !important;
-    }
-
-    .icon-btn svg{ display: block !important; }
-  }
-}
-@media (max-width: 768px){
-
-  .app-header{
-    height: calc(60px + var(--safe-top));
-  }
-
-  .app-header-inner{
-    height: 60px;
-    padding-top: var(--safe-top);
-    display: flex;
-    align-items: center; /* ✅ aligne verticalement */
-  }
-
-  .header-left,
-  .header-right{
-    display: flex;
-    align-items: center; /* ✅ même ligne verticale */
-  }
-
-  .header-left .brand {
-  transform: translateY(16px);
-}
-
-.header-right {
-  transform: translateY(-16px);
-}
-
 }

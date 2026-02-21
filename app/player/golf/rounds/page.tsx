@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -10,112 +10,427 @@ type Round = {
   round_type: "training" | "competition";
   competition_name: string | null;
   course_name: string | null;
-  location: string | null;
+  tee_name: string | null;
+
   total_score: number | null;
   total_putts: number | null;
   gir: number | null;
-  fairways_hit: number | null;
-  fairways_total: number | null;
 };
 
-function fmtDateTime(iso: string) {
+type HoleLite = {
+  round_id: string;
+  par: number | null;
+  score: number | null;
+};
+
+const PAGE_SIZE = 10;
+
+function fmtDateOnly(iso: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("fr-CH", {
+    weekday: "short",
     day: "2-digit",
-    month: "2-digit",
+    month: "short",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(d);
+}
+
+function startOfDayISO(dateStr: string) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return d.toISOString();
+}
+
+function nextDayStartISO(dateStr: string) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
+function roundTitle(r: Round) {
+  if (r.round_type === "competition") {
+    return `Compétition${r.competition_name ? ` — ${r.competition_name}` : ""}`;
+  }
+  return "Entraînement";
+}
+
+function diffLabelFromDiff(diff: number | null) {
+  if (typeof diff !== "number") return null;
+  if (diff === 0) return "E";
+  return diff > 0 ? `+${diff}` : String(diff);
 }
 
 export default function RoundsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [holesByRoundId, setHolesByRoundId] = useState<Record<string, HoleLite[]>>({});
+
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
+
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
+  const hasDateFilter = Boolean(fromDate || toDate);
 
   async function load() {
     setLoading(true);
     setError(null);
 
-    const res = await supabase
-      .from("golf_rounds")
-      .select("id,start_at,round_type,competition_name,course_name,location,total_score,total_putts,gir,fairways_hit,fairways_total")
-      .order("start_at", { ascending: false });
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes.user) throw new Error("Session invalide.");
 
-    if (res.error) {
-      setError(res.error.message);
-      setRounds([]);
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let q = supabase
+        .from("golf_rounds")
+        .select(
+          "id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,gir",
+          { count: "exact" }
+        )
+        .order("start_at", { ascending: false });
+
+      if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
+      if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
+
+      q = q.range(from, to);
+
+      const rRes = await q;
+      if (rRes.error) throw new Error(rRes.error.message);
+
+      const list = (rRes.data ?? []) as Round[];
+      setRounds(list);
+      setTotalCount(rRes.count ?? 0);
+
+      // 🔁 Comme sur la scorecard: on calcule parTotal et scoreTotal depuis les trous
+      const roundIds = list.map((r) => r.id);
+      if (roundIds.length > 0) {
+        const hRes = await supabase
+          .from("golf_round_holes")
+          .select("round_id,par,score")
+          .in("round_id", roundIds);
+
+        if (hRes.error) throw new Error(hRes.error.message);
+
+        const map: Record<string, HoleLite[]> = {};
+        (hRes.data ?? []).forEach((row: any) => {
+          const rid = row.round_id as string;
+          if (!map[rid]) map[rid] = [];
+          map[rid].push({
+            round_id: rid,
+            par: typeof row.par === "number" ? row.par : row.par ?? null,
+            score: typeof row.score === "number" ? row.score : row.score ?? null,
+          });
+        });
+        setHolesByRoundId(map);
+      } else {
+        setHolesByRoundId({});
+      }
+
       setLoading(false);
-      return;
+    } catch (e: any) {
+      setError(e?.message ?? "Erreur chargement.");
+      setRounds([]);
+      setHolesByRoundId({});
+      setTotalCount(0);
+      setLoading(false);
     }
-
-    setRounds((res.data ?? []) as Round[]);
-    setLoading(false);
   }
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, fromDate, toDate]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalPages]);
+
+  function clearFilters() {
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  }
+
+  function onChangeFrom(v: string) {
+    setFromDate(v);
+    setPage(1);
+  }
+
+  function onChangeTo(v: string) {
+    setToDate(v);
+    setPage(1);
+  }
+
+  const computedByRoundId = useMemo(() => {
+    const out: Record<
+      string,
+      { parTotal: number | null; scoreTotal: number | null; diff: number | null; diffLabel: string | null }
+    > = {};
+
+    rounds.forEach((r) => {
+      const holes = holesByRoundId[r.id] ?? [];
+
+      const parTotal = holes.reduce((acc, h) => acc + (typeof h.par === "number" ? h.par : 0), 0) || 0;
+
+      const scoreTotalFromHoles = holes.reduce((acc, h) => acc + (typeof h.score === "number" ? h.score : 0), 0);
+      const holesWithScore = holes.filter((h) => typeof h.score === "number").length;
+
+      const scoreTotal =
+        typeof r.total_score === "number" ? r.total_score : holesWithScore > 0 ? scoreTotalFromHoles : null;
+
+      const diff = typeof scoreTotal === "number" && parTotal > 0 ? scoreTotal - parTotal : null;
+
+      out[r.id] = {
+        parTotal: parTotal > 0 ? parTotal : null,
+        scoreTotal,
+        diff,
+        diffLabel: diffLabelFromDiff(diff),
+      };
+    });
+
+    return out;
+  }, [rounds, holesByRoundId]);
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="card" style={{ padding: 16, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <div>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>Mes parcours</div>
-          <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            Entraînements & compétitions
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        {/* Header */}
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              Mes parcours
+            </div>
+
+            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              <Link className="cta-green cta-green-inline" href="/player/golf/rounds/new">
+                Ajouter
+              </Link>
+              <Link className="cta-green cta-green-inline" href="/player">
+                Dashboard
+              </Link>
+            </div>
+          </div>
+
+          {/* Filtres dates (safe mobile) */}
+          <div className="glass-card" style={{ marginTop: 12, padding: 14, overflow: "hidden" }}>
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => onChangeFrom(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.90)",
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    WebkitAppearance: "none",
+                    appearance: "none",
+                  }}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => onChangeTo(e.target.value)}
+                  disabled={loading}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.90)",
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    WebkitAppearance: "none",
+                    appearance: "none",
+                  }}
+                />
+              </label>
+
+              <button
+                className="btn"
+                type="button"
+                onClick={clearFilters}
+                disabled={loading || !hasDateFilter}
+                title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
+                style={{ width: "100%", height: 44 }}
+              >
+                Effacer les dates
+              </button>
+            </div>
+          </div>
+
+          {error && <div className="marketplace-error">{error}</div>}
+        </div>
+
+        {/* Stats (sans “sur cette page”) */}
+        <div className="glass-section" style={{ marginTop: 12 }}>
+          <div
+            className="glass-card"
+            style={{
+              padding: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+              <span style={{ fontSize: 18 }}>{loading ? "…" : totalCount}</span>
+              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
+                partie(s)
+              </span>
+            </div>
           </div>
         </div>
 
-        <Link className="btn" href="/player/golf/rounds/new">
-          Ajouter un parcours
-        </Link>
-      </div>
+        {/* List */}
+        <div className="glass-section">
+          <div className="glass-card">
+            {loading ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            ) : totalCount === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun parcours pour le moment.</div>
+            ) : rounds.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun résultat pour ce filtre.</div>
+            ) : (
+              <div className="marketplace-list marketplace-list-top">
+                {rounds.map((r) => {
+                  const c = computedByRoundId[r.id];
+                  const configParts: string[] = [];
+                  if (r.course_name) configParts.push(r.course_name);
+                  if (r.tee_name) configParts.push(r.tee_name);
+                  const configLine = configParts.filter(Boolean).join(" • ");
 
-      {error && <div style={{ color: "#a00" }}>{error}</div>}
+                  return (
+                    <Link
+                      key={r.id}
+                      href={`/player/golf/rounds/${r.id}/scorecard`}
+                      className="marketplace-link"
+                      title="Ouvrir la scorecard"
+                    >
+                      <div className="marketplace-item">
+                        <div style={{ display: "grid", gap: 10 }}>
+                          {/* Ligne 1: date (sans heure) + bloc score (comme scorecard) */}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "flex-start",
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                                {fmtDateOnly(r.start_at)}
+                              </div>
 
-      <div className="card" style={{ padding: 16, display: "grid", gap: 10 }}>
-        {loading ? (
-          <div style={{ color: "var(--muted)" }}>Chargement…</div>
-        ) : rounds.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontWeight: 700 }}>Aucun parcours enregistré.</div>
-        ) : (
-          rounds.map((r) => (
-            <Link
-              key={r.id}
-              href={`/player/golf/rounds/${r.id}`}
-              className="latest-item"
-              style={{ textDecoration: "none" }}
-            >
-              <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ fontWeight: 900, minWidth: 0 }} className="truncate">
-                    {r.round_type === "competition"
-                      ? `Compétition${r.competition_name ? ` — ${r.competition_name}` : ""}`
-                      : "Entraînement"}
-                  </div>
-                  <div style={{ fontWeight: 900 }}>
-                    {r.total_score == null ? "—" : `${r.total_score}`}
-                  </div>
-                </div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+                                <span className="pill-soft">{roundTitle(r)}</span>
 
-                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }} className="truncate">
-                  {fmtDateTime(r.start_at)}
-                  {r.course_name ? ` • ${r.course_name}` : ""}
-                  {r.location ? ` • ${r.location}` : ""}
-                </div>
+                                {!!configLine && (
+                                  <span
+                                    className="truncate"
+                                    style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}
+                                  >
+                                    ⛳ {configLine}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 12 }}>
-                  Putts: {r.total_putts ?? "—"} • GIR: {r.gir ?? "—"}
-                  {typeof r.fairways_hit === "number" && typeof r.fairways_total === "number"
-                    ? ` • FW: ${r.fairways_hit}/${r.fairways_total}`
-                    : ""}
-                </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>Score</div>
+                              <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>
+                                {c?.scoreTotal ?? "—"}
+                              </div>
+                              <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
+                                {c?.diffLabel ? `(${c.diffLabel})` : " "}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                          {/* Stats rapides (comme avant) */}
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            Putts: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                            {" • "}
+                            GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                            {c?.parTotal ? (
+                              <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.55)" }}> • Par {c.parTotal}</span>
+                            ) : null}
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                          {/* action unique */}
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                            <Link
+                              className="btn"
+                              href={`/player/golf/rounds/${r.id}/scorecard`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Scorecard
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
-            </Link>
-          ))
-        )}
+            )}
+          </div>
+
+          {/* Pagination */}
+          {totalCount > 0 && (
+            <div className="glass-section">
+              <div className="marketplace-pagination">
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={loading || page <= 1}
+                >
+                  ← Précédent
+                </button>
+
+                <div className="marketplace-page-indicator">
+                  Page {page} / {totalPages}
+                </div>
+
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={loading || page >= totalPages}
+                >
+                  Suivant →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

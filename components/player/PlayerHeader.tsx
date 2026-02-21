@@ -24,36 +24,38 @@ export default function PlayerHeader() {
     <>
       <header className="app-header">
         <div className="app-header-inner">
-          <div className="app-header-grid">
-            <div className="header-left">
+          <div className="app-header-grid app-header-grid--centered">
+            {/* LEFT: Burger */}
+            <div className="header-left header-left--icon">
+              <button
+                className="icon-btn"
+                type="button"
+                aria-label="Ouvrir le menu"
+                onClick={() => setOpen(true)}
+              >
+                <BurgerIcon />
+              </button>
+            </div>
+
+            {/* CENTER: Logo */}
+            <div className="header-center header-center--brand">
               <Link href="/player" className="brand" aria-label="NexTee - Accueil">
                 <span className="brand-nex">Nex</span>
                 <span className="brand-tee">Tee</span>
               </Link>
             </div>
 
-            <div className="header-center" />
-
-            <div className="header-right">
+            {/* RIGHT: Bell */}
+            <div className="header-right header-right--icon">
               <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
               </button>
-
-              <div className="desktop-only">
-                <button
-                  className="icon-btn"
-                  type="button"
-                  aria-label="Ouvrir le menu"
-                  onClick={() => setOpen(true)}
-                >
-                  <BurgerIcon />
-                </button>
-              </div>
             </div>
           </div>
         </div>
       </header>
 
+      {/* Drawer (désormais utilisable aussi en mobile/app via CSS) */}
       <PlayerDesktopDrawer open={open} onClose={() => setOpen(false)} />
     </>
   );

@@ -48,7 +48,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       <aside className="drawer-panel" aria-label="Menu principal">
         <div className="drawer-head">
           <div className="drawer-title">Menu</div>
-          <button className="icon-btn" type="button" onClick={onClose} aria-label="Fermer">
+          <button className="icon-btn drawer-close" type="button" onClick={onClose} aria-label="Fermer">
             ✕
           </button>
         </div>
