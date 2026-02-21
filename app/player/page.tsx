@@ -675,40 +675,80 @@ export default function PlayerHomePage() {
           <div className="section-title">Volume de jeu</div>
 
           <div className="glass-card">
-            <div className="muted-uc">{thisMonthTitle}</div>
-
-            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div
+              style={{
+                marginTop: 4,
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              {/* PARCOURS */}
               <div
                 style={{
                   borderWidth: 1,
                   borderStyle: "solid",
                   borderColor: "rgba(0,0,0,0.08)",
                   background: "rgba(255,255,255,0.55)",
-                  borderRadius: 14,
-                  padding: "12px 12px",
+                  borderRadius: 16,
+                  padding: "18px 12px",
+                  textAlign: "center",
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.62)" }}>Parcours</div>
-                <div style={{ marginTop: 6 }}>
-                  <span className="big-number">{roundsMonthCount}</span>
-                  <span className="unit">MOIS</span>
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 950,
+                    lineHeight: 1,
+                    color: "var(--green-dark)",
+                  }}
+                >
+                  {roundsMonthCount}
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 14,
+                    fontWeight: 900,
+                    letterSpacing: 1,
+                  }}
+                >
+                  PARCOURS
                 </div>
               </div>
 
+              {/* TROUS */}
               <div
                 style={{
                   borderWidth: 1,
                   borderStyle: "solid",
                   borderColor: "rgba(0,0,0,0.08)",
                   background: "rgba(255,255,255,0.55)",
-                  borderRadius: 14,
-                  padding: "12px 12px",
+                  borderRadius: 16,
+                  padding: "18px 12px",
+                  textAlign: "center",
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.62)" }}>Trous</div>
-                <div style={{ marginTop: 6 }}>
-                  <span className="big-number">{holesMonthCountApprox}</span>
-                  <span className="unit">EST.</span>
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 950,
+                    lineHeight: 1,
+                    color: "var(--green-dark)",
+                  }}
+                >
+                  {holesMonthCountApprox}
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 14,
+                    fontWeight: 900,
+                    letterSpacing: 1,
+                  }}
+                >
+                  TROUS
                 </div>
               </div>
             </div>
