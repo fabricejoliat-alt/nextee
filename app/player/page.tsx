@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { PlusCircle } from "lucide-react";
 
 type Profile = {
   id: string;
@@ -83,31 +84,6 @@ function getInitials(p?: Profile | null) {
   return `${fi}${li}`;
 }
 
-function initialsName(p?: Profile | null) {
-  const f = (p?.first_name ?? "").trim();
-  const l = (p?.last_name ?? "").trim();
-  if (!f && !l) return "Utilisateur";
-  if (f && l) return `${f} ${l[0].toUpperCase()}.`;
-  return f || l;
-}
-
-function priceLabel(it: Item) {
-  if (it.is_free) return "À donner";
-  if (it.price == null) return "—";
-  return `${it.price} CHF`;
-}
-
-function compactMeta(it: Item) {
-  const parts: string[] = [];
-  if (it.category) parts.push(it.category);
-  if (it.condition) parts.push(it.condition);
-
-  const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
-  if (bm) parts.push(bm);
-
-  return parts.join(" • ");
-}
-
 function truncate(s: string, max: number) {
   const t = (s ?? "").trim();
   if (t.length <= max) return t;
@@ -138,6 +114,21 @@ function monthTitle(now = new Date()) {
   })
     .format(now)
     .toUpperCase();
+}
+
+function priceLabel(it: Item) {
+  if (it.is_free) return "À donner";
+  if (it.price == null) return "—";
+  return `${it.price} CHF`;
+}
+
+function compactMeta(it: Item) {
+  const parts: string[] = [];
+  if (it.category) parts.push(it.category);
+  if (it.condition) parts.push(it.condition);
+  const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
+  if (bm) parts.push(bm);
+  return parts.join(" • ");
 }
 
 function Donut({ percent }: { percent: number }) {
@@ -228,8 +219,6 @@ export default function PlayerHomePage() {
     return names.join(" • ");
   }, [clubs]);
 
-  const handicapDelta = -0.4;
-
   const trainingsSummary = useMemo(() => {
     const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
     const count = monthSessions.length;
@@ -237,8 +226,6 @@ export default function PlayerHomePage() {
     const motivationAvg = avg(monthSessions.map((s) => s.motivation));
     const satisfactionAvg = avg(monthSessions.map((s) => s.satisfaction));
     const difficultyAvg = avg(monthSessions.map((s) => s.difficulty));
-
-    const formeApprox = difficultyAvg == null ? null : Math.round((6.2 - difficultyAvg) * 10) / 10;
 
     const byCat: Record<string, number> = {};
     for (const it of monthItems) byCat[it.category] = (byCat[it.category] ?? 0) + (it.minutes || 0);
@@ -255,6 +242,18 @@ export default function PlayerHomePage() {
     const objective = 500;
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
+    // ✅ Dernière entrée (pour variation vs moyenne du mois)
+    const last = monthSessions?.[0] ?? null;
+
+    const deltaMotivation =
+      typeof last?.motivation === "number" && typeof motivationAvg === "number" ? Math.round((last.motivation - motivationAvg) * 10) / 10 : null;
+
+    const deltaDifficulty =
+      typeof last?.difficulty === "number" && typeof difficultyAvg === "number" ? Math.round((last.difficulty - difficultyAvg) * 10) / 10 : null;
+
+    const deltaSatisfaction =
+      typeof last?.satisfaction === "number" && typeof satisfactionAvg === "number" ? Math.round((last.satisfaction - satisfactionAvg) * 10) / 10 : null;
+
     return {
       totalMinutes,
       count,
@@ -262,8 +261,11 @@ export default function PlayerHomePage() {
       percent,
       top,
       motivationAvg,
+      difficultyAvg,
       satisfactionAvg,
-      formeApprox,
+      deltaMotivation,
+      deltaDifficulty,
+      deltaSatisfaction,
     };
   }, [monthSessions, monthItems]);
 
@@ -385,10 +387,7 @@ export default function PlayerHomePage() {
 
       const sIds = sess.map((s) => s.id);
       if (sIds.length > 0) {
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in(
-          "session_id",
-          sIds
-        );
+        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", sIds);
         setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
       } else {
         setMonthItems([]);
@@ -431,14 +430,29 @@ export default function PlayerHomePage() {
   }, []);
 
   const avatarUrl = useMemo(() => {
-  const base = profile?.avatar_url?.trim() || "";
-  if (!base) return null;
-  return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
-}, [profile?.avatar_url]);
+    const base = profile?.avatar_url?.trim() || "";
+    if (!base) return null;
+    return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
+  }, [profile?.avatar_url]);
 
   const focusGIR = 57;
   const focusFairway = 72;
   const focusPuttingAvg = 43;
+
+  // helpers pour afficher ▲▼ + valeur
+  function deltaLabel(d: number | null) {
+    if (typeof d !== "number") return "—";
+    const abs = Math.abs(d).toFixed(1);
+    if (d > 0) return `▲ +${abs}`;
+    if (d < 0) return `▼ -${abs}`;
+    return `• ${abs}`;
+  }
+  function deltaClass(d: number | null) {
+    if (typeof d !== "number") return "sense-val";
+    if (d > 0) return "sense-val up";
+    if (d < 0) return "sense-val down";
+    return "sense-val";
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -447,11 +461,7 @@ export default function PlayerHomePage() {
           <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={avatarUrl}
-                alt=""
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
+              <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             ) : (
               <div
                 style={{
@@ -475,9 +485,9 @@ export default function PlayerHomePage() {
           <div style={{ minWidth: 0 }}>
             <div className="hero-title">{loading ? "Salut…" : `${displayHello(profile)} 👋`}</div>
 
+            {/* ✅ Handicap sans variation */}
             <div className="hero-sub">
               <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
-              <div className="delta-pill">{handicapDelta >= 0 ? `+${handicapDelta}` : `${handicapDelta}`}</div>
             </div>
 
             <div className="hero-club truncate">{heroClubLine}</div>
@@ -502,9 +512,7 @@ export default function PlayerHomePage() {
 
                 <div className="hr-soft" />
 
-                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
-                  Objectif : {trainingsSummary.objective} min
-                </div>
+                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Objectif : {trainingsSummary.objective} min</div>
 
                 <div style={{ marginTop: 10 }}>
                   <span className="pill-soft">⛳ {trainingsSummary.count} séances</span>
@@ -544,7 +552,7 @@ export default function PlayerHomePage() {
               )}
             </div>
 
-            {/* Sensations */}
+            {/* ✅ Sensations (moyenne mois + variation vs dernière entrée) */}
             <div className="glass-card">
               <div className="card-title">Sensations</div>
 
@@ -552,42 +560,30 @@ export default function PlayerHomePage() {
                 <div>
                   <div className="sense-row">
                     <div>Motivation</div>
-                    <div className="sense-val up">▲ {trainingsSummary.motivationAvg ?? "—"}</div>
+                    <div className={deltaClass(trainingsSummary.deltaMotivation)}>{deltaLabel(trainingsSummary.deltaMotivation)}</div>
                   </div>
                   <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
+                    <span style={{ width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="sense-row">
+                    <div>Difficulté</div>
+                    <div className={deltaClass(trainingsSummary.deltaDifficulty)}>{deltaLabel(trainingsSummary.deltaDifficulty)}</div>
+                  </div>
+                  <div className="bar">
+                    <span style={{ width: `${clamp(((trainingsSummary.difficultyAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="sense-row">
                     <div>Satisfaction</div>
-                    <div className="sense-val up">▲ {trainingsSummary.satisfactionAvg ?? "—"}</div>
+                    <div className={deltaClass(trainingsSummary.deltaSatisfaction)}>{deltaLabel(trainingsSummary.deltaSatisfaction)}</div>
                   </div>
                   <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="sense-row">
-                    <div>Forme</div>
-                    <div className="sense-val down">▼ {trainingsSummary.formeApprox ?? "—"}</div>
-                  </div>
-                  <div className="bar">
-                    <span
-                      style={{
-                        width: `${clamp(((trainingsSummary.formeApprox ?? 0) / 6) * 100, 0, 100)}%`,
-                      }}
-                    />
+                    <span style={{ width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
                   </div>
                 </div>
               </div>
@@ -595,14 +591,14 @@ export default function PlayerHomePage() {
           </div>
 
           <Link href="/player/trainings/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <PlusCircle size={18} />
             Ajouter un entraînement
           </Link>
         </section>
 
-        {/* ===== Mes parcours ===== */}
+        {/* ===== ✅ Volume de jeu ===== */}
         <section className="glass-section">
-          <div className="section-title">Mes parcours</div>
+          <div className="section-title">Volume de jeu</div>
 
           <div className="grid-2">
             <div className="glass-card">
@@ -623,15 +619,15 @@ export default function PlayerHomePage() {
               <div className="muted-uc">FOCUS</div>
               <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
                 <div className="sense-row">
-                  <div>GIR</div>
+                  <div>Greens en régulation</div>
                   <div className="sense-val up">▲ {focusGIR}%</div>
                 </div>
                 <div className="sense-row">
-                  <div>Putting Avg</div>
-                  <div className="sense-val down">▲ {focusPuttingAvg}</div>
+                  <div>Moyenne de putt</div>
+                  <div className="sense-val up">▲ {focusPuttingAvg}</div>
                 </div>
                 <div className="sense-row">
-                  <div>FAIRWAY</div>
+                  <div>Fairways touchés</div>
                   <div className="sense-val up">▲ {focusFairway}%</div>
                 </div>
               </div>
@@ -639,7 +635,7 @@ export default function PlayerHomePage() {
           </div>
 
           <Link href="/player/golf/rounds/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <PlusCircle size={18} />
             Ajouter un parcours
           </Link>
         </section>
@@ -669,7 +665,6 @@ export default function PlayerHomePage() {
 
                         <div className="marketplace-body">
                           <div className="marketplace-item-title">{truncate(it.title, 80)}</div>
-
                           {meta && <div className="marketplace-meta">{meta}</div>}
 
                           <div className="marketplace-price-row">
@@ -685,7 +680,7 @@ export default function PlayerHomePage() {
           )}
 
           <Link href="/player/marketplace/new" className="cta-green">
-            <span style={{ fontSize: 20, lineHeight: 0 }}>＋</span>
+            <PlusCircle size={18} />
             Publier une annonce
           </Link>
         </section>

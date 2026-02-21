@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import {
   ResponsiveContainer,
@@ -15,7 +14,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -113,12 +112,6 @@ function weekStartMonday(d: Date) {
   return x;
 }
 
-function typeLabelShort(t: SessionType) {
-  if (t === "club") return "Club";
-  if (t === "private") return "Privé";
-  return "Individuel";
-}
-
 function typeLabelLong(t: SessionType) {
   if (t === "club") return "Entraînement en club";
   if (t === "private") return "Entraînement privé";
@@ -200,8 +193,9 @@ const chipStyle: React.CSSProperties = {
 };
 
 const chipActive: React.CSSProperties = {
-  borderColor: "rgba(53,72,59,0.35)",
-  background: "rgba(53,72,59,0.10)",
+  borderColor: "rgba(53,72,59,0.45)",
+  background: "rgba(53,72,59,0.14)",
+  boxShadow: "0 8px 18px rgba(0,0,0,0.10)",
 };
 
 function diffDaysInclusive(fromYmd: string, toYmd: string) {
@@ -224,6 +218,9 @@ export default function GolfDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [preset, setPreset] = useState<Preset>("month");
+
+  // ✅ volet dates personnalisées (masqué par défaut)
+  const [customOpen, setCustomOpen] = useState(false);
 
   // filters (YYYY-MM-DD)
   const [fromDate, setFromDate] = useState<string>("");
@@ -289,6 +286,7 @@ export default function GolfDashboardPage() {
     setFromDate("");
     setToDate("");
     setPreset("all");
+    setCustomOpen(false);
   }
 
   const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate), [fromDate, toDate]);
@@ -364,11 +362,7 @@ export default function GolfDashboardPage() {
           return;
         }
 
-        const iRes = await supabase
-          .from("training_session_items")
-          .select("session_id,category,minutes")
-          .in("session_id", ids);
-
+        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
         if (iRes.error) throw new Error(iRes.error.message);
 
         setItems((iRes.data ?? []) as TrainingItemRow[]);
@@ -544,12 +538,15 @@ export default function GolfDashboardPage() {
     return "vs période précédente";
   }, [prevRange, preset]);
 
-  // ✅ responsive grid: 1 colonne en dessous de 520px
-  const kpiGridStyle: React.CSSProperties = {
-    display: "grid",
-    gap: 12,
-    gridTemplateColumns: "1fr",
-  };
+  // ✅ responsive grid: 1 colonne en dessous de 900px (et 2 colonnes au-dessus)
+  const kpiGridClass = "golf-kpi-grid";
+
+  const presetLabel = useMemo(() => {
+    if (preset === "month") return "Ce mois";
+    if (preset === "last3") return "3 derniers mois";
+    if (preset === "all") return "Toute l’activité";
+    return "Personnalisé";
+  }, [preset]);
 
   return (
     <div className="player-dashboard-bg">
@@ -559,8 +556,9 @@ export default function GolfDashboardPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Golf — Analyse
+                GOLF - ANALYSE
               </div>
+
               <div className="marketplace-filter-label" style={{ margin: 0 }}>
                 <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                   <CalendarRange size={16} />
@@ -569,14 +567,7 @@ export default function GolfDashboardPage() {
               </div>
             </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player">
-                Dashboard
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player/trainings">
-                Entraînements
-              </Link>
-            </div>
+            {/* ✅ boutons sommet supprimés */}
           </div>
 
           {error && <div className="marketplace-error">{error}</div>}
@@ -591,74 +582,146 @@ export default function GolfDashboardPage() {
                 type="button"
                 className="btn"
                 style={{ ...chipStyle, ...(preset === "month" ? chipActive : {}) }}
-                onClick={() => setPreset("month")}
+                onClick={() => {
+                  setPreset("month");
+                  setCustomOpen(false);
+                }}
                 disabled={loading}
+                aria-pressed={preset === "month"}
               >
-                Mois en cours
+                Ce mois
               </button>
+
               <button
                 type="button"
                 className="btn"
                 style={{ ...chipStyle, ...(preset === "last3" ? chipActive : {}) }}
-                onClick={() => setPreset("last3")}
+                onClick={() => {
+                  setPreset("last3");
+                  setCustomOpen(false);
+                }}
                 disabled={loading}
+                aria-pressed={preset === "last3"}
               >
                 3 derniers mois
               </button>
+
               <button
                 type="button"
                 className="btn"
                 style={{ ...chipStyle, ...(preset === "all" ? chipActive : {}) }}
-                onClick={() => setPreset("all")}
+                onClick={() => {
+                  setPreset("all");
+                  setCustomOpen(false);
+                }}
                 disabled={loading}
+                aria-pressed={preset === "all"}
               >
                 Toute l’activité
               </button>
-            </div>
 
-            <div className="hr-soft" style={{ margin: "12px 0" }} />
-
-            {/* Dates (stacked, safe mobile) */}
-            <div style={{ display: "grid", gap: 10, overflow: "hidden" }}>
-              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => {
-                    setFromDate(e.target.value);
-                    setPreset("custom");
-                  }}
-                  disabled={loading}
-                  style={dateInputStyle}
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => {
-                    setToDate(e.target.value);
-                    setPreset("custom");
-                  }}
-                  disabled={loading}
-                  style={dateInputStyle}
-                />
-              </label>
-
-              <button className="btn" type="button" onClick={clearDates} disabled={loading} style={{ width: "100%", height: 44 }}>
-                Effacer les dates
+              {/* ✅ bouton pour ouvrir le volet dates */}
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  ...chipStyle,
+                  ...(preset === "custom" ? chipActive : {}),
+                  marginLeft: "auto",
+                }}
+                onClick={() => setCustomOpen((v) => !v)}
+                disabled={loading}
+                aria-expanded={customOpen}
+              >
+                <SlidersHorizontal size={16} />
+                Dates
               </button>
             </div>
+
+            {/* ✅ zone custom masquée */}
+            {customOpen && (
+              <>
+                <div className="hr-soft" style={{ margin: "12px 0" }} />
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                    Personnaliser les dates
+                    <span style={{ marginLeft: 8, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>({presetLabel})</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setCustomOpen(false)}
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      background: "rgba(255,255,255,0.65)",
+                      borderRadius: 999,
+                      padding: "8px 10px",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontWeight: 950,
+                    }}
+                  >
+                    <X size={16} />
+                    Fermer
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gap: 10, overflow: "hidden", marginTop: 10 }}>
+                  <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => {
+                        onChangeFrom(e.target.value);
+                      }}
+                      disabled={loading}
+                      style={dateInputStyle}
+                    />
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => {
+                        onChangeTo(e.target.value);
+                      }}
+                      disabled={loading}
+                      style={dateInputStyle}
+                    />
+                  </label>
+
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={clearDates}
+                    disabled={loading}
+                    style={{ width: "100%", height: 44 }}
+                  >
+                    Effacer les dates
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ✅ Titre demandé */}
+        <div className="glass-section" style={{ paddingTop: 0 }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>
+            MES ENTRAINEMENTS
           </div>
         </div>
 
         {/* ===== KPIs ===== */}
         <div className="glass-section">
-          {/* ✅ 1 colonne sur mobile/PWA */}
-          <div style={kpiGridStyle}>
+          <div className={kpiGridClass} style={kpiGridStyle}>
             {/* Volume */}
             <div className="glass-card">
               <div className="card-title">Volume</div>
@@ -684,7 +747,9 @@ export default function GolfDashboardPage() {
                     </div>
 
                     {compareLabel && (
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
+                        {loadingPrev ? "Comparatif…" : compareLabel}
+                      </div>
                     )}
                   </div>
 
@@ -725,7 +790,9 @@ export default function GolfDashboardPage() {
                   <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={avgSatisfaction} delta={deltaSat} />
 
                   {compareLabel && (
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
+                      {loadingPrev ? "Comparatif…" : compareLabel}
+                    </div>
                   )}
                 </div>
               )}
@@ -809,13 +876,12 @@ export default function GolfDashboardPage() {
           </div>
         </div>
 
-        {/* Placeholder parcours */}
+        {/* ✅ Placeholder analyse de parcours (par la suite) */}
         <div className="glass-section">
           <div className="glass-card">
-            <div className="card-title">Parcours (bientôt)</div>
+            <div className="card-title">Analyse des parcours (bientôt)</div>
             <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, lineHeight: 1.4 }}>
-              Ici on ajoutera l’analyse des parcours (score, GIR, fairways, putts, eagles/birdies/bogeys, etc.)
-              et la corrélation avec tes entraînements.
+              Ici on ajoutera l’analyse de parcours (score, GIR, fairways, putts, eagles/birdies/bogeys, etc.).
             </div>
           </div>
         </div>
@@ -823,7 +889,7 @@ export default function GolfDashboardPage() {
         <div style={{ height: 12 }} />
       </div>
 
-      {/* ✅ petite règle responsive : 2 colonnes uniquement sur grand écran */}
+      {/* ✅ 2 colonnes uniquement sur grand écran */}
       <style jsx global>{`
         @media (min-width: 900px) {
           .golf-kpi-grid {
@@ -870,4 +936,10 @@ const typeRowRightStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 950,
   color: "rgba(0,0,0,0.78)",
+};
+
+const kpiGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "1fr",
 };
