@@ -1,8 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import {
+  Home,
+  Flag,
+  ClipboardList,
+  PlusCircle,
+  Map,
+  Store,
+  Tags,
+  User,
+  LogOut,
+  X,
+} from "lucide-react";
+
+/**
+ * ✅ Adapte ici si tes routes ne correspondent pas exactement
+ */
+const ROUTES = {
+  home: "/player",
+  golfDashboard: "/player/golf",
+  
+  trainingsList: "/player/trainings",
+  trainingsNew: "/player/trainings/new",
+
+  roundsList: "/player/golf/rounds",
+  roundsNew: "/player/golf/rounds/new",
+
+  marketplaceAll: "/player/marketplace",
+  marketplaceMine: "/player/marketplace/mine",
+  marketplaceNew: "/player/marketplace/new",
+
+  profileEdit: "/player/profile",
+} as const;
 
 type Props = {
   open: boolean;
@@ -10,15 +43,20 @@ type Props = {
 };
 
 function isActive(pathname: string, href: string) {
+  // Active exact match or prefix match (useful for nested pages)
   if (href === "/player") return pathname === "/player";
-  return pathname.startsWith(href);
+  return pathname === href || pathname.startsWith(href + "/");
 }
 
 export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const [fullName, setFullName] = useState<string>("Nom et Prénom");
 
   useEffect(() => {
     if (!open) return;
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -26,65 +64,169 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  // Load profile name when drawer opens (light + robust)
+  useEffect(() => {
+    if (!open) return;
 
-  const items = [
-    { href: "/player", label: "Accueil", enabled: true },
-    { href: "/player/calendar", label: "Calendrier", enabled: false },
-    { href: "/player/golf", label: "Mon Golf", enabled: true },
-    { href: "/player/marketplace", label: "Marketplace", enabled: true },
-    { href: "/player/profile", label: "Mon profil", enabled: true },
-  ] as const;
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const userId = auth.user?.id;
+      if (!userId) {
+        setFullName("Nom et Prénom");
+        return;
+      }
+
+      // Assumption: table "profiles" has first_name/last_name
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name,last_name")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const fn = (profile?.first_name ?? "").trim();
+      const ln = (profile?.last_name ?? "").trim();
+      const name = `${fn} ${ln}`.trim();
+
+      setFullName(name || "Nom et Prénom");
+    })();
+  }, [open]);
+
+  const nav = useMemo(
+    () => [
+      {
+        label: "Accueil",
+        icon: Home,
+        href: ROUTES.home,
+      },
+      {
+        label: "Mon Golf",
+        icon: Flag,
+        children: [
+          { label: "Dashboard", icon: Home, href: ROUTES.golfDashboard },
+          { label: "Mes entraînements", icon: ClipboardList, href: ROUTES.trainingsList },
+          { label: "Ajouter un entraînement", icon: PlusCircle, href: ROUTES.trainingsNew },
+          { label: "Mes parcours", icon: Map, href: ROUTES.roundsList },
+          { label: "Ajouter un parcours", icon: PlusCircle, href: ROUTES.roundsNew },
+        ],
+      },
+      {
+        label: "Marketplace",
+        icon: Store,
+        children: [
+          { label: "Toutes les annonces", icon: Tags, href: ROUTES.marketplaceAll },
+          { label: "Mes annonces", icon: ClipboardList, href: ROUTES.marketplaceMine },
+          { label: "Ajouter une annonce", icon: PlusCircle, href: ROUTES.marketplaceNew },
+        ],
+      },
+    ],
+    []
+  );
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    onClose();
+    router.push("/");
+    router.refresh();
+  }
+
+  if (!open) return null;
 
   return (
     <>
       <button
         type="button"
         className="drawer-overlay"
-        aria-label="Fermer le menu"
+        aria-label="Fermer"
         onClick={onClose}
       />
 
-      <aside className="drawer-panel" aria-label="Menu principal">
-        <div className="drawer-head">
-          <div className="drawer-title">Menu</div>
+      <aside className="drawer-panel drawer-panel--left" aria-label="Navigation">
+        {/* Top bar */}
+        <div className="drawer-top">
+          <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="NexTee">
+            <span className="drawer-brand-nex">Nex</span>
+            <span className="drawer-brand-tee">Tee</span>
+          </Link>
+
           <button className="icon-btn drawer-close" type="button" onClick={onClose} aria-label="Fermer">
-            ✕
+            <X size={20} strokeWidth={2} />
           </button>
         </div>
 
+        {/* Navigation */}
         <nav className="drawer-nav">
-          {items.map((it) => {
-            const active = isActive(pathname, it.href);
+          {nav.map((item) => {
+            const Icon = item.icon;
+            const activeTop = item.href ? isActive(pathname, item.href) : item.children?.some((c) => isActive(pathname, c.href));
 
-            if (!it.enabled) {
+            if (item.href) {
               return (
-                <button
-                  key={it.href}
-                  type="button"
-                  className={`drawer-link ${active ? "active" : ""}`}
-                  disabled
-                  aria-disabled="true"
-                  title="Bientôt disponible"
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`drawer-item ${activeTop ? "active" : ""}`}
+                  onClick={onClose}
                 >
-                  {it.label}
-                  <span className="drawer-soon">Bientôt</span>
-                </button>
+                  <span className="drawer-item-left">
+                    <Icon size={18} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </span>
+                </Link>
               );
             }
 
+            // Section with children
             return (
-              <Link
-                key={it.href}
-                href={it.href}
-                className={`drawer-link ${active ? "active" : ""}`}
-                onClick={onClose}
-              >
-                {it.label}
-              </Link>
+              <div key={item.label} className="drawer-group">
+                <div className={`drawer-item drawer-item--group ${activeTop ? "active" : ""}`}>
+                  <span className="drawer-item-left">
+                    <Icon size={18} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </span>
+                </div>
+
+                <div className="drawer-sub">
+                  {item.children?.map((c) => {
+                    const CIcon = c.icon;
+                    const active = isActive(pathname, c.href);
+                    return (
+                      <Link
+                        key={c.label}
+                        href={c.href}
+                        className={`drawer-subitem ${active ? "active" : ""}`}
+                        onClick={onClose}
+                      >
+                        <span className="drawer-item-left">
+                          <CIcon size={16} strokeWidth={2} />
+                          <span>{c.label}</span>
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>
+
+        {/* Account section bottom */}
+        <div className="drawer-account">
+          <div className="drawer-account-name">{fullName}</div>
+
+          <Link href={ROUTES.profileEdit} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profileEdit) ? "active" : ""}`} onClick={onClose}>
+            <span className="drawer-item-left">
+              <User size={16} strokeWidth={2} />
+              <span>Modifier mon profil</span>
+            </span>
+          </Link>
+
+          <button type="button" className="drawer-subitem drawer-subitem--danger" onClick={handleLogout}>
+            <span className="drawer-item-left">
+              <LogOut size={16} strokeWidth={2} />
+              <span>Déconnexion</span>
+            </span>
+          </button>
+        </div>
       </aside>
     </>
   );

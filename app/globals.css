@@ -356,7 +356,7 @@ input[type="radio"]{
 }
 
 /* =========================================================
-   7) DRAWER (mobile + app + desktop) — vert foncé
+   7) DRAWER (mobile + app + desktop) — gauche + sous-menus
    ========================================================= */
 
 .drawer-overlay{
@@ -369,11 +369,10 @@ input[type="radio"]{
   cursor: pointer;
 }
 
+/* panneau */
 .drawer-panel{
   position: fixed;
   top: 0;
-  right: 0;
-
   height: 100vh;
   height: 100dvh;
   width: 340px;
@@ -382,80 +381,164 @@ input[type="radio"]{
   padding-top: var(--safe-top);
 
   background: var(--green-dark);
-  border-left: 1px solid rgba(255,255,255,0.12);
   z-index: 2100;
 
   display: flex;
   flex-direction: column;
-  padding: 14px;
 
   color: rgba(255,255,255,0.95);
+
+  box-shadow: 20px 0 40px rgba(0,0,0,0.35);
 }
 
-.drawer-head{
+/* ✅ à gauche */
+.drawer-panel--left{
+  left: 0;
+  right: auto;
+  border-right: 1px solid rgba(255,255,255,0.12);
+}
+
+/* top */
+.drawer-top{
+  height: var(--header-h);
+  padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 
-  padding-bottom: 12px;
   border-bottom: 1px solid rgba(255,255,255,0.12);
-  margin-bottom: 10px;
-}
-
-.drawer-title{
-  font-weight: 900;
-  font-size: 16px;
-  color: rgba(255,255,255,0.95);
 }
 
 .drawer-close{
   color: rgba(255,255,255,0.95);
 }
 
-.drawer-nav{
-  display: grid;
-  gap: 10px;
-  padding-top: 6px;
+/* brand in drawer */
+.drawer-brand{
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  font-weight: 950;
+  font-size: 20px;
+  letter-spacing: -0.4px;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.35);
 }
 
-.drawer-link{
+.drawer-brand-nex{ color: #fff; }
+.drawer-brand-tee{ color: rgba(255,255,255,0.85); }
+
+/* nav */
+.drawer-nav{
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+}
+
+/* top-level items */
+.drawer-item{
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  width: 100%;
-  text-align: left;
-
   padding: 12px 12px;
-  border-radius: 14px;
-
+  border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.14);
   background: rgba(255,255,255,0.06);
 
   color: rgba(255,255,255,0.92);
   text-decoration: none;
-  font-weight: 800;
+  font-weight: 900;
   font-size: 14px;
-  font-family: inherit;
+}
+
+.drawer-item:hover{ background: rgba(255,255,255,0.10); }
+.drawer-item.active{
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.22);
+}
+
+/* group header (not clickable) */
+.drawer-item--group{
+  cursor: default;
+}
+
+/* left part with icon + label */
+.drawer-item-left{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* sub items */
+.drawer-sub{
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  padding-left: 10px; /* indentation */
+  border-left: 1px solid rgba(255,255,255,0.14);
+  margin-left: 10px;
+}
+
+.drawer-subitem{
+  display: flex;
+  align-items: center;
+
+  padding: 10px 12px;
+  border-radius: 14px;
+
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+
+  color: rgba(255,255,255,0.90);
+  text-decoration: none;
+  font-weight: 850;
+  font-size: 13px;
 
   cursor: pointer;
 }
 
-.drawer-link:hover{ background: rgba(255,255,255,0.10); }
-.drawer-link.active{
-  border-color: rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.14);
-}
-.drawer-link:disabled{
-  opacity: 0.55;
-  cursor: not-allowed;
+.drawer-subitem:hover{ background: rgba(255,255,255,0.08); }
+.drawer-subitem.active{
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.18);
 }
 
-.drawer-soon{
-  font-size: 12px;
-  font-weight: 800;
-  color: rgba(255,255,255,0.65);
+/* bottom account area */
+.drawer-account{
+  margin-top: auto;
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+
+  display: grid;
+  gap: 10px;
+}
+
+.drawer-account-name{
+  font-weight: 950;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  color: rgba(255,255,255,0.95);
+  opacity: 0.95;
+}
+
+/* account buttons style */
+.drawer-subitem--account{
+  width: 100%;
+}
+
+.drawer-subitem--danger{
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.92);
+}
+
+.drawer-subitem--danger:hover{
+  background: rgba(185,28,28,0.22);
+  border-color: rgba(185,28,28,0.35);
 }
 
 /* =========================================================
