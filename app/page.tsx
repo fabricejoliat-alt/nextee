@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,19 +23,15 @@ export default function LoginPage() {
       password,
     });
 
-    if (error || !data.session?.access_token) {
+    // ✅ suffit: si session OK, Supabase (SSR) gère les cookies
+    if (error || !data.session) {
       setError(error?.message ?? "Erreur de connexion.");
       setLoading(false);
       return;
     }
 
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${data.session.access_token}`,
-      },
-    });
-
+    // ✅ plus besoin d'Authorization: Bearer ...
+    const res = await fetch("/api/auth", { method: "POST" });
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -43,7 +40,9 @@ export default function LoginPage() {
       return;
     }
 
-    router.push(json?.redirectTo || "/player");
+    // optionnel: si tu as /login?next=/player/golf...
+    const next = searchParams.get("next");
+    router.push(next || json?.redirectTo || "/player");
   }
 
   return (
