@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,36 +15,32 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  e.preventDefault();
+  setLoading(true);
+  setError(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-    // ✅ suffit: si session OK, Supabase (SSR) gère les cookies
-    if (error || !data.session) {
-      setError(error?.message ?? "Erreur de connexion.");
-      setLoading(false);
-      return;
-    }
-
-    // ✅ plus besoin d'Authorization: Bearer ...
-    const res = await fetch("/api/auth", { method: "POST" });
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      setError(json?.error ?? `Erreur serveur auth (${res.status})`);
-      setLoading(false);
-      return;
-    }
-
-    // optionnel: si tu as /login?next=/player/golf...
-    const next = searchParams.get("next");
-    router.push(next || json?.redirectTo || "/player");
+  if (error || !data.session) {
+    setError(error?.message ?? "Erreur de connexion.");
+    setLoading(false);
+    return;
   }
+
+  const res = await fetch("/api/auth", { method: "POST" });
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    setError(json?.error ?? `Erreur serveur auth (${res.status})`);
+    setLoading(false);
+    return;
+  }
+
+  router.push(json?.redirectTo || "/player");
+}
 
   return (
     <div className="auth-bg">
