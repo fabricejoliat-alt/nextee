@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type ApiCourseLite = {
@@ -22,11 +22,9 @@ type ApiTee = {
   holes: Array<{ par?: number; handicap?: number }>;
 };
 
-function quarterHours() {
-  const out: string[] = [];
-  for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += 15) out.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-  return out;
-}
+type ProfileRow = {
+  handicap: number | null;
+};
 
 function safeStr(v: any) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -104,7 +102,6 @@ function normalizeTees(courseDetail: any): ApiTee[] {
     });
   });
 
-  // ordre strict demandé
   const orderKey = (t: ApiTee) => {
     const n = norm(t.tee_name);
     if (t.gender === "male" && (n.includes("white") || n.includes("blanc"))) return 1;
@@ -120,6 +117,7 @@ function normalizeTees(courseDetail: any): ApiTee[] {
 function teeLabel(t: ApiTee) {
   const n = norm(t.tee_name);
   let color = t.tee_name;
+
   if (n.includes("white") || n.includes("blanc")) color = "Tee blanc";
   else if (n.includes("yellow") || n.includes("jaune")) color = "Tee jaune";
   else if (n.includes("blue") || n.includes("bleu")) color = "Tee bleu";
@@ -144,12 +142,42 @@ function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string) {
   }));
 }
 
+function localContainsFilter(list: ApiCourseLite[], query: string) {
+  const nq = norm(query);
+  if (!nq) return list;
+
+  const scored = list
+    .map((c) => {
+      const hay = norm(`${c.course_name} ${c.club_name ?? ""} ${c.city ?? ""} ${c.country ?? ""}`);
+      const idx = hay.indexOf(nq);
+      return { c, idx };
+    })
+    .filter((x) => x.idx >= 0)
+    .sort((a, b) => a.idx - b.idx);
+
+  const filtered = scored.map((x) => x.c);
+  return filtered.length ? filtered : list;
+}
+
 export default function NewRoundPage() {
   const router = useRouter();
-  const times = useMemo(() => quarterHours(), []);
   const debounceRef = useRef<any>(null);
 
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [startAt, setStartAt] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+      d.getMinutes()
+    )}`;
+  });
+
+  const [roundType, setRoundType] = useState<"training" | "competition">("training");
+  const [competitionName, setCompetitionName] = useState("");
+  const [handicapStart, setHandicapStart] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
 
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
@@ -160,50 +188,36 @@ export default function NewRoundPage() {
   const [tees, setTees] = useState<ApiTee[]>([]);
   const [selectedTeeId, setSelectedTeeId] = useState("");
 
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    time: "09:00",
+  const selectedTee = useMemo(() => tees.find((t) => t.id === selectedTeeId) ?? null, [tees, selectedTeeId]);
 
-    round_type: "training" as "training" | "competition",
-    competition_name: "",
+  useEffect(() => {
+    (async () => {
+      setError(null);
 
-    handicap_start: "",
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes.user) {
+        setError("Session invalide. Reconnecte-toi.");
+        return;
+      }
 
-    course_name: "",
-    tee_name: "",
-    slope_rating: "",
-    course_rating: "",
+      const profRes = await supabase.from("profiles").select("handicap").eq("id", userRes.user.id).maybeSingle();
+      if (profRes.error) {
+        console.warn("profile handicap load failed:", profRes.error.message);
+        return;
+      }
 
-    notes: "",
-  });
-
-  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
-    setForm((p) => ({ ...p, [k]: v }));
-  }
+      const h = (profRes.data as ProfileRow | null)?.handicap;
+      if (typeof h === "number" && Number.isFinite(h)) {
+        setHandicapStart((prev) => (prev.trim() ? prev : String(h)));
+      }
+    })();
+  }, []);
 
   async function fetchSearch(query: string): Promise<ApiCourseLite[]> {
     const r = await fetch(`/api/golfcourse/search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
     const j = await r.json().catch(() => null);
     if (!r.ok) throw new Error(j?.error ?? "Erreur recherche API");
     return normalizeCourses(j);
-  }
-
-  function localContainsFilter(list: ApiCourseLite[], query: string) {
-    const nq = norm(query);
-    if (!nq) return list;
-
-    // match sur course_name + club_name + city + country
-    const scored = list
-      .map((c) => {
-        const hay = norm(`${c.course_name} ${c.club_name ?? ""} ${c.city ?? ""} ${c.country ?? ""}`);
-        const idx = hay.indexOf(nq);
-        return { c, idx };
-      })
-      .filter((x) => x.idx >= 0)
-      .sort((a, b) => a.idx - b.idx);
-
-    const filtered = scored.map((x) => x.c);
-    return filtered.length ? filtered : list;
   }
 
   async function doSearch(query: string) {
@@ -217,21 +231,16 @@ export default function NewRoundPage() {
     setError(null);
 
     try {
-      // 1) recherche directe
       let list = await fetchSearch(s);
 
-      // 2) fallback si trop peu de résultats : on élargit (ex: "lau" -> "la")
       if (list.length < 3 && s.length >= 3) {
         const fallback = await fetchSearch(s.slice(0, 2));
-        // merge unique
         const map = new Map<string, ApiCourseLite>();
         [...list, ...fallback].forEach((c) => map.set(String(c.id), c));
         list = Array.from(map.values());
       }
 
-      // 3) filtre local "contains" pour remonter Lausanne quand tu tapes lau/laus...
       const final = localContainsFilter(list, s);
-
       setResults(final);
     } catch (e: any) {
       setResults([]);
@@ -265,17 +274,9 @@ export default function NewRoundPage() {
       if (!r.ok) throw new Error(j?.error ?? "Erreur détail parcours API");
 
       setCourseDetail(j);
-
       const teeList = normalizeTees(j);
       setTees(teeList);
-
-      setForm((p) => ({
-        ...p,
-        course_name: c.course_name || "",
-        tee_name: "",
-        slope_rating: "",
-        course_rating: "",
-      }));
+      setSelectedTeeId("");
     } catch (e: any) {
       setError(e?.message ?? "Erreur détail parcours");
     }
@@ -283,65 +284,97 @@ export default function NewRoundPage() {
 
   function applyTee(teeId: string) {
     setSelectedTeeId(teeId);
-    const t = tees.find((x) => x.id === teeId);
-    if (!t) return;
-
-    setForm((p) => ({
-      ...p,
-      tee_name: t.tee_name,
-      slope_rating: typeof t.slope_rating === "number" ? String(t.slope_rating) : "",
-      course_rating: typeof t.course_rating === "number" ? String(t.course_rating) : "",
-    }));
   }
 
-  async function createRound() {
-    setError(null);
+  const canSave = useMemo(() => {
+    if (busy) return false;
+    if (!startAt) return false;
 
-    const date = form.date;
-    const time = form.time;
-    if (!date || !time) return setError("Date et heure requises.");
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) return false;
 
-    const startAt = new Date(`${date}T${time}:00`);
-    if (Number.isNaN(startAt.getTime())) return setError("Date/heure invalide.");
+    if (roundType === "competition" && !competitionName.trim()) return false;
+    if (!selectedCourse) return false;
+    if (!selectedTeeId) return false;
 
-    if (form.round_type === "competition" && !form.competition_name.trim()) {
-      return setError("Nom de compétition requis.");
+    if (handicapStart.trim()) {
+      const v = Number(handicapStart);
+      if (!Number.isFinite(v)) return false;
     }
 
-    if (!selectedCourse) return setError("Choisis un parcours.");
-    if (!selectedTeeId) return setError("Choisis un tee de départ.");
+    return true;
+  }, [busy, startAt, roundType, competitionName, selectedCourse, selectedTeeId, handicapStart]);
+
+  async function createRound(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSave) return;
+
+    setBusy(true);
+    setError(null);
+
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) {
+      setError("Date/heure invalide.");
+      setBusy(false);
+      return;
+    }
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) return setError("Session invalide.");
+    if (userErr || !userRes.user) {
+      setError("Session invalide. Reconnecte-toi.");
+      setBusy(false);
+      return;
+    }
+
+    if (!selectedCourse) {
+      setError("Choisis un parcours.");
+      setBusy(false);
+      return;
+    }
+
+    const selectedTeeObj = tees.find((t) => t.id === selectedTeeId) ?? null;
+    if (!selectedTeeObj) {
+      setError("Choisis un tee de départ.");
+      setBusy(false);
+      return;
+    }
+
+    const handicap_start = handicapStart.trim() === "" ? null : Number(handicapStart);
+    if (handicap_start !== null && Number.isNaN(handicap_start)) {
+      setError("Handicap invalide.");
+      setBusy(false);
+      return;
+    }
 
     const payload: any = {
       user_id: userRes.user.id,
-      start_at: startAt.toISOString(),
-
-      round_type: form.round_type,
-      competition_name: form.round_type === "competition" ? form.competition_name.trim() : null,
-
-      handicap_start: form.handicap_start === "" ? null : Number(form.handicap_start),
-
+      start_at: dt.toISOString(),
+      location: null,
+      round_type: roundType,
+      competition_name: roundType === "competition" ? competitionName.trim() : null,
+      handicap_start,
       course_source: "golfcourseapi",
-      course_name: form.course_name.trim() || null,
+      course_name: selectedCourse.course_name?.trim() || null,
       external_course_id: safeStr(selectedCourse.id),
-      tee_name: form.tee_name.trim() || null,
-      slope_rating: form.slope_rating === "" ? null : Number(form.slope_rating),
-      course_rating: form.course_rating === "" ? null : Number(form.course_rating),
-
-      notes: form.notes.trim() || null,
+      tee_name: selectedTeeObj.tee_name?.trim() || null,
+      slope_rating: typeof selectedTeeObj.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
+      course_rating: typeof selectedTeeObj.course_rating === "number" ? selectedTeeObj.course_rating : null,
+      notes: notes.trim() || null,
     };
 
-    if (payload.handicap_start !== null && Number.isNaN(payload.handicap_start)) return setError("Handicap invalide.");
-    if (payload.slope_rating !== null && Number.isNaN(payload.slope_rating)) return setError("Slope invalide.");
-    if (payload.course_rating !== null && Number.isNaN(payload.course_rating)) return setError("Course rating invalide.");
-
     const ins = await supabase.from("golf_rounds").insert(payload).select("id").maybeSingle();
-    if (ins.error) return setError(ins.error.message);
+    if (ins.error) {
+      setError(ins.error.message);
+      setBusy(false);
+      return;
+    }
 
     const id = ins.data?.id;
-    if (!id) return setError("Création impossible.");
+    if (!id) {
+      setError("Création impossible.");
+      setBusy(false);
+      return;
+    }
 
     const holes = teeHolesPrefill(tees, selectedTeeId);
     if (holes) {
@@ -362,179 +395,322 @@ export default function NewRoundPage() {
     router.push(`/player/golf/rounds/${id}/edit`);
   }
 
+  function resetCourse() {
+    setSelectedCourse(null);
+    setCourseDetail(null);
+    setTees([]);
+    setSelectedTeeId("");
+  }
+
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>Ajouter un parcours</div>
-        <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-          Recherche du parcours + tee de départ
-        </div>
-      </div>
-
-      {error && <div style={{ color: "#a00" }}>{error}</div>}
-
-      <div className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Date</div>
-            <input className="input" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Heure</div>
-            <select className="input" value={form.time} onChange={(e) => set("time", e.target.value)}>
-              {times.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Type</div>
-            <select className="input" value={form.round_type} onChange={(e) => set("round_type", e.target.value as any)}>
-              <option value="training">Entraînement</option>
-              <option value="competition">Compétition</option>
-            </select>
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Handicap au départ</div>
-            <input className="input" inputMode="decimal" value={form.handicap_start} onChange={(e) => set("handicap_start", e.target.value)} placeholder="ex: 18.4" />
-          </label>
-        </div>
-
-        {form.round_type === "competition" && (
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Nom de la compétition</div>
-            <input className="input" value={form.competition_name} onChange={(e) => set("competition_name", e.target.value)} />
-          </label>
-        )}
-
-        {/* Course */}
-        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "grid", gap: 10 }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 800 }}>Rechercher un parcours</div>
-            <input
-              className="input"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setSelectedCourse(null);
-                setCourseDetail(null);
-                setTees([]);
-                setSelectedTeeId("");
-                setForm((p) => ({ ...p, course_name: "", tee_name: "", slope_rating: "", course_rating: "" }));
-              }}
-              placeholder="Ex: Lau…"
-            />
-            <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 12 }}>
-              {searching ? "Recherche…" : results.length > 0 ? `${results.length} résultat(s)` : " "}
-            </div>
-          </label>
-
-          {results.length > 0 && !selectedCourse && (
-            <div style={{ display: "grid", gap: 8 }}>
-              {results.slice(0, 10).map((c) => (
-                <button
-                  key={safeStr(c.id)}
-                  type="button"
-                  className="btn"
-                  onClick={() => selectCourse(c)}
-                  style={{ textAlign: "left" }}
-                >
-                  <div style={{ fontWeight: 900 }}>{c.course_name}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
-                    {(c.club_name ? `${c.club_name} • ` : "")}
-                    {c.city ? `${c.city} • ` : ""}
-                    {c.country ?? ""}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {selectedCourse && (
-            <div className="card" style={{ padding: 12, border: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 900 }} className="truncate">{selectedCourse.course_name}</div>
-                  <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 12 }} className="truncate">
-                    {selectedCourse.club_name ?? ""} {selectedCourse.city ? `• ${selectedCourse.city}` : ""} {selectedCourse.country ? `• ${selectedCourse.country}` : ""}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    setSelectedCourse(null);
-                    setCourseDetail(null);
-                    setTees([]);
-                    setSelectedTeeId("");
-                    setForm((p) => ({ ...p, course_name: "", tee_name: "", slope_rating: "", course_rating: "" }));
-                  }}
-                >
-                  Changer
-                </button>
+    <div className="player-dashboard-bg">
+      <div className="app-shell marketplace-page">
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                Ajouter un parcours
               </div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
+                Recherche du parcours + tee de départ, puis création du scorecard.
+              </div>
+            </div>
 
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
+                Retour
+              </Link>
+              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
+                Mes parcours
+              </Link>
+            </div>
+          </div>
+
+          {error && <div className="marketplace-error">{error}</div>}
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card">
+            <form onSubmit={createRound} style={{ display: "grid", gap: 12 }}>
+              <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 800 }}>Tee de départ</div>
-                  <select className="input" value={selectedTeeId} onChange={(e) => applyTee(e.target.value)}>
-                    <option value="">— Choisir —</option>
-                    {tees.map((t) => (
-                      <option key={t.id} value={t.id}>{teeLabel(t)}</option>
-                    ))}
-                  </select>
-
-                  {!courseDetail && <div style={{ color: "var(--muted)", fontSize: 12 }}>Chargement du détail…</div>}
-                  {courseDetail && tees.length === 0 && (
-                    <div style={{ color: "var(--muted)", fontSize: 12 }}>
-                      Aucun des 4 tees requis trouvé (blanc/jaune homme, bleu/rouge femme) dans l’API.
-                    </div>
-                  )}
+                  <span style={fieldLabelStyle}>Date & heure</span>
+                  <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={busy} />
                 </label>
 
-                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr 1fr" }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontWeight: 800 }}>Parcours</div>
-                    <input className="input" value={form.course_name} readOnly />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontWeight: 800 }}>Slope</div>
-                    <input className="input" value={form.slope_rating} readOnly />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontWeight: 800 }}>Course rating</div>
-                    <input className="input" value={form.course_rating} readOnly />
-                  </label>
-                </div>
-
-                <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 12 }}>
-                  Les 18 trous seront pré-remplis automatiquement (Par + Index) si disponibles.
-                </div>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={fieldLabelStyle}>Handicap au départ (éditable)</span>
+                  <input
+                    inputMode="decimal"
+                    value={handicapStart}
+                    onChange={(e) => setHandicapStart(e.target.value)}
+                    disabled={busy}
+                    placeholder="ex: 18.4"
+                  />
+                </label>
               </div>
-            </div>
-          )}
-        </div>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <div style={{ fontWeight: 800 }}>Remarques</div>
-          <textarea className="input" rows={4} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
-        </label>
+              <div className="hr-soft" />
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" type="button" onClick={createRound}>
-            Créer et saisir les trous
-          </button>
-          <Link className="btn" href="/player/golf/rounds">Annuler</Link>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={fieldLabelStyle}>Type de parcours</div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <label style={{ ...chipRadioStyle, ...(roundType === "training" ? chipRadioActive : {}) }}>
+                    <input type="radio" checked={roundType === "training"} onChange={() => setRoundType("training")} disabled={busy} />
+                    <span>Entraînement</span>
+                  </label>
+
+                  <label style={{ ...chipRadioStyle, ...(roundType === "competition" ? chipRadioActive : {}) }}>
+                    <input
+                      type="radio"
+                      checked={roundType === "competition"}
+                      onChange={() => setRoundType("competition")}
+                      disabled={busy}
+                    />
+                    <span>Compétition</span>
+                  </label>
+                </div>
+
+                {roundType === "competition" && (
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Nom de la compétition</span>
+                    <input value={competitionName} onChange={(e) => setCompetitionName(e.target.value)} disabled={busy} />
+                  </label>
+                )}
+              </div>
+
+              <div className="hr-soft" />
+
+              {/* ✅ section title removed here */}
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {!selectedCourse ? (
+                  <>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Rechercher un parcours</span>
+                      <input
+                        value={q}
+                        onChange={(e) => {
+                          setQ(e.target.value);
+                          resetCourse();
+                        }}
+                        disabled={busy}
+                        placeholder="Ex: Lau…"
+                      />
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                        {searching ? "Recherche…" : results.length > 0 ? `${results.length} résultat(s)` : " "}
+                      </div>
+                    </label>
+
+                    {results.length > 0 && (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {results.slice(0, 10).map((c) => {
+                          const loc = [c.club_name, c.city, c.country].filter(Boolean).join(" • ");
+
+                          return (
+                            <button
+                              key={safeStr(c.id)}
+                              type="button"
+                              className="btn"
+                              onClick={() => selectCourse(c)}
+                              disabled={busy}
+                              style={{
+                                display: "grid",
+                                gridTemplateRows: "auto auto",
+                                justifyItems: "center",
+                                alignItems: "center",
+                                textAlign: "center",
+                                gap: 4,
+                                padding: "12px 12px",
+                                width: "100%",
+                                maxWidth: "100%",
+                                overflow: "hidden",
+                                borderRadius: 14,
+                                border: "1px solid rgba(0,0,0,0.10)",
+                                background: "rgba(255,255,255,0.65)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 950,
+                                  lineHeight: 1.15,
+                                  maxWidth: "100%",
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {c.course_name}
+                              </div>
+
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: "rgba(0,0,0,0.55)",
+                                  maxWidth: "100%",
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere",
+                                  display: "-webkit-box",
+                                  WebkitBoxOrient: "vertical",
+                                  WebkitLineClamp: 2,
+                                  overflow: "hidden",
+                                }}
+                                title={loc}
+                              >
+                                {loc || " "}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      borderRadius: 16,
+                      background: "rgba(255,255,255,0.65)",
+                      padding: 12,
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 950 }} className="truncate">
+                          {selectedCourse.course_name}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }} className="truncate">
+                          {selectedCourse.club_name ?? ""}
+                          {selectedCourse.city ? ` • ${selectedCourse.city}` : ""}
+                          {selectedCourse.country ? ` • ${selectedCourse.country}` : ""}
+                        </div>
+                      </div>
+
+                      <button type="button" className="btn" onClick={resetCourse} disabled={busy}>
+                        Changer
+                      </button>
+                    </div>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Tee de départ</span>
+                      <select value={selectedTeeId} onChange={(e) => applyTee(e.target.value)} disabled={busy}>
+                        <option value="">— Choisir —</option>
+                        {tees.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {teeLabel(t)}
+                          </option>
+                        ))}
+                      </select>
+
+                      {!courseDetail && (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          Chargement du détail…
+                        </div>
+                      )}
+
+                      {courseDetail && tees.length === 0 && (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          Aucun des 4 tees requis trouvé (blanc/jaune homme, bleu/rouge femme) dans l’API.
+                        </div>
+                      )}
+                    </label>
+
+                    <div className="grid-2">
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Slope</span>
+                        <div style={readOnlyPillStyle}>{selectedTee?.slope_rating ?? "—"}</div>
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Course rating</span>
+                        <div style={readOnlyPillStyle}>{selectedTee?.course_rating ?? "—"}</div>
+                      </div>
+                    </div>
+
+                    
+                  </div>
+                )}
+              </div>
+
+              <div className="hr-soft" />
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={busy}
+                  placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                  style={{ minHeight: 110 }}
+                />
+              </label>
+
+              <button
+                className="btn"
+                type="submit"
+                disabled={!canSave || busy}
+                style={{
+                  width: "100%",
+                  background: "var(--green-dark)",
+                  borderColor: "var(--green-dark)",
+                  color: "#fff",
+                }}
+              >
+                {busy ? "Création…" : "Créer et saisir les trous"}
+              </button>
+
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
+                <Link className="btn" href="/player/golf/rounds">
+                  Annuler
+                </Link>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 900,
+  color: "rgba(0,0,0,0.70)",
+};
+
+const chipRadioStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 999,
+  padding: "8px 12px",
+  background: "rgba(255,255,255,0.70)",
+  fontWeight: 900,
+  fontSize: 13,
+  color: "rgba(0,0,0,0.78)",
+  cursor: "pointer",
+  userSelect: "none",
+};
+
+const chipRadioActive: React.CSSProperties = {
+  borderColor: "rgba(53,72,59,0.35)",
+  background: "rgba(53,72,59,0.10)",
+};
+
+const readOnlyPillStyle: React.CSSProperties = {
+  height: 42,
+  borderRadius: 10,
+  border: "1px solid rgba(0,0,0,0.10)",
+  background: "rgba(255,255,255,0.65)",
+  display: "flex",
+  alignItems: "center",
+  padding: "0 12px",
+  fontWeight: 950,
+  color: "rgba(0,0,0,0.78)",
+};
