@@ -58,77 +58,70 @@ function scoreMark(par: number | null, score: number | null): ScoreMark {
   if (d === 1) return "bogey";
   if (d === 2) return "double";
   if (d >= 3) return "tripleplus";
-  return "none"; // par (or unknown) => no shape
+  return "none";
 }
 
 function ScoreShape({ value, mark }: { value: number | null; mark: ScoreMark }) {
   const txt = value == null ? "—" : String(value);
 
-  // base (text)
   const innerText = (
     <div style={{ fontWeight: 1000, fontSize: 22, lineHeight: 1, minWidth: 22, textAlign: "center" }}>{txt}</div>
   );
 
-  // none
   if (mark === "none") return <div style={{ padding: "6px 10px" }}>{innerText}</div>;
 
-  // birdie = circle
   if (mark === "birdie") {
     return (
-      <div style={{ ...shapeBase, borderRadius: 999, border: "2px solid rgba(0,0,0,0.75)" }}>
+      <div style={{ ...shapeOuter, borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)" }}>
         {innerText}
       </div>
     );
   }
 
-  // eagle = double circle
   if (mark === "eagle") {
     return (
-      <div style={{ ...shapeBase, borderRadius: 999, border: "2px solid rgba(0,0,0,0.75)", padding: 4 }}>
-        <div style={{ borderRadius: 999, border: "2px solid rgba(0,0,0,0.75)", padding: "6px 10px" }}>
+      <div style={{ ...shapeOuter, borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)", padding: 4 }}>
+        <div style={{ borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)", padding: "6px 10px" }}>
           {innerText}
         </div>
       </div>
     );
   }
 
-  // bogey = square
   if (mark === "bogey") {
     return (
-      <div style={{ ...shapeBase, borderRadius: 8, border: "2px solid rgba(0,0,0,0.75)" }}>
+      <div style={{ ...shapeOuter, borderRadius: 8, border: "2px solid rgba(0,0,0,0.78)" }}>
         {innerText}
       </div>
     );
   }
 
-  // double bogey = double square
   if (mark === "double") {
     return (
-      <div style={{ ...shapeBase, borderRadius: 10, border: "2px solid rgba(0,0,0,0.75)", padding: 4 }}>
-        <div style={{ borderRadius: 8, border: "2px solid rgba(0,0,0,0.75)", padding: "6px 10px" }}>
+      <div style={{ ...shapeOuter, borderRadius: 10, border: "2px solid rgba(0,0,0,0.78)", padding: 4 }}>
+        <div style={{ borderRadius: 8, border: "2px solid rgba(0,0,0,0.78)", padding: "6px 10px" }}>
           {innerText}
         </div>
       </div>
     );
   }
 
-  // triple+ = double square with hatched between
-  // Trick: outer has hatch background, inner covers center.
   return (
     <div
       style={{
-        ...shapeBase,
+        ...shapeOuter,
         borderRadius: 10,
-        border: "2px solid rgba(0,0,0,0.75)",
+        border: "2px solid rgba(0,0,0,0.78)",
         padding: 4,
-        backgroundImage: "repeating-linear-gradient(45deg, rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 3px, rgba(0,0,0,0.00) 3px, rgba(0,0,0,0.00) 8px)",
+        backgroundImage:
+          "repeating-linear-gradient(45deg, rgba(0,0,0,0.38) 0px, rgba(0,0,0,0.38) 3px, rgba(0,0,0,0.00) 3px, rgba(0,0,0,0.00) 8px)",
       }}
       title="Triple bogey ou +"
     >
       <div
         style={{
           borderRadius: 8,
-          border: "2px solid rgba(0,0,0,0.75)",
+          border: "2px solid rgba(0,0,0,0.78)",
           padding: "6px 10px",
           background: "rgba(255,255,255,0.88)",
         }}
@@ -139,7 +132,7 @@ function ScoreShape({ value, mark }: { value: number | null; mark: ScoreMark }) 
   );
 }
 
-const shapeBase: React.CSSProperties = {
+const shapeOuter: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
@@ -266,7 +259,10 @@ export default function ScorecardPage() {
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${round.id}/edit`}>
+              <Link
+                className="cta-green cta-green-inline"
+                href={`/player/golf/rounds/${round.id}/edit`}
+              >
                 Modifier
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
@@ -284,50 +280,54 @@ export default function ScorecardPage() {
             <div style={{ display: "grid", gap: 10 }}>
               {holes.map((h) => {
                 const gir = isGIR(h.par, h.score, h.putts);
-                const fw =
-                  h.fairway_hit == null ? "—" : h.fairway_hit ? "Hit" : "Miss";
+                const fw = h.fairway_hit == null ? "—" : h.fairway_hit ? "Hit" : "Miss";
 
                 return (
-                  <div
+                  <Link
                     key={h.id ?? `h-${h.hole_no}`}
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.10)",
-                      borderRadius: 16,
-                      background: "rgba(255,255,255,0.65)",
-                      padding: 12,
-                      display: "grid",
-                      gap: 10,
-                    }}
+                    href={`/player/golf/rounds/${round.id}/edit?hole=${h.hole_no}`}
+                    style={{ display: "block" }}
                   >
-                    {/* Top row: hole left, score big right */}
                     <div
                       style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 16,
+                        background: "rgba(255,255,255,0.65)",
+                        padding: 12,
                         display: "grid",
-                        gridTemplateColumns: "1fr auto",
                         gap: 10,
-                        alignItems: "center",
                       }}
                     >
-                      <div style={{ fontWeight: 1000, fontSize: 16 }}>Trou {h.hole_no}</div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ fontWeight: 1000, fontSize: 16 }}>Trou {h.hole_no}</div>
 
-                      <div style={{ justifySelf: "end" }}>
-                        <ScoreShape value={h.score} mark={scoreMark(h.par, h.score)} />
+                        <div style={{ justifySelf: "end" }}>
+                          <ScoreShape value={h.score} mark={scoreMark(h.par, h.score)} />
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Pills */}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span style={pillSm}>Par {h.par ?? "—"}</span>
-                      <span style={pillSm}>FW {fw}</span>
-                      <span style={pillSm}>GIR {h.par == null || h.score == null || h.putts == null ? "—" : gir ? "Oui" : "Non"}</span>
-                    </div>
-
-                    {!!h.note?.trim() && (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                        {h.note.trim()}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span style={pillSm}>Par {h.par ?? "—"}</span>
+                        <span style={pillSm}>FW {fw}</span>
+                        <span style={pillSm}>
+                          GIR {h.par == null || h.score == null || h.putts == null ? "—" : gir ? "Oui" : "Non"}
+                        </span>
                       </div>
-                    )}
-                  </div>
+
+                      {!!h.note?.trim() && (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                          {h.note.trim()}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
                 );
               })}
             </div>

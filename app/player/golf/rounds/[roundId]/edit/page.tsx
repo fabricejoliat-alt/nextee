@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { CheckCircle2, XCircle } from "lucide-react";
 
@@ -62,10 +62,13 @@ function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
 export default function EditRoundWizardPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const roundId = useMemo(() => getParamString((params as any)?.roundId), [params]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [uxError, setUxError] = useState<string | null>(null);
 
@@ -89,6 +92,16 @@ export default function EditRoundWizardPage() {
     return `/player/golf/rounds/${id}/scorecard`;
   }, [roundId]);
 
+  const requestedHoleIdx = useMemo(() => {
+    const raw = searchParams.get("hole");
+    const n = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) return 0;
+    const holeNo = Math.max(1, Math.min(18, Math.trunc(n)));
+    return holeNo - 1;
+  }, [searchParams]);
+
+  const didInitHoleRef = useRef(false);
+
   // --- autosave queue (single-hole upsert, debounced) ---
   const saveTimerRef = useRef<any>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
@@ -97,8 +110,7 @@ export default function EditRoundWizardPage() {
   async function upsertHole(h: Hole) {
     if (!roundId) return;
 
-    const payload = {
-      id: h.id,
+    const payload: any = {
       round_id: roundId,
       hole_no: h.hole_no,
       par: h.par,
@@ -109,11 +121,17 @@ export default function EditRoundWizardPage() {
       note: h.note?.trim() || null,
     };
 
-    const res = await supabase.from("golf_round_holes").upsert([payload], { onConflict: "round_id,hole_no" });
+    // ✅ IMPORTANT: never send id if missing
+    if (typeof h.id === "string" && h.id.length > 0) payload.id = h.id;
+
+    const res = await supabase
+      .from("golf_round_holes")
+      .upsert([payload], { onConflict: "round_id,hole_no" });
+
     if (res.error) throw new Error(res.error.message);
 
     // If we didn't have id yet, fetch it once
-    if (!h.id) {
+    if (!payload.id) {
       const readBack = await supabase
         .from("golf_round_holes")
         .select("id")
@@ -123,9 +141,7 @@ export default function EditRoundWizardPage() {
 
       if (!readBack.error && readBack.data?.id) {
         const newId = readBack.data.id as string;
-        setHoles((prev) =>
-          prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x))
-        );
+        setHoles((prev) => prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x)));
         latestHoleRef.current = { ...h, id: newId };
       }
     }
@@ -167,13 +183,13 @@ export default function EditRoundWizardPage() {
       saveTimerRef.current = null;
     }
 
-    const toSave = latestHoleRef.current;
+    // ✅ always save the CURRENT hole from state (fresh)
+    const toSave = holes[holeIdx];
     if (!toSave) return;
 
     // wait current flight
     if (inFlightRef.current) {
       await inFlightRef.current;
-      return;
     }
 
     setSaving(true);
@@ -247,8 +263,11 @@ export default function EditRoundWizardPage() {
         const existing = map.get(holeNo);
 
         const par = existing?.par ?? null;
-        const score =
-          existing?.score ?? (typeof par === "number" ? par : 0); // real value, not placeholder
+
+        // ✅ if score missing, default to par (or 0 if par unknown)
+        const score = existing?.score ?? (typeof par === "number" ? par : 0);
+
+        // ✅ if putts missing, default 2 but can't exceed score
         const puttsRaw = existing?.putts ?? 2;
 
         const constrained = applyConstraints(
@@ -277,6 +296,14 @@ export default function EditRoundWizardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
+  // ✅ after first load, jump to requested hole (?hole=)
+  useEffect(() => {
+    if (loading) return;
+    if (didInitHoleRef.current) return;
+    didInitHoleRef.current = true;
+    setHoleIdx(requestedHoleIdx);
+  }, [loading, requestedHoleIdx]);
+
   // Keep latest hole pointer updated whenever current hole changes
   useEffect(() => {
     const h = holes[holeIdx];
@@ -295,10 +322,8 @@ export default function EditRoundWizardPage() {
 
     const next = applyConstraints(hole, patch);
 
-    // update state
     setHoles((prev) => prev.map((x, i) => (i === holeIdx ? next : x)));
 
-    // autosave (debounced)
     scheduleSave(next);
   }
 
@@ -383,7 +408,15 @@ export default function EditRoundWizardPage() {
 
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
               <div style={{ fontWeight: 1000, fontSize: 32, lineHeight: 1 }}>
                 Trou {hole?.hole_no ?? holeIdx + 1}
               </div>
@@ -392,11 +425,6 @@ export default function EditRoundWizardPage() {
                 <div style={pillStyle}>
                   PAR&nbsp;: <span style={{ fontWeight: 950 }}>{hole?.par ?? "—"}</span>
                 </div>
-                {saving && (
-                  <div style={{ ...pillStyle, opacity: 0.85 }}>
-                    💾 Sauvegarde…
-                  </div>
-                )}
               </div>
             </div>
 
@@ -408,17 +436,24 @@ export default function EditRoundWizardPage() {
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>Score</div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 56px", gap: 10, alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "56px 1fr 56px",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
                     <button
                       type="button"
                       className="btn"
                       onClick={() => commitPatch({ score: (hole.score ?? 0) - 1 })}
                       style={miniBtnStyle}
+                      disabled={saving}
                     >
                       –
                     </button>
 
-                    {/* ✅ shows real value (state), not placeholder */}
                     <input
                       className="input"
                       inputMode="numeric"
@@ -428,6 +463,7 @@ export default function EditRoundWizardPage() {
                         commitPatch({ score: clampInt(v, 0, 30) });
                       }}
                       style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
+                      disabled={saving}
                     />
 
                     <button
@@ -435,6 +471,7 @@ export default function EditRoundWizardPage() {
                       className="btn"
                       onClick={() => commitPatch({ score: (hole.score ?? 0) + 1 })}
                       style={miniBtnStyle}
+                      disabled={saving}
                     >
                       +
                     </button>
@@ -445,7 +482,14 @@ export default function EditRoundWizardPage() {
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>Putts</div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 56px", gap: 10, alignItems: "center" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "56px 1fr 56px",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                  >
                     <button
                       type="button"
                       className="btn"
@@ -454,6 +498,7 @@ export default function EditRoundWizardPage() {
                         commitPatch({ putts: clampInt(cur - 1, 0, maxPuttsNow) });
                       }}
                       style={miniBtnStyle}
+                      disabled={saving}
                     >
                       –
                     </button>
@@ -467,6 +512,7 @@ export default function EditRoundWizardPage() {
                         commitPatch({ putts: clampInt(v, 0, maxPuttsNow) });
                       }}
                       style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
+                      disabled={saving}
                     />
 
                     <button
@@ -477,6 +523,7 @@ export default function EditRoundWizardPage() {
                         commitPatch({ putts: clampInt(cur + 1, 0, maxPuttsNow) });
                       }}
                       style={miniBtnStyle}
+                      disabled={saving}
                     >
                       +
                     </button>
@@ -488,7 +535,6 @@ export default function EditRoundWizardPage() {
                   <div style={fieldLabelStyle}>Fairway</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {/* MISS left */}
                     <button
                       type="button"
                       className="btn"
@@ -501,6 +547,7 @@ export default function EditRoundWizardPage() {
                         ...(missSelected ? fairwayMissSelected : fairwayUnselected),
                       }}
                       aria-pressed={missSelected}
+                      disabled={saving}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <XCircle size={18} />
@@ -508,7 +555,6 @@ export default function EditRoundWizardPage() {
                       </span>
                     </button>
 
-                    {/* HIT right */}
                     <button
                       type="button"
                       className="btn"
@@ -521,6 +567,7 @@ export default function EditRoundWizardPage() {
                         ...(hitSelected ? fairwayHitSelected : fairwayUnselected),
                       }}
                       aria-pressed={hitSelected}
+                      disabled={saving}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <CheckCircle2 size={18} />
@@ -536,18 +583,24 @@ export default function EditRoundWizardPage() {
                     type="button"
                     className="btn"
                     onClick={goPrevHole}
-                    disabled={holeIdx === 0}
+                    disabled={saving || holeIdx === 0}
                     style={{ width: "100%" }}
                   >
                     {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
                   </button>
 
                   {!isLastHole ? (
-                    <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }}>
+                    <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }} disabled={saving}>
                       {`Trou ${holeIdx + 2}`}
                     </button>
                   ) : (
-                    <button type="button" className="cta-green cta-green-inline" onClick={finishAndGoScorecard} style={{ width: "100%" }}>
+                    <button
+                      type="button"
+                      className="cta-green cta-green-inline"
+                      onClick={finishAndGoScorecard}
+                      style={{ width: "100%" }}
+                      disabled={saving}
+                    >
                       Terminer
                     </button>
                   )}
@@ -556,13 +609,12 @@ export default function EditRoundWizardPage() {
             )}
           </div>
 
-          {/* below card */}
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             <Link className="cta-green cta-green-inline" href={scorecardHref} style={{ width: "100%", justifyContent: "center" as any }}>
               Afficher la carte des scores
             </Link>
 
-            <button type="button" className="btn" onClick={deleteRound} style={{ width: "100%" }}>
+            <button type="button" className="btn" onClick={deleteRound} style={{ width: "100%" }} disabled={saving}>
               Supprimer ce parcours
             </button>
           </div>
