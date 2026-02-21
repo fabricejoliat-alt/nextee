@@ -151,19 +151,15 @@ export default function EditRoundWizardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
-  // ✅ update hole with constraints:
-  // - putts <= score
+  // ✅ update hole with constraints: putts <= score
   function updateHole(idx: number, patch: Partial<Hole>) {
     setHoles((prev) => {
       const h = prev[idx];
       if (!h) return prev;
 
-      const nextScore =
-        patch.score !== undefined ? patch.score : h.score; // can be null
-      const nextPuttsRaw =
-        patch.putts !== undefined ? patch.putts : h.putts; // can be null
+      const nextScore = patch.score !== undefined ? patch.score : h.score;
+      const nextPuttsRaw = patch.putts !== undefined ? patch.putts : h.putts;
 
-      // compute max putts = score if score is number, else fallback 10
       const maxPutts =
         typeof nextScore === "number" && Number.isFinite(nextScore) ? nextScore : 10;
 
@@ -172,7 +168,6 @@ export default function EditRoundWizardPage() {
         nextPutts = clampInt(nextPuttsRaw, 0, clampInt(maxPutts, 0, 10));
       }
 
-      // if score lowered below putts, clamp putts down
       if (
         typeof nextScore === "number" &&
         Number.isFinite(nextScore) &&
@@ -183,13 +178,7 @@ export default function EditRoundWizardPage() {
         nextPutts = nextScore;
       }
 
-      const merged: Hole = {
-        ...h,
-        ...patch,
-        score: nextScore,
-        putts: nextPutts,
-      };
-
+      const merged: Hole = { ...h, ...patch, score: nextScore, putts: nextPutts };
       return prev.map((x, i) => (i === idx ? merged : x));
     });
   }
@@ -207,10 +196,7 @@ export default function EditRoundWizardPage() {
       const putts = h.putts == null ? puttsDefault : Math.min(h.putts, score);
 
       if (score === h.score && putts === h.putts) return prev;
-
-      return prev.map((x, i) =>
-        i === holeIdx ? { ...x, score, putts } : x
-      );
+      return prev.map((x, i) => (i === holeIdx ? { ...x, score, putts } : x));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holeIdx]);
@@ -232,10 +218,7 @@ export default function EditRoundWizardPage() {
       note: h.note?.trim() || null,
     };
 
-    const res = await supabase
-      .from("golf_round_holes")
-      .upsert([payload], { onConflict: "round_id,hole_no" });
-
+    const res = await supabase.from("golf_round_holes").upsert([payload], { onConflict: "round_id,hole_no" });
     if (res.error) throw new Error(res.error.message);
 
     if (!h.id) {
@@ -292,10 +275,7 @@ export default function EditRoundWizardPage() {
         note: h.note?.trim() || null,
       }));
 
-      const res = await supabase
-        .from("golf_round_holes")
-        .upsert(payload, { onConflict: "round_id,hole_no" });
-
+      const res = await supabase.from("golf_round_holes").upsert(payload, { onConflict: "round_id,hole_no" });
       if (res.error) throw new Error(res.error.message);
 
       await load();
@@ -385,7 +365,6 @@ export default function EditRoundWizardPage() {
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>{subtitle}</div>
             </div>
 
-            {/* ✅ only these 2 */}
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
                 Retour
@@ -399,7 +378,7 @@ export default function EditRoundWizardPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {/* main card */}
+        {/* card */}
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -526,35 +505,20 @@ export default function EditRoundWizardPage() {
                   </div>
                 </div>
 
-                {/* FAIRWAY (selected more visible) */}
+                {/* FAIRWAY (MISS left, HIT right) + darker selected background */}
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>Fairway</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => updateHole(holeIdx, { fairway_hit: true })}
-                      disabled={autosaving || savingAll}
-                      style={{
-                        ...fairwayBtnGood,
-                        ...(hitSelected ? fairwayBtnGoodActive : {}),
-                      }}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <CheckCircle2 size={18} />
-                        Hit Fairway
-                      </span>
-                    </button>
-
+                    {/* MISS LEFT */}
                     <button
                       type="button"
                       className="btn"
                       onClick={() => updateHole(holeIdx, { fairway_hit: false })}
                       disabled={autosaving || savingAll}
                       style={{
-                        ...fairwayBtnBad,
-                        ...(missSelected ? fairwayBtnBadActive : {}),
+                        ...fairwayBtnBase,
+                        ...(missSelected ? fairwayMissSelected : fairwayMissIdle),
                       }}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -562,10 +526,27 @@ export default function EditRoundWizardPage() {
                         Miss Fairway
                       </span>
                     </button>
+
+                    {/* HIT RIGHT */}
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => updateHole(holeIdx, { fairway_hit: true })}
+                      disabled={autosaving || savingAll}
+                      style={{
+                        ...fairwayBtnBase,
+                        ...(hitSelected ? fairwayHitSelected : fairwayHitIdle),
+                      }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <CheckCircle2 size={18} />
+                        Hit Fairway
+                      </span>
+                    </button>
                   </div>
                 </div>
 
-                {/* NAV (autosave on click) */}
+                {/* NAV / FINISH */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
                   <button
                     type="button"
@@ -610,21 +591,21 @@ export default function EditRoundWizardPage() {
                     </button>
                   )}
                 </div>
-
-                {/* Optional: keep delete somewhere? You still have deleteRound() ready if needed later */}
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={deleteRound}
-                    disabled={autosaving || savingAll}
-                    style={{ width: "100%" }}
-                  >
-                    Supprimer ce parcours
-                  </button>
-                </div>
               </div>
             )}
+          </div>
+
+          {/* delete below card */}
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={deleteRound}
+              disabled={autosaving || savingAll}
+              style={{ width: "100%" }}
+            >
+              Supprimer ce parcours
+            </button>
           </div>
         </div>
       </div>
@@ -666,29 +647,25 @@ const fairwayBtnBase: React.CSSProperties = {
   fontWeight: 950,
   border: "1px solid rgba(0,0,0,0.12)",
   background: "rgba(255,255,255,0.70)",
-  transition: "transform 140ms ease, box-shadow 140ms ease, background 140ms ease, border-color 140ms ease",
+  transition: "transform 140ms ease, box-shadow 140ms ease, background 140ms ease",
 };
 
-const fairwayBtnGood: React.CSSProperties = {
-  ...fairwayBtnBase,
+const fairwayMissIdle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.70)",
 };
 
-const fairwayBtnGoodActive: React.CSSProperties = {
-  borderWidth: 2,
-  borderColor: "rgba(21,128,61,0.75)",
-  background: "rgba(21,128,61,0.22)",
+const fairwayHitIdle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.70)",
+};
+
+const fairwayMissSelected: React.CSSProperties = {
+  background: "rgba(185,28,28,0.24)", // darker when selected
   transform: "translateY(-2px)",
-  boxShadow: "0 14px 26px rgba(0,0,0,0.14)",
+  boxShadow: "0 16px 30px rgba(0,0,0,0.16)",
 };
 
-const fairwayBtnBad: React.CSSProperties = {
-  ...fairwayBtnBase,
-};
-
-const fairwayBtnBadActive: React.CSSProperties = {
-  borderWidth: 2,
-  borderColor: "rgba(185,28,28,0.75)",
-  background: "rgba(185,28,28,0.20)",
+const fairwayHitSelected: React.CSSProperties = {
+  background: "rgba(21,128,61,0.26)", // darker when selected
   transform: "translateY(-2px)",
-  boxShadow: "0 14px 26px rgba(0,0,0,0.14)",
+  boxShadow: "0 16px 30px rgba(0,0,0,0.16)",
 };
