@@ -13,14 +13,29 @@ type ProfileRow = {
   phone: string | null;
 
   birth_date: string | null; // ISO YYYY-MM-DD
-  nationality: string | null;
   sex: string | null;
 
+  // ✅ NEW
+  handedness: "right" | "left" | "" | null;
+
+  // ✅ Handicap
   handicap: number | null;
 
   address: string | null;
   postal_code: string | null;
   city: string | null;
+
+  // ✅ NEW — Admin
+  avs_no: string | null;
+
+  // ✅ NEW — Parents
+  parent1_name: string | null;
+  parent1_phone: string | null;
+  parent1_email: string | null;
+
+  parent2_name: string | null;
+  parent2_phone: string | null;
+  parent2_email: string | null;
 
   avatar_url?: string | null; // ✅ NEW
 };
@@ -42,13 +57,33 @@ function getInitials(firstName?: string | null, lastName?: string | null) {
   const lastInitial = l ? l[0].toUpperCase() : "";
 
   if (!firstInitial && !lastInitial) return "👤";
-
   return `${firstInitial}${lastInitial}`;
 }
 
 function isAllowedImage(file: File) {
   const okTypes = ["image/jpeg", "image/png", "image/webp"];
   return okTypes.includes(file.type);
+}
+
+/** Catégories juniors (SwissGolf-style):
+ *  - enfants nés en 2016 et + : U10
+ *  - 2014 et + : U12
+ *  - 2012 et + : U14
+ *  - 2010 et + : U16
+ *  - 2008 et + : U18
+ */
+function getJuniorCategory(birthDateISO: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthDateISO.trim());
+  if (!m) return "—";
+  const year = Number(m[1]);
+  if (!Number.isFinite(year)) return "—";
+
+  if (year >= 2016) return "U10";
+  if (year >= 2014) return "U12";
+  if (year >= 2012) return "U14";
+  if (year >= 2010) return "U16";
+  if (year >= 2008) return "U18";
+  return "—";
 }
 
 export default function PlayerProfilePage() {
@@ -80,14 +115,29 @@ export default function PlayerProfilePage() {
   const [phone, setPhone] = useState("");
 
   const [birthDate, setBirthDate] = useState(""); // YYYY-MM-DD
-  const [nationality, setNationality] = useState("");
   const [sex, setSex] = useState(""); // "male" | "female" | "other" | ""
 
+  // ✅ NEW
+  const [handedness, setHandedness] = useState<"right" | "left" | "">("");
+
+  // ✅ Handicap
   const [handicap, setHandicap] = useState<string>("");
 
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
+
+  // ✅ NEW — Admin
+  const [avsNo, setAvsNo] = useState("");
+
+  // ✅ NEW — Parents
+  const [parent1Name, setParent1Name] = useState("");
+  const [parent1Phone, setParent1Phone] = useState("");
+  const [parent1Email, setParent1Email] = useState("");
+
+  const [parent2Name, setParent2Name] = useState("");
+  const [parent2Phone, setParent2Phone] = useState("");
+  const [parent2Email, setParent2Email] = useState("");
 
   const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
 
@@ -136,7 +186,27 @@ export default function PlayerProfilePage() {
     const profRes = await supabase
       .from("profiles")
       .select(
-        "id,first_name,last_name,phone,birth_date,nationality,sex,handicap,address,postal_code,city,avatar_url"
+        [
+          "id",
+          "first_name",
+          "last_name",
+          "phone",
+          "birth_date",
+          "sex",
+          "handedness",
+          "handicap",
+          "address",
+          "postal_code",
+          "city",
+          "avs_no",
+          "parent1_name",
+          "parent1_phone",
+          "parent1_email",
+          "parent2_name",
+          "parent2_phone",
+          "parent2_email",
+          "avatar_url",
+        ].join(",")
       )
       .eq("id", uid)
       .maybeSingle();
@@ -147,21 +217,31 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    const row = (profRes.data ?? null) as ProfileRow | null;
-
+const row = (profRes.data ?? null) as unknown as ProfileRow | null;
     setFirstName(row?.first_name ?? "");
     setLastName(row?.last_name ?? "");
     setPhone(row?.phone ?? "");
 
     setBirthDate(row?.birth_date ?? "");
-    setNationality(row?.nationality ?? "");
     setSex(row?.sex ?? "");
+
+    setHandedness((row?.handedness as any) ?? "");
 
     setHandicap(row?.handicap == null ? "" : String(row.handicap));
 
     setAddress(row?.address ?? "");
     setPostalCode(row?.postal_code ?? "");
     setCity(row?.city ?? "");
+
+    setAvsNo(row?.avs_no ?? "");
+
+    setParent1Name(row?.parent1_name ?? "");
+    setParent1Phone(row?.parent1_phone ?? "");
+    setParent1Email(row?.parent1_email ?? "");
+
+    setParent2Name(row?.parent2_name ?? "");
+    setParent2Phone(row?.parent2_phone ?? "");
+    setParent2Email(row?.parent2_email ?? "");
 
     setAvatarDbUrl(row?.avatar_url ?? null);
 
@@ -236,14 +316,25 @@ export default function PlayerProfilePage() {
           phone: phone.trim() || null,
 
           birth_date: birthDate.trim() || null,
-          nationality: nationality.trim() || null,
           sex: sex.trim() || null,
+
+          handedness: handedness || null,
 
           handicap: hc,
 
           address: address.trim() || null,
           postal_code: postalCode.trim() || null,
           city: city.trim() || null,
+
+          avs_no: avsNo.trim() || null,
+
+          parent1_name: parent1Name.trim() || null,
+          parent1_phone: parent1Phone.trim() || null,
+          parent1_email: parent1Email.trim() || null,
+
+          parent2_name: parent2Name.trim() || null,
+          parent2_phone: parent2Phone.trim() || null,
+          parent2_email: parent2Email.trim() || null,
         },
         { onConflict: "id" }
       );
@@ -332,21 +423,11 @@ export default function PlayerProfilePage() {
     }
   }
 
-  async function logout() {
-    setBusy(true);
-    setError(null);
-    setInfo(null);
-
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setError(error.message);
-      setBusy(false);
-      return;
-    }
-    router.push("/");
-  }
-
   const handicapNumber = useMemo(() => parseHandicap(), [handicap]);
+  const juniorCategory = useMemo(
+    () => (birthDate ? getJuniorCategory(birthDate) : "—"),
+    [birthDate]
+  );
 
   return (
     <div className="player-dashboard-bg">
@@ -373,35 +454,34 @@ export default function PlayerProfilePage() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarDbUrl ? (
-              <img
-                src={avatarUrl}
-                alt=""
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  opacity: avatarBusy ? 0.65 : 1,
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 900,
-                  fontSize: 28,
-                  letterSpacing: 1,
-                  color: "white",
-                  background:
-                    "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
-                }}
-              >
-                {getInitials(firstName, lastName)}
-              </div>
-            )}
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    opacity: avatarBusy ? 0.65 : 1,
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: 28,
+                    letterSpacing: 1,
+                    color: "white",
+                    background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
+                  }}
+                >
+                  {getInitials(firstName, lastName)}
+                </div>
+              )}
             </div>
 
             <button
@@ -450,14 +530,11 @@ export default function PlayerProfilePage() {
           />
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">
-              {loading ? "Salut…" : `${displayHello(firstName)} 👋`}
-            </div>
+            <div className="hero-title">{loading ? "Salut…" : `${displayHello(firstName)} 👋`}</div>
 
             <div className="hero-sub">
               <div>
-                Handicap{" "}
-                {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}
+                Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}
               </div>
 
               <div
@@ -483,17 +560,9 @@ export default function PlayerProfilePage() {
           </div>
         </div>
 
-        {error && (
-          <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
-        {info && (
-          <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>
-            {info}
-          </div>
-        )}
+        {info && <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>{info}</div>}
 
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
@@ -520,7 +589,14 @@ export default function PlayerProfilePage() {
                     </Field>
                   </div>
 
-                  <div className="grid-2">
+                  {/* ✅ Date (2/3) + Catégorie (1/3) */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "2fr 1fr",
+                      gap: 12,
+                    }}
+                  >
                     <Field label="Date de naissance">
                       <input
                         type="date"
@@ -529,6 +605,12 @@ export default function PlayerProfilePage() {
                       />
                     </Field>
 
+                    <Field label="Catégorie">
+                      <input value={juniorCategory} disabled />
+                    </Field>
+                  </div>
+
+                  <div className="grid-2">
                     <Field label="Sexe">
                       <select value={sex} onChange={(e) => setSex(e.target.value)}>
                         <option value="">—</option>
@@ -537,19 +619,34 @@ export default function PlayerProfilePage() {
                         <option value="other">Autre</option>
                       </select>
                     </Field>
+
+                    {/* ✅ NEW */}
+                    <Field label="Dextérité">
+                      <select
+                        value={handedness}
+                        onChange={(e) => setHandedness(e.target.value as any)}
+                      >
+                        <option value="">—</option>
+                        <option value="right">Droite</option>
+                        <option value="left">Gauche</option>
+                      </select>
+                    </Field>
                   </div>
 
-                  <div className="grid-2">
-                    <Field label="Nationalité">
-                      <input value={nationality} onChange={(e) => setNationality(e.target.value)} />
-                    </Field>
-
+                  {/* ✅ Handicap en plus grand, sur sa ligne */}
+                  <div style={{ marginTop: 6 }}>
                     <Field label="Handicap">
                       <input
                         inputMode="decimal"
                         placeholder="ex: 25.4"
                         value={handicap}
                         onChange={(e) => setHandicap(e.target.value)}
+                        style={{
+                          height: 46,
+                          fontSize: 18,
+                          fontWeight: 900,
+                          borderRadius: 12,
+                        }}
                       />
                     </Field>
                   </div>
@@ -588,10 +685,7 @@ export default function PlayerProfilePage() {
 
                   <div className="grid-2">
                     <Field label="Code postal">
-                      <input
-                        value={postalCode}
-                        onChange={(e) => setPostalCode(e.target.value)}
-                      />
+                      <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
                     <Field label="Localité">
@@ -600,9 +694,71 @@ export default function PlayerProfilePage() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75 }}>
-                  Astuce : tu peux compléter progressivement. Tout est optionnel pour le MVP.
+                <div className="hr-soft" />
+
+                {/* ✅ Admin */}
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    Administratif
+                  </div>
+
+                  <Field label="No AVS">
+                    <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
+                  </Field>
                 </div>
+
+                <div className="hr-soft" />
+
+                {/* ✅ Parents */}
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    Coordonnées des parents
+                  </div>
+
+                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 1</div>
+                  <div className="grid-2">
+                    <Field label="Nom & prénom">
+                      <input value={parent1Name} onChange={(e) => setParent1Name(e.target.value)} />
+                    </Field>
+                    <Field label="Téléphone">
+                      <input
+                        value={parent1Phone}
+                        onChange={(e) => setParent1Phone(e.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Email">
+                    <input
+                      inputMode="email"
+                      value={parent1Email}
+                      onChange={(e) => setParent1Email(e.target.value)}
+                    />
+                  </Field>
+
+                  <div className="hr-soft" style={{ margin: "6px 0" }} />
+
+                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 2</div>
+                  <div className="grid-2">
+                    <Field label="Nom & prénom">
+                      <input value={parent2Name} onChange={(e) => setParent2Name(e.target.value)} />
+                    </Field>
+                    <Field label="Téléphone">
+                      <input
+                        value={parent2Phone}
+                        onChange={(e) => setParent2Phone(e.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Email">
+                    <input
+                      inputMode="email"
+                      value={parent2Email}
+                      onChange={(e) => setParent2Email(e.target.value)}
+                    />
+                  </Field>
+                </div>
+
+                
 
                 {/* ✅ ENREGISTRER à l’intérieur de la card */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
@@ -620,18 +776,7 @@ export default function PlayerProfilePage() {
             )}
           </div>
 
-          {/* Logout en dessous */}
-          <div style={{ marginTop: 12 }}>
-            <button
-              className="btn btn-danger soft"
-              onClick={logout}
-              disabled={busy || avatarBusy}
-              type="button"
-              style={{ width: "100%" }}
-            >
-              Logout
-            </button>
-          </div>
+          {/* ✅ Logout supprimé */}
         </section>
 
         <div style={{ height: 12 }} />
