@@ -71,6 +71,7 @@ function isAllowedImage(file: File) {
  *  - 2012 et + : U14
  *  - 2010 et + : U16
  *  - 2008 et + : U18
+ *  - plus vieux : Amateur
  */
 function getJuniorCategory(birthDateISO: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthDateISO.trim());
@@ -83,7 +84,7 @@ function getJuniorCategory(birthDateISO: string) {
   if (year >= 2012) return "U14";
   if (year >= 2010) return "U16";
   if (year >= 2008) return "U18";
-  return "—";
+  return "Amateur";
 }
 
 export default function PlayerProfilePage() {
@@ -217,7 +218,7 @@ export default function PlayerProfilePage() {
       return;
     }
 
-const row = (profRes.data ?? null) as unknown as ProfileRow | null;
+    const row = (profRes.data ?? null) as unknown as ProfileRow | null;
     setFirstName(row?.first_name ?? "");
     setLastName(row?.last_name ?? "");
     setPhone(row?.phone ?? "");
@@ -537,22 +538,7 @@ const row = (profRes.data ?? null) as unknown as ProfileRow | null;
                 Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}
               </div>
 
-              <div
-                className="delta-pill"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  fontWeight: 900,
-                  fontSize: 12,
-                  background: "rgba(255,255,255,0.18)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                }}
-              >
-                {handicapDelta >= 0 ? `+${handicapDelta}` : `${handicapDelta}`}
-              </div>
+              {/* ✅ pastille supprimée (delta-pill) */}
             </div>
 
             {/* ✅ ici: nom(s) du/des club(s) */}
@@ -589,26 +575,19 @@ const row = (profRes.data ?? null) as unknown as ProfileRow | null;
                     </Field>
                   </div>
 
-                  {/* ✅ Date (2/3) + Catégorie (1/3) */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "2fr 1fr",
-                      gap: 12,
-                    }}
-                  >
-                    <Field label="Date de naissance">
-                      <input
-                        type="date"
-                        value={birthDate}
-                        onChange={(e) => setBirthDate(e.target.value)}
-                      />
-                    </Field>
+                  {/* ✅ Date de naissance sur une ligne */}
+                  <Field label="Date de naissance">
+                    <input
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                    />
+                  </Field>
 
-                    <Field label="Catégorie">
-                      <input value={juniorCategory} disabled />
-                    </Field>
-                  </div>
+                  {/* ✅ Catégorie sur une ligne */}
+                  <Field label="Catégorie">
+                    <input value={juniorCategory} disabled />
+                  </Field>
 
                   <div className="grid-2">
                     <Field label="Sexe">
@@ -757,8 +736,6 @@ const row = (profRes.data ?? null) as unknown as ProfileRow | null;
                     />
                   </Field>
                 </div>
-
-                
 
                 {/* ✅ ENREGISTRER à l’intérieur de la card */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
