@@ -39,17 +39,34 @@ function clampInt(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(v)));
 }
 
+function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
+  const next: Hole = { ...base, ...patch };
+
+  // score: clamp 0..30 if number
+  if (typeof next.score === "number" && Number.isFinite(next.score)) {
+    next.score = clampInt(next.score, 0, 30);
+  }
+
+  // putts: clamp 0..10 and <= score (if score known)
+  if (typeof next.putts === "number" && Number.isFinite(next.putts)) {
+    next.putts = clampInt(next.putts, 0, 10);
+  }
+
+  if (typeof next.score === "number" && typeof next.putts === "number") {
+    if (next.putts > next.score) next.putts = next.score;
+  }
+
+  return next;
+}
+
 export default function EditRoundWizardPage() {
   const params = useParams();
   const router = useRouter();
   const roundId = useMemo(() => getParamString((params as any)?.roundId), [params]);
 
   const [loading, setLoading] = useState(true);
-  const [autosaving, setAutosaving] = useState(false);
-  const [savingAll, setSavingAll] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // UX error (fairway required)
   const [uxError, setUxError] = useState<string | null>(null);
 
   const [round, setRound] = useState<Round | null>(null);
@@ -66,13 +83,118 @@ export default function EditRoundWizardPage() {
   );
 
   const [holeIdx, setHoleIdx] = useState(0);
-  const autosaveInFlight = useRef<Promise<any> | null>(null);
 
   const scorecardHref = useMemo(() => {
     const id = roundId ?? "";
     return `/player/golf/rounds/${id}/scorecard`;
   }, [roundId]);
 
+  // --- autosave queue (single-hole upsert, debounced) ---
+  const saveTimerRef = useRef<any>(null);
+  const inFlightRef = useRef<Promise<void> | null>(null);
+  const latestHoleRef = useRef<Hole | null>(null);
+
+  async function upsertHole(h: Hole) {
+    if (!roundId) return;
+
+    const payload = {
+      id: h.id,
+      round_id: roundId,
+      hole_no: h.hole_no,
+      par: h.par,
+      stroke_index: h.stroke_index,
+      score: h.score,
+      putts: h.putts,
+      fairway_hit: h.fairway_hit,
+      note: h.note?.trim() || null,
+    };
+
+    const res = await supabase.from("golf_round_holes").upsert([payload], { onConflict: "round_id,hole_no" });
+    if (res.error) throw new Error(res.error.message);
+
+    // If we didn't have id yet, fetch it once
+    if (!h.id) {
+      const readBack = await supabase
+        .from("golf_round_holes")
+        .select("id")
+        .eq("round_id", roundId)
+        .eq("hole_no", h.hole_no)
+        .maybeSingle();
+
+      if (!readBack.error && readBack.data?.id) {
+        const newId = readBack.data.id as string;
+        setHoles((prev) =>
+          prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x))
+        );
+        latestHoleRef.current = { ...h, id: newId };
+      }
+    }
+  }
+
+  function scheduleSave(h: Hole) {
+    latestHoleRef.current = h;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    saveTimerRef.current = setTimeout(async () => {
+      // serialize saves
+      if (inFlightRef.current) return;
+
+      const toSave = latestHoleRef.current;
+      if (!toSave) return;
+
+      setSaving(true);
+      setError(null);
+
+      const p = (async () => {
+        try {
+          await upsertHole(toSave);
+        } catch (e: any) {
+          setError(e?.message ?? "Erreur enregistrement.");
+        } finally {
+          setSaving(false);
+          inFlightRef.current = null;
+        }
+      })();
+
+      inFlightRef.current = p;
+      await p;
+    }, 180);
+  }
+
+  async function flushSave() {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const toSave = latestHoleRef.current;
+    if (!toSave) return;
+
+    // wait current flight
+    if (inFlightRef.current) {
+      await inFlightRef.current;
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    const p = (async () => {
+      try {
+        await upsertHole(toSave);
+      } catch (e: any) {
+        setError(e?.message ?? "Erreur enregistrement.");
+      } finally {
+        setSaving(false);
+        inFlightRef.current = null;
+      }
+    })();
+
+    inFlightRef.current = p;
+    await p;
+  }
+
+  // --- load ---
   async function load() {
     if (!roundId) {
       setError("Identifiant de parcours invalide.");
@@ -115,23 +237,35 @@ export default function EditRoundWizardPage() {
       return;
     }
 
-    const map = new Map<number, Hole>();
+    const map = new Map<number, any>();
     (hRes.data ?? []).forEach((x: any) => map.set(x.hole_no, x));
 
+    // ✅ IMPORTANT: set real defaults in STATE (score = par, putts = 2) if null
     setHoles(
       Array.from({ length: 18 }, (_, i) => {
         const holeNo = i + 1;
         const existing = map.get(holeNo);
-        return {
-          hole_no: holeNo,
-          id: existing?.id,
-          par: existing?.par ?? null,
-          stroke_index: existing?.stroke_index ?? null,
-          score: existing?.score ?? null,
-          putts: existing?.putts ?? null,
-          fairway_hit: existing?.fairway_hit ?? null,
-          note: existing?.note ?? null,
-        };
+
+        const par = existing?.par ?? null;
+        const score =
+          existing?.score ?? (typeof par === "number" ? par : 0); // real value, not placeholder
+        const puttsRaw = existing?.putts ?? 2;
+
+        const constrained = applyConstraints(
+          {
+            hole_no: holeNo,
+            id: existing?.id,
+            par,
+            stroke_index: existing?.stroke_index ?? null,
+            score,
+            putts: puttsRaw,
+            fairway_hit: existing?.fairway_hit ?? null,
+            note: existing?.note ?? null,
+          },
+          {}
+        );
+
+        return constrained;
       })
     );
 
@@ -143,136 +277,56 @@ export default function EditRoundWizardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
-  function updateHole(idx: number, patch: Partial<Hole>) {
-    setHoles((prev) => {
-      const h = prev[idx];
-      if (!h) return prev;
-
-      const nextScore = patch.score !== undefined ? patch.score : h.score;
-      const nextPuttsRaw = patch.putts !== undefined ? patch.putts : h.putts;
-
-      const maxPutts = typeof nextScore === "number" && Number.isFinite(nextScore) ? nextScore : 10;
-
-      let nextPutts = nextPuttsRaw;
-      if (typeof nextPuttsRaw === "number" && Number.isFinite(nextPuttsRaw)) {
-        nextPutts = clampInt(nextPuttsRaw, 0, clampInt(maxPutts, 0, 10));
-      }
-
-      if (
-        typeof nextScore === "number" &&
-        Number.isFinite(nextScore) &&
-        typeof nextPutts === "number" &&
-        Number.isFinite(nextPutts) &&
-        nextPutts > nextScore
-      ) {
-        nextPutts = nextScore;
-      }
-
-      const merged: Hole = { ...h, ...patch, score: nextScore, putts: nextPutts };
-      return prev.map((x, i) => (i === idx ? merged : x));
-    });
-  }
-
+  // Keep latest hole pointer updated whenever current hole changes
   useEffect(() => {
+    const h = holes[holeIdx];
+    if (h) latestHoleRef.current = h;
     setUxError(null);
-
-    setHoles((prev) => {
-      const h = prev[holeIdx];
-      if (!h) return prev;
-
-      const score = h.score == null ? (typeof h.par === "number" ? h.par : 0) : h.score;
-      const puttsDefault = score <= 0 ? 0 : Math.min(2, score);
-      const putts = h.putts == null ? puttsDefault : Math.min(h.putts, score);
-
-      if (score === h.score && putts === h.putts) return prev;
-      return prev.map((x, i) => (i === holeIdx ? { ...x, score, putts } : x));
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holeIdx]);
+  }, [holeIdx, holes.length]);
 
-  async function saveHole(idx: number) {
-    if (!roundId) return;
-    const h = holes[idx];
-    if (!h) return;
+  // --- actions (ALL autosave) ---
+  const hole = holes[holeIdx];
+  const isLastHole = holeIdx === 17;
+  const fairwayChosen = hole?.fairway_hit !== null;
 
-    const payload = {
-      id: h.id,
-      round_id: roundId,
-      hole_no: h.hole_no,
-      par: h.par,
-      stroke_index: h.stroke_index,
-      score: h.score,
-      putts: h.putts,
-      fairway_hit: h.fairway_hit,
-      note: h.note?.trim() || null,
-    };
+  function commitPatch(patch: Partial<Hole>) {
+    if (!hole) return;
 
-    const res = await supabase.from("golf_round_holes").upsert([payload], { onConflict: "round_id,hole_no" });
-    if (res.error) throw new Error(res.error.message);
+    const next = applyConstraints(hole, patch);
 
-    if (!h.id) {
-      const readBack = await supabase
-        .from("golf_round_holes")
-        .select("id")
-        .eq("round_id", roundId)
-        .eq("hole_no", h.hole_no)
-        .maybeSingle();
+    // update state
+    setHoles((prev) => prev.map((x, i) => (i === holeIdx ? next : x)));
 
-      if (!readBack.error && readBack.data?.id) {
-        setHoles((prev) => prev.map((x, i) => (i === idx ? { ...x, id: readBack.data.id } : x)));
-      }
-    }
+    // autosave (debounced)
+    scheduleSave(next);
   }
 
-  async function autosaveCurrentHole() {
-    if (!roundId) return;
-    if (autosaveInFlight.current) return autosaveInFlight.current;
-
-    setAutosaving(true);
-    setError(null);
-
-    const p = (async () => {
-      try {
-        await saveHole(holeIdx);
-      } catch (e: any) {
-        setError(e?.message ?? "Erreur enregistrement.");
-      } finally {
-        setAutosaving(false);
-        autosaveInFlight.current = null;
-      }
-    })();
-
-    autosaveInFlight.current = p;
-    return p;
+  async function goPrevHole() {
+    if (!fairwayChosen) {
+      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      return;
+    }
+    await flushSave();
+    if (holeIdx > 0) setHoleIdx(holeIdx - 1);
   }
 
-  async function saveAll() {
-    if (!roundId) return;
-    setSavingAll(true);
-    setError(null);
-
-    try {
-      const payload = holes.map((h) => ({
-        id: h.id,
-        round_id: roundId,
-        hole_no: h.hole_no,
-        par: h.par,
-        stroke_index: h.stroke_index,
-        score: h.score,
-        putts: h.putts,
-        fairway_hit: h.fairway_hit,
-        note: h.note?.trim() || null,
-      }));
-
-      const res = await supabase.from("golf_round_holes").upsert(payload, { onConflict: "round_id,hole_no" });
-      if (res.error) throw new Error(res.error.message);
-
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur enregistrement.");
-    } finally {
-      setSavingAll(false);
+  async function goNextHole() {
+    if (!fairwayChosen) {
+      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      return;
     }
+    await flushSave();
+    if (holeIdx < 17) setHoleIdx(holeIdx + 1);
+  }
+
+  async function finishAndGoScorecard() {
+    if (!fairwayChosen) {
+      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      return;
+    }
+    await flushSave();
+    router.push(scorecardHref);
   }
 
   async function deleteRound() {
@@ -285,41 +339,6 @@ export default function EditRoundWizardPage() {
       return;
     }
     router.push("/player/golf/rounds");
-  }
-
-  const hole = holes[holeIdx];
-  const isLastHole = holeIdx === 17;
-
-  const fairwayChosen = hole?.fairway_hit !== null;
-
-  async function guardedNavigate(fn: () => Promise<void>) {
-    if (!fairwayChosen) {
-      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
-      return;
-    }
-    await fn();
-  }
-
-  async function goPrevHole() {
-    await guardedNavigate(async () => {
-      await autosaveCurrentHole();
-      if (holeIdx > 0) setHoleIdx(holeIdx - 1);
-    });
-  }
-
-  async function goNextHole() {
-    await guardedNavigate(async () => {
-      await autosaveCurrentHole();
-      if (holeIdx < 17) setHoleIdx(holeIdx + 1);
-    });
-  }
-
-  async function finishAndGoScorecard() {
-    await guardedNavigate(async () => {
-      await autosaveCurrentHole();
-      await saveAll();
-      router.push(scorecardHref);
-    });
   }
 
   if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
@@ -369,10 +388,15 @@ export default function EditRoundWizardPage() {
                 Trou {hole?.hole_no ?? holeIdx + 1}
               </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={pillStyle}>
                   PAR&nbsp;: <span style={{ fontWeight: 950 }}>{hole?.par ?? "—"}</span>
                 </div>
+                {saving && (
+                  <div style={{ ...pillStyle, opacity: 0.85 }}>
+                    💾 Sauvegarde…
+                  </div>
+                )}
               </div>
             </div>
 
@@ -388,36 +412,28 @@ export default function EditRoundWizardPage() {
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => {
-                        const cur = hole.score ?? (typeof hole.par === "number" ? hole.par : 0);
-                        updateHole(holeIdx, { score: clampInt(cur - 1, 0, 30) });
-                      }}
-                      disabled={autosaving || savingAll}
+                      onClick={() => commitPatch({ score: (hole.score ?? 0) - 1 })}
                       style={miniBtnStyle}
                     >
                       –
                     </button>
 
+                    {/* ✅ shows real value (state), not placeholder */}
                     <input
                       className="input"
                       inputMode="numeric"
-                      value={hole.score ?? ""}
+                      value={String(hole.score ?? 0)}
                       onChange={(e) => {
-                        const v = e.target.value === "" ? null : clampInt(Number(e.target.value), 0, 30);
-                        updateHole(holeIdx, { score: v });
+                        const v = e.target.value === "" ? 0 : Number(e.target.value);
+                        commitPatch({ score: clampInt(v, 0, 30) });
                       }}
-                      placeholder={String(hole.par ?? "")}
                       style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
                     />
 
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => {
-                        const cur = hole.score ?? (typeof hole.par === "number" ? hole.par : 0);
-                        updateHole(holeIdx, { score: clampInt(cur + 1, 0, 30) });
-                      }}
-                      disabled={autosaving || savingAll}
+                      onClick={() => commitPatch({ score: (hole.score ?? 0) + 1 })}
                       style={miniBtnStyle}
                     >
                       +
@@ -434,10 +450,9 @@ export default function EditRoundWizardPage() {
                       type="button"
                       className="btn"
                       onClick={() => {
-                        const cur = hole.putts ?? Math.min(2, maxPuttsNow);
-                        updateHole(holeIdx, { putts: clampInt(cur - 1, 0, maxPuttsNow) });
+                        const cur = hole.putts ?? 2;
+                        commitPatch({ putts: clampInt(cur - 1, 0, maxPuttsNow) });
                       }}
-                      disabled={autosaving || savingAll}
                       style={miniBtnStyle}
                     >
                       –
@@ -446,16 +461,11 @@ export default function EditRoundWizardPage() {
                     <input
                       className="input"
                       inputMode="numeric"
-                      value={hole.putts ?? ""}
+                      value={String(hole.putts ?? 2)}
                       onChange={(e) => {
-                        const vRaw = e.target.value === "" ? null : Number(e.target.value);
-                        if (vRaw === null) {
-                          updateHole(holeIdx, { putts: null });
-                          return;
-                        }
-                        updateHole(holeIdx, { putts: clampInt(vRaw, 0, maxPuttsNow) });
+                        const v = e.target.value === "" ? 0 : Number(e.target.value);
+                        commitPatch({ putts: clampInt(v, 0, maxPuttsNow) });
                       }}
-                      placeholder={String(Math.min(2, maxPuttsNow))}
                       style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
                     />
 
@@ -463,10 +473,9 @@ export default function EditRoundWizardPage() {
                       type="button"
                       className="btn"
                       onClick={() => {
-                        const cur = hole.putts ?? Math.min(2, maxPuttsNow);
-                        updateHole(holeIdx, { putts: clampInt(cur + 1, 0, maxPuttsNow) });
+                        const cur = hole.putts ?? 2;
+                        commitPatch({ putts: clampInt(cur + 1, 0, maxPuttsNow) });
                       }}
-                      disabled={autosaving || savingAll}
                       style={miniBtnStyle}
                     >
                       +
@@ -479,14 +488,14 @@ export default function EditRoundWizardPage() {
                   <div style={fieldLabelStyle}>Fairway</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {/* MISS left */}
                     <button
                       type="button"
                       className="btn"
                       onClick={() => {
                         setUxError(null);
-                        updateHole(holeIdx, { fairway_hit: false });
+                        commitPatch({ fairway_hit: false });
                       }}
-                      disabled={autosaving || savingAll}
                       style={{
                         ...fairwayBtnBase,
                         ...(missSelected ? fairwayMissSelected : fairwayUnselected),
@@ -499,14 +508,14 @@ export default function EditRoundWizardPage() {
                       </span>
                     </button>
 
+                    {/* HIT right */}
                     <button
                       type="button"
                       className="btn"
                       onClick={() => {
                         setUxError(null);
-                        updateHole(holeIdx, { fairway_hit: true });
+                        commitPatch({ fairway_hit: true });
                       }}
-                      disabled={autosaving || savingAll}
                       style={{
                         ...fairwayBtnBase,
                         ...(hitSelected ? fairwayHitSelected : fairwayUnselected),
@@ -522,54 +531,38 @@ export default function EditRoundWizardPage() {
                 </div>
 
                 {/* NAV / FINISH */}
-               
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={goPrevHole}
+                    disabled={holeIdx === 0}
+                    style={{ width: "100%" }}
+                  >
+                    {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
+                  </button>
 
-<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
-  <button
-    type="button"
-    className="btn"
-    onClick={goPrevHole}
-    disabled={autosaving || savingAll || holeIdx === 0 || !fairwayChosen}
-    style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
-  >
-    {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
-  </button>
-
-  {!isLastHole ? (
-    // ✅ Trou suivant = gris normal
-    <button
-      type="button"
-      className="btn"
-      onClick={goNextHole}
-      disabled={autosaving || savingAll || !fairwayChosen}
-      style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
-    >
-      {`Trou ${holeIdx + 2}`}
-    </button>
-  ) : (
-    // ✅ Terminer = vert (même taille car même layout + width:100%)
-    <button
-      type="button"
-      className="btn"
-      onClick={finishAndGoScorecard}
-      disabled={autosaving || savingAll || !fairwayChosen}
-      style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
-    >
-      {savingAll ? "Enregistrement…" : "Terminer"}
-    </button>
-  )}
-</div>
+                  {!isLastHole ? (
+                    <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }}>
+                      {`Trou ${holeIdx + 2}`}
+                    </button>
+                  ) : (
+                    <button type="button" className="cta-green cta-green-inline" onClick={finishAndGoScorecard} style={{ width: "100%" }}>
+                      Terminer
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
 
-          {/* ✅ green scorecard button below the glass card */}
+          {/* below card */}
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             <Link className="cta-green cta-green-inline" href={scorecardHref} style={{ width: "100%", justifyContent: "center" as any }}>
               Afficher la carte des scores
             </Link>
 
-            <button type="button" className="btn" onClick={deleteRound} disabled={autosaving || savingAll} style={{ width: "100%" }}>
+            <button type="button" className="btn" onClick={deleteRound} style={{ width: "100%" }}>
               Supprimer ce parcours
             </button>
           </div>
@@ -635,10 +628,4 @@ const fairwayHitSelected: React.CSSProperties = {
   filter: "saturate(1.25) contrast(1.08)",
   transform: "translateY(-2px) scale(1.015)",
   boxShadow: "0 18px 32px rgba(0,0,0,0.18)",
-};
-
-const disabledBtnStyle: React.CSSProperties = {
-  opacity: 0.55,
-  filter: "grayscale(0.2)",
-  cursor: "not-allowed",
 };
