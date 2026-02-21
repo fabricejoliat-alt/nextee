@@ -10,7 +10,7 @@ type Profile = {
   first_name: string | null;
   last_name: string | null;
   handicap: number | null;
-  avatar_url: string | null; // ✅
+  avatar_url: string | null;
 };
 
 type ClubMember = { club_id: string };
@@ -55,8 +55,14 @@ type TrainingItemRow = {
   minutes: number;
 };
 
-type GolfRoundRow = { id: string; start_at: string };
-type GolfHoleRow = { round_id: string; hole_no: number; par: number | null; score: number | null; putts: number | null; fairway_hit: boolean | null };
+type GolfRoundRow = {
+  id: string;
+  start_at: string;
+  gir: number | null;
+  fairways_hit: number | null;
+  fairways_total: number | null;
+  total_putts: number | null;
+};
 
 const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
   warmup_mobility: "Échauffement",
@@ -98,7 +104,7 @@ function clamp(n: number, a: number, b: number) {
 }
 
 function avg(values: Array<number | null>) {
-  const v = values.filter((x): x is number => typeof x === "number");
+  const v = values.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   if (v.length === 0) return null;
   const sum = v.reduce((a, b) => a + b, 0);
   return Math.round((sum / v.length) * 10) / 10;
@@ -178,7 +184,7 @@ function Donut({ percent }: { percent: number }) {
   );
 }
 
-/** Flèche uniquement (comme sensations) */
+/** Flèche “standard”: up=vert, down=rouge (comme sensations) */
 function ArrowOnly({ delta }: { delta: number | null }) {
   if (delta == null || !Number.isFinite(delta)) return <span className="sense-val">—</span>;
   const up = delta > 0;
@@ -186,6 +192,26 @@ function ArrowOnly({ delta }: { delta: number | null }) {
   const cls = up ? "sense-val up" : down ? "sense-val down" : "sense-val";
   const sign = up ? "▲" : down ? "▼" : "•";
   return <span className={cls}>{sign}</span>;
+}
+
+/** Flèche “inverse” (pour putts): down=vert, up=rouge */
+function ArrowOnlyInverseGoodDown({ delta }: { delta: number | null }) {
+  if (delta == null || !Number.isFinite(delta)) return <span className="sense-val">—</span>;
+  const up = delta > 0;
+  const down = delta < 0;
+  // ✅ inverse couleurs
+  const cls = down ? "sense-val up" : up ? "sense-val down" : "sense-val";
+  const sign = up ? "▲" : down ? "▼" : "•";
+  return <span className={cls}>{sign}</span>;
+}
+
+/** Variation “dernière valeur vs précédente” (en ignorant les null) */
+function deltaLastVsPrev(values: Array<number | null | undefined>) {
+  const v = values.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  if (v.length < 2) return null;
+  const last = v[0];
+  const prev = v[1];
+  return Math.round((last - prev) * 10) / 10;
 }
 
 export default function PlayerHomePage() {
@@ -203,9 +229,9 @@ export default function PlayerHomePage() {
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
-  // ✅ Parcours du mois (liste ids) + trous (pour stats focus)
+  // ✅ Rounds month + previous month (pour tendances focus)
   const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
-  const [holesMonth, setHolesMonth] = useState<GolfHoleRow[]>([]);
+  const [roundsPrevMonth, setRoundsPrevMonth] = useState<GolfRoundRow[]>([]);
 
   const bucket = "marketplace";
 
@@ -251,17 +277,11 @@ export default function PlayerHomePage() {
     const objective = 500;
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
-    // ✅ Dernière séance (la plus récente)
-    const last = monthSessions?.[0] ?? null;
-
-    const deltaMotivation =
-      typeof last?.motivation === "number" && typeof motivationAvg === "number" ? Math.round((last.motivation - motivationAvg) * 10) / 10 : null;
-
-    const deltaDifficulty =
-      typeof last?.difficulty === "number" && typeof difficultyAvg === "number" ? Math.round((last.difficulty - difficultyAvg) * 10) / 10 : null;
-
-    const deltaSatisfaction =
-      typeof last?.satisfaction === "number" && typeof satisfactionAvg === "number" ? Math.round((last.satisfaction - satisfactionAvg) * 10) / 10 : null;
+    // ✅ Tendance = dernière valeur vs précédente (ignorer null)
+    // monthSessions est trié DESC (plus récent en premier)
+    const deltaMotivation = deltaLastVsPrev(monthSessions.map((s) => s.motivation));
+    const deltaDifficulty = deltaLastVsPrev(monthSessions.map((s) => s.difficulty));
+    const deltaSatisfaction = deltaLastVsPrev(monthSessions.map((s) => s.satisfaction));
 
     return {
       totalMinutes,
@@ -283,67 +303,40 @@ export default function PlayerHomePage() {
     return m || 1;
   }, [trainingsSummary.top]);
 
-  // ===== Focus stats calculées à partir des trous du mois + trends vs mois précédent (flèche seulement) =====
-  const { start: curStart, end: curEnd } = useMemo(() => monthRangeLocal(new Date()), []);
-  const prevRange = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    const end = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    return { start, end };
-  }, []);
+  // ===== Focus calculé depuis golf_rounds (comme dashboard) =====
+  const focusFromRounds = useMemo(() => {
+    const girVals = roundsMonth.map((r) => (typeof r.gir === "number" ? r.gir : null)).filter((x): x is number => typeof x === "number");
+    const fwPctVals = roundsMonth
+      .map((r) => {
+        if (typeof r.fairways_hit !== "number" || typeof r.fairways_total !== "number" || r.fairways_total <= 0) return null;
+        return (r.fairways_hit / r.fairways_total) * 100;
+      })
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+    const puttVals = roundsMonth.map((r) => (typeof r.total_putts === "number" ? r.total_putts : null)).filter((x): x is number => typeof x === "number");
 
-  const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
-
-  const focus = useMemo(() => {
-    // Fairways: par4/5 où fairway_hit non null
-    let fwTot = 0;
-    let fwHit = 0;
-
-    // Putts: moyenne par trou (si renseigné)
-    const puttVals: number[] = [];
-
-    // GIR: approximation (si tu ne stockes pas "gir" par trou)
-    // => on calcule UNIQUEMENT fairways/putts ici (solide avec holes),
-    // et on laisse GIR à "—" si pas de champ fiable.
-    // Si tu veux un vrai GIR: utilise golf_rounds.gir côté API (comme sur dashboard).
-    // Ici on met GIR à null.
-    const girPct: number | null = null;
-
-    for (const h of holesMonth) {
-      if (typeof h.putts === "number") puttVals.push(h.putts);
-
-      // fairways: par4/5 + bool présent
-      if (typeof h.par === "number" && h.par >= 4 && typeof h.fairway_hit === "boolean") {
-        fwTot += 1;
-        if (h.fairway_hit) fwHit += 1;
-      }
-    }
-
-    const fwPct = fwTot ? Math.round((fwHit / fwTot) * 1000) / 10 : null;
+    const girAvg = girVals.length ? Math.round((girVals.reduce((a, b) => a + b, 0) / girVals.length) * 10) / 10 : null;
+    const fwPctAvg = fwPctVals.length ? Math.round((fwPctVals.reduce((a, b) => a + b, 0) / fwPctVals.length) * 10) / 10 : null;
     const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
 
-    return { girPct, fwPct, puttAvg };
-  }, [holesMonth]);
+    return { girAvg, fwPctAvg, puttAvg };
+  }, [roundsMonth]);
 
-  const prevFocus = useMemo(() => {
-    let fwTot = 0;
-    let fwHit = 0;
-    const puttVals: number[] = [];
-    const girPct: number | null = null;
+  const prevFocusFromRounds = useMemo(() => {
+    const girVals = roundsPrevMonth.map((r) => (typeof r.gir === "number" ? r.gir : null)).filter((x): x is number => typeof x === "number");
+    const fwPctVals = roundsPrevMonth
+      .map((r) => {
+        if (typeof r.fairways_hit !== "number" || typeof r.fairways_total !== "number" || r.fairways_total <= 0) return null;
+        return (r.fairways_hit / r.fairways_total) * 100;
+      })
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+    const puttVals = roundsPrevMonth.map((r) => (typeof r.total_putts === "number" ? r.total_putts : null)).filter((x): x is number => typeof x === "number");
 
-    for (const h of prevHoles) {
-      if (typeof h.putts === "number") puttVals.push(h.putts);
-      if (typeof h.par === "number" && h.par >= 4 && typeof h.fairway_hit === "boolean") {
-        fwTot += 1;
-        if (h.fairway_hit) fwHit += 1;
-      }
-    }
-
-    const fwPct = fwTot ? Math.round((fwHit / fwTot) * 1000) / 10 : null;
+    const girAvg = girVals.length ? Math.round((girVals.reduce((a, b) => a + b, 0) / girVals.length) * 10) / 10 : null;
+    const fwPctAvg = fwPctVals.length ? Math.round((fwPctVals.reduce((a, b) => a + b, 0) / fwPctVals.length) * 10) / 10 : null;
     const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
 
-    return { girPct, fwPct, puttAvg };
-  }, [prevHoles]);
+    return { girAvg, fwPctAvg, puttAvg };
+  }, [roundsPrevMonth]);
 
   const focusDelta = useMemo(() => {
     const d = (cur: number | null, prev: number | null) => {
@@ -352,11 +345,11 @@ export default function PlayerHomePage() {
       return v === 0 ? 0 : v;
     };
     return {
-      gir: d(focus.girPct, prevFocus.girPct), // null si GIR non calculé
-      fw: d(focus.fwPct, prevFocus.fwPct),
-      putt: d(focus.puttAvg, prevFocus.puttAvg),
+      gir: d(focusFromRounds.girAvg, prevFocusFromRounds.girAvg),
+      fw: d(focusFromRounds.fwPctAvg, prevFocusFromRounds.fwPctAvg),
+      putt: d(focusFromRounds.puttAvg, prevFocusFromRounds.puttAvg),
     };
-  }, [focus, prevFocus]);
+  }, [focusFromRounds, prevFocusFromRounds]);
 
   async function load() {
     setLoading(true);
@@ -388,7 +381,7 @@ export default function PlayerHomePage() {
       setMonthSessions([]);
       setMonthItems([]);
       setRoundsMonth([]);
-      setHolesMonth([]);
+      setRoundsPrevMonth([]);
       setLoading(false);
       return;
     }
@@ -444,7 +437,7 @@ export default function PlayerHomePage() {
       setThumbByItemId({});
     }
 
-    // Trainings month (⚠️ tu avais oublié le filtre user_id)
+    // Trainings month
     const { start, end } = monthRangeLocal(new Date());
     const sRes = await supabase
       .from("training_sessions")
@@ -470,49 +463,35 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
-    // Rounds month + holes month + prev month holes (for trends)
+    // Rounds month + prev month (GIR/fairways/putts)
     try {
-      // current month rounds
-      const rRes = await supabase
+      const { start: curStart, end: curEnd } = monthRangeLocal(new Date());
+
+      const curR = await supabase
         .from("golf_rounds")
-        .select("id,start_at")
+        .select("id,start_at,gir,fairways_hit,fairways_total,total_putts")
         .eq("user_id", uid)
         .gte("start_at", curStart.toISOString())
         .lt("start_at", curEnd.toISOString())
         .order("start_at", { ascending: false });
 
-      const rList = (rRes.data ?? []) as GolfRoundRow[];
-      setRoundsMonth(rList);
+      setRoundsMonth((curR.data ?? []) as GolfRoundRow[]);
 
-      if (rList.length > 0) {
-        const roundIds = rList.map((r) => r.id);
-        const hRes = await supabase.from("golf_round_holes").select("round_id,hole_no,par,score,putts,fairway_hit").in("round_id", roundIds);
-        setHolesMonth((hRes.data ?? []) as GolfHoleRow[]);
-      } else {
-        setHolesMonth([]);
-      }
+      const prevStart = new Date(curStart.getFullYear(), curStart.getMonth() - 1, 1, 0, 0, 0, 0);
+      const prevEnd = new Date(curStart.getFullYear(), curStart.getMonth(), 1, 0, 0, 0, 0);
 
-      // previous month rounds -> holes
-      const prRes = await supabase
+      const prevR = await supabase
         .from("golf_rounds")
-        .select("id,start_at")
+        .select("id,start_at,gir,fairways_hit,fairways_total,total_putts")
         .eq("user_id", uid)
-        .gte("start_at", prevRange.start.toISOString())
-        .lt("start_at", prevRange.end.toISOString())
+        .gte("start_at", prevStart.toISOString())
+        .lt("start_at", prevEnd.toISOString())
         .order("start_at", { ascending: false });
 
-      const prList = (prRes.data ?? []) as GolfRoundRow[];
-      if (prList.length > 0) {
-        const prIds = prList.map((r) => r.id);
-        const phRes = await supabase.from("golf_round_holes").select("round_id,hole_no,par,score,putts,fairway_hit").in("round_id", prIds);
-        setPrevHoles((phRes.data ?? []) as GolfHoleRow[]);
-      } else {
-        setPrevHoles([]);
-      }
+      setRoundsPrevMonth((prevR.data ?? []) as GolfRoundRow[]);
     } catch {
       setRoundsMonth([]);
-      setHolesMonth([]);
-      setPrevHoles([]);
+      setRoundsPrevMonth([]);
     }
 
     setLoading(false);
@@ -529,23 +508,17 @@ export default function PlayerHomePage() {
     return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
   }, [profile?.avatar_url]);
 
-  // helpers pour sensations (▲▼ + valeur) — on garde tel quel
-  function deltaLabel(d: number | null) {
-    if (typeof d !== "number") return "—";
-    const abs = Math.abs(d).toFixed(1);
-    if (d > 0) return `▲ +${abs}`;
-    if (d < 0) return `▼ -${abs}`;
-    return `• ${abs}`;
-  }
-  function deltaClass(d: number | null) {
-    if (typeof d !== "number") return "sense-val";
-    if (d > 0) return "sense-val up";
-    if (d < 0) return "sense-val down";
-    return "sense-val";
-  }
+  // ✅ affichage sensations : valeur = moyenne du mois / flèche = tendance vs séance précédente
+  const senseRightStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 64,
+    justifyContent: "flex-end",
+  };
 
   const roundsMonthCount = roundsMonth.length;
-  const holesMonthCount = holesMonth.length;
+  const holesMonthCountApprox = roundsMonthCount * 18;
 
   return (
     <div className="player-dashboard-bg">
@@ -644,7 +617,7 @@ export default function PlayerHomePage() {
               )}
             </div>
 
-            {/* Sensations */}
+            {/* ✅ Sensations : moyenne du mois + flèche vs séance précédente */}
             <div className="glass-card">
               <div className="card-title">Sensations</div>
 
@@ -652,7 +625,10 @@ export default function PlayerHomePage() {
                 <div>
                   <div className="sense-row">
                     <div>Motivation</div>
-                    <div className={deltaClass(trainingsSummary.deltaMotivation)}>{deltaLabel(trainingsSummary.deltaMotivation)}</div>
+                    <div style={senseRightStyle}>
+                      <span className="sense-val">{trainingsSummary.motivationAvg ?? "—"}</span>
+                      <ArrowOnly delta={trainingsSummary.deltaMotivation} />
+                    </div>
                   </div>
                   <div className="bar">
                     <span style={{ width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
@@ -662,7 +638,10 @@ export default function PlayerHomePage() {
                 <div>
                   <div className="sense-row">
                     <div>Difficulté</div>
-                    <div className={deltaClass(trainingsSummary.deltaDifficulty)}>{deltaLabel(trainingsSummary.deltaDifficulty)}</div>
+                    <div style={senseRightStyle}>
+                      <span className="sense-val">{trainingsSummary.difficultyAvg ?? "—"}</span>
+                      <ArrowOnly delta={trainingsSummary.deltaDifficulty} />
+                    </div>
                   </div>
                   <div className="bar">
                     <span style={{ width: `${clamp(((trainingsSummary.difficultyAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
@@ -672,7 +651,10 @@ export default function PlayerHomePage() {
                 <div>
                   <div className="sense-row">
                     <div>Satisfaction</div>
-                    <div className={deltaClass(trainingsSummary.deltaSatisfaction)}>{deltaLabel(trainingsSummary.deltaSatisfaction)}</div>
+                    <div style={senseRightStyle}>
+                      <span className="sense-val">{trainingsSummary.satisfactionAvg ?? "—"}</span>
+                      <ArrowOnly delta={trainingsSummary.deltaSatisfaction} />
+                    </div>
                   </div>
                   <div className="bar">
                     <span style={{ width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
@@ -688,22 +670,14 @@ export default function PlayerHomePage() {
           </Link>
         </section>
 
-        {/* ===== ✅ Volume de jeu + Focus en dessous ===== */}
+        {/* ===== Volume de jeu ===== */}
         <section className="glass-section">
           <div className="section-title">Volume de jeu</div>
 
-          {/* ✅ Card Volume (1 ligne) */}
           <div className="glass-card">
             <div className="muted-uc">{thisMonthTitle}</div>
 
-            <div
-              style={{
-                marginTop: 12,
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
+            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div
                 style={{
                   borderWidth: 1,
@@ -733,22 +707,21 @@ export default function PlayerHomePage() {
               >
                 <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.62)" }}>Trous</div>
                 <div style={{ marginTop: 6 }}>
-                  <span className="big-number">{holesMonthCount}</span>
-                  <span className="unit">MOIS</span>
+                  <span className="big-number">{holesMonthCountApprox}</span>
+                  <span className="unit">EST.</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ✅ Card Focus (en dessous + plus grande) */}
           <div className="glass-card" style={{ marginTop: 12 }}>
-            <div className="card-title">Focus (tendance vs mois précédent)</div>
+            <div className="card-title">Focus</div>
 
             <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
               <div className="sense-row">
                 <div>Greens en régulation</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focus.girPct == null ? "—" : `${focus.girPct}%`}</div>
+                  <div className="sense-val">{focusFromRounds.girAvg == null ? "—" : `${focusFromRounds.girAvg}`}</div>
                   <ArrowOnly delta={focusDelta.gir} />
                 </div>
               </div>
@@ -756,23 +729,18 @@ export default function PlayerHomePage() {
               <div className="sense-row">
                 <div>Moyenne de putt</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focus.puttAvg == null ? "—" : `${focus.puttAvg}`}</div>
-                  <ArrowOnly delta={focusDelta.putt} />
+                  <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
+                  {/* ✅ inverse couleurs (baisse = bon = vert) */}
+                  <ArrowOnlyInverseGoodDown delta={focusDelta.putt} />
                 </div>
               </div>
 
               <div className="sense-row">
                 <div>Fairways touchés</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focus.fwPct == null ? "—" : `${focus.fwPct}%`}</div>
+                  <div className="sense-val">{focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`}</div>
                   <ArrowOnly delta={focusDelta.fw} />
                 </div>
-              </div>
-
-              <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.4 }}>
-                Les flèches comparent au mois précédent (si suffisamment de données).
-                <br />
-                GIR n’est pas calculé ici si tu ne le stockes pas par trou. Si tu veux un vrai GIR, on peut le lire depuis <code>golf_rounds.gir</code> (comme sur ton Dashboard).
               </div>
             </div>
           </div>
