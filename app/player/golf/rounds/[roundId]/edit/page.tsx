@@ -34,17 +34,6 @@ function getParamString(p: any): string | null {
   return null;
 }
 
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
 function clampInt(v: number, min: number, max: number) {
   if (!Number.isFinite(v)) return min;
   return Math.max(min, Math.min(max, Math.trunc(v)));
@@ -59,6 +48,9 @@ export default function EditRoundWizardPage() {
   const [autosaving, setAutosaving] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // UX error (fairway required)
+  const [uxError, setUxError] = useState<string | null>(null);
 
   const [round, setRound] = useState<Round | null>(null);
   const [holes, setHoles] = useState<Hole[]>(
@@ -151,7 +143,6 @@ export default function EditRoundWizardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
-  // ✅ update hole with constraints: putts <= score
   function updateHole(idx: number, patch: Partial<Hole>) {
     setHoles((prev) => {
       const h = prev[idx];
@@ -160,8 +151,7 @@ export default function EditRoundWizardPage() {
       const nextScore = patch.score !== undefined ? patch.score : h.score;
       const nextPuttsRaw = patch.putts !== undefined ? patch.putts : h.putts;
 
-      const maxPutts =
-        typeof nextScore === "number" && Number.isFinite(nextScore) ? nextScore : 10;
+      const maxPutts = typeof nextScore === "number" && Number.isFinite(nextScore) ? nextScore : 10;
 
       let nextPutts = nextPuttsRaw;
       if (typeof nextPuttsRaw === "number" && Number.isFinite(nextPuttsRaw)) {
@@ -183,10 +173,9 @@ export default function EditRoundWizardPage() {
     });
   }
 
-  // defaults on hole enter:
-  // - score defaults to PAR (or 0)
-  // - putts defaults to min(2, score)
   useEffect(() => {
+    setUxError(null);
+
     setHoles((prev) => {
       const h = prev[holeIdx];
       if (!h) return prev;
@@ -301,31 +290,36 @@ export default function EditRoundWizardPage() {
   const hole = holes[holeIdx];
   const isLastHole = holeIdx === 17;
 
-  const subtitle = [
-    round?.round_type === "competition"
-      ? `Compétition${round?.competition_name ? ` — ${round.competition_name}` : ""}`
-      : "Entraînement",
-    round?.start_at ? fmtDateTime(round.start_at) : null,
-    round?.course_name || null,
-    round?.tee_name || null,
-  ]
-    .filter(Boolean)
-    .join(" • ");
+  const fairwayChosen = hole?.fairway_hit !== null;
+
+  async function guardedNavigate(fn: () => Promise<void>) {
+    if (!fairwayChosen) {
+      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      return;
+    }
+    await fn();
+  }
 
   async function goPrevHole() {
-    await autosaveCurrentHole();
-    if (holeIdx > 0) setHoleIdx(holeIdx - 1);
+    await guardedNavigate(async () => {
+      await autosaveCurrentHole();
+      if (holeIdx > 0) setHoleIdx(holeIdx - 1);
+    });
   }
 
   async function goNextHole() {
-    await autosaveCurrentHole();
-    if (holeIdx < 17) setHoleIdx(holeIdx + 1);
+    await guardedNavigate(async () => {
+      await autosaveCurrentHole();
+      if (holeIdx < 17) setHoleIdx(holeIdx + 1);
+    });
   }
 
   async function finishAndGoScorecard() {
-    await autosaveCurrentHole();
-    await saveAll();
-    router.push(scorecardHref);
+    await guardedNavigate(async () => {
+      await autosaveCurrentHole();
+      await saveAll();
+      router.push(scorecardHref);
+    });
   }
 
   if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
@@ -355,30 +349,19 @@ export default function EditRoundWizardPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        {/* header glass */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Saisir les trous
               </div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>{subtitle}</div>
-            </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
-                Retour
-              </Link>
-              <Link className="cta-green cta-green-inline" href={scorecardHref}>
-                Afficher la carte des scores
-              </Link>
             </div>
           </div>
 
           {error && <div className="marketplace-error">{error}</div>}
+          {uxError && <div className="marketplace-error">{uxError}</div>}
         </div>
 
-        {/* card */}
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 14 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -390,11 +373,6 @@ export default function EditRoundWizardPage() {
                 <div style={pillStyle}>
                   PAR&nbsp;: <span style={{ fontWeight: 950 }}>{hole?.par ?? "—"}</span>
                 </div>
-                {(autosaving || savingAll) && (
-                  <div style={{ ...pillStyle, opacity: 0.9 }}>
-                    💾 {savingAll ? "Enregistrement…" : "Auto-save…"}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -412,12 +390,10 @@ export default function EditRoundWizardPage() {
                       className="btn"
                       onClick={() => {
                         const cur = hole.score ?? (typeof hole.par === "number" ? hole.par : 0);
-                        const next = clampInt(cur - 1, 0, 30);
-                        updateHole(holeIdx, { score: next });
+                        updateHole(holeIdx, { score: clampInt(cur - 1, 0, 30) });
                       }}
                       disabled={autosaving || savingAll}
                       style={miniBtnStyle}
-                      aria-label="Diminuer le score"
                     >
                       –
                     </button>
@@ -439,19 +415,17 @@ export default function EditRoundWizardPage() {
                       className="btn"
                       onClick={() => {
                         const cur = hole.score ?? (typeof hole.par === "number" ? hole.par : 0);
-                        const next = clampInt(cur + 1, 0, 30);
-                        updateHole(holeIdx, { score: next });
+                        updateHole(holeIdx, { score: clampInt(cur + 1, 0, 30) });
                       }}
                       disabled={autosaving || savingAll}
                       style={miniBtnStyle}
-                      aria-label="Augmenter le score"
                     >
                       +
                     </button>
                   </div>
                 </div>
 
-                {/* PUTTS (<= score) */}
+                {/* PUTTS */}
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>Putts</div>
 
@@ -461,12 +435,10 @@ export default function EditRoundWizardPage() {
                       className="btn"
                       onClick={() => {
                         const cur = hole.putts ?? Math.min(2, maxPuttsNow);
-                        const next = clampInt(cur - 1, 0, maxPuttsNow);
-                        updateHole(holeIdx, { putts: next });
+                        updateHole(holeIdx, { putts: clampInt(cur - 1, 0, maxPuttsNow) });
                       }}
                       disabled={autosaving || savingAll}
                       style={miniBtnStyle}
-                      aria-label="Diminuer les putts"
                     >
                       –
                     </button>
@@ -481,8 +453,7 @@ export default function EditRoundWizardPage() {
                           updateHole(holeIdx, { putts: null });
                           return;
                         }
-                        const v = clampInt(vRaw, 0, maxPuttsNow);
-                        updateHole(holeIdx, { putts: v });
+                        updateHole(holeIdx, { putts: clampInt(vRaw, 0, maxPuttsNow) });
                       }}
                       placeholder={String(Math.min(2, maxPuttsNow))}
                       style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
@@ -493,33 +464,34 @@ export default function EditRoundWizardPage() {
                       className="btn"
                       onClick={() => {
                         const cur = hole.putts ?? Math.min(2, maxPuttsNow);
-                        const next = clampInt(cur + 1, 0, maxPuttsNow);
-                        updateHole(holeIdx, { putts: next });
+                        updateHole(holeIdx, { putts: clampInt(cur + 1, 0, maxPuttsNow) });
                       }}
                       disabled={autosaving || savingAll}
                       style={miniBtnStyle}
-                      aria-label="Augmenter les putts"
                     >
                       +
                     </button>
                   </div>
                 </div>
 
-                {/* FAIRWAY (MISS left, HIT right) + darker selected background */}
+                {/* FAIRWAY */}
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>Fairway</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {/* MISS LEFT */}
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => updateHole(holeIdx, { fairway_hit: false })}
+                      onClick={() => {
+                        setUxError(null);
+                        updateHole(holeIdx, { fairway_hit: false });
+                      }}
                       disabled={autosaving || savingAll}
                       style={{
                         ...fairwayBtnBase,
-                        ...(missSelected ? fairwayMissSelected : fairwayMissIdle),
+                        ...(missSelected ? fairwayMissSelected : fairwayUnselected),
                       }}
+                      aria-pressed={missSelected}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <XCircle size={18} />
@@ -527,16 +499,19 @@ export default function EditRoundWizardPage() {
                       </span>
                     </button>
 
-                    {/* HIT RIGHT */}
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => updateHole(holeIdx, { fairway_hit: true })}
+                      onClick={() => {
+                        setUxError(null);
+                        updateHole(holeIdx, { fairway_hit: true });
+                      }}
                       disabled={autosaving || savingAll}
                       style={{
                         ...fairwayBtnBase,
-                        ...(hitSelected ? fairwayHitSelected : fairwayHitIdle),
+                        ...(hitSelected ? fairwayHitSelected : fairwayUnselected),
                       }}
+                      aria-pressed={hitSelected}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <CheckCircle2 size={18} />
@@ -547,63 +522,54 @@ export default function EditRoundWizardPage() {
                 </div>
 
                 {/* NAV / FINISH */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={goPrevHole}
-                    disabled={autosaving || savingAll || holeIdx === 0}
-                    style={{ width: "100%" }}
-                  >
-                    {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
-                  </button>
+               
 
-                  {!isLastHole ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={goNextHole}
-                      disabled={autosaving || savingAll}
-                      style={{
-                        width: "100%",
-                        background: "var(--green-dark)",
-                        borderColor: "var(--green-dark)",
-                        color: "#fff",
-                      }}
-                    >
-                      {`Trou ${holeIdx + 2}`}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={finishAndGoScorecard}
-                      disabled={autosaving || savingAll}
-                      style={{
-                        width: "100%",
-                        background: "var(--green-dark)",
-                        borderColor: "var(--green-dark)",
-                        color: "#fff",
-                        fontWeight: 950,
-                      }}
-                    >
-                      {savingAll ? "Enregistrement…" : "Enregistrer"}
-                    </button>
-                  )}
-                </div>
+<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+  <button
+    type="button"
+    className="btn"
+    onClick={goPrevHole}
+    disabled={autosaving || savingAll || holeIdx === 0 || !fairwayChosen}
+    style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
+  >
+    {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
+  </button>
+
+  {!isLastHole ? (
+    // ✅ Trou suivant = gris normal
+    <button
+      type="button"
+      className="btn"
+      onClick={goNextHole}
+      disabled={autosaving || savingAll || !fairwayChosen}
+      style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
+    >
+      {`Trou ${holeIdx + 2}`}
+    </button>
+  ) : (
+    // ✅ Terminer = vert (même taille car même layout + width:100%)
+    <button
+      type="button"
+      className="btn"
+      onClick={finishAndGoScorecard}
+      disabled={autosaving || savingAll || !fairwayChosen}
+      style={{ width: "100%", ...(!fairwayChosen ? disabledBtnStyle : null) }}
+    >
+      {savingAll ? "Enregistrement…" : "Terminer"}
+    </button>
+  )}
+</div>
               </div>
             )}
           </div>
 
-          {/* delete below card */}
-          <div style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={deleteRound}
-              disabled={autosaving || savingAll}
-              style={{ width: "100%" }}
-            >
+          {/* ✅ green scorecard button below the glass card */}
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            <Link className="cta-green cta-green-inline" href={scorecardHref} style={{ width: "100%", justifyContent: "center" as any }}>
+              Afficher la carte des scores
+            </Link>
+
+            <button type="button" className="btn" onClick={deleteRound} disabled={autosaving || savingAll} style={{ width: "100%" }}>
               Supprimer ce parcours
             </button>
           </div>
@@ -642,30 +608,37 @@ const miniBtnStyle: React.CSSProperties = {
 };
 
 const fairwayBtnBase: React.CSSProperties = {
-  height: 54,
+  height: 56,
   borderRadius: 14,
   fontWeight: 950,
   border: "1px solid rgba(0,0,0,0.12)",
-  background: "rgba(255,255,255,0.70)",
-  transition: "transform 140ms ease, box-shadow 140ms ease, background 140ms ease",
+  transition: "transform 140ms ease, box-shadow 140ms ease, filter 140ms ease, opacity 140ms ease",
 };
 
-const fairwayMissIdle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.70)",
-};
-
-const fairwayHitIdle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.70)",
+const fairwayUnselected: React.CSSProperties = {
+  background: "rgba(255,255,255,0.42)",
+  opacity: 0.5,
+  filter: "saturate(0.7) contrast(0.95)",
 };
 
 const fairwayMissSelected: React.CSSProperties = {
-  background: "rgba(185,28,28,0.24)", // darker when selected
-  transform: "translateY(-2px)",
-  boxShadow: "0 16px 30px rgba(0,0,0,0.16)",
+  background: "rgba(185,28,28,0.42)",
+  opacity: 1,
+  filter: "saturate(1.25) contrast(1.08)",
+  transform: "translateY(-2px) scale(1.015)",
+  boxShadow: "0 18px 32px rgba(0,0,0,0.18)",
 };
 
 const fairwayHitSelected: React.CSSProperties = {
-  background: "rgba(21,128,61,0.26)", // darker when selected
-  transform: "translateY(-2px)",
-  boxShadow: "0 16px 30px rgba(0,0,0,0.16)",
+  background: "rgba(21,128,61,0.46)",
+  opacity: 1,
+  filter: "saturate(1.25) contrast(1.08)",
+  transform: "translateY(-2px) scale(1.015)",
+  boxShadow: "0 18px 32px rgba(0,0,0,0.18)",
+};
+
+const disabledBtnStyle: React.CSSProperties = {
+  opacity: 0.55,
+  filter: "grayscale(0.2)",
+  cursor: "not-allowed",
 };
