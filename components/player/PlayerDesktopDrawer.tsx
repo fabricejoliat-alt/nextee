@@ -216,7 +216,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           <Link href={ROUTES.profileEdit} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profileEdit) ? "active" : ""}`} onClick={onClose}>
             <span className="drawer-item-left">
               <User size={16} strokeWidth={2} />
-              <span>Modifier mon profil</span>
+              <span>Mon profil</span>
             </span>
           </Link>
 
