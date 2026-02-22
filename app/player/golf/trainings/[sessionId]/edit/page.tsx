@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type SessionType = "club" | "private" | "individual";
@@ -15,6 +15,29 @@ type TrainingItemDraft = {
 
 type ClubRow = { id: string; name: string | null };
 type ClubMemberRow = { club_id: string };
+
+type SessionDbRow = {
+  id: string;
+  user_id: string;
+  start_at: string;
+  location_text: string | null;
+  session_type: SessionType;
+  club_id: string | null;
+  coach_name: string | null;
+  motivation: number | null;
+  difficulty: number | null;
+  satisfaction: number | null;
+  notes: string | null;
+  total_minutes: number | null;
+};
+
+type ItemDbRow = {
+  session_id: string;
+  category: string;
+  minutes: number;
+  note: string | null;
+  created_at?: string;
+};
 
 // ✅ enum values from DB + nice labels
 const TRAINING_CATEGORIES: { value: string; label: string }[] = [
@@ -38,8 +61,19 @@ function buildMinuteOptions() {
 }
 const MINUTE_OPTIONS = buildMinuteOptions();
 
-export default function PlayerTrainingNewPage() {
+function toLocalDateTimeInputValue(iso: string) {
+  // Convert ISO -> "YYYY-MM-DDTHH:mm" for datetime-local (local timezone)
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
+}
+
+export default function PlayerTrainingEditPage() {
   const router = useRouter();
+  const params = useParams<{ sessionId: string }>();
+  const sessionId = String(params?.sessionId ?? "").trim();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -53,21 +87,13 @@ export default function PlayerTrainingNewPage() {
   const [clubIdForTraining, setClubIdForTraining] = useState<string>("");
 
   // fields
-  const [startAt, setStartAt] = useState<string>(() => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-      d.getMinutes()
-    )}`;
-  });
-
+  const [startAt, setStartAt] = useState<string>("");
   const [place, setPlace] = useState<string>("");
   const [sessionType, setSessionType] = useState<SessionType>("club");
-
   const [coachName, setCoachName] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
-  // sensations 1..6 (DB checks)
+  // sensations 1..6
   const [motivation, setMotivation] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("");
   const [satisfaction, setSatisfaction] = useState<string>("");
@@ -85,6 +111,7 @@ export default function PlayerTrainingNewPage() {
   const canSave = useMemo(() => {
     if (busy) return false;
     if (!userId) return false;
+    if (!sessionId) return false;
     if (!startAt) return false;
 
     if (sessionType === "club" && !clubIdForTraining) return false;
@@ -101,12 +128,18 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, userId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       setError(null);
+
+      if (!sessionId) {
+        setError("ID entraînement manquant.");
+        setLoading(false);
+        return;
+      }
 
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userRes.user) {
@@ -118,6 +151,7 @@ export default function PlayerTrainingNewPage() {
       const uid = userRes.user.id;
       setUserId(uid);
 
+      // 1) load memberships + clubs
       const memRes = await supabase
         .from("club_members")
         .select("club_id")
@@ -144,15 +178,82 @@ export default function PlayerTrainingNewPage() {
         const map: Record<string, ClubRow> = {};
         for (const c of clubsRes.data ?? []) map[c.id] = c as ClubRow;
         setClubsById(map);
+      } else {
+        setClubsById({});
+      }
 
-        setClubIdForTraining(ids[0]);
+      // 2) load session
+      const sRes = await supabase
+        .from("training_sessions")
+        .select(
+          "id,user_id,start_at,location_text,session_type,club_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes"
+        )
+        .eq("id", sessionId)
+        .maybeSingle();
+
+      if (sRes.error) {
+        setError(sRes.error.message);
+        setLoading(false);
+        return;
+      }
+      const sess = (sRes.data ?? null) as SessionDbRow | null;
+      if (!sess) {
+        setError("Entraînement introuvable.");
+        setLoading(false);
+        return;
+      }
+
+      // Optionnel: si tu veux une protection “soft” côté UI
+      if (sess.user_id && sess.user_id !== uid) {
+        setError("Tu n’as pas l’autorisation de modifier cet entraînement.");
+        setLoading(false);
+        return;
+      }
+
+      setStartAt(toLocalDateTimeInputValue(sess.start_at));
+      setPlace((sess.location_text ?? "") as string);
+      setSessionType(sess.session_type);
+
+      setCoachName((sess.coach_name ?? "") as string);
+      setNotes((sess.notes ?? "") as string);
+
+      setMotivation(typeof sess.motivation === "number" ? String(sess.motivation) : "");
+      setDifficulty(typeof sess.difficulty === "number" ? String(sess.difficulty) : "");
+      setSatisfaction(typeof sess.satisfaction === "number" ? String(sess.satisfaction) : "");
+
+      const cid = sess.session_type === "club" ? (sess.club_id ?? "") : "";
+      if (sess.session_type === "club") {
+        // si club_id présent, on le garde; sinon fallback = premier club actif
+        if (cid) setClubIdForTraining(cid);
+        else if (ids.length > 0) setClubIdForTraining(ids[0]);
+        else setClubIdForTraining("");
       } else {
         setClubIdForTraining("");
       }
 
+      // 3) load items
+      const itRes = await supabase
+        .from("training_session_items")
+        .select("session_id,category,minutes,note,created_at")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true });
+
+      if (itRes.error) {
+        setError(itRes.error.message);
+        setLoading(false);
+        return;
+      }
+
+      const draft: TrainingItemDraft[] = (itRes.data ?? []).map((r: ItemDbRow) => ({
+        category: r.category ?? "",
+        minutes: r.minutes != null ? String(r.minutes) : "",
+        note: (r.note ?? "") as string,
+      }));
+
+      setItems(draft.length > 0 ? draft : []);
       setLoading(false);
     })();
-  }, []);
+  }, [sessionId]);
 
   function addLine() {
     setItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
@@ -168,8 +269,10 @@ export default function PlayerTrainingNewPage() {
 
   function setType(next: SessionType) {
     setSessionType(next);
-    if (next === "club" && !clubIdForTraining && clubIds.length > 0) {
-      setClubIdForTraining(clubIds[0]);
+    if (next === "club") {
+      if (!clubIdForTraining && clubIds.length > 0) setClubIdForTraining(clubIds[0]);
+    } else {
+      setClubIdForTraining("");
     }
   }
 
@@ -193,11 +296,10 @@ export default function PlayerTrainingNewPage() {
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
-    // 1) session (✅ correct columns)
-    const insertSession = await supabase
+    // 1) update session
+    const upd = await supabase
       .from("training_sessions")
-      .insert({
-        user_id: userId,
+      .update({
         start_at: dt.toISOString(),
         location_text: place.trim() || null,
         session_type: sessionType,
@@ -209,34 +311,37 @@ export default function PlayerTrainingNewPage() {
         notes: notes.trim() || null,
         total_minutes: totalMinutes,
       })
-      .select("id")
-      .single();
+      .eq("id", sessionId);
 
-    if (insertSession.error) {
-      setError(insertSession.error.message);
+    if (upd.error) {
+      setError(upd.error.message);
       setBusy(false);
       return;
     }
 
-    const sessionId = insertSession.data.id as string;
+    // 2) replace items (simple & safe)
+    const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
+    if (delItems.error) {
+      setError(delItems.error.message);
+      setBusy(false);
+      return;
+    }
 
-    // 2) items (✅ correct table + enum values)
     const payload = items.map((it) => ({
       session_id: sessionId,
-      category: it.category, // must be enum value
+      category: it.category,
       minutes: Number(it.minutes),
       note: it.note.trim() || null,
     }));
 
-    const insertItems = await supabase.from("training_session_items").insert(payload);
-
-    if (insertItems.error) {
-      setError(insertItems.error.message);
+    const ins = await supabase.from("training_session_items").insert(payload);
+    if (ins.error) {
+      setError(ins.error.message);
       setBusy(false);
       return;
     }
 
-    router.push("/player/trainings");
+    router.push("/player/golf/trainings");
   }
 
   return (
@@ -247,15 +352,15 @@ export default function PlayerTrainingNewPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Ajouter un entraînement
+                Modifier un entraînement
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/trainings">
+              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
                 Retour
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player/trainings">
+              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
                 Mes entraînements
               </Link>
             </div>
@@ -451,7 +556,12 @@ export default function PlayerTrainingNewPage() {
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                             <div className="pill-soft">Poste {idx + 1}</div>
 
-                            <button type="button" className="btn btn-danger soft" onClick={() => removeLine(idx)} disabled={busy}>
+                            <button
+                              type="button"
+                              className="btn btn-danger soft"
+                              onClick={() => removeLine(idx)}
+                              disabled={busy}
+                            >
                               Supprimer
                             </button>
                           </div>

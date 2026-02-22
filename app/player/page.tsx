@@ -664,7 +664,7 @@ export default function PlayerHomePage() {
             </div>
           </div>
 
-          <Link href="/player/trainings/new" className="cta-green">
+          <Link href="/player/golf/trainings/new" className="cta-green">
             <PlusCircle size={18} />
             Ajouter un entraînement
           </Link>

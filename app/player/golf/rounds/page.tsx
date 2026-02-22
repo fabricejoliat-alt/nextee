@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { SlidersHorizontal } from "lucide-react";
 
 type Round = {
   id: string;
@@ -24,6 +25,56 @@ type HoleLite = {
 };
 
 const PAGE_SIZE = 10;
+
+type Preset = "month" | "last3" | "all" | "custom";
+
+function isoToYMD(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function monthRangeLocal(now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function last3MonthsRangeLocal(now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+const dateInputStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
+  background: "rgba(255,255,255,0.90)",
+  borderWidth: 1,
+  borderStyle: "solid",
+  borderColor: "rgba(0,0,0,0.10)",
+  borderRadius: 10,
+  padding: "10px 12px",
+  WebkitAppearance: "none",
+  appearance: "none",
+};
+
+const selectStyle: React.CSSProperties = {
+  width: "100%",
+  height: 44,
+  borderWidth: 1,
+  borderStyle: "solid",
+  borderColor: "rgba(0,0,0,0.10)",
+  borderRadius: 12,
+  padding: "0 12px",
+  background: "rgba(255,255,255,0.75)",
+  fontWeight: 950,
+  color: "rgba(0,0,0,0.80)",
+  outline: "none",
+  appearance: "none",
+};
 
 function fmtDateOnly(iso: string) {
   const d = new Date(iso);
@@ -68,6 +119,9 @@ export default function RoundsListPage() {
 
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+
+  const [preset, setPreset] = useState<Preset>("month");
+  const [customOpen, setCustomOpen] = useState(false);
 
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -147,6 +201,50 @@ export default function RoundsListPage() {
   }, [page, fromDate, toDate]);
 
   useEffect(() => {
+  const now = new Date();
+  const { start, end } = monthRangeLocal(now);
+
+  const endInclusive = new Date(end);
+  endInclusive.setDate(endInclusive.getDate() - 1);
+
+  setFromDate(isoToYMD(start));
+  setToDate(isoToYMD(endInclusive));
+}, []);
+
+  useEffect(() => {
+  const now = new Date();
+
+  if (preset === "month") {
+    const { start, end } = monthRangeLocal(now);
+    const endInclusive = new Date(end);
+    endInclusive.setDate(endInclusive.getDate() - 1);
+    setFromDate(isoToYMD(start));
+    setToDate(isoToYMD(endInclusive));
+    setPage(1);
+    return;
+  }
+
+  if (preset === "last3") {
+    const { start, end } = last3MonthsRangeLocal(now);
+    const endInclusive = new Date(end);
+    endInclusive.setDate(endInclusive.getDate() - 1);
+    setFromDate(isoToYMD(start));
+    setToDate(isoToYMD(endInclusive));
+    setPage(1);
+    return;
+  }
+
+  if (preset === "all") {
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+    return;
+  }
+
+  // preset === "custom" => on ne touche pas aux dates
+}, [preset]);
+
+  useEffect(() => {
     if (page > totalPages) setPage(totalPages);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalPages]);
@@ -217,67 +315,108 @@ export default function RoundsListPage() {
             </div>
           </div>
 
-          {/* Filtres dates (safe mobile) */}
-          <div className="glass-card" style={{ marginTop: 12, padding: 14, overflow: "hidden" }}>
-            <div style={{ display: "grid", gap: 10 }}>
-              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => onChangeFrom(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    WebkitAppearance: "none",
-                    appearance: "none",
-                  }}
-                />
-              </label>
+          {/* ✅ Filters (preset select + custom dates) */}
+<div className="glass-card" style={{ marginTop: 12, padding: 14, overflow: "hidden" }}>
+  <div style={{ display: "grid", gap: 12 }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <SlidersHorizontal size={16} />
+      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>Période</div>
+    </div>
 
-              <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => onChangeTo(e.target.value)}
-                  disabled={loading}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    maxWidth: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "rgba(255,255,255,0.90)",
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    WebkitAppearance: "none",
-                    appearance: "none",
-                  }}
-                />
-              </label>
+    <select
+      value={preset}
+      onChange={(e) => {
+        const v = e.target.value as Preset;
 
-              <button
-                className="btn"
-                type="button"
-                onClick={clearFilters}
-                disabled={loading || !hasDateFilter}
-                title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
-                style={{ width: "100%", height: 44 }}
-              >
-                Effacer les dates
-              </button>
-            </div>
-          </div>
+        if (v === "custom") {
+          setPreset("custom");
+
+          // Si aucune date, on initialise sur le mois courant
+          if (!fromDate && !toDate) {
+            const now = new Date();
+            const { start, end } = monthRangeLocal(now);
+            const endInclusive = new Date(end);
+            endInclusive.setDate(endInclusive.getDate() - 1);
+            setFromDate(isoToYMD(start));
+            setToDate(isoToYMD(endInclusive));
+          }
+
+          setCustomOpen(true);
+          setPage(1);
+          return;
+        }
+
+        setPreset(v);
+        setCustomOpen(false);
+      }}
+      disabled={loading}
+      style={selectStyle}
+      aria-label="Filtrer par période"
+    >
+      <option value="month">Ce mois</option>
+      <option value="last3">3 derniers mois</option>
+      <option value="all">Toute l’activité</option>
+      <option value="custom">Personnalisé</option>
+    </select>
+
+    {customOpen && preset === "custom" && (
+      <>
+        <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+        <div style={{ display: "grid", gap: 10, overflow: "hidden" }}>
+          <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setPreset("custom");
+                setCustomOpen(true);
+                setPage(1);
+              }}
+              disabled={loading}
+              style={dateInputStyle}
+            />
+          </label>
+
+          <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setPreset("custom");
+                setCustomOpen(true);
+                setPage(1);
+              }}
+              disabled={loading}
+              style={dateInputStyle}
+            />
+          </label>
+
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+              setPreset("all");
+              setCustomOpen(false);
+              setPage(1);
+            }}
+            disabled={loading || !hasDateFilter}
+            title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
+            style={{ width: "100%", height: 44 }}
+          >
+            Effacer les dates
+          </button>
+        </div>
+      </>
+    )}
+  </div>
+</div>
 
           {error && <div className="marketplace-error">{error}</div>}
         </div>

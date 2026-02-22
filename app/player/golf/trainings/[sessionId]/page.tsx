@@ -196,13 +196,13 @@ export default function PlayerTrainingDetailPage() {
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/trainings">
+              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
                 Retour
               </Link>
 
               <Link
                 className="cta-green cta-green-inline"
-                href={sessionId ? `/player/trainings/${sessionId}/edit` : "/player/trainings"}
+                href={sessionId ? `/player/golf/trainings/${sessionId}/edit` : "/player/golf/trainings"}
               >
                 Modifier
               </Link>
@@ -314,11 +314,11 @@ export default function PlayerTrainingDetailPage() {
 
                 {/* Actions bottom (optionnel, pratique sur mobile) */}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-                  <button type="button" className="btn" onClick={() => router.push("/player/trainings")}>
+                  <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
                     Retour liste
                   </button>
 
-                  <Link className="btn" href={`/player/trainings/${sessionId}/edit`}>
+                  <Link className="btn" href={`/player/golf/trainings/${sessionId}/edit`}>
                     Modifier
                   </Link>
                 </div>

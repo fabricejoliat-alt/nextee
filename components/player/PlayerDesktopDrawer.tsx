@@ -24,8 +24,8 @@ const ROUTES = {
   home: "/player",
   golfDashboard: "/player/golf",
   
-  trainingsList: "/player/trainings",
-  trainingsNew: "/player/trainings/new",
+  trainingsList: "/player/golf/trainings",
+  trainingsNew: "/player/golf/trainings/new",
 
   roundsList: "/player/golf/rounds",
   roundsNew: "/player/golf/rounds/new",

@@ -703,7 +703,18 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [fromDate, toDate]);
+      
+  const PRESET_LABEL: Record<Preset, string> = {
+  month: "Ce mois",
+  last3: "3 derniers mois",
+  all: "Toute l’activité",
+  custom: "Personnalisé",
+};
 
+function presetToSelectValue(p: Preset): Preset {
+  // Le select doit rester cohérent : si customOpen est ouvert ou preset=custom -> custom
+  return p;
+}
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(() => sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0), [sessions]);
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
@@ -1328,114 +1339,149 @@ export default function GolfDashboardPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {/* ===== Filters ===== */}
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14 }}>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <button
-                type="button"
-                className="btn"
-                style={{ ...chipStyle, ...(preset === "month" ? chipActive : {}) }}
-                onClick={() => {
-                  setPreset("month");
-                  setCustomOpen(false);
-                }}
-                disabled={loading}
-                aria-pressed={preset === "month"}
-              >
-                Ce mois
-              </button>
-
-              <button
-                type="button"
-                className="btn"
-                style={{ ...chipStyle, ...(preset === "last3" ? chipActive : {}) }}
-                onClick={() => {
-                  setPreset("last3");
-                  setCustomOpen(false);
-                }}
-                disabled={loading}
-                aria-pressed={preset === "last3"}
-              >
-                3 derniers mois
-              </button>
-
-              <button
-                type="button"
-                className="btn"
-                style={{ ...chipStyle, ...(preset === "all" ? chipActive : {}) }}
-                onClick={() => {
-                  setPreset("all");
-                  setCustomOpen(false);
-                }}
-                disabled={loading}
-                aria-pressed={preset === "all"}
-              >
-                Toute l’activité
-              </button>
-
-              <button
-                type="button"
-                className="btn"
-                style={{ ...chipStyle, ...(preset === "custom" ? chipActive : {}), marginLeft: "auto" }}
-                onClick={() => setCustomOpen((v) => !v)}
-                disabled={loading}
-                aria-expanded={customOpen}
-              >
-                <SlidersHorizontal size={16} />
-                Dates
-              </button>
-            </div>
-
-            {customOpen && (
-              <>
-                <div className="hr-soft" style={{ margin: "12px 0" }} />
-
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Personnaliser les dates</div>
-
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setCustomOpen(false)}
-                    style={{
-                      borderWidth: 1,
-                      borderStyle: "solid",
-                      borderColor: "rgba(0,0,0,0.10)",
-                      background: "rgba(255,255,255,0.65)",
-                      borderRadius: 999,
-                      padding: "8px 10px",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontWeight: 950,
-                    }}
-                  >
-                    <X size={16} />
-                    Fermer
-                  </button>
-                </div>
-
-                <div style={{ display: "grid", gap: 10, overflow: "hidden", marginTop: 10 }}>
-                  <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                    <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
-                    <input type="date" value={fromDate} onChange={(e) => onChangeFrom(e.target.value)} disabled={loading} style={dateInputStyle} />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                    <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
-                    <input type="date" value={toDate} onChange={(e) => onChangeTo(e.target.value)} disabled={loading} style={dateInputStyle} />
-                  </label>
-
-                  <button className="btn" type="button" onClick={clearDates} disabled={loading} style={{ width: "100%", height: 44 }}>
-                    Effacer les dates
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+       {/* ===== Filters ===== */}
+<div className="glass-section">
+  <div className="glass-card" style={{ padding: 14 }}>
+    <div style={{ display: "grid", gap: 12 }}>
+      {/* Label */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <SlidersHorizontal size={16} />
+        <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
+          Période
         </div>
+      </div>
+
+      {/* Select full width */}
+      <select
+        value={preset}
+        onChange={(e) => {
+          const v = e.target.value as Preset;
+
+          if (v === "custom") {
+            setPreset("custom");
+
+            // Si aucune date définie, on initialise avec le mois courant
+            if (!fromDate && !toDate) {
+              const now = new Date();
+              const { start, end } = monthRangeLocal(now);
+              const endInclusive = new Date(end);
+              endInclusive.setDate(endInclusive.getDate() - 1);
+
+              setFromDate(isoToYMD(start));
+              setToDate(isoToYMD(endInclusive));
+            }
+
+            setCustomOpen(true);
+            return;
+          }
+
+          setPreset(v);
+          setCustomOpen(false);
+        }}
+        disabled={loading}
+        style={{
+          width: "100%",
+          height: 44,
+          borderWidth: 1,
+          borderStyle: "solid",
+          borderColor: "rgba(0,0,0,0.10)",
+          borderRadius: 12,
+          padding: "0 12px",
+          background: "rgba(255,255,255,0.75)",
+          fontWeight: 950,
+          color: "rgba(0,0,0,0.80)",
+          outline: "none",
+          appearance: "none",
+        }}
+        aria-label="Filtrer par période"
+      >
+        <option value="month">Ce mois</option>
+        <option value="last3">3 derniers mois</option>
+        <option value="all">Toute l’activité</option>
+        <option value="custom">Personnalisé</option>
+      </select>
+
+      {/* Custom dates */}
+      {customOpen && preset === "custom" && (
+        <>
+          <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              overflow: "hidden",
+            }}
+          >
+            <label style={{ display: "grid", gap: 6 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "rgba(0,0,0,0.65)",
+                }}
+              >
+                Du
+              </span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setPreset("custom");
+                  setCustomOpen(true);
+                }}
+                disabled={loading}
+                style={dateInputStyle}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: "rgba(0,0,0,0.65)",
+                }}
+              >
+                Au
+              </span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setPreset("custom");
+                  setCustomOpen(true);
+                }}
+                disabled={loading}
+                style={dateInputStyle}
+              />
+            </label>
+
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+                setPreset("all");
+                setCustomOpen(false);
+              }}
+              disabled={loading}
+              style={{
+                width: "100%",
+                height: 44,
+              }}
+            >
+              Effacer les dates
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+</div>
 
         {/* ===== Title Trainings ===== */}
         <div className="glass-section" style={{ paddingTop: 0 }}>
