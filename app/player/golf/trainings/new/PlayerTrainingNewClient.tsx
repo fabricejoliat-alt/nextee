@@ -70,7 +70,7 @@ function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
 
-export default function PlayerTrainingNewClient() {
+export default function PlayerTrainingNewPage() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -165,14 +165,8 @@ export default function PlayerTrainingNewClient() {
   const coachNameForSave = useMemo(() => {
     // ✅ planned: save read-only summary based on event coaches
     if (linkedEvent) {
-      const heads = coachOptions
-        .filter((c) => c.isHead)
-        .map((c) => c.label)
-        .filter((x) => x && x !== "—");
-      const assists = coachOptions
-        .filter((c) => !c.isHead)
-        .map((c) => c.label)
-        .filter((x) => x && x !== "—");
+      const heads = coachOptions.filter((c) => c.isHead).map((c) => c.label).filter((x) => x && x !== "—");
+      const assists = coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter((x) => x && x !== "—");
       const parts: string[] = [];
       if (heads.length) parts.push(`Coach: ${heads.join(", ")}`);
       if (assists.length) parts.push(`Assistants: ${assists.join(", ")}`);
@@ -221,65 +215,105 @@ export default function PlayerTrainingNewClient() {
   }, [linkedEvent, userId, busy]);
 
   async function loadCoachOptionsForPlannedEvent(ev: ClubEventRow): Promise<CoachOption[]> {
-    const coachesRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", ev.id);
-    let coachIds = uniq((coachesRes.data ?? []).map((r: any) => String(r.coach_id ?? "").trim())).filter(Boolean);
+  // 1) Try explicit coaches for this event (club_event_coaches)
+  const coachesRes = await supabase
+    .from("club_event_coaches")
+    .select("coach_id")
+    .eq("event_id", ev.id);
 
-    if (coachIds.length === 0) {
-      const gRes = await supabase.from("coach_groups").select("head_coach_user_id").eq("id", ev.group_id).maybeSingle();
-      const headId = String(gRes.data?.head_coach_user_id ?? "").trim();
+  let coachIds = uniq((coachesRes.data ?? []).map((r: any) => String(r.coach_id ?? "").trim())).filter(Boolean);
 
-      const gcRes = await supabase.from("coach_group_coaches").select("coach_user_id,is_head").eq("group_id", ev.group_id);
-      const assistants = (gcRes.data ?? [])
-        .filter((r: any) => !Boolean(r.is_head))
-        .map((r: any) => String(r.coach_user_id ?? "").trim())
-        .filter(Boolean);
+  // 2) Fallback: use group head coach + assistants (if event has no explicit coaches)
+  if (coachIds.length === 0) {
+    // head coach from coach_groups
+    const gRes = await supabase
+      .from("coach_groups")
+      .select("head_coach_user_id")
+      .eq("id", ev.group_id)
+      .maybeSingle();
 
-      coachIds = uniq([headId, ...assistants]).filter(Boolean);
-    }
+    const headId = String(gRes.data?.head_coach_user_id ?? "").trim();
 
-    if (coachIds.length === 0) return [];
-
-    const isHeadById: Record<string, boolean> = {};
-
-    const g2Res = await supabase.from("coach_groups").select("head_coach_user_id").eq("id", ev.group_id).maybeSingle();
-    const headId2 = String(g2Res.data?.head_coach_user_id ?? "").trim();
-    if (headId2) isHeadById[headId2] = true;
-
-    const groupRoleRes = await supabase
+    // assistants (and possibly also head) from coach_group_coaches
+    const gcRes = await supabase
       .from("coach_group_coaches")
       .select("coach_user_id,is_head")
-      .eq("group_id", ev.group_id)
-      .in("coach_user_id", coachIds);
+      .eq("group_id", ev.group_id);
 
-    if (!groupRoleRes.error) {
-      (groupRoleRes.data ?? []).forEach((r: any) => {
-        const id = String(r.coach_user_id ?? "").trim();
-        if (!id) return;
-        if (Boolean(r.is_head)) isHeadById[id] = true;
-        else if (isHeadById[id] === undefined) isHeadById[id] = false;
-      });
-    }
+    const assistants = (gcRes.data ?? [])
+      .filter((r: any) => !Boolean(r.is_head))
+      .map((r: any) => String(r.coach_user_id ?? "").trim())
+      .filter(Boolean);
 
-    const anyHead = coachIds.some((id) => Boolean(isHeadById[id]));
-    if (!anyHead && coachIds[0]) isHeadById[coachIds[0]] = true;
+    // build final list: head first, then assistants (dedup)
+    coachIds = uniq([headId, ...assistants]).filter(Boolean);
+  }
 
-    const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", coachIds);
-    if (pRes.error) return [];
+  if (coachIds.length === 0) return [];
 
-    const byId: Record<string, ProfileLite> = {};
-    (pRes.data ?? []).forEach((p: any) => (byId[String(p.id)] = p as ProfileLite));
+  // 3) Determine head/assistant flags (best-effort)
+  const isHeadById: Record<string, boolean> = {};
 
-    const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
+  // prefer coach_groups.head_coach_user_id as "head"
+  const g2Res = await supabase
+    .from("coach_groups")
+    .select("head_coach_user_id")
+    .eq("id", ev.group_id)
+    .maybeSingle();
+  const headId2 = String(g2Res.data?.head_coach_user_id ?? "").trim();
+  if (headId2) isHeadById[headId2] = true;
 
-    return sorted.map((id) => {
-      const p = byId[id];
-      const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
-      const isHead = Boolean(isHeadById[id]);
-      return { id, label, isHead, roleLabel: isHead ? "Coach" : "Assistant" };
+  // also read coach_group_coaches flags if present
+  const groupRoleRes = await supabase
+    .from("coach_group_coaches")
+    .select("coach_user_id,is_head")
+    .eq("group_id", ev.group_id)
+    .in("coach_user_id", coachIds);
+
+  if (!groupRoleRes.error) {
+    (groupRoleRes.data ?? []).forEach((r: any) => {
+      const id = String(r.coach_user_id ?? "").trim();
+      if (!id) return;
+      if (Boolean(r.is_head)) isHeadById[id] = true;
+      else if (isHeadById[id] === undefined) isHeadById[id] = false;
     });
   }
 
+  // ensure we have at least one head: if none marked, make first one head
+  const anyHead = coachIds.some((id) => Boolean(isHeadById[id]));
+  if (!anyHead && coachIds[0]) isHeadById[coachIds[0]] = true;
+
+  // 4) Profiles for names
+  const pRes = await supabase
+    .from("profiles")
+    .select("id,first_name,last_name")
+    .in("id", coachIds);
+
+  if (pRes.error) return [];
+
+  const byId: Record<string, ProfileLite> = {};
+  (pRes.data ?? []).forEach((p: any) => (byId[String(p.id)] = p as ProfileLite));
+
+  // 5) Build options (head first)
+  const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
+
+  return sorted.map((id) => {
+    const p = byId[id];
+    const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
+    const isHead = Boolean(isHeadById[id]);
+    return {
+      id,
+      label,
+      isHead,
+      roleLabel: isHead ? "Coach" : "Assistant",
+    };
+  });
+}
+
   async function loadCoachOptionsForNonPlannedClub(clubId: string, uid: string): Promise<CoachOption[]> {
+    // ✅ Coaches liés au(x) groupe(s) du joueur dans ce club
+    // coach_group_players -> coach_groups (club_id) -> coach_group_coaches -> profiles
+
     const gpRes = await supabase
       .from("coach_group_players")
       .select("group_id, coach_groups!inner(club_id)")
@@ -291,7 +325,11 @@ export default function PlayerTrainingNewClient() {
     const groupIds = uniq((gpRes.data ?? []).map((r: any) => String(r.group_id ?? "").trim())).filter(Boolean);
     if (groupIds.length === 0) return [];
 
-    const gcRes = await supabase.from("coach_group_coaches").select("coach_user_id,is_head").in("group_id", groupIds);
+    const gcRes = await supabase
+      .from("coach_group_coaches")
+      .select("coach_user_id,is_head")
+      .in("group_id", groupIds);
+
     if (gcRes.error) return [];
 
     const rows = (gcRes.data ?? []) as any[];
@@ -302,6 +340,7 @@ export default function PlayerTrainingNewClient() {
     rows.forEach((r) => {
       const id = String(r.coach_user_id ?? "").trim();
       if (!id) return;
+      // si un coach est head dans au moins un des groupes => head
       if (Boolean(r.is_head)) isHeadById[id] = true;
       else if (isHeadById[id] === undefined) isHeadById[id] = false;
     });
@@ -309,16 +348,23 @@ export default function PlayerTrainingNewClient() {
     const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", coachIds);
     if (pRes.error) return [];
 
+    const profiles = (pRes.data ?? []) as any[];
     const byId: Record<string, ProfileLite> = {};
-    (pRes.data ?? []).forEach((p: any) => (byId[String(p.id)] = p as ProfileLite));
+    profiles.forEach((p) => (byId[String(p.id)] = p as ProfileLite));
 
+    // ordre stable: heads d'abord puis assistants (plus lisible)
     const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
 
     return sorted.map((id) => {
       const p = byId[id];
       const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
       const isHead = Boolean(isHeadById[id]);
-      return { id, label, isHead, roleLabel: isHead ? "Coach" : "Assistant" };
+      return {
+        id,
+        label,
+        isHead,
+        roleLabel: isHead ? "Coach" : "Assistant",
+      };
     });
   }
 
@@ -337,6 +383,7 @@ export default function PlayerTrainingNewClient() {
       const uid = userRes.user.id;
       setUserId(uid);
 
+      // memberships
       const memRes = await supabase.from("club_members").select("club_id").eq("user_id", uid).eq("is_active", true);
       if (memRes.error) {
         setError(memRes.error.message);
@@ -347,6 +394,7 @@ export default function PlayerTrainingNewClient() {
       const ids = Array.from(new Set((memRes.data ?? []).map((r: ClubMemberRow) => r.club_id))).filter(Boolean);
       setClubIds(ids);
 
+      // load clubs for memberships
       if (ids.length > 0) {
         const clubsRes = await supabase.from("clubs").select("id,name").in("id", ids);
         if (clubsRes.error) {
@@ -358,12 +406,14 @@ export default function PlayerTrainingNewClient() {
         const map: Record<string, ClubRow> = {};
         for (const c of clubsRes.data ?? []) map[(c as any).id] = c as ClubRow;
         setClubsById(map);
+
         setClubIdForTraining(ids[0]);
       } else {
         setClubsById({});
         setClubIdForTraining("");
       }
 
+      // If clubEventId provided: load planned club event and prefill
       if (clubEventId) {
         const eRes = await supabase
           .from("club_events")
@@ -376,11 +426,20 @@ export default function PlayerTrainingNewClient() {
         } else if (eRes.data) {
           const ev = eRes.data as ClubEventRow;
           setLinkedEvent(ev);
+
+          // ✅ force club session
           setSessionType("club");
+
+          // ✅ prefill actual start from planned start
           setStartAt(toLocalDateTimeInputValue(ev.starts_at));
+
+          // ✅ prefill location
           setPlace(ev.location_text ?? "");
+
+          // ✅ use event club_id
           if (ev.club_id) setClubIdForTraining(ev.club_id);
 
+          // ✅ ensure event club exists in dropdown map (even if not in memberships)
           if (ev.club_id && !clubsById[ev.club_id]) {
             const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
             if (!cRes.error && cRes.data) {
@@ -389,10 +448,12 @@ export default function PlayerTrainingNewClient() {
             }
           }
 
+          // ✅ planned coaches: read-only display (head + assistants)
           const opts: CoachOption[] = await loadCoachOptionsForPlannedEvent(ev);
           setCoachOptions(opts);
-          setSelectedCoachIds([]);
+          setSelectedCoachIds([]); // pas utilisé en planned
 
+          // ✅ load my current attendee status to pre-toggle "absent" if already set
           const aRes = await supabase
             .from("club_event_attendees")
             .select("status")
@@ -411,10 +472,11 @@ export default function PlayerTrainingNewClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubEventId]);
 
+  // ✅ when NOT planned: load coaches ONLY if user is creating a "club" training
   useEffect(() => {
     (async () => {
       if (!userId) return;
-      if (linkedEvent) return;
+      if (linkedEvent) return; // planned => coaches already loaded
       if (sessionType !== "club") {
         setCoachOptions([]);
         setSelectedCoachIds([]);
@@ -429,6 +491,7 @@ export default function PlayerTrainingNewClient() {
       const opts: CoachOption[] = await loadCoachOptionsForNonPlannedClub(clubIdForTraining, userId);
       setCoachOptions(opts);
 
+      // par défaut: sélectionner tout ce qui est dispo
       setSelectedCoachIds((prev) => {
         const allowed = new Set(opts.map((o) => o.id));
         const kept = prev.filter((id) => allowed.has(id));
@@ -454,6 +517,7 @@ export default function PlayerTrainingNewClient() {
   }
 
   function setType(next: SessionType) {
+    // if linked to an event: type forced club
     if (linkedEvent) return;
 
     setSessionType(next);
@@ -469,7 +533,12 @@ export default function PlayerTrainingNewClient() {
     setBusy(true);
     setError(null);
 
-    const up = await supabase.from("club_event_attendees").update({ status: "absent" }).eq("event_id", linkedEvent.id).eq("player_id", userId);
+    // ✅ Option A: update only (no insert) => avoids RLS INSERT issues
+    const up = await supabase
+      .from("club_event_attendees")
+      .update({ status: "absent" })
+      .eq("event_id", linkedEvent.id)
+      .eq("player_id", userId);
 
     if (up.error) {
       setError(up.error.message);
@@ -501,6 +570,7 @@ export default function PlayerTrainingNewClient() {
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
+    // ✅ if linkedEvent, mark attendee present (UPDATE only)
     if (linkedEvent) {
       const upAtt = await supabase
         .from("club_event_attendees")
@@ -520,15 +590,24 @@ export default function PlayerTrainingNewClient() {
       .insert({
         user_id: userId,
         start_at: dt.toISOString(),
+
+        // ✅ planned: keep place/club consistent with event
         location_text: (linkedEvent ? (linkedEvent.location_text ?? place) : place).trim() || null,
         session_type: sessionType,
         club_id: linkedEvent ? linkedEvent.club_id : club_id,
+
+        // ✅ save coaches names (planned: summary; non-planned club: checked)
         coach_name: coachNameForSave,
+
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
         notes: notes.trim() || null,
+
+        // ✅ total minutes
         total_minutes: totalMinutes,
+
+        // ✅ link to planned event if any
         club_event_id: linkedEvent?.id ?? null,
       })
       .select("id")
@@ -571,6 +650,8 @@ export default function PlayerTrainingNewClient() {
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Ajouter un entraînement
               </div>
+
+              
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -598,6 +679,7 @@ export default function PlayerTrainingNewClient() {
               <div>Chargement…</div>
             ) : (
               <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+                {/* ✅ planned info + absence toggle */}
                 {linkedEvent ? (
                   <div
                     style={{
@@ -615,6 +697,8 @@ export default function PlayerTrainingNewClient() {
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      
+
                       <label
                         style={{
                           display: "inline-flex",
@@ -672,15 +756,23 @@ export default function PlayerTrainingNewClient() {
                         <span>{totalMinutes}</span>
                         <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min effectifs</span>
                       </div>
+
+                    
                     </div>
                   </div>
                 </div>
 
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>
-                    Lieu {linkedEvent ? <span style={{ opacity: 0.7 }}>(planifié)</span> : <span style={{ opacity: 0.7 }}>(optionnel)</span>}
+                    Lieu{" "}
+                    {linkedEvent ? <span style={{ opacity: 0.7 }}>(planifié)</span> : <span style={{ opacity: 0.7 }}>(optionnel)</span>}
                   </span>
-                  <input value={place} onChange={(e) => setPlace(e.target.value)} disabled={inputsDisabled || Boolean(linkedEvent)} placeholder="Ex: Practice / Putting green / Parcours" />
+                  <input
+                    value={place}
+                    onChange={(e) => setPlace(e.target.value)}
+                    disabled={inputsDisabled || Boolean(linkedEvent)}
+                    placeholder="Ex: Practice / Putting green / Parcours"
+                  />
                 </label>
 
                 <div className="hr-soft" />
@@ -695,12 +787,22 @@ export default function PlayerTrainingNewClient() {
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
-                      <input type="radio" checked={sessionType === "private"} onChange={() => setType("private")} disabled={inputsDisabled || Boolean(linkedEvent)} />
+                      <input
+                        type="radio"
+                        checked={sessionType === "private"}
+                        onChange={() => setType("private")}
+                        disabled={inputsDisabled || Boolean(linkedEvent)}
+                      />
                       <span>Cours privé</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
-                      <input type="radio" checked={sessionType === "individual"} onChange={() => setType("individual")} disabled={inputsDisabled || Boolean(linkedEvent)} />
+                      <input
+                        type="radio"
+                        checked={sessionType === "individual"}
+                        onChange={() => setType("individual")}
+                        disabled={inputsDisabled || Boolean(linkedEvent)}
+                      />
                       <span>Entraînement individuel</span>
                     </label>
                   </div>
@@ -710,7 +812,11 @@ export default function PlayerTrainingNewClient() {
                       <span style={fieldLabelStyle}>
                         Club {linkedEvent ? <span style={{ opacity: 0.7 }}>(planifié)</span> : null}
                       </span>
-                      <select value={clubIdForTraining} onChange={(e) => setClubIdForTraining(e.target.value)} disabled={inputsDisabled || clubIds.length === 0 || Boolean(linkedEvent)}>
+                      <select
+                        value={clubIdForTraining}
+                        onChange={(e) => setClubIdForTraining(e.target.value)}
+                        disabled={inputsDisabled || clubIds.length === 0 || Boolean(linkedEvent)}
+                      >
                         <option value="">-</option>
                         {clubIds.map((id) => (
                           <option key={id} value={id}>
@@ -721,6 +827,11 @@ export default function PlayerTrainingNewClient() {
                     </label>
                   )}
 
+                  {/* ✅ Coach section:
+                      - Planned: read-only display head coach + assistants
+                      - Non-planned club: checkbox list
+                      - Private/Individual: nothing
+                  */}
                   {showCoachSectionPlannedReadOnly ? (
                     <div style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>Coach (planifié)</span>
@@ -756,7 +867,9 @@ export default function PlayerTrainingNewClient() {
                               </div>
                             </div>
 
-                            {plannedCoachSummary ? <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{plannedCoachSummary}</div> : null}
+                            {plannedCoachSummary ? (
+                              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{plannedCoachSummary}</div>
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -779,14 +892,26 @@ export default function PlayerTrainingNewClient() {
                         }}
                       >
                         {coachOptions.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>— Aucun coach trouvé pour tes groupes dans ce club —</div>
+                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
+                            — Aucun coach trouvé pour tes groupes dans ce club —
+                          </div>
                         ) : (
                           <>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button type="button" className="btn" disabled={inputsDisabled} onClick={() => setSelectedCoachIds(coachOptions.map((c) => c.id))}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={inputsDisabled}
+                                onClick={() => setSelectedCoachIds(coachOptions.map((c) => c.id))}
+                              >
                                 Tout sélectionner
                               </button>
-                              <button type="button" className="btn" disabled={inputsDisabled} onClick={() => setSelectedCoachIds([])}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={inputsDisabled}
+                                onClick={() => setSelectedCoachIds([])}
+                              >
                                 Aucun
                               </button>
                             </div>
@@ -824,11 +949,19 @@ export default function PlayerTrainingNewClient() {
                                       />
                                       <div style={{ display: "grid" }}>
                                         <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
-                                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{c.roleLabel}</div>
+                                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
+                                          {c.roleLabel}
+                                        </div>
                                       </div>
                                     </div>
 
-                                    <div className="pill-soft" style={{ background: c.isHead ? "rgba(53,72,59,0.14)" : "rgba(0,0,0,0.06)", fontWeight: 950 }}>
+                                    <div
+                                      className="pill-soft"
+                                      style={{
+                                        background: c.isHead ? "rgba(53,72,59,0.14)" : "rgba(0,0,0,0.06)",
+                                        fontWeight: 950,
+                                      }}
+                                    >
                                       {c.isHead ? "Head" : "Assistant"}
                                     </div>
                                   </label>
@@ -839,7 +972,9 @@ export default function PlayerTrainingNewClient() {
                             {nonPlannedCoachSummary ? (
                               <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{nonPlannedCoachSummary}</div>
                             ) : (
-                              <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>Astuce : tu peux ne rien cocher si tu veux.</div>
+                              <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
+                                Astuce : tu peux ne rien cocher si tu veux.
+                              </div>
                             )}
                           </>
                         )}
@@ -848,7 +983,136 @@ export default function PlayerTrainingNewClient() {
                   ) : null}
                 </div>
 
-                {/* ... le reste de ton fichier est identique (structure, sensations, notes, save) ... */}
+                <div className="hr-soft" />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={fieldLabelStyle}>Structure de l&apos;entraînement</div>
+
+                  {items.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      Ajoute un poste pour structurer ton entraînement.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {items.map((it, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 14,
+                            background: "rgba(255,255,255,0.65)",
+                            padding: 12,
+                            display: "grid",
+                            gap: 10,
+                            opacity: inputsDisabled ? 0.65 : 1,
+                          }}
+                        >
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Poste</span>
+                              <select value={it.category} onChange={(e) => updateLine(idx, { category: e.target.value })} disabled={inputsDisabled}>
+                                <option value="">-</option>
+                                {TRAINING_CATEGORIES.map((c) => (
+                                  <option key={c.value} value={c.value}>
+                                    {c.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Durée</span>
+                              <select value={it.minutes} onChange={(e) => updateLine(idx, { minutes: e.target.value })} disabled={inputsDisabled}>
+                                <option value="">-</option>
+                                {MINUTE_OPTIONS.map((m) => (
+                                  <option key={m} value={String(m)}>
+                                    {m} min
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Note (optionnel)</span>
+                            <input
+                              value={it.note}
+                              onChange={(e) => updateLine(idx, { note: e.target.value })}
+                              disabled={inputsDisabled}
+                              placeholder="Ex: focus wedging 60–80m"
+                            />
+                          </label>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                            <div className="pill-soft">Poste {idx + 1}</div>
+                            <button type="button" className="btn btn-danger soft" onClick={() => removeLine(idx)} disabled={inputsDisabled}>
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="button" className="btn" onClick={addLine} disabled={inputsDisabled}>
+                      + Ajouter un poste
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hr-soft" />
+
+                <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Motivation avant l&apos;entraînement</span>
+                    <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={inputsDisabled}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Difficulté de l&apos;entraînement</span>
+                    <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={inputsDisabled}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Satisfaction après l&apos;entraînement</span>
+                    <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={inputsDisabled}>
+                      <option value="">-</option>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                        <option key={v} value={String(v)}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="hr-soft" />
+
+                <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
+                  <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    disabled={inputsDisabled}
+                    placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                    style={{ minHeight: 110 }}
+                  />
+                </label>
 
                 {/* ✅ action buttons */}
                 {isAbsent && linkedEvent ? (
