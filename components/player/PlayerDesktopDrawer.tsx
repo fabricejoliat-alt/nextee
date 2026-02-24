@@ -143,8 +143,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       <aside className="drawer-panel drawer-panel--left" aria-label="Navigation">
         {/* Top bar */}
         <div className="drawer-top">
-          <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="NexTee">
-            <span className="drawer-brand-nex">Nex</span>
+          <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee">
+            <span className="drawer-brand-nex">Activi</span>
             <span className="drawer-brand-tee">Tee</span>
           </Link>
 

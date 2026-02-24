@@ -41,64 +41,13 @@ type PlannedEventRow = {
   status: "scheduled" | "cancelled";
 };
 
-type Preset = "month" | "last3" | "next3" | "all" | "custom";
+type FilterMode = "to_evaluate" | "planned" | "past";
+
+type DisplayItem =
+  | { kind: "session"; key: string; dateIso: string; session: SessionRow }
+  | { kind: "event"; key: string; dateIso: string; event: PlannedEventRow };
 
 const PAGE_SIZE = 10;
-
-function isoToYMD(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function monthRangeLocal(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
-  return { start, end };
-}
-
-function last3MonthsRangeLocal(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
-  return { start, end };
-}
-
-function next3MonthsFromTodayRangeLocal(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  end.setMonth(end.getMonth() + 3);
-  return { start, end };
-}
-
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  height: 44,
-  borderWidth: 1,
-  borderStyle: "solid",
-  borderColor: "rgba(0,0,0,0.10)",
-  borderRadius: 12,
-  padding: "0 12px",
-  background: "rgba(255,255,255,0.75)",
-  fontWeight: 950,
-  color: "rgba(0,0,0,0.80)",
-  outline: "none",
-  appearance: "none",
-};
-
-const dateInputStyle: React.CSSProperties = {
-  display: "block",
-  width: "100%",
-  maxWidth: "100%",
-  minWidth: 0,
-  boxSizing: "border-box",
-  background: "rgba(255,255,255,0.90)",
-  borderWidth: 1,
-  borderStyle: "solid",
-  borderColor: "rgba(0,0,0,0.10)",
-  borderRadius: 10,
-  padding: "10px 12px",
-  WebkitAppearance: "none",
-  appearance: "none",
-};
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -122,17 +71,6 @@ function uuidOrNull(v: any) {
   const s = String(v ?? "").trim();
   if (!s || s === "undefined" || s === "null") return null;
   return s;
-}
-
-function startOfDayISO(dateStr: string) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return d.toISOString();
-}
-
-function nextDayStartISO(dateStr: string) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString();
 }
 
 function categoryLabel(cat: string) {
@@ -193,29 +131,95 @@ export default function TrainingsListPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [planned, setPlanned] = useState<PlannedEventRow[]>([]);
+  const [attendeeEvents, setAttendeeEvents] = useState<PlannedEventRow[]>([]);
 
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [itemsBySessionId, setItemsBySessionId] = useState<Record<string, SessionItemRow[]>>({});
 
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
-
-  const [preset, setPreset] = useState<Preset>("all");
-  const [customOpen, setCustomOpen] = useState(false);
+  const [filterMode, setFilterMode] = useState<FilterMode>("planned");
 
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-
   const [deletingId, setDeletingId] = useState<string>("");
 
-  const totalPages = Math.max(1, Math.ceil((totalCount || 0) / PAGE_SIZE));
+  const nowTs = Date.now();
 
-  const totalThisPage = useMemo(() => {
-    return sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+  const evaluatedEventIds = useMemo(() => {
+    return new Set(sessions.map((s) => s.club_event_id).filter((x): x is string => !!x));
   }, [sessions]);
 
-  const hasDateFilter = Boolean(fromDate || toDate);
+  const scheduledEvents = useMemo(() => {
+    return attendeeEvents.filter((ev) => ev.status === "scheduled");
+  }, [attendeeEvents]);
+
+  const eventsToEvaluate = useMemo(() => {
+    return scheduledEvents
+      .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
+      .filter((ev) => !evaluatedEventIds.has(ev.id))
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
+  }, [scheduledEvents, nowTs, evaluatedEventIds]);
+
+  const plannedEvents = useMemo(() => {
+    return scheduledEvents
+      .filter((ev) => new Date(ev.starts_at).getTime() >= nowTs)
+      .filter((ev) => !evaluatedEventIds.has(ev.id))
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }, [scheduledEvents, nowTs, evaluatedEventIds]);
+
+  const pastSessions = useMemo(() => {
+    return sessions
+      .filter((s) => new Date(s.start_at).getTime() < nowTs)
+      .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
+  }, [sessions, nowTs]);
+
+  const displayItems = useMemo<DisplayItem[]>(() => {
+    if (filterMode === "to_evaluate") {
+      return eventsToEvaluate.map((event) => ({
+        kind: "event",
+        key: `event-${event.id}`,
+        dateIso: event.starts_at,
+        event,
+      }));
+    }
+
+    if (filterMode === "planned") {
+      return plannedEvents.map((event) => ({
+        kind: "event",
+        key: `event-${event.id}`,
+        dateIso: event.starts_at,
+        event,
+      }));
+    }
+
+    const pastSessionItems: DisplayItem[] = pastSessions.map((session) => ({
+      kind: "session",
+      key: `session-${session.id}`,
+      dateIso: session.start_at,
+      session,
+    }));
+
+    const pastEventItems: DisplayItem[] = eventsToEvaluate.map((event) => ({
+      kind: "event",
+      key: `event-${event.id}`,
+      dateIso: event.starts_at,
+      event,
+    }));
+
+    return [...pastSessionItems, ...pastEventItems].sort(
+      (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
+    );
+  }, [filterMode, eventsToEvaluate, plannedEvents, pastSessions]);
+
+  const toEvaluateCount = eventsToEvaluate.length;
+  const plannedCount = plannedEvents.length;
+  const pastCount = pastSessions.length + eventsToEvaluate.length;
+  const totalCount = displayItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const pagedItems = useMemo(() => {
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE;
+    return displayItems.slice(from, to);
+  }, [displayItems, page]);
 
   async function load() {
     setLoading(true);
@@ -226,75 +230,49 @@ export default function TrainingsListPage() {
       if (userErr || !userRes.user) throw new Error("Session invalide.");
       const uid = userRes.user.id;
 
-      const from = (page - 1) * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-
-      // ✅ training_sessions (player-owned)
-      let q = supabase
+      // all player-owned sessions (local filtering + pagination by mode)
+      const sRes = await supabase
         .from("training_sessions")
         .select(
-          "id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id",
-          { count: "exact" }
+          "id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id"
         )
         .eq("user_id", uid)
         .order("start_at", { ascending: false });
 
-      if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
-      if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
-      q = q.range(from, to);
-
-      const sRes = await q;
       if (sRes.error) throw new Error(sRes.error.message);
 
       const list = (sRes.data ?? []) as SessionRow[];
       setSessions(list);
-      setTotalCount(sRes.count ?? 0);
 
-      // ✅ planned coach events for this player (no join, 2 queries)
-      // 1) attendance rows to get event_ids
-      let aQ = supabase
+      // attendee events for this player
+      const aRes = await supabase
         .from("club_event_attendees")
         .select("event_id,player_id,status")
         .eq("player_id", uid);
 
-      // (no date filter here, because attendee table doesn't have date)
-      const aRes = await aQ;
       if (aRes.error) throw new Error(aRes.error.message);
 
       const eventIds = Array.from(new Set((aRes.data ?? []).map((r: any) => r.event_id as string)));
 
-      let plannedEvents: PlannedEventRow[] = [];
+      let events: PlannedEventRow[] = [];
       if (eventIds.length > 0) {
-        // 2) fetch events in date range (and scheduled/cancelled as you like)
-        let eQ = supabase
+        const eRes = await supabase
           .from("club_events")
           .select("id,starts_at,duration_minutes,location_text,club_id,group_id,series_id,status")
           .in("id", eventIds)
           .order("starts_at", { ascending: false });
 
-        if (fromDate) eQ = eQ.gte("starts_at", startOfDayISO(fromDate));
-        if (toDate) eQ = eQ.lt("starts_at", nextDayStartISO(toDate));
-
-        const eRes = await eQ;
         if (eRes.error) throw new Error(eRes.error.message);
-
-        plannedEvents = (eRes.data ?? []) as PlannedEventRow[];
-
-        // ✅ remove events already converted to a training_session (club_event_id)
-        const already = new Set(list.map((s) => s.club_event_id).filter((x): x is string => !!x));
-        plannedEvents = plannedEvents.filter((ev) => !already.has(ev.id));
-
-        // ✅ small cap (UX)
-        plannedEvents = plannedEvents.slice(0, 30);
+        events = (eRes.data ?? []) as PlannedEventRow[];
       }
-      setPlanned(plannedEvents);
+      setAttendeeEvents(events);
 
-      // clubs names (sessions + planned)
+      // clubs names (sessions + all attendee events)
       const clubIds = Array.from(
         new Set(
           [
             ...list.map((s) => uuidOrNull(s.club_id)),
-            ...plannedEvents.map((e) => uuidOrNull(e.club_id)),
+            ...events.map((e) => uuidOrNull(e.club_id)),
           ].filter((x): x is string => typeof x === "string" && x.length > 0)
         )
       );
@@ -314,7 +292,7 @@ export default function TrainingsListPage() {
         setClubNameById({});
       }
 
-      // items (postes) for sessions in this page
+      // items for all sessions (needed in past list)
       const sessionIds = list.map((s) => s.id);
       if (sessionIds.length > 0) {
         const itRes = await supabase
@@ -339,68 +317,28 @@ export default function TrainingsListPage() {
       }
 
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Erreur chargement.";
+      setError(message);
       setSessions([]);
-      setPlanned([]);
+      setAttendeeEvents([]);
       setClubNameById({});
       setItemsBySessionId({});
-      setTotalCount(0);
       setLoading(false);
     }
   }
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, fromDate, toDate]);
+  }, []);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalPages]);
+  }, [page, totalPages]);
 
   useEffect(() => {
-    const now = new Date();
-
-    if (preset === "month") {
-      const { start, end } = monthRangeLocal(now);
-      const endInclusive = new Date(end);
-      endInclusive.setDate(endInclusive.getDate() - 1);
-      setFromDate(isoToYMD(start));
-      setToDate(isoToYMD(endInclusive));
-      setPage(1);
-      return;
-    }
-
-    if (preset === "last3") {
-      const { start, end } = last3MonthsRangeLocal(now);
-      const endInclusive = new Date(end);
-      endInclusive.setDate(endInclusive.getDate() - 1);
-      setFromDate(isoToYMD(start));
-      setToDate(isoToYMD(endInclusive));
-      setPage(1);
-      return;
-    }
-
-    if (preset === "next3") {
-      const { start, end } = next3MonthsFromTodayRangeLocal(now);
-      const endInclusive = new Date(end);
-      endInclusive.setDate(endInclusive.getDate() - 1);
-      setFromDate(isoToYMD(start));
-      setToDate(isoToYMD(endInclusive));
-      setPage(1);
-      return;
-    }
-
-    if (preset === "all") {
-      setFromDate("");
-      setToDate("");
-      setPage(1);
-      return;
-    }
-    // preset === custom => nothing
-  }, [preset]);
+    setPage(1);
+  }, [filterMode]);
 
   async function handleDelete(sessionId: string) {
     const ok = window.confirm("Supprimer cet entraînement ? Cette action est définitive.");
@@ -452,210 +390,138 @@ export default function TrainingsListPage() {
             <div style={{ display: "grid", gap: 12 }}>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <SlidersHorizontal size={16} />
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>Période</div>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>Affichage</div>
               </div>
 
-              <select
-                value={preset}
-                onChange={(e) => {
-                  const v = e.target.value as Preset;
+              <div style={{ display: "grid", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setFilterMode("past")}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    justifyContent: "flex-start",
+                    background: filterMode === "past" ? "var(--green-dark)" : undefined,
+                    borderColor: filterMode === "past" ? "var(--green-dark)" : undefined,
+                    color: filterMode === "past" ? "#fff" : undefined,
+                    boxShadow: filterMode === "past" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
+                  }}
+                >
+                  Entraînements effectués ({pastCount})
+                </button>
 
-                  if (v === "custom") {
-                    setPreset("custom");
-                    if (!fromDate && !toDate) {
-                      const now = new Date();
-                      const { start, end } = monthRangeLocal(now);
-                      const endInclusive = new Date(end);
-                      endInclusive.setDate(endInclusive.getDate() - 1);
-                      setFromDate(isoToYMD(start));
-                      setToDate(isoToYMD(endInclusive));
-                    }
-                    setCustomOpen(true);
-                    setPage(1);
-                    return;
-                  }
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setFilterMode("to_evaluate")}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    justifyContent: "flex-start",
+                    background: filterMode === "to_evaluate" ? "var(--green-dark)" : undefined,
+                    borderColor: filterMode === "to_evaluate" ? "var(--green-dark)" : undefined,
+                    color: filterMode === "to_evaluate" ? "#fff" : undefined,
+                    boxShadow: filterMode === "to_evaluate" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
+                  }}
+                >
+                  Entraînements à évaluer{" "}
+                  <span
+                    style={{
+                      color:
+                        toEvaluateCount > 0 && filterMode !== "to_evaluate"
+                          ? "#c62828"
+                          : undefined,
+                      fontWeight: 950,
+                    }}
+                  >
+                    ({toEvaluateCount})
+                  </span>
+                </button>
 
-                  setPreset(v);
-                  setCustomOpen(false);
-                }}
-                disabled={loading}
-                style={selectStyle}
-                aria-label="Filtrer par période"
-              >
-                <option value="month">Ce mois</option>
-                <option value="last3">3 derniers mois</option>
-                <option value="next3">Les 3 prochains mois</option>
-                <option value="all">Toute l’activité</option>
-                <option value="custom">Personnalisé</option>
-              </select>
-
-              {customOpen && preset === "custom" && (
-                <>
-                  <div className="hr-soft" style={{ margin: "2px 0" }} />
-
-                  <div style={{ display: "grid", gap: 10, overflow: "hidden" }}>
-                    <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
-                      <input
-                        type="date"
-                        value={fromDate}
-                        onChange={(e) => {
-                          setFromDate(e.target.value);
-                          setPreset("custom");
-                          setCustomOpen(true);
-                          setPage(1);
-                        }}
-                        disabled={loading}
-                        style={dateInputStyle}
-                      />
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
-                      <input
-                        type="date"
-                        value={toDate}
-                        onChange={(e) => {
-                          setToDate(e.target.value);
-                          setPreset("custom");
-                          setCustomOpen(true);
-                          setPage(1);
-                        }}
-                        disabled={loading}
-                        style={dateInputStyle}
-                      />
-                    </label>
-
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => {
-                        setFromDate("");
-                        setToDate("");
-                        setPreset("all");
-                        setCustomOpen(false);
-                        setPage(1);
-                      }}
-                      disabled={loading || !hasDateFilter}
-                      style={{ width: "100%", height: 44 }}
-                    >
-                      Effacer les dates
-                    </button>
-                  </div>
-                </>
-              )}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setFilterMode("planned")}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    justifyContent: "flex-start",
+                    background: filterMode === "planned" ? "var(--green-dark)" : undefined,
+                    borderColor: filterMode === "planned" ? "var(--green-dark)" : undefined,
+                    color: filterMode === "planned" ? "#fff" : undefined,
+                    boxShadow: filterMode === "planned" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
+                  }}
+                >
+                  Entraînements planifiés ({plannedCount})
+                </button>
+              </div>
             </div>
           </div>
 
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {/* Stat summary */}
-        <div className="glass-section" style={{ marginTop: 12 }}>
-          <div
-            className="glass-card"
-            style={{
-              padding: 12,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: 12,
-            }}
-          >
-            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-              <span style={{ fontSize: 18 }}>{loading ? "…" : totalCount}</span>
-              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>séance(s)</span>
-            </div>
-
-            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-              <span style={{ fontSize: 18 }}>{loading ? "…" : totalThisPage}</span>
-              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>min</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Planned coach trainings */}
-        {planned.length > 0 && (
-          <div className="glass-section">
-            <div className="glass-card">
-              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)", marginBottom: 10 }}>
-                Entraînements planifiés
-              </div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {planned.map((e) => {
-                  const clubName = clubNameById[e.club_id] ?? "Club";
-                  return (
-                    <div
-                      key={e.id}
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 14,
-                        background: "rgba(255,255,255,0.65)",
-                        padding: 12,
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {fmtDateTime(e.starts_at)}
-                        </div>
-                        <div className="marketplace-price-pill">{e.duration_minutes} min</div>
-                      </div>
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="pill-soft">{clubName}</span>
-                        <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <CalendarClock size={14} />
-                          Planifié
-                        </span>
-                        {e.location_text ? (
-                          <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                            📍 {e.location_text}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                        {/* ✅ You can implement this param in your /new page */}
-                        <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
-                          <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                          Saisir
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                👉 Ces séances sont planifiées par le coach. Clique <b>Saisir</b> pour enregistrer tes postes + sensations.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* List (player sessions) */}
+        {/* List */}
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
             ) : totalCount === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun entraînement pour le moment.</div>
-            ) : sessions.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun résultat pour ce filtre.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun entraînement planifié.</div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
-                {sessions.map((s) => {
-                  const clubName =
-                    s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? "Club" : null;
+                {pagedItems.map((item) => {
+                  if (item.kind === "event") {
+                    const e = item.event;
+                    const clubName = clubNameById[e.club_id] ?? "Club";
+                    const isPlanned = new Date(e.starts_at).getTime() >= nowTs;
 
+                    return (
+                      <div
+                        key={item.key}
+                        className="marketplace-item"
+                        style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)" }}
+                      >
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                              {fmtDateTime(e.starts_at)}
+                            </div>
+                            <div className="marketplace-price-pill">{e.duration_minutes} min</div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span className="pill-soft">{clubName}</span>
+                            <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <CalendarClock size={14} />
+                              {isPlanned ? "Planifié" : "À évaluer"}
+                            </span>
+                            {e.location_text ? (
+                              <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                📍 {e.location_text}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                            <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                              <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              Saisir
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const s = item.session;
+                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? "Club" : null;
                   const deleting = deletingId === s.id;
                   const postes = itemsBySessionId[s.id] ?? [];
 
                   return (
-                    <Link key={s.id} href={`/player/golf/trainings/${s.id}`} className="marketplace-link">
+                    <Link key={item.key} href={`/player/golf/trainings/${s.id}`} className="marketplace-link">
                       <div className="marketplace-item">
                         <div style={{ display: "grid", gap: 10 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>

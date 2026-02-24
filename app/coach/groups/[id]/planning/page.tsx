@@ -81,6 +81,20 @@ function nowLocalDatetime() {
   return isoToLocalInput(d.toISOString());
 }
 
+function normalizeToQuarterHour(localValue: string) {
+  if (!localValue) return localValue;
+  const dt = new Date(localValue);
+  if (Number.isNaN(dt.getTime())) return localValue;
+
+  dt.setSeconds(0, 0);
+  const minutes = dt.getMinutes();
+  const rounded = Math.round(minutes / 15) * 15;
+  dt.setMinutes(rounded);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
 function ymdToday() {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -97,6 +111,25 @@ function toYMD(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+function buildDurationOptions() {
+  const out: number[] = [];
+  for (let m = 30; m <= 240; m += 15) out.push(m);
+  return out;
+}
+const DURATION_OPTIONS = buildDurationOptions();
+
+function buildQuarterHourOptions() {
+  const out: string[] = [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let h = 0; h < 24; h += 1) {
+    for (let m = 0; m < 60; m += 15) {
+      out.push(`${pad(h)}:${pad(m)}`);
+    }
+  }
+  return out;
+}
+const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
 
 function startOfDayISO(ymd: string) {
   // ymd = YYYY-MM-DD (local) => ISO at local midnight
@@ -161,7 +194,9 @@ export default function CoachGroupPlanningPage() {
   const [mode, setMode] = useState<"single" | "series">("single");
 
   // single
-  const [startsAtLocal, setStartsAtLocal] = useState<string>(() => nowLocalDatetime());
+  const [startsAtLocal, setStartsAtLocal] = useState<string>(() =>
+    normalizeToQuarterHour(nowLocalDatetime())
+  );
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
   const [locationText, setLocationText] = useState<string>("");
 
@@ -181,6 +216,28 @@ export default function CoachGroupPlanningPage() {
     () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
     [selectedPlayers]
   );
+
+  const singleDate = useMemo(() => {
+    if (!startsAtLocal.includes("T")) return ymdToday();
+    const v = startsAtLocal.slice(0, 10);
+    return v || ymdToday();
+  }, [startsAtLocal]);
+
+  const singleTime = useMemo(() => {
+    if (!startsAtLocal.includes("T")) return "18:00";
+    const v = startsAtLocal.slice(11, 16);
+    return QUARTER_HOUR_OPTIONS.includes(v) ? v : "18:00";
+  }, [startsAtLocal]);
+
+  function updateSingleDate(nextDate: string) {
+    if (!nextDate) return;
+    setStartsAtLocal(`${nextDate}T${singleTime}`);
+  }
+
+  function updateSingleTime(nextTime: string) {
+    if (!nextTime) return;
+    setStartsAtLocal(`${singleDate}T${nextTime}`);
+  }
 
   const candidatesPlayers = useMemo(() => {
     const q = queryPlayers.trim().toLowerCase();
@@ -551,14 +608,25 @@ export default function CoachGroupPlanningPage() {
             {mode === "single" ? (
               <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Date & heure</span>
-                  <input type="datetime-local" value={startsAtLocal} onChange={(e) => setStartsAtLocal(e.target.value)} disabled={busy} />
+                  <span style={fieldLabelStyle}>Date</span>
+                  <input type="date" value={singleDate} onChange={(e) => updateSingleDate(e.target.value)} disabled={busy} />
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={fieldLabelStyle}>Heure</span>
+                  <select value={singleTime} onChange={(e) => updateSingleTime(e.target.value)} disabled={busy}>
+                    {QUARTER_HOUR_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Durée</span>
                   <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
-                    {[45, 60, 75, 90, 105, 120].map((m) => (
+                    {DURATION_OPTIONS.map((m) => (
                       <option key={m} value={m}>
                         {m} min
                       </option>
@@ -604,7 +672,7 @@ export default function CoachGroupPlanningPage() {
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Durée</span>
                     <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
-                      {[45, 60, 75, 90, 105, 120].map((m) => (
+                      {DURATION_OPTIONS.map((m) => (
                         <option key={m} value={m}>
                           {m} min
                         </option>

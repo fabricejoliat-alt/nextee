@@ -32,8 +32,8 @@ export default function CoachHeader() {
             </div>
 
             <div className="header-center header-center--brand">
-              <Link href="/coach" className="brand" aria-label="NexTee - Coach">
-                <span className="brand-nex">Nex</span>
+              <Link href="/coach" className="brand" aria-label="ActiviTee - Coach">
+                <span className="brand-nex">Activi</span>
                 <span className="brand-tee">Tee</span>
               </Link>
             </div>

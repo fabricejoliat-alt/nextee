@@ -46,7 +46,7 @@ export default function LoginPage() {
         <div className="auth-card">
           <div className="auth-brand-wrapper">
             <div className="auth-brand auth-brand--dark">
-              <span className="auth-brand-nex">Nex</span>
+              <span className="auth-brand-nex">Activi</span>
               <span className="auth-brand-tee">Tee</span>
             </div>
             <div className="auth-tagline">Junior Golf Platform</div>

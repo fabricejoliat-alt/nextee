@@ -39,8 +39,8 @@ export default function PlayerHeader() {
 
             {/* CENTER: Logo */}
             <div className="header-center header-center--brand">
-              <Link href="/player" className="brand" aria-label="NexTee - Accueil">
-                <span className="brand-nex">Nex</span>
+              <Link href="/player" className="brand" aria-label="ActiviTee - Accueil">
+                <span className="brand-nex">Activi</span>
                 <span className="brand-tee">Tee</span>
               </Link>
             </div>

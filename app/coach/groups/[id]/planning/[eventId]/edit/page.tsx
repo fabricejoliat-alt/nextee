@@ -152,6 +152,7 @@ export default function CoachEventEditPage() {
   const [players, setPlayers] = useState<ProfileLite[]>([]);
   const [queryPlayers, setQueryPlayers] = useState("");
   const [selectedPlayers, setSelectedPlayers] = useState<Record<string, ProfileLite>>({});
+  const [initialSelectedPlayerIds, setInitialSelectedPlayerIds] = useState<string[]>([]);
 
   function toggleInList(list: string[], id: string) {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -304,6 +305,7 @@ export default function CoachEventEditPage() {
       // selected attendees -> selectedPlayers map
       const eaRes = await supabase.from("club_event_attendees").select("player_id").eq("event_id", eventId);
       const selectedIds = !eaRes.error ? (eaRes.data ?? []).map((r: any) => r.player_id as string) : [];
+      setInitialSelectedPlayerIds(selectedIds);
 
       const defaultSelected: Record<string, ProfileLite> = {};
       plList.forEach((p) => {
@@ -322,6 +324,7 @@ export default function CoachEventEditPage() {
       setPlayers([]);
       setCoachIdsSelected([]);
       setSelectedPlayers({});
+      setInitialSelectedPlayerIds([]);
       setLoading(false);
     }
   }
@@ -332,6 +335,58 @@ export default function CoachEventEditPage() {
   }, [eventId]);
 
   const playerIdsSelected = useMemo(() => Object.keys(selectedPlayers), [selectedPlayers]);
+
+  const playersAddedOnSave = useMemo(() => {
+    const initial = new Set(initialSelectedPlayerIds);
+    return playerIdsSelected.filter((id) => !initial.has(id));
+  }, [initialSelectedPlayerIds, playerIdsSelected]);
+
+  const playersRemovedOnSave = useMemo(() => {
+    const current = new Set(playerIdsSelected);
+    return initialSelectedPlayerIds.filter((id) => !current.has(id));
+  }, [initialSelectedPlayerIds, playerIdsSelected]);
+
+  async function syncPlayerChangesOnFuturePlannedEvents() {
+    if (!groupId) return;
+    if (playersAddedOnSave.length === 0 && playersRemovedOnSave.length === 0) return;
+
+    const nowIso = new Date().toISOString();
+    const futureRes = await supabase
+      .from("club_events")
+      .select("id")
+      .eq("group_id", groupId)
+      .eq("status", "scheduled")
+      .gte("starts_at", nowIso);
+
+    if (futureRes.error) throw new Error(futureRes.error.message);
+
+    const futureEventIds = ((futureRes.data ?? []) as Array<{ id: string }>)
+      .map((r) => String(r.id ?? ""))
+      .filter(Boolean);
+    if (futureEventIds.length === 0) return;
+
+    if (playersAddedOnSave.length > 0) {
+      const addRows = futureEventIds.flatMap((eid) =>
+        playersAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
+      );
+
+      const addRes = await supabase
+        .from("club_event_attendees")
+        .upsert(addRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
+
+      if (addRes.error) throw new Error(addRes.error.message);
+    }
+
+    if (playersRemovedOnSave.length > 0) {
+      const delRes = await supabase
+        .from("club_event_attendees")
+        .delete()
+        .in("event_id", futureEventIds)
+        .in("player_id", playersRemovedOnSave);
+
+      if (delRes.error) throw new Error(delRes.error.message);
+    }
+  }
 
   const canSaveOccurrence = useMemo(() => {
     if (busy || loading) return false;
@@ -390,6 +445,8 @@ export default function CoachEventEditPage() {
           .insert(playerIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "expected" })));
         if (insA.error) throw new Error(insA.error.message);
       }
+
+      await syncPlayerChangesOnFuturePlannedEvents();
 
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning/${eventId}`);
@@ -500,6 +557,8 @@ export default function CoachEventEditPage() {
           if (aIns.error) throw new Error(aIns.error.message);
         }
       }
+
+      await syncPlayerChangesOnFuturePlannedEvents();
 
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);

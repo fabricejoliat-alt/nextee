@@ -62,6 +62,38 @@ function toLocalDateTimeInputValue(iso: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function ymdToday() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function normalizeToQuarterHour(localValue: string) {
+  if (!localValue) return localValue;
+  const dt = new Date(localValue);
+  if (Number.isNaN(dt.getTime())) return localValue;
+
+  dt.setSeconds(0, 0);
+  const minutes = dt.getMinutes();
+  const rounded = Math.round(minutes / 15) * 15;
+  dt.setMinutes(rounded);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function buildQuarterHourOptions() {
+  const opts: string[] = [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let h = 0; h < 24; h += 1) {
+    for (let m = 0; m < 60; m += 15) {
+      opts.push(`${pad(h)}:${pad(m)}`);
+    }
+  }
+  return opts;
+}
+const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
+
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
@@ -92,7 +124,9 @@ export default function PlayerTrainingNewPage() {
   const [startAt, setStartAt] = useState<string>(() => {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return normalizeToQuarterHour(
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    );
   });
 
   const [place, setPlace] = useState<string>("");
@@ -148,18 +182,9 @@ export default function PlayerTrainingNewPage() {
     if (sessionType !== "club") return "";
     if (selectedCoachIds.length === 0) return "";
     const selected = coachOptions.filter((c) => selectedCoachIds.includes(c.id));
-
-    const heads = selected.filter((c) => c.isHead);
-    const assists = selected.filter((c) => !c.isHead);
-
-    const headNames = heads.map((c) => c.label).filter(Boolean);
-    const assistNames = assists.map((c) => c.label).filter(Boolean);
-
-    const lines: string[] = [];
-    if (headNames.length > 0) lines.push(`Coach : ${headNames.join(", ")}`);
-    if (assistNames.length > 0) lines.push(`Assistants : ${assistNames.join(", ")}`);
-    if (lines.length === 0) return selected.map((c) => c.label).join(", ");
-    return lines.join(" • ");
+    const names = selected.map((c) => c.label).filter(Boolean);
+    if (names.length === 0) return "";
+    return `Coach : ${names.join(", ")}`;
   }, [linkedEvent, sessionType, coachOptions, selectedCoachIds]);
 
   const coachNameForSave = useMemo(() => {
@@ -213,6 +238,28 @@ export default function PlayerTrainingNewPage() {
     if (busy) return false;
     return true;
   }, [linkedEvent, userId, busy]);
+
+  const startDate = useMemo(() => {
+    if (!startAt.includes("T")) return ymdToday();
+    const v = startAt.slice(0, 10);
+    return v || ymdToday();
+  }, [startAt]);
+
+  const startTime = useMemo(() => {
+    if (!startAt.includes("T")) return "18:00";
+    const v = startAt.slice(11, 16);
+    return QUARTER_HOUR_OPTIONS.includes(v) ? v : "18:00";
+  }, [startAt]);
+
+  function updateStartDate(nextDate: string) {
+    if (!nextDate) return;
+    setStartAt(`${nextDate}T${startTime}`);
+  }
+
+  function updateStartTime(nextTime: string) {
+    if (!nextTime) return;
+    setStartAt(`${startDate}T${nextTime}`);
+  }
 
   async function loadCoachOptionsForPlannedEvent(ev: ClubEventRow): Promise<CoachOption[]> {
   // 1) Try explicit coaches for this event (club_event_coaches)
@@ -310,60 +357,55 @@ export default function PlayerTrainingNewPage() {
   });
 }
 
-  async function loadCoachOptionsForNonPlannedClub(clubId: string, uid: string): Promise<CoachOption[]> {
-    // ✅ Coaches liés au(x) groupe(s) du joueur dans ce club
-    // coach_group_players -> coach_groups (club_id) -> coach_group_coaches -> profiles
+  async function loadCoachOptionsForNonPlannedClub(clubId: string): Promise<CoachOption[]> {
+    // ✅ Entraînement club non lié à un groupe:
+    // afficher tous les coachs du club + les head coachs des groupes du club.
 
-    const gpRes = await supabase
-      .from("coach_group_players")
-      .select("group_id, coach_groups!inner(club_id)")
-      .eq("player_user_id", uid)
-      .eq("coach_groups.club_id", clubId);
+    const memRes = await supabase
+      .from("club_members")
+      .select("user_id,role,is_active")
+      .eq("club_id", clubId)
+      .eq("is_active", true)
+      .eq("role", "coach");
 
-    if (gpRes.error) return [];
+    if (memRes.error) return [];
 
-    const groupIds = uniq((gpRes.data ?? []).map((r: any) => String(r.group_id ?? "").trim())).filter(Boolean);
-    if (groupIds.length === 0) return [];
+    const memberCoachIds = uniq((memRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim())).filter(Boolean);
 
-    const gcRes = await supabase
-      .from("coach_group_coaches")
-      .select("coach_user_id,is_head")
-      .in("group_id", groupIds);
+    const grpRes = await supabase
+      .from("coach_groups")
+      .select("head_coach_user_id")
+      .eq("club_id", clubId)
+      .eq("is_active", true);
 
-    if (gcRes.error) return [];
+    const headCoachIds = !grpRes.error
+      ? uniq((grpRes.data ?? []).map((r: any) => String(r.head_coach_user_id ?? "").trim())).filter(Boolean)
+      : [];
 
-    const rows = (gcRes.data ?? []) as any[];
-    const coachIds = uniq(rows.map((r) => String(r.coach_user_id ?? "").trim())).filter(Boolean);
+    const coachIds = uniq([...memberCoachIds, ...headCoachIds]).filter(Boolean);
     if (coachIds.length === 0) return [];
-
-    const isHeadById: Record<string, boolean> = {};
-    rows.forEach((r) => {
-      const id = String(r.coach_user_id ?? "").trim();
-      if (!id) return;
-      // si un coach est head dans au moins un des groupes => head
-      if (Boolean(r.is_head)) isHeadById[id] = true;
-      else if (isHeadById[id] === undefined) isHeadById[id] = false;
-    });
 
     const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", coachIds);
     if (pRes.error) return [];
 
-    const profiles = (pRes.data ?? []) as any[];
     const byId: Record<string, ProfileLite> = {};
-    profiles.forEach((p) => (byId[String(p.id)] = p as ProfileLite));
+    (pRes.data ?? []).forEach((p: any) => {
+      byId[String(p.id)] = p as ProfileLite;
+    });
 
-    // ordre stable: heads d'abord puis assistants (plus lisible)
-    const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
+    const sorted = [...coachIds].sort((a, b) => {
+      const na = nameOf(byId[a]?.first_name ?? null, byId[a]?.last_name ?? null);
+      const nb = nameOf(byId[b]?.first_name ?? null, byId[b]?.last_name ?? null);
+      return na.localeCompare(nb, "fr");
+    });
 
     return sorted.map((id) => {
       const p = byId[id];
-      const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
-      const isHead = Boolean(isHeadById[id]);
       return {
         id,
-        label,
-        isHead,
-        roleLabel: isHead ? "Coach" : "Assistant",
+        label: p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—",
+        isHead: false,
+        roleLabel: "Coach",
       };
     });
   }
@@ -431,7 +473,7 @@ export default function PlayerTrainingNewPage() {
           setSessionType("club");
 
           // ✅ prefill actual start from planned start
-          setStartAt(toLocalDateTimeInputValue(ev.starts_at));
+          setStartAt(normalizeToQuarterHour(toLocalDateTimeInputValue(ev.starts_at)));
 
           // ✅ prefill location
           setPlace(ev.location_text ?? "");
@@ -488,7 +530,7 @@ export default function PlayerTrainingNewPage() {
         return;
       }
 
-      const opts: CoachOption[] = await loadCoachOptionsForNonPlannedClub(clubIdForTraining, userId);
+      const opts: CoachOption[] = await loadCoachOptionsForNonPlannedClub(clubIdForTraining);
       setCoachOptions(opts);
 
       // par défaut: sélectionner tout ce qui est dispo
@@ -730,36 +772,21 @@ export default function PlayerTrainingNewPage() {
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>
-                      Date & heure {linkedEvent ? <span style={{ opacity: 0.7 }}>(réel)</span> : null}
+                      Date {linkedEvent ? <span style={{ opacity: 0.7 }}>(réel)</span> : null}
                     </span>
-                    <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={inputsDisabled} />
+                    <input type="date" value={startDate} onChange={(e) => updateStartDate(e.target.value)} disabled={inputsDisabled} />
                   </label>
 
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Durée</span>
-                    <div
-                      style={{
-                        height: 42,
-                        borderRadius: 10,
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        background: "rgba(255,255,255,0.65)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "0 12px",
-                        fontWeight: 950,
-                        color: "rgba(0,0,0,0.78)",
-                        gap: 10,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                        <span>{totalMinutes}</span>
-                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min effectifs</span>
-                      </div>
-
-                    
-                    </div>
-                  </div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Heure</span>
+                    <select value={startTime} onChange={(e) => updateStartTime(e.target.value)} disabled={inputsDisabled}>
+                      {QUARTER_HOUR_OPTIONS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 <label style={{ display: "grid", gap: 6 }}>
@@ -893,7 +920,7 @@ export default function PlayerTrainingNewPage() {
                       >
                         {coachOptions.length === 0 ? (
                           <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
-                            — Aucun coach trouvé pour tes groupes dans ce club —
+                            — Aucun coach trouvé dans ce club —
                           </div>
                         ) : (
                           <>
@@ -958,11 +985,11 @@ export default function PlayerTrainingNewPage() {
                                     <div
                                       className="pill-soft"
                                       style={{
-                                        background: c.isHead ? "rgba(53,72,59,0.14)" : "rgba(0,0,0,0.06)",
+                                        background: "rgba(53,72,59,0.14)",
                                         fontWeight: 950,
                                       }}
                                     >
-                                      {c.isHead ? "Head" : "Assistant"}
+                                      {c.roleLabel}
                                     </div>
                                   </label>
                                 );
@@ -987,6 +1014,29 @@ export default function PlayerTrainingNewPage() {
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={fieldLabelStyle}>Structure de l&apos;entraînement</div>
+
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div
+                      style={{
+                        height: 42,
+                        borderRadius: 10,
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        background: "rgba(255,255,255,0.65)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "0 12px",
+                        fontWeight: 950,
+                        color: "rgba(0,0,0,0.78)",
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span>{totalMinutes}</span>
+                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min effectifs</span>
+                      </div>
+                    </div>
+                  </div>
 
                   {items.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
