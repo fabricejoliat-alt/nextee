@@ -24,7 +24,17 @@ type CoachGroupCoachRow = {
 };
 
 type GroupCategoryRow = { group_id: string; category: string };
-type GroupPlayerRow = { group_id: string; player_user_id: string };
+type GroupPlayerRow = {
+  group_id: string;
+  player_user_id: string;
+  profiles?: ProfileMini | null;
+};
+type ProfileMini = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+};
 
 function toneForCategory(cat: string) {
   const c = (cat ?? "").toLowerCase();
@@ -72,11 +82,40 @@ function Badge({
   return <span style={style}>{label}</span>;
 }
 
+function fullName(p?: ProfileMini | null) {
+  const f = (p?.first_name ?? "").trim();
+  const l = (p?.last_name ?? "").trim();
+  return `${f} ${l}`.trim() || "—";
+}
+
+function initials(p?: ProfileMini | null) {
+  const f = (p?.first_name ?? "").trim();
+  const l = (p?.last_name ?? "").trim();
+  const fi = f ? f[0].toUpperCase() : "";
+  const li = l ? l[0].toUpperCase() : "";
+  return (fi + li) || "👤";
+}
+
+function avatarNode(p?: ProfileMini | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
 export default function CoachGroupsPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<CoachGroupCoachRow[]>([]);
   const [categories, setCategories] = useState<Record<string, string[]>>({});
   const [playerCounts, setPlayerCounts] = useState<Record<string, number>>({});
+  const [playersByGroup, setPlayersByGroup] = useState<Record<string, ProfileMini[]>>({});
+  const [coachesByGroup, setCoachesByGroup] = useState<Record<string, ProfileMini[]>>({});
   const [q, setQ] = useState("");
   const [catFilter, setCatFilter] = useState<string>("");
 
@@ -90,6 +129,8 @@ export default function CoachGroupsPage() {
       setRows([]);
       setCategories({});
       setPlayerCounts({});
+      setPlayersByGroup({});
+      setCoachesByGroup({});
       setLoading(false);
       return;
     }
@@ -120,6 +161,8 @@ export default function CoachGroupsPage() {
       setRows([]);
       setCategories({});
       setPlayerCounts({});
+      setPlayersByGroup({});
+      setCoachesByGroup({});
       setLoading(false);
       return;
     }
@@ -142,6 +185,8 @@ export default function CoachGroupsPage() {
     if (groupIds.length === 0) {
       setCategories({});
       setPlayerCounts({});
+      setPlayersByGroup({});
+      setCoachesByGroup({});
       setLoading(false);
       return;
     }
@@ -172,18 +217,64 @@ export default function CoachGroupsPage() {
     // 3) Compter joueurs / groupe
     const { data: players, error: pErr } = await supabase
       .from("coach_group_players")
-      .select("group_id,player_user_id")
+      .select("group_id,player_user_id,profiles:player_user_id(id,first_name,last_name,avatar_url)")
       .in("group_id", groupIds);
 
     if (!pErr) {
       const counts: Record<string, number> = {};
+      const byGroup: Record<string, ProfileMini[]> = {};
       (players as GroupPlayerRow[] | null)?.forEach((p) => {
         counts[p.group_id] = (counts[p.group_id] ?? 0) + 1;
+        const prof = p.profiles ?? null;
+        if (!byGroup[p.group_id]) byGroup[p.group_id] = [];
+        byGroup[p.group_id].push({
+          id: prof?.id ?? p.player_user_id,
+          first_name: prof?.first_name ?? null,
+          last_name: prof?.last_name ?? null,
+          avatar_url: prof?.avatar_url ?? null,
+        });
       });
       setPlayerCounts(counts);
+      Object.keys(byGroup).forEach((gid) => {
+        byGroup[gid] = byGroup[gid]
+          .slice()
+          .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      });
+      setPlayersByGroup(byGroup);
     } else {
       console.error(pErr);
       setPlayerCounts({});
+      setPlayersByGroup({});
+    }
+
+    const { data: coachLinks, error: coachErr } = await supabase
+      .from("coach_group_coaches")
+      .select("group_id,coach_user_id,profiles:coach_user_id(id,first_name,last_name,avatar_url)")
+      .in("group_id", groupIds);
+
+    if (!coachErr) {
+      const byGroup: Record<string, ProfileMini[]> = {};
+      (coachLinks ?? []).forEach((row: any) => {
+        const gid = String(row.group_id ?? "");
+        if (!gid) return;
+        const prof = row.profiles ?? null;
+        if (!byGroup[gid]) byGroup[gid] = [];
+        byGroup[gid].push({
+          id: prof?.id ?? String(row.coach_user_id ?? ""),
+          first_name: prof?.first_name ?? null,
+          last_name: prof?.last_name ?? null,
+          avatar_url: prof?.avatar_url ?? null,
+        });
+      });
+      Object.keys(byGroup).forEach((gid) => {
+        byGroup[gid] = byGroup[gid]
+          .slice()
+          .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      });
+      setCoachesByGroup(byGroup);
+    } else {
+      console.error(coachErr);
+      setCoachesByGroup({});
     }
 
     setLoading(false);
@@ -210,6 +301,10 @@ export default function CoachGroupsPage() {
         const clubName = g.clubs?.name ?? "Club";
         const cats = categories[r.group_id] ?? [];
         const players = playerCounts[r.group_id] ?? 0;
+        const playerProfiles = playersByGroup[r.group_id] ?? [];
+        const coachProfiles = coachesByGroup[r.group_id] ?? [];
+        const playerSearch = playerProfiles.map((p) => fullName(p).toLowerCase());
+        const coachSearch = coachProfiles.map((p) => fullName(p).toLowerCase());
 
         return {
           group_id: r.group_id,
@@ -218,6 +313,10 @@ export default function CoachGroupsPage() {
           clubName,
           cats,
           players,
+          playerProfiles,
+          coachProfiles,
+          playerSearch,
+          coachSearch,
         };
       });
 
@@ -227,7 +326,9 @@ export default function CoachGroupsPage() {
           !query ||
           x.group.name.toLowerCase().includes(query) ||
           (x.clubName ?? "").toLowerCase().includes(query) ||
-          x.cats.some((c) => c.toLowerCase().includes(query));
+          x.cats.some((c) => c.toLowerCase().includes(query)) ||
+          x.playerSearch.some((name) => name.includes(query)) ||
+          x.coachSearch.some((name) => name.includes(query));
 
         const matchesCat = !catFilter || x.cats.includes(catFilter);
         return matchesQ && matchesCat;
@@ -238,7 +339,7 @@ export default function CoachGroupsPage() {
           return a.group.is_active ? -1 : 1;
         return a.group.name.localeCompare(b.group.name, "fr");
       });
-  }, [rows, q, catFilter, categories, playerCounts]);
+  }, [rows, q, catFilter, categories, playerCounts, playersByGroup, coachesByGroup]);
 
   const inputWrapStyle: React.CSSProperties = {
     position: "relative",
@@ -269,7 +370,7 @@ export default function CoachGroupsPage() {
     <div className="player-dashboard-bg">
       <div className="app-shell">
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Groupes</div>
+          <div className="section-title">Mes groupes</div>
 
           {/* Filtres (style Player) */}
           <div className="glass-card" style={{ marginTop: 12 }}>
@@ -315,10 +416,6 @@ export default function CoachGroupsPage() {
             </div>
 
             <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 10 }}>
-              <Badge
-                label={`${filtered.length} groupe${filtered.length > 1 ? "s" : ""}`}
-                tone="neutral"
-              />
               {catFilter ? (
                 <button
                   onClick={() => setCatFilter("")}
@@ -352,8 +449,8 @@ export default function CoachGroupsPage() {
             </div>
           </div>
 
-          {/* Liste (style Player : grid-2) */}
-<div style={{ marginTop: 12, display: "grid", gap: 12 }}>            {/* Colonne gauche : liste */}
+          {/* Liste */}
+          <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
             <div className="glass-card">
               <div className="card-title">Mes groupes</div>
 
@@ -369,6 +466,8 @@ export default function CoachGroupsPage() {
                     const cats = x.cats ?? [];
                     const players = x.players ?? 0;
                     const clubName = x.clubName ?? "Club";
+                    const playerProfiles = x.playerProfiles ?? [];
+                    const coachProfiles = x.coachProfiles ?? [];
 
                     return (
                       <Link
@@ -381,7 +480,15 @@ export default function CoachGroupsPage() {
                         }}
                       >
                         <div style={{ fontWeight: 950 }}>{x.group.name}</div>
-                        <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
+                        <div
+                          style={{
+                            opacity: 0.62,
+                            fontWeight: 700,
+                            fontSize: 12,
+                            marginTop: 6,
+                            lineHeight: 1.25,
+                          }}
+                        >
                           {clubName} • {players} joueur{players > 1 ? "s" : ""}
                         </div>
 
@@ -404,6 +511,62 @@ export default function CoachGroupsPage() {
                             <Badge label={`+${cats.length - 4}`} tone="neutral" />
                           ) : null}
                         </div>
+
+                        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>Joueurs</div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {playerProfiles.length === 0 ? (
+                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>Aucun joueur</div>
+                              ) : (
+                                <>
+                                  {playerProfiles.slice(0, 3).map((p) => (
+                                    <div key={p.id} style={miniRowStyle}>
+                                      <div style={miniAvatarBoxStyle} aria-hidden="true">
+                                        {avatarNode(p)}
+                                      </div>
+                                      <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
+                                        {fullName(p)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {playerProfiles.length > 3 ? (
+                                    <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
+                                      +{playerProfiles.length - 3} autre{playerProfiles.length - 3 > 1 ? "s" : ""}
+                                    </div>
+                                  ) : null}
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>Coachs</div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {coachProfiles.length === 0 ? (
+                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>Aucun coach</div>
+                              ) : (
+                                <>
+                                  {coachProfiles.slice(0, 3).map((p) => (
+                                    <div key={p.id} style={miniRowStyle}>
+                                      <div style={miniAvatarBoxStyle} aria-hidden="true">
+                                        {avatarNode(p)}
+                                      </div>
+                                      <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
+                                        {fullName(p)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {coachProfiles.length > 3 ? (
+                                    <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
+                                      +{coachProfiles.length - 3} autre{coachProfiles.length - 3 > 1 ? "s" : ""}
+                                    </div>
+                                  ) : null}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </Link>
                     );
                   })}
@@ -415,32 +578,6 @@ export default function CoachGroupsPage() {
                 Créer un groupe
               </Link>
             </div>
-
-            {/* Colonne droite : résumé / actions */}
-            <div className="glass-card">
-              <div className="card-title">Actions</div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                <Link href="/coach/calendar" className="glass-card" style={{ padding: 14 }}>
-                  <div style={{ fontWeight: 950 }}>Calendrier</div>
-                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                    Planifier des entraînements
-                  </div>
-                </Link>
-
-                <Link href="/coach/trainings" className="glass-card" style={{ padding: 14 }}>
-                  <div style={{ fontWeight: 950 }}>Entraînements</div>
-                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                    Voir tous les entraînements
-                  </div>
-                </Link>
-              </div>
-
-              <Link href="/coach/trainings/new" className="cta-green" style={{ marginTop: 12 }}>
-                <PlusCircle size={18} />
-                Ajouter un entraînement
-              </Link>
-            </div>
           </div>
         </section>
 
@@ -449,3 +586,30 @@ export default function CoachGroupsPage() {
     </div>
   );
 }
+
+const miniRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  border: "1px solid rgba(0,0,0,0.08)",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.58)",
+  padding: "6px 8px",
+  minWidth: 0,
+};
+
+const miniAvatarBoxStyle: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 8,
+  overflow: "hidden",
+  background: "rgba(255,255,255,0.70)",
+  border: "1px solid rgba(0,0,0,0.08)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 900,
+  fontSize: 11,
+  color: "var(--green-dark)",
+  flexShrink: 0,
+};

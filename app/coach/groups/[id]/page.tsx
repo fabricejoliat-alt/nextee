@@ -56,6 +56,13 @@ type CategoryRow = {
   category: string;
 };
 
+type PlannedEventLite = {
+  id: string;
+  starts_at: string;
+  status: "scheduled" | "cancelled";
+  series_id?: string | null;
+};
+
 function fullName(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
@@ -69,6 +76,19 @@ function initials(p?: ProfileLite | null) {
   const fi = f ? f[0].toUpperCase() : "";
   const li = l ? l[0].toUpperCase() : "";
   return (fi + li) || "👤";
+}
+
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
 }
 
 /** Small, dependency-free searchable dropdown (combobox) */
@@ -209,7 +229,7 @@ function SearchSelect({
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                       <div style={avatarBoxStyle} aria-hidden="true">
-                        {initials(p)}
+                        {avatarNode(p)}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 950 }} className="truncate">
@@ -269,6 +289,7 @@ export default function CoachGroupEditPage() {
   const [cats, setCats] = useState<CategoryRow[]>([]);
   const [players, setPlayers] = useState<GroupPlayerRow[]>([]);
   const [coaches, setCoaches] = useState<GroupCoachRow[]>([]);
+  const [plannedEvents, setPlannedEvents] = useState<PlannedEventLite[]>([]);
 
   // editable group info
   const [groupName, setGroupName] = useState("");
@@ -424,6 +445,15 @@ export default function CoachGroupEditPage() {
 
     setCoaches((cRes.data ?? []) as any);
 
+    const evRes = await supabase
+      .from("club_events")
+      .select("id,starts_at,status,series_id")
+      .eq("group_id", groupId)
+      .order("starts_at", { ascending: true });
+
+    if (!evRes.error) setPlannedEvents((evRes.data ?? []) as PlannedEventLite[]);
+    else setPlannedEvents([]);
+
     if (g?.club_id) {
       await loadClubMembers(g.club_id, uid);
     } else {
@@ -445,6 +475,22 @@ export default function CoachGroupEditPage() {
     if (group?.head_coach_user_id && group.head_coach_user_id === userId) return true;
     return coaches.some((c) => c.coach_user_id === userId && c.is_head);
   }, [userId, group, coaches]);
+
+  const planningSummary = useMemo(() => {
+    const now = Date.now();
+    const scheduled = plannedEvents.filter((e) => e.status === "scheduled");
+    const upcoming = scheduled.filter((e) => new Date(e.starts_at).getTime() >= now);
+    const next = upcoming
+      .slice()
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0];
+    const recurringCount = scheduled.filter((e) => Boolean(e.series_id)).length;
+    return {
+      totalScheduled: scheduled.length,
+      upcomingCount: upcoming.length,
+      recurringCount,
+      nextStartsAt: next?.starts_at ?? null,
+    };
+  }, [plannedEvents]);
 
   const canSaveInfo = useMemo(() => {
     if (busy) return false;
@@ -692,11 +738,7 @@ export default function CoachGroupEditPage() {
         </div>
 
         <div className="glass-section">
-          
           <div className="glass-card">
-            <Link className="cta-green cta-green-inline" style={{ display: "grid", gap: 10, marginBottom: 15 }} href={`/coach/groups/${groupId}/planning`}>
-  Planification
-</Link>
             {loading ? (
               <div>Chargement…</div>
             ) : !group ? (
@@ -856,10 +898,28 @@ export default function CoachGroupEditPage() {
                             .map((row) => {
                               const p = row.profiles ?? null;
                               return (
-                                <div key={row.id} style={lightRowCardStyle}>
+                                <div
+                                  key={row.id}
+                                  style={{ ...lightRowCardStyle, cursor: "pointer" }}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() =>
+                                    router.push(
+                                      `/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`
+                                    )
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      router.push(
+                                        `/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`
+                                      );
+                                    }
+                                  }}
+                                >
                                   <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                     <div style={avatarBoxStyle} aria-hidden="true">
-                                      {initials(p)}
+                                      {avatarNode(p)}
                                     </div>
                                     <div style={{ minWidth: 0 }}>
                                       <div style={{ fontWeight: 950 }} className="truncate">
@@ -875,7 +935,10 @@ export default function CoachGroupEditPage() {
                                     <button
                                       type="button"
                                       className="btn btn-danger soft"
-                                      onClick={() => removePlayerFromGroup(row.id)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removePlayerFromGroup(row.id);
+                                      }}
                                       disabled={busy}
                                       style={{ padding: "10px 12px" }}
                                       aria-label="Retirer joueur"
@@ -902,12 +965,12 @@ export default function CoachGroupEditPage() {
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Le <b>Head coach</b> ne peut pas être retiré. Les assistants sont <b>uniquement</b> des profils{" "}
+                      Le <b>Head coach</b> ne peut pas être retiré. Les coachs supplémentaires sont <b>uniquement</b> des profils{" "}
                       <b>coach</b>.
                     </div>
 
                     <SearchSelect
-                      label="Ajouter un assistant coach"
+                      label="Ajouter un coach"
                       placeholder="Tape un nom…"
                       items={coachCandidates}
                       disabled={busy}
@@ -930,30 +993,30 @@ export default function CoachGroupEditPage() {
                               <div key={row.id} style={lightRowCardStyle}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                   <div style={avatarBoxStyle} aria-hidden="true">
-                                    {initials(p)}
+                                    {avatarNode(p)}
                                   </div>
                                   <div style={{ minWidth: 0 }}>
                                     <div style={{ fontWeight: 950 }} className="truncate">
                                       {fullName(p)}
                                     </div>
-                                    <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                      {row.is_head ? "Head coach" : "Assistant coach"}
+                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
+                                      {row.is_head ? "Head coach" : "Coach supplémentaire"}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
 
                                 {row.is_head ? (
                                   <span className="pill-soft">Head</span>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    className="btn btn-danger soft"
-                                    onClick={() => removeCoachFromGroup(row)}
-                                    disabled={busy}
-                                    style={{ padding: "10px 12px" }}
-                                    aria-label="Retirer assistant"
-                                    title="Retirer"
-                                  >
+                                    <button
+                                      type="button"
+                                      className="btn btn-danger soft"
+                                      onClick={() => removeCoachFromGroup(row)}
+                                      disabled={busy}
+                                      style={{ padding: "10px 12px" }}
+                                      aria-label="Retirer coach"
+                                      title="Retirer"
+                                    >
                                     <Trash2 size={18} />
                                   </button>
                                 )}
@@ -963,6 +1026,40 @@ export default function CoachGroupEditPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* PLANNING */}
+                <div className="glass-card" style={{ padding: 14 }}>
+                  <div className="card-title">Planification des entraînements</div>
+
+                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <span className="pill-soft">À venir: {planningSummary.upcomingCount}</span>
+                      <span className="pill-soft">Planifiés: {planningSummary.totalScheduled}</span>
+                      <span className="pill-soft">Récurrents: {planningSummary.recurringCount}</span>
+                    </div>
+
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                      {planningSummary.nextStartsAt
+                        ? `Prochain entraînement: ${new Intl.DateTimeFormat("fr-CH", {
+                            weekday: "short",
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }).format(new Date(planningSummary.nextStartsAt))}`
+                        : "Aucun entraînement à venir."}
+                    </div>
+
+                    <Link
+                      className="cta-green cta-green-inline"
+                      href={`/coach/groups/${groupId}/planning`}
+                      style={{ width: "100%" }}
+                    >
+                      Planification
+                    </Link>
                   </div>
                 </div>
 

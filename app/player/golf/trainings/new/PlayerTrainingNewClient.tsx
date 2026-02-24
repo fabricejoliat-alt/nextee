@@ -31,7 +31,7 @@ type ProfileLite = { id: string; first_name: string | null; last_name: string | 
 type CoachOption = {
   id: string;
   label: string;
-  roleLabel: "Coach" | "Assistant";
+  roleLabel: "Coach" | "Coach supplémentaire";
   isHead: boolean;
 };
 
@@ -173,7 +173,7 @@ export default function PlayerTrainingNewPage() {
 
     const lines: string[] = [];
     if (headNames.length > 0) lines.push(`Coach : ${headNames.join(", ")}`);
-    if (assistNames.length > 0) lines.push(`Assistants : ${assistNames.join(", ")}`);
+    if (assistNames.length > 0) lines.push(`Coachs supplémentaires : ${assistNames.join(", ")}`);
     return lines.join(" • ");
   }, [linkedEvent, coachOptions]);
 
@@ -194,7 +194,7 @@ export default function PlayerTrainingNewPage() {
       const assists = coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter((x) => x && x !== "—");
       const parts: string[] = [];
       if (heads.length) parts.push(`Coach: ${heads.join(", ")}`);
-      if (assists.length) parts.push(`Assistants: ${assists.join(", ")}`);
+      if (assists.length) parts.push(`Coachs supplémentaires: ${assists.join(", ")}`);
       return parts.length ? parts.join(" • ") : null;
     }
 
@@ -344,17 +344,17 @@ export default function PlayerTrainingNewPage() {
   // 5) Build options (head first)
   const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
 
-  return sorted.map((id) => {
-    const p = byId[id];
-    const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
-    const isHead = Boolean(isHeadById[id]);
-    return {
-      id,
-      label,
-      isHead,
-      roleLabel: isHead ? "Coach" : "Assistant",
-    };
-  });
+    return sorted.map((id) => {
+      const p = byId[id];
+      const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
+      const isHead = Boolean(isHeadById[id]);
+      return {
+        id,
+        label,
+        isHead,
+        roleLabel: isHead ? "Coach" : "Coach supplémentaire",
+      };
+    });
 }
 
   async function loadCoachOptionsForNonPlannedClub(clubId: string): Promise<CoachOption[]> {
@@ -855,7 +855,7 @@ export default function PlayerTrainingNewPage() {
                   )}
 
                   {/* ✅ Coach section:
-                      - Planned: read-only display head coach + assistants
+                      - Planned: read-only display head coach + coachs supplémentaires
                       - Non-planned club: checkbox list
                       - Private/Individual: nothing
                   */}
@@ -888,7 +888,7 @@ export default function PlayerTrainingNewPage() {
                             <div className="hr-soft" style={{ margin: "2px 0" }} />
 
                             <div style={{ display: "grid", gap: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Assistants</div>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Coachs supplémentaires</div>
                               <div style={{ fontSize: 13 }}>
                                 {coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter(Boolean).join(", ") || "—"}
                               </div>

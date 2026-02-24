@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { Inter, Inter_Tight } from "next/font/google";
+import { IBM_Plex_Sans, Inter, Inter_Tight } from "next/font/google";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -12,6 +12,13 @@ const interTight = Inter_Tight({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-inter-tight",
+});
+
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-ibm-plex-sans",
+  weight: ["400", "500", "600", "700"],
 });
 
 /**
@@ -28,7 +35,10 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr" className={`${inter.className} ${inter.variable} ${interTight.variable}`}>
+    <html
+      lang="fr"
+      className={`${inter.className} ${inter.variable} ${interTight.variable} ${ibmPlexSans.variable}`}
+    >
       <body>{children}</body>
     </html>
   );

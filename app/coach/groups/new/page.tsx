@@ -42,6 +42,19 @@ function initials(p?: ProfileLite | null) {
   return (fi + li) || "👤";
 }
 
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
 export default function CoachGroupNewPage() {
   const router = useRouter();
 
@@ -343,7 +356,7 @@ async function handleCreate(e: React.FormEvent) {
       is_head: false,
     }));
     const aRes = await supabase.from("coach_group_coaches").insert(rows);
-    if (aRes.error) setError(`Groupe créé, mais erreur ajout assistants: ${aRes.error.message}`);
+    if (aRes.error) setError(`Groupe créé, mais erreur ajout coachs supplémentaires: ${aRes.error.message}`);
   }
 
   // ✅ categories (optionnel)
@@ -557,7 +570,7 @@ async function handleCreate(e: React.FormEvent) {
                             <div key={p.id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {initials(p)}
+                                  {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
@@ -601,7 +614,7 @@ async function handleCreate(e: React.FormEvent) {
                             <div key={p.id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {initials(p)}
+                                  {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
@@ -647,7 +660,7 @@ async function handleCreate(e: React.FormEvent) {
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Tu es automatiquement <b>Head Coach</b>. Ajoute des assistants (coach/manager).
+                      Tu es automatiquement <b>Head Coach</b>. Ajoute des coachs supplémentaires (coach/manager).
                     </div>
 
                     <div style={{ position: "relative" }}>
@@ -665,17 +678,17 @@ async function handleCreate(e: React.FormEvent) {
                         value={queryCoaches}
                         onChange={(e) => setQueryCoaches(e.target.value)}
                         disabled={busy}
-                        placeholder="Rechercher un assistant (nom)…"
+                        placeholder="Rechercher un coach (nom)…"
                         style={{ paddingLeft: 44 }}
                       />
                     </div>
 
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Assistants ({selectedCoachesList.length})</div>
+                      <div className="pill-soft">Coachs supplémentaires ({selectedCoachesList.length})</div>
 
                       {selectedCoachesList.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun assistant sélectionné.
+                          Aucun coach supplémentaire sélectionné.
                         </div>
                       ) : (
                         <div style={{ display: "grid", gap: 10 }}>
@@ -683,12 +696,12 @@ async function handleCreate(e: React.FormEvent) {
                             <div key={p.id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {initials(p)}
+                                  {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
                                   <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Assistant coach
+                                    Coach supplémentaire
                                   </div>
                                 </div>
                               </div>
@@ -699,7 +712,7 @@ async function handleCreate(e: React.FormEvent) {
                                 onClick={() => toggleSelected(setSelectedCoaches, p)}
                                 disabled={busy}
                                 style={{ padding: "10px 12px" }}
-                                aria-label="Retirer assistant"
+                                aria-label="Retirer coach"
                                 title="Retirer"
                               >
                                 <Trash2 size={18} />
@@ -711,7 +724,7 @@ async function handleCreate(e: React.FormEvent) {
                     </div>
 
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Ajouter un assistant ({candidatesCoaches.length})</div>
+                      <div className="pill-soft">Ajouter un coach ({candidatesCoaches.length})</div>
 
                       {clubId && clubMembersCoaches.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -727,12 +740,12 @@ async function handleCreate(e: React.FormEvent) {
                             <div key={p.id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {initials(p)}
+                                  {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
                                   <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Ajouter comme assistant
+                                    Ajouter comme coach
                                   </div>
                                 </div>
                               </div>
@@ -751,7 +764,7 @@ async function handleCreate(e: React.FormEvent) {
                                   background: "rgba(255,255,255,0.70)",
                                   border: "1px solid rgba(0,0,0,0.08)",
                                 }}
-                                aria-label="Ajouter assistant"
+                                aria-label="Ajouter coach"
                                 title="Ajouter"
                               >
                                 <PlusCircle size={18} />
@@ -766,20 +779,15 @@ async function handleCreate(e: React.FormEvent) {
 
                 {/* ACTIONS */}
                 <button
-                  className="btn"
+                  className="cta-green cta-green-inline"
                   type="submit"
                   disabled={!canSave || busy}
-                  style={{
-                    width: "100%",
-                    background: "var(--green-dark)",
-                    borderColor: "var(--green-dark)",
-                    color: "#fff",
-                  }}
+                  style={{ width: "100%" }}
                 >
                   {busy ? "Création…" : "Créer le groupe"}
                 </button>
 
-                <Link href="/coach/groups" className="glass-btn" style={{ width: "100%", textAlign: "center" }}>
+                <Link href="/coach/groups" className="btn" style={{ width: "100%", textAlign: "center" }}>
                   Annuler
                 </Link>
               </form>

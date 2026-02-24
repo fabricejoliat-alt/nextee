@@ -316,6 +316,10 @@ export default function EditRoundWizardPage() {
   const hole = holes[holeIdx];
   const isLastHole = holeIdx === 17;
   const fairwayChosen = hole?.fairway_hit !== null;
+  const isPar3 = hole?.par === 3;
+  const missLabel = isPar3 ? "Miss Green" : "Miss Fairway";
+  const hitLabel = isPar3 ? "Hit Green" : "Hit Fairway";
+  const chooseLabel = isPar3 ? "Hit ou Miss Green" : "Hit ou Miss Fairway";
 
   function commitPatch(patch: Partial<Hole>) {
     if (!hole) return;
@@ -329,7 +333,7 @@ export default function EditRoundWizardPage() {
 
   async function goPrevHole() {
     if (!fairwayChosen) {
-      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      setUxError(`Choisis ${chooseLabel} pour continuer.`);
       return;
     }
     await flushSave();
@@ -338,7 +342,7 @@ export default function EditRoundWizardPage() {
 
   async function goNextHole() {
     if (!fairwayChosen) {
-      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      setUxError(`Choisis ${chooseLabel} pour continuer.`);
       return;
     }
     await flushSave();
@@ -347,7 +351,7 @@ export default function EditRoundWizardPage() {
 
   async function finishAndGoScorecard() {
     if (!fairwayChosen) {
-      setUxError("Choisis Hit ou Miss Fairway pour continuer.");
+      setUxError(`Choisis ${chooseLabel} pour continuer.`);
       return;
     }
     await flushSave();
@@ -532,7 +536,7 @@ export default function EditRoundWizardPage() {
 
                 {/* FAIRWAY */}
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>Fairway</div>
+                  <div style={fieldLabelStyle}>{isPar3 ? "Green" : "Fairway"}</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <button
@@ -551,7 +555,7 @@ export default function EditRoundWizardPage() {
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <XCircle size={18} />
-                        Miss Fairway
+                        {missLabel}
                       </span>
                     </button>
 
@@ -571,7 +575,7 @@ export default function EditRoundWizardPage() {
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <CheckCircle2 size={18} />
-                        Hit Fairway
+                        {hitLabel}
                       </span>
                     </button>
                   </div>

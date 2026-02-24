@@ -87,6 +87,19 @@ function initials(p?: { first_name: string | null; last_name: string | null } | 
   return (fi + li) || "👤";
 }
 
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
 function weekdayFromDate(d: Date) {
   // JS: 0=Sun..6=Sat
   return d.getDay();
@@ -920,7 +933,7 @@ export default function CoachEventEditPage() {
                           <div key={p.id} style={lightRowCardStyle}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                               <div style={avatarBoxStyle} aria-hidden="true">
-                                {initials(p)}
+                                {avatarNode(p)}
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
@@ -959,7 +972,7 @@ export default function CoachEventEditPage() {
                           <div key={p.id} style={lightRowCardStyle}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                               <div style={avatarBoxStyle} aria-hidden="true">
-                                {initials(p)}
+                                {avatarNode(p)}
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 950 }}>{fullName(p)}</div>

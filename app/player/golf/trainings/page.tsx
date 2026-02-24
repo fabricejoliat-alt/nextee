@@ -41,7 +41,7 @@ type PlannedEventRow = {
   status: "scheduled" | "cancelled";
 };
 
-type FilterMode = "to_evaluate" | "planned" | "past";
+type FilterMode = "to_complete" | "planned" | "past";
 
 type DisplayItem =
   | { kind: "session"; key: string; dateIso: string; session: SessionRow }
@@ -143,7 +143,36 @@ export default function TrainingsListPage() {
 
   const nowTs = Date.now();
 
-  const evaluatedEventIds = useMemo(() => {
+  const pastSessions = useMemo(() => {
+    return sessions
+      .filter((s) => new Date(s.start_at).getTime() < nowTs)
+      .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
+  }, [sessions, nowTs]);
+
+  const completeSessionIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions) {
+      const postes = itemsBySessionId[s.id] ?? [];
+      const hasPoste = postes.some((p) => (p.minutes ?? 0) > 0);
+      const hasSensations =
+        typeof s.motivation === "number" &&
+        typeof s.difficulty === "number" &&
+        typeof s.satisfaction === "number";
+      if (hasPoste && hasSensations) set.add(s.id);
+    }
+    return set;
+  }, [sessions, itemsBySessionId]);
+
+  const completedEventIds = useMemo(() => {
+    return new Set(
+      sessions
+        .filter((s) => completeSessionIds.has(s.id))
+        .map((s) => s.club_event_id)
+        .filter((x): x is string => !!x)
+    );
+  }, [sessions, completeSessionIds]);
+
+  const eventIdsWithAnySession = useMemo(() => {
     return new Set(sessions.map((s) => s.club_event_id).filter((x): x is string => !!x));
   }, [sessions]);
 
@@ -151,43 +180,70 @@ export default function TrainingsListPage() {
     return attendeeEvents.filter((ev) => ev.status === "scheduled");
   }, [attendeeEvents]);
 
-  const eventsToEvaluate = useMemo(() => {
+  const eventsToComplete = useMemo(() => {
     return scheduledEvents
       .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
-      .filter((ev) => !evaluatedEventIds.has(ev.id))
+      .filter((ev) => !completedEventIds.has(ev.id))
+      .filter((ev) => !eventIdsWithAnySession.has(ev.id))
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
-  }, [scheduledEvents, nowTs, evaluatedEventIds]);
+  }, [scheduledEvents, nowTs, completedEventIds, eventIdsWithAnySession]);
 
   const plannedEvents = useMemo(() => {
     return scheduledEvents
       .filter((ev) => new Date(ev.starts_at).getTime() >= nowTs)
-      .filter((ev) => !evaluatedEventIds.has(ev.id))
+      .filter((ev) => !completedEventIds.has(ev.id))
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-  }, [scheduledEvents, nowTs, evaluatedEventIds]);
+  }, [scheduledEvents, nowTs, completedEventIds]);
 
-  const pastSessions = useMemo(() => {
+  const futureSessions = useMemo(() => {
     return sessions
-      .filter((s) => new Date(s.start_at).getTime() < nowTs)
-      .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
+      .filter((s) => new Date(s.start_at).getTime() >= nowTs)
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
   }, [sessions, nowTs]);
 
+  const incompletePastSessions = useMemo(() => {
+    return pastSessions.filter((s) => !completeSessionIds.has(s.id));
+  }, [pastSessions, completeSessionIds]);
+
   const displayItems = useMemo<DisplayItem[]>(() => {
-    if (filterMode === "to_evaluate") {
-      return eventsToEvaluate.map((event) => ({
+    if (filterMode === "to_complete") {
+      const incompleteSessionItems: DisplayItem[] = incompletePastSessions.map((session) => ({
+        kind: "session",
+        key: `session-${session.id}`,
+        dateIso: session.start_at,
+        session,
+      }));
+
+      const incompleteEventItems: DisplayItem[] = eventsToComplete.map((event) => ({
         kind: "event",
         key: `event-${event.id}`,
         dateIso: event.starts_at,
         event,
       }));
+
+      return [...incompleteSessionItems, ...incompleteEventItems].sort(
+        (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
+      );
     }
 
     if (filterMode === "planned") {
-      return plannedEvents.map((event) => ({
+      const plannedEventItems: DisplayItem[] = plannedEvents.map((event) => ({
         kind: "event",
         key: `event-${event.id}`,
         dateIso: event.starts_at,
         event,
       }));
+
+      const futureSessionItems: DisplayItem[] = futureSessions.map((session) => ({
+        kind: "session",
+        key: `session-${session.id}`,
+        dateIso: session.start_at,
+        session,
+      }));
+
+      return [...plannedEventItems, ...futureSessionItems].sort(
+        (a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()
+      );
     }
 
     const pastSessionItems: DisplayItem[] = pastSessions.map((session) => ({
@@ -197,7 +253,7 @@ export default function TrainingsListPage() {
       session,
     }));
 
-    const pastEventItems: DisplayItem[] = eventsToEvaluate.map((event) => ({
+    const pastEventItems: DisplayItem[] = eventsToComplete.map((event) => ({
       kind: "event",
       key: `event-${event.id}`,
       dateIso: event.starts_at,
@@ -207,11 +263,11 @@ export default function TrainingsListPage() {
     return [...pastSessionItems, ...pastEventItems].sort(
       (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
     );
-  }, [filterMode, eventsToEvaluate, plannedEvents, pastSessions]);
+  }, [filterMode, incompletePastSessions, eventsToComplete, plannedEvents, futureSessions, pastSessions]);
 
-  const toEvaluateCount = eventsToEvaluate.length;
-  const plannedCount = plannedEvents.length;
-  const pastCount = pastSessions.length + eventsToEvaluate.length;
+  const toCompleteCount = incompletePastSessions.length + eventsToComplete.length;
+  const plannedCount = plannedEvents.length + futureSessions.length;
+  const pastCount = pastSessions.length + eventsToComplete.length;
   const totalCount = displayItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -414,28 +470,28 @@ export default function TrainingsListPage() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => setFilterMode("to_evaluate")}
+                  onClick={() => setFilterMode("to_complete")}
                   disabled={loading}
                   style={{
                     width: "100%",
                     justifyContent: "flex-start",
-                    background: filterMode === "to_evaluate" ? "var(--green-dark)" : undefined,
-                    borderColor: filterMode === "to_evaluate" ? "var(--green-dark)" : undefined,
-                    color: filterMode === "to_evaluate" ? "#fff" : undefined,
-                    boxShadow: filterMode === "to_evaluate" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
+                    background: filterMode === "to_complete" ? "var(--green-dark)" : undefined,
+                    borderColor: filterMode === "to_complete" ? "var(--green-dark)" : undefined,
+                    color: filterMode === "to_complete" ? "#fff" : undefined,
+                    boxShadow: filterMode === "to_complete" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
                   }}
                 >
-                  Entraînements à évaluer{" "}
+                  Entraînements à compléter{" "}
                   <span
                     style={{
                       color:
-                        toEvaluateCount > 0 && filterMode !== "to_evaluate"
+                        toCompleteCount > 0 && filterMode !== "to_complete"
                           ? "#c62828"
                           : undefined,
                       fontWeight: 950,
                     }}
                   >
-                    ({toEvaluateCount})
+                    ({toCompleteCount})
                   </span>
                 </button>
 
@@ -495,7 +551,7 @@ export default function TrainingsListPage() {
                             <span className="pill-soft">{clubName}</span>
                             <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                               <CalendarClock size={14} />
-                              {isPlanned ? "Planifié" : "À évaluer"}
+                              {isPlanned ? "Planifié" : "À compléter"}
                             </span>
                             {e.location_text ? (
                               <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">

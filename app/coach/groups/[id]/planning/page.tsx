@@ -157,6 +157,19 @@ function initials(p?: { first_name: string | null; last_name: string | null } | 
   return fi + li || "👤";
 }
 
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
@@ -573,102 +586,54 @@ export default function CoachGroupPlanningPage() {
         {/* Create */}
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-                <Calendar size={16} />
-                Créer un entraînement
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Calendar size={16} />
+                  Créer un entraînement
+                </div>
+
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setMode("single")}
+                    disabled={busy}
+                    style={mode === "single" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                  >
+                    Unique
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setMode("series")}
+                    disabled={busy}
+                    style={mode === "series" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                  >
+                    <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                    Récurrent
+                  </button>
+                </div>
               </div>
 
-              <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setMode("single")}
-                  disabled={busy}
-                  style={mode === "single" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
-                >
-                  Unique
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setMode("series")}
-                  disabled={busy}
-                  style={mode === "series" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
-                >
-                  <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  Récurrent
-                </button>
-              </div>
-            </div>
-
-            <div className="hr-soft" />
-
-            {/* Core fields */}
-            {mode === "single" ? (
-              <div className="grid-2">
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Date</span>
-                  <input type="date" value={singleDate} onChange={(e) => updateSingleDate(e.target.value)} disabled={busy} />
-                </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Heure</span>
-                  <select value={singleTime} onChange={(e) => updateSingleTime(e.target.value)} disabled={busy}>
-                    {QUARTER_HOUR_OPTIONS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Durée</span>
-                  <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
-                    {DURATION_OPTIONS.map((m) => (
-                      <option key={m} value={m}>
-                        {m} min
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              {mode === "single" ? (
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Jour</span>
-                    <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                      <option value={1}>Lundi</option>
-                      <option value={2}>Mardi</option>
-                      <option value={3}>Mercredi</option>
-                      <option value={4}>Jeudi</option>
-                      <option value={5}>Vendredi</option>
-                      <option value={6}>Samedi</option>
-                      <option value={0}>Dimanche</option>
-                    </select>
+                    <span style={fieldLabelStyle}>Date</span>
+                    <input type="date" value={singleDate} onChange={(e) => updateSingleDate(e.target.value)} disabled={busy} />
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Heure</span>
-                    <input type="time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy} />
+                    <select value={singleTime} onChange={(e) => updateSingleTime(e.target.value)} disabled={busy}>
+                      {QUARTER_HOUR_OPTIONS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                </div>
 
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Du</span>
-                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Au</span>
-                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={busy} />
-                  </label>
-                </div>
-
-                <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>Durée</span>
                     <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
@@ -679,35 +644,80 @@ export default function CoachGroupPlanningPage() {
                       ))}
                     </select>
                   </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Rythme</span>
-                    <select value={intervalWeeks} onChange={(e) => setIntervalWeeks(Number(e.target.value))} disabled={busy}>
-                      {[1, 2, 3, 4].map((w) => (
-                        <option key={w} value={w}>
-                          Toutes les {w} semaine{w > 1 ? "s" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                 </div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Jour</span>
+                      <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
+                        <option value={1}>Lundi</option>
+                        <option value={2}>Mardi</option>
+                        <option value={3}>Mercredi</option>
+                        <option value={4}>Jeudi</option>
+                        <option value={5}>Vendredi</option>
+                        <option value={6}>Samedi</option>
+                        <option value={0}>Dimanche</option>
+                      </select>
+                    </label>
 
-                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                  ⚠️ On matérialise les occurrences (max 80) pour que ce soit simple à éditer/supprimer par événement.
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Heure</span>
+                      <input type="time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy} />
+                    </label>
+                  </div>
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Du</span>
+                      <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Au</span>
+                      <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={busy} />
+                    </label>
+                  </div>
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Durée</span>
+                      <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
+                        {DURATION_OPTIONS.map((m) => (
+                          <option key={m} value={m}>
+                            {m} min
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Rythme</span>
+                      <select value={intervalWeeks} onChange={(e) => setIntervalWeeks(Number(e.target.value))} disabled={busy}>
+                        {[1, 2, 3, 4].map((w) => (
+                          <option key={w} value={w}>
+                            Toutes les {w} semaine{w > 1 ? "s" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    ⚠️ On matérialise les occurrences (max 80) pour que ce soit simple à éditer/supprimer par événement.
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={fieldLabelStyle}>Lieu (optionnel)</span>
-              <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} placeholder="Ex: Practice / putting / parcours" />
-            </label>
-
-            <div className="hr-soft" />
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} placeholder="Ex: Practice / putting / parcours" />
+              </label>
+            </div>
 
             {/* Select coaches */}
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 8 }}>
+              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <Users size={16} /> Coachs
               </div>
 
@@ -735,8 +745,8 @@ export default function CoachGroupPlanningPage() {
             </div>
 
             {/* Select players */}
-            <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <Users size={16} /> Joueurs attendus
               </div>
 
@@ -798,7 +808,7 @@ export default function CoachGroupPlanningPage() {
                       <div key={p.id} style={lightRowCardStyle}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                           <div style={avatarBoxStyle} aria-hidden="true">
-                            {initials(p)}
+                            {avatarNode(p)}
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
@@ -837,7 +847,7 @@ export default function CoachGroupPlanningPage() {
                       <div key={p.id} style={lightRowCardStyle}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                           <div style={avatarBoxStyle} aria-hidden="true">
-                            {initials(p)}
+                            {avatarNode(p)}
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
@@ -875,19 +885,10 @@ export default function CoachGroupPlanningPage() {
 
             <button
               type="button"
-              className="btn"
+              className="cta-green cta-green-inline"
               disabled={busy || loading || !group}
               onClick={() => (mode === "single" ? createSingleEvent() : createSeries())}
-              style={{
-                width: "100%",
-                background: "var(--green-dark)",
-                borderColor: "var(--green-dark)",
-                color: "#fff",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-              }}
+              style={{ width: "100%", justifyContent: "center" }}
             >
               <PlusCircle size={18} />
               {busy ? "Enregistrement…" : mode === "single" ? "Créer l’entraînement" : "Créer la récurrence"}
@@ -900,7 +901,7 @@ export default function CoachGroupPlanningPage() {
           <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
               <SlidersHorizontal size={16} />
-              Filtrer les entraînements
+              Filtrer les entraînements existants
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1022,12 +1023,6 @@ export default function CoachGroupPlanningPage() {
           </div>
         </div>
 
-        {/* Note */}
-        <div className="glass-section" style={{ marginTop: 12 }}>
-          <div className="glass-card" style={{ color: "rgba(0,0,0,0.62)", fontWeight: 800, fontSize: 12 }}>
-            👉 Le coach planifie uniquement la date/lieu/coachs/joueurs attendus. Le joueur saisit le contenu (postes + sensations) après, comme aujourd’hui.
-          </div>
-        </div>
       </div>
     </div>
   );

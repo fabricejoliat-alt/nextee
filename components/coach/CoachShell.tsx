@@ -6,7 +6,7 @@ export default function CoachShell({ children }: { children: React.ReactNode }) 
   return (
     <>
       <CoachHeader />
-      <main className="app-shell">{children}</main>
+      <main className="app-shell coach-shell">{children}</main>
       {/* ✅ pas de footer */}
     </>
   );

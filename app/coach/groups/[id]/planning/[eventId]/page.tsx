@@ -59,6 +59,19 @@ function initials(p?: { first_name: string | null; last_name: string | null } | 
   return (fi + li) || "👤";
 }
 
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
 const avatarBoxStyle: React.CSSProperties = {
   width: 42,
   height: 42,
@@ -267,7 +280,7 @@ export default function CoachEventDetailPage() {
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                               <div style={avatarBoxStyle} aria-hidden="true">
-                                {initials(p)}
+                                {avatarNode(p)}
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 950 }} className="truncate">

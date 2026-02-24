@@ -45,7 +45,7 @@ a { color: inherit; text-decoration: none; }
 :root{
   --bg: #ffffff;
   --text: #111827;
-  --muted: #6b7280;
+  --muted: #2f343b;
   --border: #e5e7eb;
   --card: #ffffff;
   --hover: #f3f4f6;
@@ -904,7 +904,7 @@ input[type="radio"]{
 .muted-uc{
   font-size: 11px;
   font-weight: 900;
-  opacity: 0.70;
+  opacity: 0.86;
   letter-spacing: 0.7px;
   text-transform: uppercase;
 }
@@ -920,7 +920,7 @@ input[type="radio"]{
   font-size: 11px;
   font-weight: 900;
   margin-left: 6px;
-  opacity: 0.65;
+  opacity: 0.82;
 }
 
 .hr-soft{
@@ -938,7 +938,7 @@ input[type="radio"]{
   border-radius: 999px;
   font-size: 12px;
   font-weight: 900;
-  color: rgba(0,0,0,0.75);
+  color: rgba(0,0,0,0.88);
 }
 
 /* Bars */
@@ -948,7 +948,7 @@ input[type="radio"]{
   font-weight: 900;
   font-size: 12px;
   margin-bottom: 6px;
-  color: rgba(0,0,0,0.70);
+  color: rgba(0,0,0,0.84);
 }
 
 .bar{
@@ -973,7 +973,7 @@ input[type="radio"]{
   font-weight: 900;
   font-size: 12px;
   margin-bottom: 6px;
-  color: rgba(0,0,0,0.70);
+  color: rgba(0,0,0,0.84);
 }
 
 .sense-val{ font-weight: 950; }
@@ -1036,6 +1036,12 @@ input[type="radio"]{
   align-items: center;
   justify-content: center;
   gap: 8px;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
 
   margin-top: 12px;
   padding: 14px;
@@ -1066,6 +1072,15 @@ input[type="radio"]{
   box-shadow:
     0 6px 14px rgba(0,0,0,0.35),
     inset 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.cta-green:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow:
+    0 8px 16px rgba(0,0,0,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.1);
 }
 
 /* =========================================================
@@ -1103,7 +1118,7 @@ input[type="radio"]{
 
 .market-meta{
   font-size: 11px;
-  opacity: 0.70;
+  opacity: 0.88;
   font-weight: 800;
 }
 
@@ -1125,7 +1140,7 @@ input[type="radio"]{
 
 .market-seller{
   min-width: 0;
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .market-price{
@@ -1148,7 +1163,7 @@ input[type="radio"]{
 }
 
 .marketplace-empty{
-  color: rgba(0,0,0,0.55);
+  color: rgba(0,0,0,0.78);
   font-weight: 800;
 }
 
@@ -1215,7 +1230,7 @@ input[type="radio"]{
 .marketplace-meta{
   font-size: 12px;
   font-weight: 700;
-  color: rgba(0,0,0,0.55);
+  color: rgba(0,0,0,0.78);
 }
 
 .marketplace-price-row{
@@ -1302,6 +1317,142 @@ input[type="radio"]{
 /* Scroll margin helper (si tu l'utilises) */
 .marketplace-list-top{
   scroll-margin-top: calc(var(--header-h) + var(--safe-top) + 20px);
+}
+
+/* =========================================================
+   12) COACH TYPO TUNING (plus compact, plus lisible data)
+   ========================================================= */
+
+.coach-shell{
+  font-family: var(--font-ibm-plex-sans), var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.coach-shell .section-title{
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.55px;
+}
+
+.coach-shell .card-title{
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.55px;
+  color: var(--green-dark);
+}
+
+.coach-shell .marketplace-item-title{
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+.coach-shell .marketplace-price-pill{
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.coach-shell .pill-soft{
+  font-size: 11px;
+  font-weight: 850;
+  padding: 5px 10px;
+}
+
+.coach-shell .btn{
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  height: 36px;
+}
+
+.coach-shell .cta-green{
+  background: var(--green-dark) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+}
+
+.coach-shell .cta-green:hover{
+  background: #2f4035 !important;
+}
+
+.coach-shell .cta-green:active{
+  background: #27362d !important;
+}
+
+.coach-shell .cta-green:disabled{
+  opacity: 1;
+  background: var(--green-dark) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+}
+
+/* Quand une card parent contient déjà des cards internes, on enlève son "cadre". */
+.coach-shell .glass-section > .glass-card:has(.glass-card){
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+
+/* =========================================================
+   12b) PLAYER TYPO TUNING (aligné coach)
+   ========================================================= */
+
+.player-shell{
+  font-family: var(--font-ibm-plex-sans), var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.player-shell .section-title{
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.55px;
+}
+
+.player-shell .card-title{
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.55px;
+  color: var(--green-dark);
+}
+
+.player-shell .marketplace-item-title{
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+.player-shell .marketplace-price-pill{
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.player-shell .pill-soft{
+  font-size: 11px;
+  font-weight: 850;
+  padding: 5px 10px;
+}
+
+.player-shell .btn{
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  height: 36px;
+}
+
+.player-shell .cta-green{
+  background: var(--green-dark) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+}
+
+.player-shell .cta-green:hover{
+  background: #2f4035 !important;
+}
+
+.player-shell .cta-green:active{
+  background: #27362d !important;
+}
+
+.player-shell .cta-green:disabled{
+  opacity: 1;
+  background: var(--green-dark) !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
 }
 
 /* =========================================================
