@@ -27,7 +27,7 @@ type GroupCategoryRow = { group_id: string; category: string };
 type GroupPlayerRow = {
   group_id: string;
   player_user_id: string;
-  profiles?: ProfileMini | null;
+  profiles?: ProfileMini | ProfileMini[] | null;
 };
 type ProfileMini = {
   id: string;
@@ -225,7 +225,7 @@ export default function CoachGroupsPage() {
       const byGroup: Record<string, ProfileMini[]> = {};
       (players as GroupPlayerRow[] | null)?.forEach((p) => {
         counts[p.group_id] = (counts[p.group_id] ?? 0) + 1;
-        const prof = p.profiles ?? null;
+        const prof = Array.isArray(p.profiles) ? (p.profiles[0] ?? null) : (p.profiles ?? null);
         if (!byGroup[p.group_id]) byGroup[p.group_id] = [];
         byGroup[p.group_id].push({
           id: prof?.id ?? p.player_user_id,
