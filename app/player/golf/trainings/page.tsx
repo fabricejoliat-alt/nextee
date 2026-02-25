@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Flame, Mountain, Smile, SlidersHorizontal, CalendarClock, Pencil } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionRow = {
   id: string;
@@ -63,31 +64,14 @@ function fmtDateTime(iso: string) {
 
 function typeLabel(t: SessionRow["session_type"]) {
   if (t === "club") return "Club";
-  if (t === "private") return "Privé";
-  return "Individuel";
+  if (t === "private") return "Private";
+  return "Individual";
 }
 
 function uuidOrNull(v: any) {
   const s = String(v ?? "").trim();
   if (!s || s === "undefined" || s === "null") return null;
   return s;
-}
-
-function categoryLabel(cat: string) {
-  const map: Record<string, string> = {
-    warmup_mobility: "Échauffement / mobilité",
-    long_game: "Long jeu",
-    putting: "Putting",
-    wedging: "Wedging",
-    pitching: "Pitching",
-    chipping: "Chipping",
-    bunker: "Bunker",
-    course: "Parcours",
-    mental: "Mental",
-    fitness: "Fitness",
-    other: "Autre",
-  };
-  return map[cat] ?? cat;
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -127,6 +111,7 @@ function RatingBar({
 }
 
 export default function TrainingsListPage() {
+  const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,6 +125,23 @@ export default function TrainingsListPage() {
 
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string>("");
+
+  const categoryLabel = (cat: string) => {
+    const map: Record<string, string> = {
+      warmup_mobility: t("cat.warmup_mobility"),
+      long_game: t("cat.long_game"),
+      putting: t("cat.putting"),
+      wedging: t("cat.wedging"),
+      pitching: t("cat.pitching"),
+      chipping: t("cat.chipping"),
+      bunker: t("cat.bunker"),
+      course: t("cat.course"),
+      mental: t("cat.mental"),
+      fitness: t("cat.fitness"),
+      other: t("cat.other"),
+    };
+    return map[cat] ?? cat;
+  };
 
   const nowTs = Date.now();
 
@@ -283,7 +285,7 @@ export default function TrainingsListPage() {
 
     try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("Session invalide.");
+      if (userErr || !userRes.user) throw new Error(t("trainings.error.invalidSession"));
       const uid = userRes.user.id;
 
       // all player-owned sessions (local filtering + pagination by mode)
@@ -338,7 +340,7 @@ export default function TrainingsListPage() {
         if (!cRes.error) {
           const map: Record<string, string> = {};
           (cRes.data ?? []).forEach((c: ClubRow) => {
-            map[c.id] = (c.name ?? "Club") as string;
+            map[c.id] = (c.name ?? t("common.club")) as string;
           });
           setClubNameById(map);
         } else {
@@ -374,7 +376,7 @@ export default function TrainingsListPage() {
 
       setLoading(false);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Erreur chargement.";
+      const message = e instanceof Error ? e.message : t("common.errorLoading");
       setError(message);
       setSessions([]);
       setAttendeeEvents([]);
@@ -397,7 +399,7 @@ export default function TrainingsListPage() {
   }, [filterMode]);
 
   async function handleDelete(sessionId: string) {
-    const ok = window.confirm("Supprimer cet entraînement ? Cette action est définitive.");
+    const ok = window.confirm(t("trainings.confirmDelete"));
     if (!ok) return;
 
     setDeletingId(sessionId);
@@ -428,15 +430,15 @@ export default function TrainingsListPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              Mes entraînements
+              {t("trainings.title")}
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings/new">
-                Ajouter
+                {t("common.add")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player">
-                Dashboard
+                {t("common.dashboard")}
               </Link>
             </div>
           </div>
@@ -446,7 +448,7 @@ export default function TrainingsListPage() {
             <div style={{ display: "grid", gap: 12 }}>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 <SlidersHorizontal size={16} />
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>Affichage</div>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>{t("trainings.display")}</div>
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
@@ -464,7 +466,7 @@ export default function TrainingsListPage() {
                     boxShadow: filterMode === "past" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
                   }}
                 >
-                  Entraînements effectués ({pastCount})
+                  {t("trainings.done")} ({pastCount})
                 </button>
 
                 <button
@@ -481,7 +483,7 @@ export default function TrainingsListPage() {
                     boxShadow: filterMode === "to_complete" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
                   }}
                 >
-                  Entraînements à compléter{" "}
+                  {t("trainings.toComplete")}{" "}
                   <span
                     style={{
                       color:
@@ -509,7 +511,7 @@ export default function TrainingsListPage() {
                     boxShadow: filterMode === "planned" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
                   }}
                 >
-                  Entraînements planifiés ({plannedCount})
+                  {t("trainings.planned")} ({plannedCount})
                 </button>
               </div>
             </div>
@@ -522,15 +524,15 @@ export default function TrainingsListPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : totalCount === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun entraînement planifié.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("trainings.nonePlanned")}</div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pagedItems.map((item) => {
                   if (item.kind === "event") {
                     const e = item.event;
-                    const clubName = clubNameById[e.club_id] ?? "Club";
+                    const clubName = clubNameById[e.club_id] ?? t("common.club");
                     const isPlanned = new Date(e.starts_at).getTime() >= nowTs;
 
                     return (
@@ -542,7 +544,14 @@ export default function TrainingsListPage() {
                         <div style={{ display: "grid", gap: 10 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {fmtDateTime(e.starts_at)}
+                              {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+                                weekday: "short",
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }).format(new Date(e.starts_at))}
                             </div>
                             <div className="marketplace-price-pill">{e.duration_minutes} min</div>
                           </div>
@@ -551,7 +560,7 @@ export default function TrainingsListPage() {
                             <span className="pill-soft">{clubName}</span>
                             <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                               <CalendarClock size={14} />
-                              {isPlanned ? "Planifié" : "À compléter"}
+                              {isPlanned ? t("trainings.statusPlanned") : t("trainings.statusToComplete")}
                             </span>
                             {e.location_text ? (
                               <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">
@@ -563,7 +572,7 @@ export default function TrainingsListPage() {
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
                               <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                              Saisir
+                              {t("trainings.enter")}
                             </Link>
                           </div>
                         </div>
@@ -572,7 +581,7 @@ export default function TrainingsListPage() {
                   }
 
                   const s = item.session;
-                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? "Club" : null;
+                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
                   const deleting = deletingId === s.id;
                   const postes = itemsBySessionId[s.id] ?? [];
 
@@ -582,9 +591,16 @@ export default function TrainingsListPage() {
                         <div style={{ display: "grid", gap: 10 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {fmtDateTime(s.start_at)}
+                              {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+                                weekday: "short",
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }).format(new Date(s.start_at))}
                             </div>
-                            <div className="marketplace-price-pill">{(s.total_minutes ?? 0) > 0 ? `${s.total_minutes} min` : "—"}</div>
+                            <div className="marketplace-price-pill">{(s.total_minutes ?? 0) > 0 ? `${s.total_minutes} ${t("common.min")}` : "—"}</div>
                           </div>
 
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -594,7 +610,7 @@ export default function TrainingsListPage() {
                               <span className="pill-soft">{typeLabel(s.session_type)}</span>
                             )}
 
-                            {s.club_event_id ? <span className="pill-soft">Coach</span> : null}
+                            {s.club_event_id ? <span className="pill-soft">{t("common.coach")}</span> : null}
 
                             {s.location_text && (
                               <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
@@ -622,18 +638,18 @@ export default function TrainingsListPage() {
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
                           <div style={{ display: "grid", gap: 10 }}>
-                            <RatingBar icon={<Flame size={16} />} label="Motivation" value={s.motivation} />
-                            <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={s.difficulty} />
-                            <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={s.satisfaction} />
+                            <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={s.motivation} />
+                            <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={s.difficulty} />
+                            <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={s.satisfaction} />
                           </div>
 
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <Link className="btn" href={`/player/golf/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
-                              Voir
+                              {t("common.view")}
                             </Link>
 
                             <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
-                              Modifier
+                              {t("common.edit")}
                             </Link>
 
                             <button
@@ -645,9 +661,9 @@ export default function TrainingsListPage() {
                                 e.stopPropagation();
                                 handleDelete(s.id);
                               }}
-                              title="Supprimer cet entraînement"
+                              title={t("trainings.deleteThis")}
                             >
-                              {deleting ? "Suppression…" : "Supprimer"}
+                              {deleting ? t("common.deleting") : t("common.delete")}
                             </button>
                           </div>
                         </div>
@@ -663,15 +679,15 @@ export default function TrainingsListPage() {
             <div className="glass-section">
               <div className="marketplace-pagination">
                 <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
-                  ← Précédent
+                  {t("common.prev")}
                 </button>
 
                 <div className="marketplace-page-indicator">
-                  Page {page} / {totalPages}
+                  {t("common.page")} {page} / {totalPages}
                 </div>
 
                 <button className="btn" type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={loading || page >= totalPages}>
-                  Suivant →
+                  {t("common.next")}
                 </button>
               </div>
             </div>

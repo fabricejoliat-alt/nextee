@@ -30,19 +30,22 @@ export async function POST(req: NextRequest) {
     const userId = String(body.userId || "").trim();
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
 
+    const nextRole = typeof body.role === "string" ? body.role.trim().toLowerCase() : "";
+    const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);
+    if (nextRole && !allowedRoles.has(nextRole)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    const nextUsername =
+      typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+
     // Update profile fields
     const profilePatch: any = {
-  first_name: (body.first_name ?? null),
-  last_name: (body.last_name ?? null),
-  birth_date: (body.birth_date ?? null),
-  nationality: (body.nationality ?? null),
-  sex: (body.sex ?? null),
-  handicap: (body.handicap ?? null),
-  address: (body.address ?? null),
-  postal_code: (body.postal_code ?? null),
-  locality: (body.locality ?? null),
-  phone: (body.phone ?? null),
-};
+      first_name: body.first_name ?? null,
+      last_name: body.last_name ?? null,
+      username: nextUsername || null,
+      app_role: nextRole || null,
+    };
 
 
     const { error: profErr } = await supabaseAdmin
@@ -52,14 +55,21 @@ export async function POST(req: NextRequest) {
 
     if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
 
-    // Update auth email/password (optional)
+    // Update auth email/password/metadata (optional)
     const nextEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const nextPassword = typeof body.auth_password === "string" ? body.auth_password : "";
+    const hasRoleOrUsername = Boolean(nextRole || nextUsername);
 
-    if (nextEmail || nextPassword) {
+    if (nextEmail || nextPassword || hasRoleOrUsername) {
       const patch: any = {};
       if (nextEmail) patch.email = nextEmail;
       if (nextPassword) patch.password = nextPassword;
+      if (hasRoleOrUsername) {
+        patch.user_metadata = {
+          ...(nextUsername ? { username: nextUsername } : {}),
+          ...(nextRole ? { role: nextRole } : {}),
+        };
+      }
 
       const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(userId, patch);
       if (authErr) return NextResponse.json({ error: authErr.message }, { status: 400 });

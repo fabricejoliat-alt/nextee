@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type ClubLite = { id: string; name: string | null };
 
@@ -110,6 +111,7 @@ function avatarNode(p?: ProfileMini | null) {
 }
 
 export default function CoachGroupsPage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<CoachGroupCoachRow[]>([]);
   const [categories, setCategories] = useState<Record<string, string[]>>({});
@@ -370,7 +372,7 @@ export default function CoachGroupsPage() {
     <div className="player-dashboard-bg">
       <div className="app-shell">
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Mes groupes</div>
+          <div className="section-title">{t("coach.myGroups")}</div>
 
           {/* Filtres (style Player) */}
           <div className="glass-card" style={{ marginTop: 12 }}>
@@ -396,7 +398,7 @@ export default function CoachGroupsPage() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Rechercher un groupe, un club, une catégorie…"
+                  placeholder={t("coachGroups.searchPlaceholder")}
                   style={inputStyle}
                 />
               </div>
@@ -406,7 +408,7 @@ export default function CoachGroupsPage() {
                 onChange={(e) => setCatFilter(e.target.value)}
                 style={selectStyle}
               >
-                <option value="">Toutes</option>
+                <option value="">{t("coachGroups.allCategories")}</option>
                 {allCategoryOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -428,7 +430,7 @@ export default function CoachGroupsPage() {
                     cursor: "pointer",
                   }}
                 >
-                  effacer filtre catégorie
+                  {t("coachGroups.clearCategoryFilter")}
                 </button>
               ) : null}
               {q.trim() ? (
@@ -443,7 +445,7 @@ export default function CoachGroupsPage() {
                     cursor: "pointer",
                   }}
                 >
-                  effacer recherche
+                  {t("coachGroups.clearSearch")}
                 </button>
               ) : null}
             </div>
@@ -452,20 +454,20 @@ export default function CoachGroupsPage() {
           {/* Liste */}
           <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
             <div className="glass-card">
-              <div className="card-title">Mes groupes</div>
+              <div className="card-title">{t("coach.myGroups")}</div>
 
               {loading ? (
-                <div style={{ opacity: 0.8, fontWeight: 800 }}>Chargement…</div>
+                <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
               ) : filtered.length === 0 ? (
                 <div style={{ opacity: 0.8, fontWeight: 800 }}>
-                  Aucun groupe trouvé.
+                  {t("coachGroups.noneFound")}
                 </div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   {filtered.map((x) => {
                     const cats = x.cats ?? [];
                     const players = x.players ?? 0;
-                    const clubName = x.clubName ?? "Club";
+                    const clubName = x.clubName ?? t("common.club");
                     const playerProfiles = x.playerProfiles ?? [];
                     const coachProfiles = x.coachProfiles ?? [];
 
@@ -489,22 +491,22 @@ export default function CoachGroupsPage() {
                             lineHeight: 1.25,
                           }}
                         >
-                          {clubName} • {players} joueur{players > 1 ? "s" : ""}
+                          {clubName} • {players} {t(players > 1 ? "coachGroups.playersPlural" : "coachGroups.playersSingle")}
                         </div>
 
                         <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
                           <Badge
-                            label={x.group.is_active ? "Actif" : "Inactif"}
+                            label={x.group.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}
                             tone={x.group.is_active ? "green" : "neutral"}
                           />
-                          {x.is_head ? <Badge label="Head coach" tone="blue" /> : null}
+                          {x.is_head ? <Badge label={t("trainingNew.headCoach")} tone="blue" /> : null}
 
                           {cats.length ? (
                             cats.slice(0, 4).map((c) => (
                               <Badge key={c} label={c} tone={toneForCategory(c) as any} />
                             ))
                           ) : (
-                            <Badge label="Sans catégorie" tone="neutral" />
+                            <Badge label={t("coachGroups.noCategory")} tone="neutral" />
                           )}
 
                           {cats.length > 4 ? (
@@ -514,10 +516,10 @@ export default function CoachGroupsPage() {
 
                         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                           <div style={{ display: "grid", gap: 6 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>Joueurs</div>
+                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.playersTitle")}</div>
                             <div style={{ display: "grid", gap: 6 }}>
                               {playerProfiles.length === 0 ? (
-                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>Aucun joueur</div>
+                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noPlayer")}</div>
                               ) : (
                                 <>
                                   {playerProfiles.slice(0, 3).map((p) => (
@@ -532,7 +534,7 @@ export default function CoachGroupsPage() {
                                   ))}
                                   {playerProfiles.length > 3 ? (
                                     <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
-                                      +{playerProfiles.length - 3} autre{playerProfiles.length - 3 > 1 ? "s" : ""}
+                                      +{playerProfiles.length - 3} {t(playerProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
                                     </div>
                                   ) : null}
                                 </>
@@ -541,10 +543,10 @@ export default function CoachGroupsPage() {
                           </div>
 
                           <div style={{ display: "grid", gap: 6 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>Coachs</div>
+                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.coachesTitle")}</div>
                             <div style={{ display: "grid", gap: 6 }}>
                               {coachProfiles.length === 0 ? (
-                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>Aucun coach</div>
+                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noCoach")}</div>
                               ) : (
                                 <>
                                   {coachProfiles.slice(0, 3).map((p) => (
@@ -559,7 +561,7 @@ export default function CoachGroupsPage() {
                                   ))}
                                   {coachProfiles.length > 3 ? (
                                     <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
-                                      +{coachProfiles.length - 3} autre{coachProfiles.length - 3 > 1 ? "s" : ""}
+                                      +{coachProfiles.length - 3} {t(coachProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
                                     </div>
                                   ) : null}
                                 </>
@@ -575,7 +577,7 @@ export default function CoachGroupsPage() {
 
               <Link href="/coach/groups/new" className="cta-green" style={{ marginTop: 12 }}>
                 <PlusCircle size={18} />
-                Créer un groupe
+                {t("coachGroups.createGroup")}
               </Link>
             </div>
           </div>

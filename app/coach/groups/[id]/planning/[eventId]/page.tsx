@@ -106,7 +106,7 @@ export default function CoachEventDetailPage() {
     setError(null);
 
     try {
-      if (!eventId) throw new Error("Entraînement manquant.");
+      if (!eventId) throw new Error("Missing training.");
 
       // event
       const eRes = await supabase
@@ -116,7 +116,7 @@ export default function CoachEventDetailPage() {
         .maybeSingle();
 
       if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Entraînement introuvable.");
+      if (!eRes.data) throw new Error("Training not found.");
       const ev = eRes.data as EventRow;
       setEvent(ev);
 
@@ -229,7 +229,7 @@ export default function CoachEventDetailPage() {
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
             ) : !event ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
@@ -241,7 +241,7 @@ export default function CoachEventDetailPage() {
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <span className="pill-soft">{clubName || "Club"}</span>
-                  {event.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
+                  {event.series_id ? <span className="pill-soft">Recurring</span> : <span className="pill-soft">Single</span>}
                   {event.location_text ? (
                     <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
                       📍 {event.location_text}

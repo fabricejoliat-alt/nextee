@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { PlusCircle, Search, Trash2, Users, Tag, User } from "lucide-react";
 
 
@@ -56,6 +57,7 @@ function avatarNode(p?: ProfileLite | null) {
 }
 
 export default function CoachGroupNewPage() {
+  const { t } = useI18n();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -116,7 +118,7 @@ export default function CoachGroupNewPage() {
   const clubIds = Array.from(new Set((memRes.data ?? []).map((r: any) => r.club_id))).filter(Boolean);
 
 if (clubIds.length === 0) {
-  setError("Tu n’as aucun club où tu es Coach/Manager (donc tu ne peux pas créer de groupe).");
+  setError(t("coachGroupNew.noClubPermission"));
   setClubs([]);
   setClubId("");
   setLoading(false);
@@ -327,7 +329,7 @@ async function handleCreate(e: React.FormEvent) {
 
 
   if (gRes.error) {
-    setError(gRes.error?.message ?? "Erreur création du groupe.");
+    setError(gRes.error?.message ?? t("coachGroupNew.createError"));
     setBusy(false);
     return;
   }
@@ -381,7 +383,7 @@ async function handleCreate(e: React.FormEvent) {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        {/* Header like "Ajouter un entraînement" */}
+        {/* Header section */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
@@ -442,7 +444,7 @@ async function handleCreate(e: React.FormEvent) {
                         value={groupName}
                         onChange={(e) => setGroupName(e.target.value)}
                         disabled={busy}
-                        placeholder="Ex: Juniors U14, Compétition, Adultes…"
+                        placeholder={t("coachGroupNew.categoryPlaceholder")}
                       />
                     </label>
 
@@ -495,7 +497,7 @@ async function handleCreate(e: React.FormEvent) {
                           background: "rgba(255,255,255,0.70)",
                           border: "1px solid rgba(0,0,0,0.08)",
                         }}
-                        aria-label="Ajouter catégorie"
+                        aria-label={t("coachGroupNew.addCategory")}
                         title="Ajouter"
                       >
                         <PlusCircle size={18} />
@@ -517,7 +519,7 @@ async function handleCreate(e: React.FormEvent) {
                               onClick={() => removeCategory(c)}
                               disabled={busy}
                               style={{ padding: "8px 10px" }}
-                              aria-label="Supprimer catégorie"
+                              aria-label={t("coachGroupNew.removeCategory")}
                               title="Supprimer"
                             >
                               <Trash2 size={16} />
@@ -784,7 +786,7 @@ async function handleCreate(e: React.FormEvent) {
                   disabled={!canSave || busy}
                   style={{ width: "100%" }}
                 >
-                  {busy ? "Création…" : "Créer le groupe"}
+                  {busy ? t("coachGroupNew.creating") : t("coachGroupNew.createGroup")}
                 </button>
 
                 <Link href="/coach/groups" className="btn" style={{ width: "100%", textAlign: "center" }}>

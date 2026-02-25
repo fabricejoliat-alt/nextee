@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
   id: string;
@@ -38,13 +39,14 @@ function compactMeta(it: Item) {
   return parts.join(" • ");
 }
 
-function priceLabel(it: Item) {
-  if (it.is_free) return "À donner";
+function priceLabel(it: Item, t: (key: string) => string) {
+  if (it.is_free) return t("marketplace.free");
   if (it.price == null) return "—";
   return `${it.price} CHF`;
 }
 
 export default function MarketplaceMine() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export default function MarketplaceMine() {
 
     const { data: userRes } = await supabase.auth.getUser();
     if (!userRes?.user) {
-      setError("Session invalide.");
+      setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
       return;
     }
@@ -88,7 +90,7 @@ export default function MarketplaceMine() {
       .maybeSingle();
 
     if (memRes.error || !memRes.data?.club_id) {
-      setError(memRes.error?.message ?? "Pas de club actif.");
+      setError(memRes.error?.message ?? t("marketplace.noActiveClub"));
       setLoading(false);
       return;
     }
@@ -161,7 +163,7 @@ export default function MarketplaceMine() {
   }
 
   async function remove(itId: string) {
-    if (!confirm("Supprimer cette annonce ?")) return;
+    if (!confirm(t("marketplace.confirmDelete"))) return;
     if (busy) return;
 
     setBusy(true);
@@ -183,19 +185,19 @@ export default function MarketplaceMine() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Mes annonces
+                {t("player.myListings")}
               </div>
               <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
-                Active/désactive, modifie ou supprime tes annonces.
+                {t("marketplace.mineSubtitle")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/marketplace">
-                Toutes les annonces
+                {t("player.allListings")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
-                Publier
+                {t("common.add")}
               </Link>
             </div>
           </div>
@@ -206,10 +208,10 @@ export default function MarketplaceMine() {
         {/* List */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card">Chargement…</div>
+            <div className="glass-card">{t("common.loading")}</div>
           ) : items.length === 0 ? (
             <div className="glass-card marketplace-empty">
-              Tu n’as pas encore d’annonce.
+              {t("marketplace.mineEmpty")}
             </div>
           ) : (
             <div className="marketplace-list">
@@ -239,7 +241,7 @@ export default function MarketplaceMine() {
                               background: "rgba(0,0,0,0.06)",
                               border: "1px solid rgba(0,0,0,0.08)"
                             }}>
-                              Inactif
+                              {t("coachGroups.inactive")}
                             </div>
                           )}
                         </div>
@@ -253,7 +255,7 @@ export default function MarketplaceMine() {
                         )}
 
                         <div className="marketplace-price-row">
-                          <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                          <div className="marketplace-price-pill">{priceLabel(it, t)}</div>
                         </div>
 
                         <div className="hr-soft" style={{ marginTop: 10, marginBottom: 10 }} />
@@ -275,7 +277,7 @@ export default function MarketplaceMine() {
                               <span className="toggle-thumb" />
                             </span>
                             <span className="toggle-label">
-                              {it.is_active ? "Actif" : "Inactif"}
+                              {it.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}
                             </span>
                           </label>
                         </div>
@@ -300,7 +302,7 @@ export default function MarketplaceMine() {
                               borderRadius: 10,
                             }}
                           >
-                            Modifier
+                            {t("common.edit")}
                           </Link>
 
                           <button
@@ -316,7 +318,7 @@ export default function MarketplaceMine() {
                               borderRadius: 10,
                             }}
                           >
-                            Supprimer
+                            {t("common.delete")}
                           </button>
                         </div>
 

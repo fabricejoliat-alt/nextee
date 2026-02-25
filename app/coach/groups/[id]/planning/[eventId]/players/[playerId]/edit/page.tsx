@@ -93,7 +93,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
     setError(null);
 
     try {
-      if (!eventId || !playerId) throw new Error("Paramètres manquants.");
+      if (!eventId || !playerId) throw new Error("Missing parameters.");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
       if (uErr || !uRes.user) throw new Error("Session invalide.");
@@ -106,7 +106,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         .maybeSingle();
 
       if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Entraînement introuvable.");
+      if (!eRes.data) throw new Error("Training not found.");
       setEvent(eRes.data as EventRow);
 
       const pRes = await supabase
@@ -224,10 +224,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
             ) : !event || !player ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Évaluation (1–6)</div>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Evaluation (1-6)</div>
 
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
@@ -308,13 +308,13 @@ export default function CoachEventPlayerFeedbackEditPage() {
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Commentaire privé (coach)</span>
+                  <span style={fieldLabelStyle}>Coach private comment</span>
                   <textarea
                     value={draft.private_note ?? ""}
                     onChange={(e) => setDraft((p) => ({ ...p, private_note: e.target.value }))}
                     disabled={busy}
                     style={{ minHeight: 90 }}
-                    placeholder="Notes privées…"
+                    placeholder="Private notes..."
                   />
                 </label>
 

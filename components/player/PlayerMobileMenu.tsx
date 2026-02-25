@@ -4,20 +4,22 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type NavItem = { href: string; label: string };
-
-const NAV: NavItem[] = [
-  { href: "/player", label: "Accueil" },
-  { href: "/player/golf", label: "Mon Golf" },
-  { href: "/player/marketplace", label: "Marketplace" },
-  { href: "/player/profile", label: "Mon profil" },
-];
 
 export default function PlayerMobileMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
+
+  const NAV: NavItem[] = [
+    { href: "/player", label: t("nav.home") },
+    { href: "/player/golf", label: t("player.myGolf") },
+    { href: "/player/marketplace", label: t("nav.marketplace") },
+    { href: "/player/profile", label: t("common.profile") },
+  ];
 
   useEffect(() => {
     setOpen(false);
@@ -33,7 +35,7 @@ export default function PlayerMobileMenu() {
       <button
         className="btn"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Ouvrir le menu"
+        aria-label={t("common.openMenu")}
         style={{
           width: 44,
           height: 44,
@@ -107,7 +109,7 @@ export default function PlayerMobileMenu() {
                 cursor: "pointer",
               }}
             >
-              Logout
+              {t("common.logout")}
             </button>
           </div>
         </>

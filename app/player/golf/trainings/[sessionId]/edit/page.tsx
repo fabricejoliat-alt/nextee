@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -40,19 +41,19 @@ type ItemDbRow = {
 };
 
 // ✅ enum values from DB + nice labels
-const TRAINING_CATEGORIES: { value: string; label: string }[] = [
-  { value: "warmup_mobility", label: "Échauffement / mobilité" },
-  { value: "long_game", label: "Long jeu" },
-  { value: "putting", label: "Putting" },
-  { value: "wedging", label: "Wedging" },
-  { value: "pitching", label: "Pitching" },
-  { value: "chipping", label: "Chipping" },
-  { value: "bunker", label: "Bunker" },
-  { value: "course", label: "Parcours" },
-  { value: "mental", label: "Mental" },
-  { value: "fitness", label: "Fitness" },
-  { value: "other", label: "Autre" },
-];
+const TRAINING_CATEGORY_VALUES = [
+  "warmup_mobility",
+  "long_game",
+  "putting",
+  "wedging",
+  "pitching",
+  "chipping",
+  "bunker",
+  "course",
+  "mental",
+  "fitness",
+  "other",
+] as const;
 
 function buildMinuteOptions() {
   const opts: number[] = [];
@@ -71,6 +72,7 @@ function toLocalDateTimeInputValue(iso: string) {
 }
 
 export default function PlayerTrainingEditPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams<{ sessionId: string }>();
   const sessionId = String(params?.sessionId ?? "").trim();
@@ -100,6 +102,11 @@ export default function PlayerTrainingEditPage() {
 
   // items
   const [items, setItems] = useState<TrainingItemDraft[]>([]);
+
+  const TRAINING_CATEGORIES: { value: string; label: string }[] = useMemo(
+    () => TRAINING_CATEGORY_VALUES.map((value) => ({ value, label: t(`cat.${value}`) })),
+    [t]
+  );
 
   const totalMinutes = useMemo(() => {
     return items.reduce((sum, it) => {
@@ -136,14 +143,14 @@ export default function PlayerTrainingEditPage() {
       setError(null);
 
       if (!sessionId) {
-        setError("ID entraînement manquant.");
+        setError(t("trainingDetail.error.missingId"));
         setLoading(false);
         return;
       }
 
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userRes.user) {
-        setError("Session invalide. Reconnecte-toi.");
+        setError(t("trainingDetail.error.invalidSession"));
         setLoading(false);
         return;
       }
@@ -198,14 +205,14 @@ export default function PlayerTrainingEditPage() {
       }
       const sess = (sRes.data ?? null) as SessionDbRow | null;
       if (!sess) {
-        setError("Entraînement introuvable.");
+        setError(t("trainingDetail.error.notFound"));
         setLoading(false);
         return;
       }
 
       // Optionnel: si tu veux une protection “soft” côté UI
       if (sess.user_id && sess.user_id !== uid) {
-        setError("Tu n’as pas l’autorisation de modifier cet entraînement.");
+        setError(t("trainingEdit.error.forbidden"));
         setLoading(false);
         return;
       }
@@ -285,7 +292,7 @@ export default function PlayerTrainingEditPage() {
 
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
-      setError("Date/heure invalide.");
+      setError(t("roundsNew.error.invalidDate"));
       setBusy(false);
       return;
     }
@@ -352,16 +359,16 @@ export default function PlayerTrainingEditPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Modifier un entraînement
+                {t("trainingEdit.title")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                Retour
+                {t("common.back")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                Mes entraînements
+                {t("trainings.title")}
               </Link>
             </div>
           </div>
@@ -370,7 +377,7 @@ export default function PlayerTrainingEditPage() {
 
           {sessionType === "club" && clubIds.length === 0 && !loading && (
             <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
-              ⚠️ Ton compte n’est lié à aucun club actif : impossible d’enregistrer un entraînement “Club”.
+              {t("trainingNew.noActiveClub")}
             </div>
           )}
         </div>
@@ -379,12 +386,12 @@ export default function PlayerTrainingEditPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <div>{t("common.loading")}</div>
             ) : (
               <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Date & heure</span>
+                    <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
                     <input
                       type="datetime-local"
                       value={startAt}
@@ -394,7 +401,7 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <div style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Total</span>
+                    <span style={fieldLabelStyle}>{t("common.total")}</span>
                     <div
                       style={{
                         height: 42,
@@ -416,24 +423,24 @@ export default function PlayerTrainingEditPage() {
                 </div>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                  <span style={fieldLabelStyle}>{t("common.place")} ({t("common.optional")})</span>
                   <input
                     value={place}
                     onChange={(e) => setPlace(e.target.value)}
                     disabled={busy}
-                    placeholder="Ex: Practice / Putting green / Parcours"
+                    placeholder={t("trainingNew.placePlaceholder")}
                   />
                 </label>
 
                 <div className="hr-soft" />
 
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>Type d’entraînement</div>
+                  <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <label style={{ ...chipRadioStyle, ...(sessionType === "club" ? chipRadioActive : {}) }}>
                       <input type="radio" checked={sessionType === "club"} onChange={() => setType("club")} disabled={busy} />
-                      <span>Entraînement Club</span>
+                      <span>{t("trainingDetail.typeClub")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}) }}>
@@ -443,7 +450,7 @@ export default function PlayerTrainingEditPage() {
                         onChange={() => setType("private")}
                         disabled={busy}
                       />
-                      <span>Cours privé</span>
+                      <span>{t("trainingDetail.typePrivate")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}) }}>
@@ -453,13 +460,13 @@ export default function PlayerTrainingEditPage() {
                         onChange={() => setType("individual")}
                         disabled={busy}
                       />
-                      <span>Entraînement individuel</span>
+                      <span>{t("trainingDetail.typeIndividual")}</span>
                     </label>
                   </div>
 
                   {sessionType === "club" && (
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Club</span>
+                      <span style={fieldLabelStyle}>{t("common.club")}</span>
                       <select
                         value={clubIdForTraining}
                         onChange={(e) => setClubIdForTraining(e.target.value)}
@@ -476,12 +483,12 @@ export default function PlayerTrainingEditPage() {
                   )}
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Coach (optionnel)</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
                     <input
                       value={coachName}
                       onChange={(e) => setCoachName(e.target.value)}
                       disabled={busy}
-                      placeholder="Ex: Prénom Nom"
+                      placeholder={t("trainingEdit.coachPlaceholder")}
                     />
                   </label>
                 </div>
@@ -489,11 +496,11 @@ export default function PlayerTrainingEditPage() {
                 <div className="hr-soft" />
 
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>Structure de l&apos;entraînement</div>
+                  <div style={fieldLabelStyle}>{t("trainingNew.trainingStructure")}</div>
 
                   {items.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Ajoute un poste pour structurer ton entraînement.
+                      {t("trainingNew.addSectionHint")}
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
@@ -511,7 +518,7 @@ export default function PlayerTrainingEditPage() {
                         >
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Poste</span>
+                              <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
                               <select
                                 value={it.category}
                                 onChange={(e) => updateLine(idx, { category: e.target.value })}
@@ -527,7 +534,7 @@ export default function PlayerTrainingEditPage() {
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Durée</span>
+                              <span style={fieldLabelStyle}>{t("trainingNew.duration")}</span>
                               <select
                                 value={it.minutes}
                                 onChange={(e) => updateLine(idx, { minutes: e.target.value })}
@@ -544,17 +551,17 @@ export default function PlayerTrainingEditPage() {
                           </div>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Note (optionnel)</span>
+                            <span style={fieldLabelStyle}>{t("trainingNew.noteOptional")}</span>
                             <input
                               value={it.note}
                               onChange={(e) => updateLine(idx, { note: e.target.value })}
                               disabled={busy}
-                              placeholder="Ex: focus wedging 60–80m"
+                              placeholder={t("trainingNew.notePlaceholder")}
                             />
                           </label>
 
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                            <div className="pill-soft">Poste {idx + 1}</div>
+                            <div className="pill-soft">{t("trainingNew.section")} {idx + 1}</div>
 
                             <button
                               type="button"
@@ -562,7 +569,7 @@ export default function PlayerTrainingEditPage() {
                               onClick={() => removeLine(idx)}
                               disabled={busy}
                             >
-                              Supprimer
+                              {t("common.delete")}
                             </button>
                           </div>
                         </div>
@@ -572,7 +579,7 @@ export default function PlayerTrainingEditPage() {
 
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <button type="button" className="btn" onClick={addLine} disabled={busy}>
-                      + Ajouter un poste
+                      + {t("trainingNew.addSection")}
                     </button>
                   </div>
                 </div>
@@ -581,7 +588,7 @@ export default function PlayerTrainingEditPage() {
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Motivation avant l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
                     <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={busy}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -593,7 +600,7 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Difficulté de l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={busy}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -605,7 +612,7 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Satisfaction après l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
                     <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={busy}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -620,12 +627,12 @@ export default function PlayerTrainingEditPage() {
                 <div className="hr-soft" />
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     disabled={busy}
-                    placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                    placeholder={t("roundsNew.notesPlaceholder")}
                     style={{ minHeight: 110 }}
                   />
                 </label>
@@ -641,7 +648,7 @@ export default function PlayerTrainingEditPage() {
                     color: "#fff",
                   }}
                 >
-                  {busy ? "Enregistrement…" : "Enregistrer"}
+                  {busy ? t("trainingNew.saving") : t("common.save")}
                 </button>
               </form>
             )}

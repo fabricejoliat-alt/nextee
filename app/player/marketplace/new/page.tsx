@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const CATEGORIES = [
   "Driver",
@@ -18,16 +19,17 @@ const CATEGORIES = [
   "Sac",
   "Chariot",
   "GPS / montre",
-  "Télémètre",
+  "Rangefinder",
   "Chaussures",
   "Textile",
   "Accessoires",
   "Divers",
 ] as const;
 
-const CONDITIONS = ["Neuf", "Comme neuf", "Bon état", "À réparer"] as const;
+const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
 
 export default function MarketplaceNew() {
+  const { t } = useI18n();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,7 @@ export default function MarketplaceNew() {
       }
 
       if (!memRes.data?.club_id) {
-        setError("Ton compte n’est pas lié à un club actif.");
+        setError(t("marketplace.noActiveClub"));
         setLoading(false);
         return;
       }
@@ -376,7 +378,7 @@ export default function MarketplaceNew() {
 
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Catégorie</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.byCategory")}</span>
                     <select value={category} onChange={(e) => setCategory(e.target.value)} disabled={busy}>
                       <option value="">-</option>
                       {CATEGORIES.map((c) => (
@@ -388,7 +390,7 @@ export default function MarketplaceNew() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>État</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.condition")}</span>
                     <select value={condition} onChange={(e) => setCondition(e.target.value)} disabled={busy}>
                       <option value="">-</option>
                       {CONDITIONS.map((c) => (
@@ -407,7 +409,7 @@ export default function MarketplaceNew() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Modèle (optionnel)</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.modelOptional")}</span>
                     <input value={model} onChange={(e) => setModel(e.target.value)} disabled={busy} />
                   </label>
                 </div>
@@ -415,7 +417,7 @@ export default function MarketplaceNew() {
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Description</span>
                   <textarea
-                    placeholder="État, longueur, grip, détails importants..."
+                    placeholder={t("marketplace.descriptionPlaceholder")}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     disabled={busy}
@@ -437,7 +439,7 @@ export default function MarketplaceNew() {
                         onChange={() => setMode("SELL")}
                         disabled={busy}
                       />
-                      <span>À vendre</span>
+                      <span>{t("marketplace.sell")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(saleMode === "GIVE" ? chipRadioActive : {}) }}>
@@ -448,7 +450,7 @@ export default function MarketplaceNew() {
                         onChange={() => setMode("GIVE")}
                         disabled={busy}
                       />
-                      <span>À donner</span>
+                      <span>{t("marketplace.free")}</span>
                     </label>
                   </div>
 
@@ -481,7 +483,7 @@ export default function MarketplaceNew() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Téléphone</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.phone")}</span>
                     <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} disabled={busy} />
                   </label>
                 </div>
@@ -567,7 +569,7 @@ export default function MarketplaceNew() {
                               opacity: dragIndex === idx ? 0.7 : 1,
                               cursor: busy ? "not-allowed" : "grab",
                             }}
-                            title="Glisse pour réordonner"
+                            title={t("marketplace.dragToReorder")}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img

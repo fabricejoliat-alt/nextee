@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
   id: string;
@@ -46,13 +47,14 @@ function compactMeta(it: Item) {
   return parts.join(" • ");
 }
 
-function priceLabel(it: Item) {
-  if (it.is_free) return "À donner";
+function priceLabel(it: Item, t: (key: string) => string) {
+  if (it.is_free) return t("marketplace.free");
   if (it.price == null) return "—";
   return `${it.price} CHF`;
 }
 
 export default function PlayerMarketplaceHome() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +92,7 @@ export default function PlayerMarketplaceHome() {
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide.");
+      setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
       return;
     }
@@ -107,7 +109,7 @@ export default function PlayerMarketplaceHome() {
       .maybeSingle();
 
     if (memRes.error || !memRes.data?.club_id) {
-      setError("Pas de club actif.");
+      setError(t("marketplace.noActiveClub"));
       setLoading(false);
       return;
     }
@@ -242,15 +244,15 @@ export default function PlayerMarketplaceHome() {
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
-            <div className="section-title">Marketplace</div>
+            <div className="section-title">{t("nav.marketplace")}</div>
 
             <div className="marketplace-actions">
               <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
-                Mes annonces
+                {t("player.myListings")}
               </Link>
 
               <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
-                Publier une annonce
+                {t("player.newListing")}
               </Link>
             </div>
           </div>
@@ -258,7 +260,7 @@ export default function PlayerMarketplaceHome() {
           {/* Filtre catégorie */}
           <div className="marketplace-filter-row">
             <label className="marketplace-filter-label" htmlFor="cat">
-              Par catégorie
+              {t("marketplace.byCategory")}
             </label>
 
             <select
@@ -267,7 +269,7 @@ export default function PlayerMarketplaceHome() {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="marketplace-filter-select"
             >
-              <option value="">Toutes</option>
+              <option value="">{t("marketplace.all")}</option>
               {categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -277,7 +279,7 @@ export default function PlayerMarketplaceHome() {
 
             {selectedCategory && (
               <button className="btn marketplace-filter-clear" onClick={() => setSelectedCategory("")}>
-                Réinitialiser
+                {t("marketplace.reset")}
               </button>
             )}
           </div>
@@ -288,10 +290,10 @@ export default function PlayerMarketplaceHome() {
         {/* Liste */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card">Chargement…</div>
+            <div className="glass-card">{t("common.loading")}</div>
           ) : pagedItems.length === 0 ? (
             <div className="glass-card marketplace-empty">
-              {selectedCategory ? "Aucune annonce dans cette catégorie." : "Aucune annonce pour le moment."}
+              {selectedCategory ? t("marketplace.noneInCategory") : t("marketplace.none")}
             </div>
           ) : (
             <>
@@ -320,7 +322,7 @@ export default function PlayerMarketplaceHome() {
 
                             {/* Ligne 3 — Prix à droite dans mini card */}
                             <div className="marketplace-price-row">
-                              <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                              <div className="marketplace-price-pill">{priceLabel(it, t)}</div>
                             </div>
                           </div>
                         </div>
@@ -334,15 +336,15 @@ export default function PlayerMarketplaceHome() {
               {filteredItems.length > PAGE_SIZE && (
                 <div className="marketplace-pagination">
                   <button className="btn" onClick={goPrev} disabled={page === 1}>
-                    Précédent
+                    {t("common.prev")}
                   </button>
 
                   <div className="marketplace-page-indicator">
-                    Page <strong>{page}</strong> / {totalPages}
+                    {t("common.page")} <strong>{page}</strong> / {totalPages}
                   </div>
 
                   <button className="btn" onClick={goNext} disabled={page === totalPages}>
-                    Suivant
+                    {t("common.next")}
                   </button>
                 </div>
               )}

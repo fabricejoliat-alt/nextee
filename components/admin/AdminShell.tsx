@@ -1,13 +1,11 @@
 import "./admin.css";
-import AdminTopbar from "./AdminTopbar";
+import AdminHeader from "./AdminHeader";
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="adminShell">
-      <div className="main">
-        <AdminTopbar />
-        <main className="content">{children}</main>
-      </div>
+    <div className="admin-page">
+      <AdminHeader />
+      <main className="app-shell admin-shell">{children}</main>
     </div>
   );
 }

@@ -24,11 +24,11 @@
   border-bottom: 1px solid var(--border);
 }
 
-.brand {
+.sidebar .brand {
   font-weight: 700;
   font-size: 14px;
 }
-.subBrand {
+.sidebar .subBrand {
   margin-top: 2px;
   font-size: 12px;
   color: var(--muted);
@@ -215,4 +215,3 @@
   .content { padding: 22px 18px; }
   .grid3 { grid-template-columns: repeat(3, 1fr); }
 }
-

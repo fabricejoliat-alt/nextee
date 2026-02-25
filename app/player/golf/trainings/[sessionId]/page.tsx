@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Flame, Mountain, Smile, Award } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -54,9 +55,9 @@ type CoachProfileLite = {
   last_name: string | null;
 };
 
-function fmtDateTime(iso: string) {
+function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -66,25 +67,25 @@ function fmtDateTime(iso: string) {
   }).format(d);
 }
 
-function typeLabel(t: SessionType) {
-  if (t === "club") return "Entraînement Club";
-  if (t === "private") return "Cours privé";
-  return "Entraînement individuel";
+function typeLabel(t: SessionType, tr: (key: string) => string) {
+  if (t === "club") return tr("trainingDetail.typeClub");
+  if (t === "private") return tr("trainingDetail.typePrivate");
+  return tr("trainingDetail.typeIndividual");
 }
 
-function categoryLabel(cat: string) {
+function categoryLabel(cat: string, tr: (key: string) => string) {
   const map: Record<string, string> = {
-    warmup_mobility: "Échauffement / mobilité",
-    long_game: "Long jeu",
-    putting: "Putting",
-    wedging: "Wedging",
-    pitching: "Pitching",
-    chipping: "Chipping",
-    bunker: "Bunker",
-    course: "Parcours",
-    mental: "Mental",
-    fitness: "Fitness",
-    other: "Autre",
+    warmup_mobility: tr("cat.warmup_mobility"),
+    long_game: tr("cat.long_game"),
+    putting: tr("cat.putting"),
+    wedging: tr("cat.wedging"),
+    pitching: tr("cat.pitching"),
+    chipping: tr("cat.chipping"),
+    bunker: tr("cat.bunker"),
+    course: tr("cat.course"),
+    mental: tr("cat.mental"),
+    fitness: tr("cat.fitness"),
+    other: tr("cat.other"),
   };
   return map[cat] ?? cat;
 }
@@ -129,6 +130,7 @@ function nameOf(first: string | null, last: string | null) {
 }
 
 export default function PlayerTrainingDetailPage() {
+  const { t, locale } = useI18n();
   const router = useRouter();
   const params = useParams<{ sessionId: string }>();
   const sessionId = String(params?.sessionId ?? "").trim();
@@ -155,10 +157,10 @@ export default function PlayerTrainingDetailPage() {
       setError(null);
 
       try {
-        if (!sessionId) throw new Error("ID entraînement manquant.");
+        if (!sessionId) throw new Error(t("trainingDetail.error.missingId"));
 
         const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
+        if (userErr || !userRes.user) throw new Error(t("trainingDetail.error.invalidSession"));
         const uid = userRes.user.id;
 
         const sRes = await supabase
@@ -172,8 +174,8 @@ export default function PlayerTrainingDetailPage() {
         if (sRes.error) throw new Error(sRes.error.message);
 
         const s = (sRes.data ?? null) as SessionDbRow | null;
-        if (!s) throw new Error("Entraînement introuvable.");
-        if (s.user_id !== uid) throw new Error("Tu n’as pas l’autorisation de voir cet entraînement.");
+        if (!s) throw new Error(t("trainingDetail.error.notFound"));
+        if (s.user_id !== uid) throw new Error(t("trainingDetail.error.forbidden"));
 
         setSession(s);
 
@@ -189,8 +191,8 @@ export default function PlayerTrainingDetailPage() {
         // club name
         if (s.session_type === "club" && s.club_id) {
           const cRes = await supabase.from("clubs").select("id,name").eq("id", s.club_id).maybeSingle();
-          if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
-          else setClubName("Club");
+          if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? t("common.club"));
+          else setClubName(t("common.club"));
         } else {
           setClubName("");
         }
@@ -232,7 +234,7 @@ export default function PlayerTrainingDetailPage() {
 
         setLoading(false);
       } catch (e: any) {
-        setError(e?.message ?? "Erreur chargement.");
+        setError(e?.message ?? t("common.errorLoading"));
         setSession(null);
         setItems([]);
         setClubName("");
@@ -251,20 +253,20 @@ export default function PlayerTrainingDetailPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Détail entraînement
+                {t("trainingDetail.title")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                Retour
+                {t("common.back")}
               </Link>
 
               <Link
                 className="cta-green cta-green-inline"
                 href={sessionId ? `/player/golf/trainings/${sessionId}/edit` : "/player/golf/trainings"}
               >
-                Modifier
+                {t("common.edit")}
               </Link>
             </div>
           </div>
@@ -276,15 +278,15 @@ export default function PlayerTrainingDetailPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : !session ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
                 {/* Top line */}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                   <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
-                    {fmtDateTime(session.start_at)}
+                    {fmtDateTime(session.start_at, locale)}
                   </div>
                   <div className="marketplace-price-pill">{totalMinutes > 0 ? `${totalMinutes} min` : "—"}</div>
                 </div>
@@ -292,12 +294,12 @@ export default function PlayerTrainingDetailPage() {
                 {/* Type + club + location */}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {session.session_type === "club" ? (
-                    <span className="pill-soft">{clubName || "Club"}</span>
+                    <span className="pill-soft">{clubName || t("common.club")}</span>
                   ) : (
-                    <span className="pill-soft">{typeLabel(session.session_type)}</span>
+                    <span className="pill-soft">{typeLabel(session.session_type, t)}</span>
                   )}
 
-                  {session.club_event_id ? <span className="pill-soft">Coach</span> : null}
+                  {session.club_event_id ? <span className="pill-soft">{t("common.coach")}</span> : null}
 
                   {session.location_text && (
                     <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
@@ -309,7 +311,7 @@ export default function PlayerTrainingDetailPage() {
                 {/* Coach (optional, your existing field) */}
                 {session.coach_name && (
                   <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                    👤 Coach : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{session.coach_name}</span>
+                    👤 {t("common.coach")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{session.coach_name}</span>
                   </div>
                 )}
 
@@ -320,18 +322,18 @@ export default function PlayerTrainingDetailPage() {
                     <div style={{ display: "grid", gap: 10 }}>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950, color: "rgba(0,0,0,0.75)", fontSize: 12 }}>
                         <Award size={16} />
-                        Évaluation du coach
+                        {t("trainingDetail.coachEvaluation")}
                       </div>
 
                       {coachFeedback.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucune évaluation coach visible pour le moment.
+                          {t("trainingDetail.noCoachEvaluation")}
                         </div>
                       ) : (
                         <div style={{ display: "grid", gap: 10 }}>
                           {coachFeedback.map((fb, idx) => {
                             const cp = coachProfilesById[fb.coach_id];
-                            const coachName = cp ? nameOf(cp.first_name, cp.last_name) : "Coach";
+                            const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
 
                             return (
                               <div
@@ -347,27 +349,27 @@ export default function PlayerTrainingDetailPage() {
                               >
                                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                                   <div style={{ fontWeight: 950 }}>{coachName}</div>
-                                  <span className="pill-soft">Notes sur 6</span>
+                                  <span className="pill-soft">{t("trainingDetail.scoreOver6")}</span>
                                 </div>
 
                                 <div className="grid-2">
                                   <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                    Engagement : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.engagement ?? "—"}</span>
+                                    {t("trainingDetail.engagement")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.engagement ?? "—"}</span>
                                   </div>
                                   <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                    Attitude : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.attitude ?? "—"}</span>
+                                    {t("trainingDetail.attitude")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.attitude ?? "—"}</span>
                                   </div>
                                 </div>
 
                                 <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                  Performance : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.performance ?? "—"}</span>
+                                  {t("trainingDetail.performance")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.performance ?? "—"}</span>
                                 </div>
 
                                 {String(fb.player_note ?? "").trim() ? (
                                   <>
                                     <div className="hr-soft" style={{ margin: "2px 0" }} />
                                     <div style={{ display: "grid", gap: 8 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Note du coach</div>
+                                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.coachNote")}</div>
                                       <div
                                         style={{
                                           border: "1px solid rgba(0,0,0,0.10)",
@@ -400,14 +402,14 @@ export default function PlayerTrainingDetailPage() {
 
                 {items.length > 0 ? (
                   <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Postes</div>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.sections")}</div>
 
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                       {items.map((it, i) => {
                         const extra = String(it.note ?? it.other_detail ?? "").trim();
                         return (
                           <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {categoryLabel(it.category)} — {it.minutes} min
+                            {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
                             {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
                           </li>
                         );
@@ -415,18 +417,18 @@ export default function PlayerTrainingDetailPage() {
                     </ul>
                   </div>
                 ) : (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun poste enregistré.</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("trainingDetail.noSection")}</div>
                 )}
 
                 {items.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
                 {/* Sensations */}
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Sensations</div>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.feelings")}</div>
 
-                  <RatingBar icon={<Flame size={16} />} label="Motivation" value={session.motivation} />
-                  <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={session.difficulty} />
-                  <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={session.satisfaction} />
+                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />
+                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={session.difficulty} />
+                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={session.satisfaction} />
                 </div>
 
                 {/* Notes */}
@@ -434,7 +436,7 @@ export default function PlayerTrainingDetailPage() {
                   <>
                     <div className="hr-soft" style={{ margin: "2px 0" }} />
                     <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Remarques</div>
+                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
                       <div
                         style={{
                           border: "1px solid rgba(0,0,0,0.10)",
@@ -457,11 +459,11 @@ export default function PlayerTrainingDetailPage() {
                 {/* Actions bottom */}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
-                    Retour liste
+                    {t("trainingDetail.backToList")}
                   </button>
 
                   <Link className="btn" href={`/player/golf/trainings/${sessionId}/edit`}>
-                    Modifier
+                    {t("common.edit")}
                   </Link>
                 </div>
               </div>

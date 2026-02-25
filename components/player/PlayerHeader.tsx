@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
 import { Bell } from "lucide-react";
+import LanguageToggle from "@/components/i18n/LanguageToggle";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 function BurgerIcon() {
   return (
@@ -19,6 +21,7 @@ function BurgerIcon() {
 
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
 
   return (
     <>
@@ -30,7 +33,7 @@ export default function PlayerHeader() {
               <button
                 className="icon-btn"
                 type="button"
-                aria-label="Ouvrir le menu"
+                aria-label={t("common.openMenu")}
                 onClick={() => setOpen(true)}
               >
                 <BurgerIcon />
@@ -47,7 +50,8 @@ export default function PlayerHeader() {
 
             {/* RIGHT: Bell */}
             <div className="header-right header-right--icon">
-              <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
+              <LanguageToggle />
+              <button className="icon-btn" type="button" aria-label={t("common.notificationsSoon")}>
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
               </button>
             </div>

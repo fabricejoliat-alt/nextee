@@ -9,6 +9,41 @@ function randomPassword(len = 14) {
   return out;
 }
 
+function normalizeToken(input: string) {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/\.{2,}/g, ".");
+}
+
+async function generateUniqueUsername(supabaseAdmin: any, firstName: string, lastName: string) {
+  const first = normalizeToken(firstName);
+  const last = normalizeToken(lastName);
+  const baseRaw = [first, last].filter(Boolean).join(".");
+  const base = baseRaw || `user.${Date.now().toString().slice(-6)}`;
+
+  let candidate = base;
+  let suffix = 1;
+  while (suffix <= 500) {
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .ilike("username", candidate)
+      .limit(1);
+
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return candidate;
+
+    suffix += 1;
+    candidate = `${base}${suffix}`;
+  }
+
+  throw new Error("Impossible de générer un username unique.");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -16,12 +51,17 @@ export async function POST(req: NextRequest) {
     const email = String(body.email || "").trim().toLowerCase();
     const first_name = String(body.first_name || "").trim();
     const last_name = String(body.last_name || "").trim();
+    const role = String(body.role || "player").trim().toLowerCase();
+    const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);
 
     if (!email || !first_name || !last_name) {
       return NextResponse.json(
         { error: "Prénom, nom et email requis." },
         { status: 400 }
       );
+    }
+    if (!allowedRoles.has(role)) {
+      return NextResponse.json({ error: "Rôle invalide." }, { status: 400 });
     }
 
     const supabaseAdmin = createClient(
@@ -55,12 +95,17 @@ export async function POST(req: NextRequest) {
     }
 
     // Créer utilisateur Auth (mot de passe temporaire MVP)
+    const username = await generateUniqueUsername(supabaseAdmin, first_name, last_name);
     const tempPassword = randomPassword();
     const { data: created, error: createErr } =
       await supabaseAdmin.auth.admin.createUser({
         email,
         password: tempPassword,
         email_confirm: true,
+        user_metadata: {
+          username,
+          role,
+        },
       });
 
     if (createErr || !created.user) {
@@ -75,7 +120,16 @@ export async function POST(req: NextRequest) {
     // Upsert profile (prénom/nom)
     const { error: profErr } = await supabaseAdmin
       .from("profiles")
-      .upsert({ id: newUserId, first_name, last_name }, { onConflict: "id" });
+      .upsert(
+        {
+          id: newUserId,
+          first_name,
+          last_name,
+          username,
+          app_role: role,
+        },
+        { onConflict: "id" }
+      );
 
     if (profErr) {
       return NextResponse.json({ error: profErr.message }, { status: 400 });
@@ -84,6 +138,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       user: { id: newUserId, email },
       tempPassword,
+      username,
+      role,
     });
   } catch (e: any) {
     return NextResponse.json(

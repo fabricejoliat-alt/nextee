@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { SlidersHorizontal } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Round = {
   id: string;
@@ -76,9 +77,9 @@ const selectStyle: React.CSSProperties = {
   appearance: "none",
 };
 
-function fmtDateOnly(iso: string) {
+function fmtDateOnly(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -97,11 +98,11 @@ function nextDayStartISO(dateStr: string) {
   return d.toISOString();
 }
 
-function roundTitle(r: Round) {
+function roundTitle(r: Round, t: (key: string) => string) {
   if (r.round_type === "competition") {
-    return `Compétition${r.competition_name ? ` — ${r.competition_name}` : ""}`;
+    return `${t("rounds.competition")}${r.competition_name ? ` — ${r.competition_name}` : ""}`;
   }
-  return "Entraînement";
+  return t("rounds.training");
 }
 
 function diffLabelFromDiff(diff: number | null) {
@@ -111,6 +112,7 @@ function diffLabelFromDiff(diff: number | null) {
 }
 
 export default function RoundsListPage() {
+  const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,7 +137,7 @@ export default function RoundsListPage() {
 
     try {
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("Session invalide.");
+      if (userErr || !userRes.user) throw new Error(t("rounds.error.invalidSession"));
 
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
@@ -187,7 +189,7 @@ export default function RoundsListPage() {
 
       setLoading(false);
     } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+      setError(e?.message ?? t("common.errorLoading"));
       setRounds([]);
       setHolesByRoundId({});
       setTotalCount(0);
@@ -302,15 +304,15 @@ export default function RoundsListPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              Mes parcours
+              {t("rounds.title")}
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds/new">
-                Ajouter
+                {t("common.add")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player">
-                Dashboard
+                {t("common.dashboard")}
               </Link>
             </div>
           </div>
@@ -320,7 +322,7 @@ export default function RoundsListPage() {
   <div style={{ display: "grid", gap: 12 }}>
     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       <SlidersHorizontal size={16} />
-      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>Période</div>
+      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>{t("common.period")}</div>
     </div>
 
     <select
@@ -351,12 +353,12 @@ export default function RoundsListPage() {
       }}
       disabled={loading}
       style={selectStyle}
-      aria-label="Filtrer par période"
+      aria-label={t("common.filterByPeriod")}
     >
-      <option value="month">Ce mois</option>
-      <option value="last3">3 derniers mois</option>
-      <option value="all">Toute l’activité</option>
-      <option value="custom">Personnalisé</option>
+      <option value="month">{t("common.thisMonth")}</option>
+      <option value="last3">{t("common.last3Months")}</option>
+      <option value="all">{t("common.allActivity")}</option>
+      <option value="custom">{t("common.custom")}</option>
     </select>
 
     {customOpen && preset === "custom" && (
@@ -365,7 +367,7 @@ export default function RoundsListPage() {
 
         <div style={{ display: "grid", gap: 10, overflow: "hidden" }}>
           <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Du</span>
+            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{t("common.from")}</span>
             <input
               type="date"
               value={fromDate}
@@ -381,7 +383,7 @@ export default function RoundsListPage() {
           </label>
 
           <label style={{ display: "grid", gap: 6, minWidth: 0, overflow: "hidden" }}>
-            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Au</span>
+            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{t("common.to")}</span>
             <input
               type="date"
               value={toDate}
@@ -407,10 +409,10 @@ export default function RoundsListPage() {
               setPage(1);
             }}
             disabled={loading || !hasDateFilter}
-            title={!hasDateFilter ? "Aucun filtre" : "Effacer le filtre"}
+            title={!hasDateFilter ? t("common.noFilter") : t("common.clearFilter")}
             style={{ width: "100%", height: 44 }}
           >
-            Effacer les dates
+            {t("common.clearDates")}
           </button>
         </div>
       </>
@@ -436,7 +438,7 @@ export default function RoundsListPage() {
             <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
               <span style={{ fontSize: 18 }}>{loading ? "…" : totalCount}</span>
               <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
-                partie(s)
+                {t("rounds.games")}
               </span>
             </div>
           </div>
@@ -446,11 +448,11 @@ export default function RoundsListPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : totalCount === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun parcours pour le moment.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("rounds.noneYet")}</div>
             ) : rounds.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun résultat pour ce filtre.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noResultsForFilter")}</div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {rounds.map((r) => {
@@ -465,7 +467,7 @@ export default function RoundsListPage() {
                       key={r.id}
                       href={`/player/golf/rounds/${r.id}/scorecard`}
                       className="marketplace-link"
-                      title="Ouvrir la scorecard"
+                      title={t("rounds.openScorecard")}
                     >
                       <div className="marketplace-item">
                         <div style={{ display: "grid", gap: 10 }}>
@@ -480,11 +482,11 @@ export default function RoundsListPage() {
                           >
                             <div style={{ minWidth: 0 }}>
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                {fmtDateOnly(r.start_at)}
+                                {fmtDateOnly(r.start_at, locale)}
                               </div>
 
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-                                <span className="pill-soft">{roundTitle(r)}</span>
+                                <span className="pill-soft">{roundTitle(r, t)}</span>
 
                                 {!!configLine && (
                                   <span
@@ -498,7 +500,7 @@ export default function RoundsListPage() {
                             </div>
 
                             <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>Score</div>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
                               <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>
                                 {c?.scoreTotal ?? "—"}
                               </div>
@@ -512,7 +514,7 @@ export default function RoundsListPage() {
 
                           {/* Stats rapides (comme avant) */}
                           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            Putts: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                            {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
                             {" • "}
                             GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
                             {c?.parTotal ? (
@@ -529,7 +531,7 @@ export default function RoundsListPage() {
                               href={`/player/golf/rounds/${r.id}/scorecard`}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              Scorecard
+                              {t("rounds.scorecard")}
                             </Link>
                           </div>
                         </div>
@@ -551,11 +553,11 @@ export default function RoundsListPage() {
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={loading || page <= 1}
                 >
-                  ← Précédent
+                  {t("common.prev")}
                 </button>
 
                 <div className="marketplace-page-indicator">
-                  Page {page} / {totalPages}
+                  {t("common.page")} {page} / {totalPages}
                 </div>
 
                 <button
@@ -564,7 +566,7 @@ export default function RoundsListPage() {
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={loading || page >= totalPages}
                 >
-                  Suivant →
+                  {t("common.next")}
                 </button>
               </div>
             </div>

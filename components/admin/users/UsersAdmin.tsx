@@ -3,22 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+type AppRole = "manager" | "coach" | "player" | "parent" | "captain" | "staff";
+
 type UserRow = {
-  id: string; // interne seulement (pas affiché)
+  id: string;
   email: string;
   first_name: string | null;
   last_name: string | null;
-
-  birth_date: string | null; // YYYY-MM-DD
-  nationality: string | null;
-  sex: string | null;
-  handicap: number | null;
-
-  address: string | null;
-  postal_code: string | null;
-  locality: string | null;
-
-  phone: string | null;
+  username: string | null;
+  role: AppRole | null;
 };
 
 function labelName(u: UserRow) {
@@ -32,20 +25,19 @@ export default function UsersAdmin() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // create user (simple)
+  // create user
   const [cFirst, setCFirst] = useState("");
   const [cLast, setCLast] = useState("");
   const [cEmail, setCEmail] = useState("");
-  const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(null);
+  const [cRole, setCRole] = useState<AppRole>("player");
+  const [createdCreds, setCreatedCreds] = useState<{ username: string; tempPassword: string } | null>(null);
 
-  const canCreate = useMemo(() => {
-    return cFirst.trim() && cLast.trim() && cEmail.trim();
-  }, [cFirst, cLast, cEmail]);
+  const canCreate = useMemo(() => cFirst.trim() && cLast.trim() && cEmail.trim(), [cFirst, cLast, cEmail]);
 
   // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<UserRow>>({});
-  const [authPassword, setAuthPassword] = useState(""); // mot de passe Auth (optionnel)
+  const [authPassword, setAuthPassword] = useState("");
 
   async function getToken() {
     const { data } = await supabase.auth.getSession();
@@ -76,7 +68,7 @@ export default function UsersAdmin() {
       return;
     }
 
-    setUsers(json.users ?? []);
+    setUsers((json.users ?? []) as UserRow[]);
     setLoading(false);
   }
 
@@ -87,7 +79,7 @@ export default function UsersAdmin() {
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setCreatedTempPassword(null);
+    setCreatedCreds(null);
 
     const token = await getToken();
     if (!token) {
@@ -105,6 +97,7 @@ export default function UsersAdmin() {
         first_name: cFirst.trim(),
         last_name: cLast.trim(),
         email: cEmail.trim().toLowerCase(),
+        role: cRole,
       }),
     });
 
@@ -114,10 +107,14 @@ export default function UsersAdmin() {
       return;
     }
 
-    setCreatedTempPassword(json.tempPassword ?? null);
+    setCreatedCreds({
+      username: json.username ?? "",
+      tempPassword: json.tempPassword ?? "",
+    });
     setCFirst("");
     setCLast("");
     setCEmail("");
+    setCRole("player");
 
     await loadUsers();
   }
@@ -130,14 +127,8 @@ export default function UsersAdmin() {
       email: u.email,
       first_name: u.first_name ?? "",
       last_name: u.last_name ?? "",
-      birth_date: u.birth_date,
-      nationality: u.nationality ?? "",
-      sex: u.sex ?? "",
-      handicap: u.handicap ?? null,
-      address: u.address ?? "",
-      postal_code: u.postal_code ?? "",
-      locality: u.locality ?? "",
-      phone: u.phone ?? "",
+      username: u.username ?? "",
+      role: (u.role ?? "player") as AppRole,
     });
   }
 
@@ -160,34 +151,13 @@ export default function UsersAdmin() {
       return;
     }
 
-    let handicap: number | null = null;
-
-if (form.handicap !== null && form.handicap !== undefined) {
-  const parsed = Number(form.handicap);
-  if (!Number.isNaN(parsed)) {
-    handicap = parsed;
-  }
-}
-
-
     const payload = {
       userId: editingId,
-
       first_name: (form.first_name ?? "").toString().trim() || null,
       last_name: (form.last_name ?? "").toString().trim() || null,
-
-      birth_date: form.birth_date ? String(form.birth_date) : null,
-      nationality: (form.nationality ?? "").toString().trim() || null,
-      sex: (form.sex ?? "").toString().trim() || null,
-      handicap: Number.isFinite(handicap as any) ? handicap : null,
-
-      address: (form.address ?? "").toString().trim() || null,
-      postal_code: (form.postal_code ?? "").toString().trim() || null,
-      locality: (form.locality ?? "").toString().trim() || null,
-      phone: (form.phone ?? "").toString().trim() || null,
-
-      // Auth updates (optionnels)
       email: (form.email ?? "").toString().trim().toLowerCase() || null,
+      username: (form.username ?? "").toString().trim().toLowerCase() || null,
+      role: (form.role ?? "player").toString().trim().toLowerCase(),
       auth_password: authPassword || null,
     };
 
@@ -216,9 +186,6 @@ if (form.handicap !== null && form.handicap !== undefined) {
     <div style={{ display: "grid", gap: 16 }}>
       <div>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Utilisateurs</h1>
-        <p style={{ marginTop: 6, color: "var(--muted)" }}>
-          Le superadmin n’apparaît pas ici. Pas d’UUID affiché.
-        </p>
       </div>
 
       {error && (
@@ -235,29 +202,38 @@ if (form.handicap !== null && form.handicap !== undefined) {
         </div>
       )}
 
-      {/* Create */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Créer un utilisateur</h2>
 
         <form onSubmit={createUser} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
           <input placeholder="Prénom" value={cFirst} onChange={(e) => setCFirst(e.target.value)} style={inputStyle} />
           <input placeholder="Nom" value={cLast} onChange={(e) => setCLast(e.target.value)} style={inputStyle} />
-          <input placeholder="Email" value={cEmail} onChange={(e) => setCEmail(e.target.value)} style={inputStyle} />
+          <input placeholder="Adresse e-mail" value={cEmail} onChange={(e) => setCEmail(e.target.value)} style={inputStyle} />
+          <select value={cRole} onChange={(e) => setCRole(e.target.value as AppRole)} style={inputStyle}>
+            <option value="player">Joueur</option>
+            <option value="coach">Coach</option>
+            <option value="manager">Manager</option>
+            <option value="parent">Parent</option>
+            <option value="captain">Capitaine</option>
+            <option value="staff">Staff</option>
+          </select>
 
           <button className="btn" disabled={!canCreate} type="submit">
             Créer
           </button>
         </form>
 
-        {createdTempPassword && (
+        {createdCreds && (
           <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 12 }}>
-            <div style={{ fontWeight: 900 }}>Mot de passe temporaire (Auth)</div>
-            <div style={{ fontFamily: "monospace", marginTop: 6 }}>{createdTempPassword}</div>
+            <div style={{ fontWeight: 900 }}>Identifiants générés</div>
+            <div style={{ marginTop: 6 }}>Username: <b>{createdCreds.username}</b></div>
+            <div style={{ marginTop: 6 }}>
+              Mot de passe: <span style={{ fontFamily: "monospace" }}>{createdCreds.tempPassword}</span>
+            </div>
           </div>
         )}
       </div>
 
-      {/* List */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Liste</h2>
 
@@ -286,6 +262,9 @@ if (form.handicap !== null && form.handicap !== undefined) {
                       <div>
                         <div style={{ fontWeight: 900 }}>{labelName(u)}</div>
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>{u.email}</div>
+                        <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                          username: {u.username ?? "—"} • rôle: {u.role ?? "player"}
+                        </div>
                       </div>
 
                       <button className="btn" onClick={() => startEdit(u)}>
@@ -294,110 +273,55 @@ if (form.handicap !== null && form.handicap !== undefined) {
                     </div>
                   ) : (
                     <>
-                      <div style={{ display: "grid", gap: 10 }}>
-                        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                          <input
-                            placeholder="Prénom"
-                            value={(form.first_name ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
-                            style={inputStyle}
-                          />
-                          <input
-                            placeholder="Nom"
-                            value={(form.last_name ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
-                            style={inputStyle}
-                          />
-                        </div>
-
+                      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
                         <input
-                          placeholder="Adresse e-mail (login)"
-                          value={(form.email ?? "") as any}
-                          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                          placeholder="Prénom"
+                          value={(form.first_name ?? "") as string}
+                          onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
                           style={inputStyle}
                         />
-
-                        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr" }}>
-                          <input
-                            type="date"
-                            value={(form.birth_date ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, birth_date: e.target.value || null }))}
-                            style={inputStyle}
-                          />
-
-                          <input
-                            placeholder="Nationalité"
-                            value={(form.nationality ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, nationality: e.target.value }))}
-                            style={inputStyle}
-                          />
-
-                          <select
-                            value={(form.sex ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, sex: e.target.value }))}
-                            style={inputStyle}
-                          >
-                            <option value="">Sexe…</option>
-                            <option value="M">M</option>
-                            <option value="F">F</option>
-                            <option value="X">X</option>
-                          </select>
-                        </div>
-
-                        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                          <input
-  type="number"
-  step="0.1"
-  placeholder="Handicap"
-  value={form.handicap ?? ""}
-  onChange={(e) =>
-    setForm((f) => ({
-      ...f,
-      handicap: e.target.value === "" ? null : Number(e.target.value),
-    }))
-  }
-  style={inputStyle}
-/>
-
-
-                          <input
-                            placeholder="Téléphone"
-                            value={(form.phone ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                            style={inputStyle}
-                          />
-                        </div>
-
                         <input
-                          placeholder="Adresse"
-                          value={(form.address ?? "") as any}
-                          onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                          style={inputStyle}
-                        />
-
-                        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr" }}>
-                          <input
-                            placeholder="Code postal"
-                            value={(form.postal_code ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, postal_code: e.target.value }))}
-                            style={inputStyle}
-                          />
-                          <input
-                            placeholder="Localité"
-                            value={(form.locality ?? "") as any}
-                            onChange={(e) => setForm((f) => ({ ...f, locality: e.target.value }))}
-                            style={inputStyle}
-                          />
-                        </div>
-
-                        <input
-                          placeholder="Changer mot de passe (login) (optionnel)"
-                          type="text"
-                          value={authPassword}
-                          onChange={(e) => setAuthPassword(e.target.value)}
+                          placeholder="Nom"
+                          value={(form.last_name ?? "") as string}
+                          onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
                           style={inputStyle}
                         />
                       </div>
+
+                      <input
+                        placeholder="Adresse e-mail"
+                        value={(form.email ?? "") as string}
+                        onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                        style={inputStyle}
+                      />
+
+                      <input
+                        placeholder="Username"
+                        value={(form.username ?? "") as string}
+                        onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                        style={inputStyle}
+                      />
+
+                      <select
+                        value={(form.role ?? "player") as string}
+                        onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as AppRole }))}
+                        style={inputStyle}
+                      >
+                        <option value="player">Joueur</option>
+                        <option value="coach">Coach</option>
+                        <option value="manager">Manager</option>
+                        <option value="parent">Parent</option>
+                        <option value="captain">Capitaine</option>
+                        <option value="staff">Staff</option>
+                      </select>
+
+                      <input
+                        placeholder="Changer mot de passe (optionnel)"
+                        type="text"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        style={inputStyle}
+                      />
 
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="btn" onClick={saveEdit} disabled={savingId === u.id}>
@@ -425,3 +349,4 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   background: "white",
 };
+

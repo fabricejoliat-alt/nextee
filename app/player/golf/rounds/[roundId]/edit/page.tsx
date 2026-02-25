@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Round = {
   id: string;
@@ -60,6 +61,7 @@ function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
 }
 
 export default function EditRoundWizardPage() {
+  const { t } = useI18n();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -165,7 +167,7 @@ export default function EditRoundWizardPage() {
         try {
           await upsertHole(toSave);
         } catch (e: any) {
-          setError(e?.message ?? "Erreur enregistrement.");
+          setError(e?.message ?? t("trainingNew.saving"));
         } finally {
           setSaving(false);
           inFlightRef.current = null;
@@ -199,7 +201,7 @@ export default function EditRoundWizardPage() {
       try {
         await upsertHole(toSave);
       } catch (e: any) {
-        setError(e?.message ?? "Erreur enregistrement.");
+          setError(e?.message ?? t("trainingNew.saving"));
       } finally {
         setSaving(false);
         inFlightRef.current = null;
@@ -213,7 +215,7 @@ export default function EditRoundWizardPage() {
   // --- load ---
   async function load() {
     if (!roundId) {
-      setError("Identifiant de parcours invalide.");
+      setError(t("roundsEdit.error.invalidId"));
       setLoading(false);
       return;
     }
@@ -234,7 +236,7 @@ export default function EditRoundWizardPage() {
       return;
     }
     if (!rRes.data) {
-      setError("Parcours introuvable.");
+      setError(t("roundsEdit.error.notFound"));
       setRound(null);
       setLoading(false);
       return;
@@ -317,9 +319,9 @@ export default function EditRoundWizardPage() {
   const isLastHole = holeIdx === 17;
   const fairwayChosen = hole?.fairway_hit !== null;
   const isPar3 = hole?.par === 3;
-  const missLabel = isPar3 ? "Miss Green" : "Miss Fairway";
-  const hitLabel = isPar3 ? "Hit Green" : "Hit Fairway";
-  const chooseLabel = isPar3 ? "Hit ou Miss Green" : "Hit ou Miss Fairway";
+  const missLabel = isPar3 ? t("roundsEdit.missGreen") : t("roundsEdit.missFairway");
+  const hitLabel = isPar3 ? t("roundsEdit.hitGreen") : t("roundsEdit.hitFairway");
+  const chooseLabel = isPar3 ? t("roundsEdit.chooseGreen") : t("roundsEdit.chooseFairway");
 
   function commitPatch(patch: Partial<Hole>) {
     if (!hole) return;
@@ -360,7 +362,7 @@ export default function EditRoundWizardPage() {
 
   async function deleteRound() {
     if (!roundId) return;
-    if (!confirm("Supprimer ce parcours ?")) return;
+    if (!confirm(t("roundsEdit.confirmDelete"))) return;
 
     const del = await supabase.from("golf_rounds").delete().eq("id", roundId);
     if (del.error) {
@@ -370,19 +372,19 @@ export default function EditRoundWizardPage() {
     router.push("/player/golf/rounds");
   }
 
-  if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
+  if (loading) return <div style={{ color: "var(--muted)" }}>{t("common.loading")}</div>;
 
   if (!round) {
     return (
       <div style={{ display: "grid", gap: 12 }}>
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 900 }}>Parcours</div>
+          <div style={{ fontWeight: 900 }}>{t("rounds.title")}</div>
           <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            {error ?? "Impossible d’afficher le parcours."}
+            {error ?? t("roundsEdit.error.cannotDisplay")}
           </div>
         </div>
         <Link className="btn" href="/player/golf/rounds">
-          Retour
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -401,7 +403,7 @@ export default function EditRoundWizardPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Saisir les trous
+                {t("roundsEdit.enterHoles")}
               </div>
             </div>
           </div>
@@ -422,7 +424,7 @@ export default function EditRoundWizardPage() {
               }}
             >
               <div style={{ fontWeight: 1000, fontSize: 32, lineHeight: 1 }}>
-                Trou {hole?.hole_no ?? holeIdx + 1}
+                {t("roundsEdit.hole")} {hole?.hole_no ?? holeIdx + 1}
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -438,7 +440,7 @@ export default function EditRoundWizardPage() {
               <div style={{ display: "grid", gap: 14 }}>
                 {/* SCORE */}
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>Score</div>
+                  <div style={fieldLabelStyle}>{t("rounds.score")}</div>
 
                   <div
                     style={{
@@ -484,7 +486,7 @@ export default function EditRoundWizardPage() {
 
                 {/* PUTTS */}
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>Putts</div>
+                  <div style={fieldLabelStyle}>{t("rounds.putts")}</div>
 
                   <div
                     style={{
@@ -536,7 +538,7 @@ export default function EditRoundWizardPage() {
 
                 {/* FAIRWAY */}
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>{isPar3 ? "Green" : "Fairway"}</div>
+                  <div style={fieldLabelStyle}>{isPar3 ? t("roundsEdit.green") : t("roundsEdit.fairway")}</div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <button
@@ -590,12 +592,12 @@ export default function EditRoundWizardPage() {
                     disabled={saving || holeIdx === 0}
                     style={{ width: "100%" }}
                   >
-                    {holeIdx === 0 ? "Trou —" : `Trou ${holeIdx}`}
+                    {holeIdx === 0 ? t("roundsEdit.holeDash") : `${t("roundsEdit.hole")} ${holeIdx}`}
                   </button>
 
                   {!isLastHole ? (
                     <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }} disabled={saving}>
-                      {`Trou ${holeIdx + 2}`}
+                      {`${t("roundsEdit.hole")} ${holeIdx + 2}`}
                     </button>
                   ) : (
                     <button
@@ -605,7 +607,7 @@ export default function EditRoundWizardPage() {
                       style={{ width: "100%" }}
                       disabled={saving}
                     >
-                      Terminer
+                      {t("roundsEdit.finish")}
                     </button>
                   )}
                 </div>
@@ -615,11 +617,11 @@ export default function EditRoundWizardPage() {
 
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             <Link className="cta-green cta-green-inline" href={scorecardHref} style={{ width: "100%", justifyContent: "center" as any }}>
-              Afficher la carte des scores
+              {t("roundsEdit.showScorecard")}
             </Link>
 
             <button type="button" className="btn" onClick={deleteRound} style={{ width: "100%" }} disabled={saving}>
-              Supprimer ce parcours
+              {t("roundsEdit.deleteRound")}
             </button>
           </div>
         </div>

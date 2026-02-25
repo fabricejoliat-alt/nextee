@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     const { data: profiles, error: profErr } = await supabaseAdmin
   .from("profiles")
   .select(
-    "id, first_name, last_name, birth_date, nationality, sex, handicap, address, postal_code, locality, phone"
+    "id, first_name, last_name, username, app_role"
   )
   .order("created_at", { ascending: false });
 
@@ -64,7 +64,11 @@ export async function GET(req: Request) {
     }
 
     const out = filtered.map((p: any) => ({
-      ...p,
+      id: p.id,
+      first_name: p.first_name ?? null,
+      last_name: p.last_name ?? null,
+      username: p.username ?? null,
+      role: p.app_role ?? "player",
       email: authEmailById.get(p.id) ?? "",
     }));
 

@@ -13,7 +13,7 @@ export default function AdminHomeStats() {
     setLoading(true);
     setError(null);
 
-    // clubs count
+    // organizations count (legacy source: clubs table for now)
     const clubsRes = await supabase.from("clubs").select("id", { count: "exact", head: true });
     if (clubsRes.error) {
       setError(clubsRes.error.message);
@@ -51,7 +51,7 @@ export default function AdminHomeStats() {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Accueil Admin</h1>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Accueil</h1>
         <p style={{ marginTop: 6, color: "var(--muted)" }}>
           Vue rapide de l’application.
         </p>
@@ -73,7 +73,7 @@ export default function AdminHomeStats() {
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
         <div className="card">
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>Clubs</div>
+          <div style={{ color: "var(--muted)", fontSize: 13 }}>Organisations</div>
           <div style={{ fontSize: 34, fontWeight: 900, marginTop: 6 }}>
             {loading ? "…" : clubCount}
           </div>

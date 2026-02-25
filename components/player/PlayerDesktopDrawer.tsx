@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
   Home,
   Flag,
@@ -51,8 +52,9 @@ function isActive(pathname: string, href: string) {
 export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
 
-  const [fullName, setFullName] = useState<string>("Nom et Prénom");
+  const [fullName, setFullName] = useState<string>(t("common.defaultName"));
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +74,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       const { data: auth } = await supabase.auth.getUser();
       const userId = auth.user?.id;
       if (!userId) {
-        setFullName("Nom et Prénom");
+        setFullName(t("common.defaultName"));
         return;
       }
 
@@ -87,39 +89,39 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       const ln = (profile?.last_name ?? "").trim();
       const name = `${fn} ${ln}`.trim();
 
-      setFullName(name || "Nom et Prénom");
+      setFullName(name || t("common.defaultName"));
     })();
-  }, [open]);
+  }, [open, t]);
 
   const nav = useMemo(
     () => [
       {
-        label: "Accueil",
+        label: t("nav.home"),
         icon: Home,
         href: ROUTES.home,
       },
       {
-        label: "Mon Golf",
+        label: t("player.myGolf"),
         icon: Flag,
         children: [
           { label: "Dashboard", icon: Home, href: ROUTES.golfDashboard },
-          { label: "Mes entraînements", icon: ClipboardList, href: ROUTES.trainingsList },
-          { label: "Ajouter un entraînement", icon: PlusCircle, href: ROUTES.trainingsNew },
-          { label: "Mes parcours", icon: Map, href: ROUTES.roundsList },
-          { label: "Ajouter un parcours", icon: PlusCircle, href: ROUTES.roundsNew },
+          { label: t("player.trainings"), icon: ClipboardList, href: ROUTES.trainingsList },
+          { label: t("player.newTraining"), icon: PlusCircle, href: ROUTES.trainingsNew },
+          { label: t("player.rounds"), icon: Map, href: ROUTES.roundsList },
+          { label: t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
         ],
       },
       {
-        label: "Marketplace",
+        label: t("nav.marketplace"),
         icon: Store,
         children: [
-          { label: "Toutes les annonces", icon: Tags, href: ROUTES.marketplaceAll },
-          { label: "Mes annonces", icon: ClipboardList, href: ROUTES.marketplaceMine },
-          { label: "Ajouter une annonce", icon: PlusCircle, href: ROUTES.marketplaceNew },
+          { label: t("player.allListings"), icon: Tags, href: ROUTES.marketplaceAll },
+          { label: t("player.myListings"), icon: ClipboardList, href: ROUTES.marketplaceMine },
+          { label: t("player.newListing"), icon: PlusCircle, href: ROUTES.marketplaceNew },
         ],
       },
     ],
-    []
+    [t]
   );
 
   async function handleLogout() {
@@ -136,11 +138,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       <button
         type="button"
         className="drawer-overlay"
-        aria-label="Fermer"
+        aria-label={t("common.close")}
         onClick={onClose}
       />
 
-      <aside className="drawer-panel drawer-panel--left" aria-label="Navigation">
+      <aside className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
         {/* Top bar */}
         <div className="drawer-top">
           <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee">
@@ -148,7 +150,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             <span className="drawer-brand-tee">Tee</span>
           </Link>
 
-          <button className="icon-btn drawer-close" type="button" onClick={onClose} aria-label="Fermer">
+          <button className="icon-btn drawer-close" type="button" onClick={onClose} aria-label={t("common.close")}>
             <X size={20} strokeWidth={2} />
           </button>
         </div>
@@ -216,14 +218,14 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           <Link href={ROUTES.profileEdit} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profileEdit) ? "active" : ""}`} onClick={onClose}>
             <span className="drawer-item-left">
               <User size={16} strokeWidth={2} />
-              <span>Mon profil</span>
+              <span>{t("common.profile")}</span>
             </span>
           </Link>
 
           <button type="button" className="drawer-subitem drawer-subitem--danger" onClick={handleLogout}>
             <span className="drawer-item-left">
               <LogOut size={16} strokeWidth={2} />
-              <span>Déconnexion</span>
+              <span>{t("common.logout")}</span>
             </span>
           </button>
         </div>

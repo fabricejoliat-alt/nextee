@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
   ResponsiveContainer,
   LineChart,
@@ -80,20 +81,6 @@ type ProfileLite = {
   avatar_url: string | null;
 };
 
-const TRAINING_CAT_LABEL: Record<string, string> = {
-  warmup_mobility: "Échauffement",
-  long_game: "Long jeu",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Mental",
-  fitness: "Fitness",
-  other: "Autre",
-};
-
 const LOOKBACK_DAYS = 14;
 
 function clamp(n: number, a: number, b: number) {
@@ -128,17 +115,17 @@ function last3MonthsRangeLocal(now = new Date()) {
   return { start, end };
 }
 
-function fmtPeriod(fromDate: string, toDate: string) {
-  if (!fromDate && !toDate) return "Toute l’activité";
+function fmtPeriod(fromDate: string, toDate: string, locale: string, t: (key: string) => string) {
+  if (!fromDate && !toDate) return t("common.allActivity");
   const f = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
-  const t = toDate ? new Date(`${toDate}T00:00:00`) : null;
+  const toD = toDate ? new Date(`${toDate}T00:00:00`) : null;
 
   const fmt = (d: Date) =>
-    new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
 
-  if (f && t) return `${fmt(f)} → ${fmt(t)}`;
-  if (f) return `Depuis ${fmt(f)}`;
-  if (t) return `Jusqu’au ${fmt(t)}`;
+  if (f && toD) return `${fmt(f)} → ${fmt(toD)}`;
+  if (f) return `${t("golfDashboard.from")} ${fmt(f)}`;
+  if (toD) return `${t("golfDashboard.to")} ${fmt(toD)}`;
   return "—";
 }
 
@@ -158,13 +145,13 @@ function weekStartMonday(d: Date) {
   return x;
 }
 
-function typeLabelLong(t: SessionType) {
-  if (t === "club") return "Entraînement en club";
-  if (t === "private") return "Entraînement privé";
-  return "Entraînement individuel";
+function typeLabelLong(sessionType: SessionType, t: (key: string) => string) {
+  if (sessionType === "club") return t("trainingDetail.typeClub");
+  if (sessionType === "private") return t("trainingDetail.typePrivate");
+  return t("trainingDetail.typeIndividual");
 }
 
-function deltaArrow(delta: number | null) {
+function deltaArrow(delta: number | null, title = "Previous period comparison") {
   if (delta == null || !Number.isFinite(delta)) return null;
   const up = delta > 0;
   const down = delta < 0;
@@ -182,7 +169,7 @@ function deltaArrow(delta: number | null) {
         textAlign: "center",
         color: up ? "rgba(47,125,79,1)" : down ? "rgba(185,28,28,1)" : "rgba(0,0,0,0.55)",
       }}
-      title="Comparatif période précédente"
+      title={title}
     >
       {sign}
     </span>
@@ -303,12 +290,12 @@ function pearson(xs: number[], ys: number[]) {
 }
 
 function corrStrength(r: number | null) {
-  if (r == null) return { label: "—" };
+  if (r == null) return { labelKey: "golfDashboard.corr.none" };
   const ar = Math.abs(r);
-  if (ar >= 0.6) return { label: "forte" };
-  if (ar >= 0.35) return { label: "modérée" };
-  if (ar >= 0.2) return { label: "faible" };
-  return { label: "très faible" };
+  if (ar >= 0.6) return { labelKey: "golfDashboard.corr.strong" };
+  if (ar >= 0.35) return { labelKey: "golfDashboard.corr.moderate" };
+  if (ar >= 0.2) return { labelKey: "golfDashboard.corr.weak" };
+  return { labelKey: "golfDashboard.corr.veryWeak" };
 }
 
 function pct(n: number, d: number) {
@@ -350,6 +337,8 @@ function initials(p?: ProfileLite | null) {
 }
 
 export default function GolfDashboardPage() {
+  const { t, locale } = useI18n();
+  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
   const params = useParams<{ playerId: string }>();
   const searchParams = useSearchParams();
   const playerId = String(params?.playerId ?? "").trim();
@@ -437,7 +426,7 @@ export default function GolfDashboardPage() {
           .map((r) => r.club_id)
           .filter((id) => myClubIds.has(id));
 
-        if (sharedClubIds.length === 0) throw new Error("Accès refusé à ce joueur.");
+        if (sharedClubIds.length === 0) throw new Error("Access denied for this player.");
         setSharedClubIds(sharedClubIds);
 
         const [profileRes, clubsRes] = await Promise.all([
@@ -530,7 +519,7 @@ export default function GolfDashboardPage() {
     setCustomOpen(false);
   }
 
-  const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate), [fromDate, toDate]);
+  const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate, dateLocale, t), [dateLocale, fromDate, t, toDate]);
 
   const prevRange = useMemo(() => {
     if (preset === "all") return null;
@@ -568,10 +557,10 @@ export default function GolfDashboardPage() {
 
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
-    if (preset === "month") return "vs mois précédent";
-    if (preset === "last3") return "vs 3 mois précédents";
-    return "vs période précédente";
-  }, [prevRange, preset]);
+    if (preset === "month") return t("golfDashboard.vsPrevMonth");
+    if (preset === "last3") return t("golfDashboard.vsPrev3Months");
+    return t("golfDashboard.vsPrevPeriod");
+  }, [prevRange, preset, t]);
 
   // ===== LOAD TRAININGS (current) =====
   useEffect(() => {
@@ -827,11 +816,11 @@ export default function GolfDashboardPage() {
   }, [canLoadData, fromDate, playerId, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
-  month: "Ce mois",
-  last3: "3 derniers mois",
-  all: "Toute l’activité",
-  custom: "Personnalisé",
-};
+    month: t("common.thisMonth"),
+    last3: t("common.last3Months"),
+    all: t("common.allActivity"),
+    custom: t("common.custom"),
+  };
 
 function presetToSelectValue(p: Preset): Preset {
   // Le select doit rester cohérent : si customOpen est ouvert ou preset=custom -> custom
@@ -892,9 +881,9 @@ function presetToSelectValue(p: Preset): Preset {
 
   const topCats = useMemo(() => {
     return Object.entries(minutesByCat)
-      .map(([cat, minutes]) => ({ cat, label: TRAINING_CAT_LABEL[cat] ?? cat, minutes }))
+      .map(([cat, minutes]) => ({ cat, label: t(`cat.${cat}`), minutes }))
       .sort((a, b) => b.minutes - a.minutes);
-  }, [minutesByCat]);
+  }, [minutesByCat, t]);
 
   const catMax = useMemo(() => {
     const m = topCats.reduce((mx, x) => Math.max(mx, x.minutes), 0);
@@ -993,10 +982,10 @@ function presetToSelectValue(p: Preset): Preset {
 
     return list.map((x) => {
       const d = new Date(`${x.week}T00:00:00`);
-      const label = new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "2-digit" }).format(d);
+      const label = new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "2-digit" }).format(d);
       return { ...x, weekLabel: label };
     });
-  }, [filteredSessions]);
+  }, [dateLocale, filteredSessions]);
 
   // ===== MES PARCOURS AGGREGATES (CURRENT + PREV) =====
   const holeAgg = useMemo(() => {
@@ -1433,10 +1422,10 @@ function presetToSelectValue(p: Preset): Preset {
       const st = corrStrength(corr.putting_vs_putts);
       const good = corr.putting_vs_putts < 0; // more putting -> fewer putts
       tips.push({
-        title: `Putting ↔ Putts (${st.label})`,
+        title: `${t("golfDashboard.correlation.puttingPutts")} (${t(st.labelKey)})`,
         body: good
-          ? "Ton putting semble se traduire par moins de putts. Garde 2 micro-séances/semaine (20–30 min) + 10 minutes de “speed control” à chaque entraînement."
-          : "Ton putting ne se voit pas encore sur les putts. Mets l’accent sur la vitesse (putts longs) + routine : 10 putts à 1m en fin de séance (objectif 10/10).",
+          ? t("golfDashboard.advice.puttingGood")
+          : t("golfDashboard.advice.puttingWeak"),
       });
     }
 
@@ -1444,10 +1433,10 @@ function presetToSelectValue(p: Preset): Preset {
       const st = corrStrength(corr.long_vs_fairway);
       const good = corr.long_vs_fairway > 0;
       tips.push({
-        title: `Long jeu ↔ Fairways (${st.label})`,
+        title: `${t("golfDashboard.correlation.longFairways")} (${t(st.labelKey)})`,
         body: good
-          ? "Le long jeu a un impact positif sur les fairways. Pour accélérer : séance 'cible étroite' (couloir) + 10 mises en jeu “routine complète”."
-          : "Pas de lien clair long jeu → fairways. Ajoute du transfert : 1 balle = 1 cible, et note le choix de club/ligne sur le parcours.",
+          ? t("golfDashboard.advice.longGameGood")
+          : t("golfDashboard.advice.longGameWeak"),
       });
     }
 
@@ -1455,10 +1444,10 @@ function presetToSelectValue(p: Preset): Preset {
       const st = corrStrength(corr.mins_vs_score);
       const good = corr.mins_vs_score < 0; // more training -> lower score
       tips.push({
-        title: `Volume (14j) ↔ Score (${st.label})`,
+        title: `${t("golfDashboard.correlation.volumeScore")} (${t(st.labelKey)})`,
         body: good
-          ? "La régularité d’entraînement est associée à un meilleur score. Vise 2–3 séances/semaine plutôt que de gros blocs irréguliers."
-          : "Le volume seul n’explique pas ton score : on doit mieux répartir par secteurs et ajouter des objectifs (ex: fairways, putts, doubles+).",
+          ? t("golfDashboard.advice.volumeGood")
+          : t("golfDashboard.advice.volumeWeak"),
       });
     }
 
@@ -1466,15 +1455,15 @@ function presetToSelectValue(p: Preset): Preset {
       const st = corrStrength(corr.mental_vs_doubles);
       const good = corr.mental_vs_doubles < 0; // more mental -> fewer doubles+
       tips.push({
-        title: `Mental ↔ Doubles+ (${st.label})`,
+        title: `${t("golfDashboard.correlation.mentalDoubles")} (${t(st.labelKey)})`,
         body: good
-          ? "Le mental semble réduire les grosses erreurs. Continue : routine + reset après erreur (respiration 10s, plan simple)."
-          : "Les doubles+ semblent venir d’autres facteurs (mise en jeu / pénalités / sorties). On pourra renforcer avec analyse trou par trou + notes.",
+          ? t("golfDashboard.advice.mentalGood")
+          : t("golfDashboard.advice.mentalWeak"),
       });
     }
 
     return tips.slice(0, 4);
-  }, [corr]);
+  }, [corr, t]);
 
   // ===== UI =====
   const kpiGridClass = "golf-kpi-grid";
@@ -1488,7 +1477,7 @@ function presetToSelectValue(p: Preset): Preset {
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
         {!accessChecked ? (
-          <div className="glass-card" style={{ marginTop: 12, fontWeight: 800, opacity: 0.8 }}>Chargement…</div>
+          <div className="glass-card" style={{ marginTop: 12, fontWeight: 800, opacity: 0.8 }}>{t("common.loading")}</div>
         ) : null}
 
         {/* ===== Header ===== */}
@@ -1563,7 +1552,7 @@ function presetToSelectValue(p: Preset): Preset {
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
         <SlidersHorizontal size={16} />
         <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
-          Période
+          {t("common.period")}
         </div>
       </div>
 
@@ -1609,12 +1598,12 @@ function presetToSelectValue(p: Preset): Preset {
           outline: "none",
           appearance: "none",
         }}
-        aria-label="Filtrer par période"
+        aria-label={t("common.filterByPeriod")}
       >
         <option value="month">Ce mois</option>
         <option value="last3">3 derniers mois</option>
-        <option value="all">Toute l’activité</option>
-        <option value="custom">Personnalisé</option>
+        <option value="all">{t("common.allActivity")}</option>
+        <option value="custom">{t("common.custom")}</option>
       </select>
 
       <div className="hr-soft" style={{ margin: "2px 0" }} />
@@ -1635,7 +1624,7 @@ function presetToSelectValue(p: Preset): Preset {
               : {}
           }
         >
-          Club avec moi coach
+          {t("coachPlayerDashboard.scopeMineClub")}
         </button>
         <button
           type="button"
@@ -1648,13 +1637,13 @@ function presetToSelectValue(p: Preset): Preset {
               : {}
           }
         >
-          Tous les entraînements
+          {t("coachPlayerDashboard.scopeAll")}
         </button>
       </div>
       <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
         {trainingScope === "mine_club"
-          ? "Uniquement les entraînements de club où vous êtes renseigné comme coach."
-          : "Affiche tous les entraînements du joueur (tous clubs/coachs confondus)."}
+          ? t("coachPlayerDashboard.scopeMineClubHint")
+          : t("coachPlayerDashboard.scopeAllHint")}
       </div>
 
       {/* Custom dates */}
@@ -1730,7 +1719,7 @@ function presetToSelectValue(p: Preset): Preset {
                 height: 44,
               }}
             >
-              Effacer les dates
+              {t("common.clearDates")}
             </button>
           </div>
         </>
@@ -1742,7 +1731,7 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== Title Trainings ===== */}
         <div className="glass-section" style={{ paddingTop: 0 }}>
           <div className="section-title" style={{ marginBottom: 0 }}>
-            {`Les entraînements de ${playerFirstName}`}
+            {t("coachPlayerDashboard.trainingsOf").replace("{name}", playerFirstName)}
           </div>
         </div>
 
@@ -1750,12 +1739,12 @@ function presetToSelectValue(p: Preset): Preset {
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card">
-              <div className="card-title">Volume</div>
+              <div className="card-title">{t("golfDashboard.volume")}</div>
 
               {loading ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : filteredSessions.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   <div style={{ display: "grid", gap: 8 }}>
@@ -1774,7 +1763,7 @@ function presetToSelectValue(p: Preset): Preset {
                             fontWeight: 950,
                             color: deltaMinutes >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
                           }}
-                          title="Comparatif période précédente"
+                          title={t("golfDashboard.previousPeriodComparison")}
                         >
                           {deltaMinutes >= 0 ? "▲" : "▼"} {Math.abs(deltaMinutes)} min
                         </span>
@@ -1782,7 +1771,7 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                      <span className="pill-soft">⛳ {filteredSessions.length} séances</span>
+                      <span className="pill-soft">⛳ {filteredSessions.length} {t("golfDashboard.sessions")}</span>
 
                       {deltaCount != null && (
                         <span
@@ -1793,34 +1782,34 @@ function presetToSelectValue(p: Preset): Preset {
                             fontWeight: 950,
                             color: deltaCount >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
                           }}
-                          title="Comparatif période précédente"
+                          title={t("golfDashboard.previousPeriodComparison")}
                         >
-                          {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} séances
+                          {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} {t("golfDashboard.sessions")}
                         </span>
                       )}
                     </div>
 
                     {compareLabel && (
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? "Comparatif…" : compareLabel}</div>
+                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
                     )}
                   </div>
 
                   <div className="hr-soft" style={{ margin: "2px 0" }} />
 
                   <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Répartition</div>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("golfDashboard.breakdown")}</div>
 
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("club")}</div>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("club", t)}</div>
                         <div style={typeRowRightStyle}>{byType.club}</div>
                       </div>
                       <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("private")}</div>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("private", t)}</div>
                         <div style={typeRowRightStyle}>{byType.private}</div>
                       </div>
                       <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("individual")}</div>
+                        <div style={typeRowLeftStyle}>{typeLabelLong("individual", t)}</div>
                         <div style={typeRowRightStyle}>{byType.individual}</div>
                       </div>
                     </div>
@@ -1830,18 +1819,18 @@ function presetToSelectValue(p: Preset): Preset {
             </div>
 
             <div className="glass-card">
-              <div className="card-title">Sensations (moyennes)</div>
+              <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
 
               {filteredSessions.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 14 }}>
-                  <RatingBar icon={<Flame size={16} />} label="Motivation" value={avgMotivation} delta={deltaMot} />
-                  <RatingBar icon={<Mountain size={16} />} label="Difficulté" value={avgDifficulty} delta={deltaDif} />
-                  <RatingBar icon={<Smile size={16} />} label="Satisfaction" value={avgSatisfaction} delta={deltaSat} />
+                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
                   {compareLabel && (
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? "Comparatif…" : compareLabel}</div>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
                   )}
                 </div>
               )}
@@ -1852,10 +1841,10 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== Graphes trainings ===== */}
         <div className="glass-section">
           <div className="glass-card">
-            <div className="card-title">Volume hebdomadaire</div>
+            <div className="card-title">{t("golfDashboard.weeklyVolume")}</div>
 
             {weekSeries.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
               <div style={{ height: 260 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1865,7 +1854,7 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="minutes" name="Minutes / semaine" fill="rgba(53,72,59,0.65)" />
+                    <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1875,10 +1864,10 @@ function presetToSelectValue(p: Preset): Preset {
 
         <div className="glass-section">
           <div className="glass-card">
-            <div className="card-title">Tendance des sensations (par semaine)</div>
+            <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
 
             {weekSeries.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1889,9 +1878,9 @@ function presetToSelectValue(p: Preset): Preset {
                     <Tooltip />
                     <Legend />
 
-                    <Line type="monotone" dataKey="motivation" name="Motivation" stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="difficulty" name="Difficulté" stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
-                    <Line type="monotone" dataKey="satisfaction" name="Satisfaction" stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
+                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -1901,10 +1890,10 @@ function presetToSelectValue(p: Preset): Preset {
 
         <div className="glass-section">
           <div className="glass-card">
-            <div className="card-title">Répartition des postes</div>
+            <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
 
             {topCats.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 {topCats.slice(0, 8).map((x) => {
@@ -1929,7 +1918,7 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== Title Rounds ===== */}
         <div className="glass-section" style={{ paddingTop: 0 }}>
           <div className="section-title" style={{ marginBottom: 0 }}>
-            {`Les parcours de ${playerFirstName}`}
+            {t("coachPlayerDashboard.roundsOf").replace("{name}", playerFirstName)}
           </div>
         </div>
 
@@ -1938,17 +1927,17 @@ function presetToSelectValue(p: Preset): Preset {
           <div className={kpiGridClass} style={kpiGridStyle}>
             {/* Card 1: Volume + trous + split training/competition */}
             <div className="glass-card">
-              <div className="card-title">Volume de jeu</div>
+              <div className="card-title">{t("golfDashboard.playVolume")}</div>
 
               {loadingRounds || loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : rounds.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun parcours sur la période.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={miniRow}>
-                      <div style={miniLeft}>Parcours joués</div>
+                      <div style={miniLeft}>{t("golfDashboard.roundsPlayed")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{rounds.length}</div>
                         {prevRange ? deltaArrow(rounds.length - prevRounds.length) : null}
@@ -1956,7 +1945,7 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
 
                     <div style={miniRow}>
-                      <div style={miniLeft}>Trous joués</div>
+                      <div style={miniLeft}>{t("golfDashboard.holesPlayed")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{holeAgg.holesPlayed}</div>
                         {prevRange ? deltaArrow(holeAgg.holesPlayed - prevHoles.length) : null}
@@ -1968,7 +1957,7 @@ function presetToSelectValue(p: Preset): Preset {
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={miniRow}>
-                      <div style={miniLeft}>Parcours d’entraînement</div>
+                      <div style={miniLeft}>{t("golfDashboard.trainingRounds")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{roundsSplit.training}</div>
                         {prevRange ? deltaArrow(roundsSplit.training - prevRoundsSplit.training) : null}
@@ -1976,7 +1965,7 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
 
                     <div style={miniRow}>
-                      <div style={miniLeft}>Parcours de compétition</div>
+                      <div style={miniLeft}>{t("golfDashboard.competitionRounds")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{roundsSplit.competition}</div>
                         {prevRange ? deltaArrow(roundsSplit.competition - prevRoundsSplit.competition) : null}
@@ -1985,7 +1974,7 @@ function presetToSelectValue(p: Preset): Preset {
 
                     {roundsSplit.other > 0 && (
                       <div style={miniRow}>
-                        <div style={miniLeft}>Autres</div>
+                        <div style={miniLeft}>{t("golfDashboard.other")}</div>
                         <div style={miniRight}>{roundsSplit.other}</div>
                       </div>
                     )}
@@ -1995,14 +1984,14 @@ function presetToSelectValue(p: Preset): Preset {
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={miniRow}>
-                      <div style={miniLeft}>Score moyen (18 trous)</div>
+                      <div style={miniLeft}>{t("golfDashboard.avgScore18")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{holeAgg.avgScore18 ?? "—"}</div>
                         {prevRange ? deltaArrow((holeAgg.avgScore18 ?? 0) - (prevHoleAgg.avgScore18 ?? 0)) : null}
                       </div>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                      Moyenne calculée uniquement sur les parcours avec <b>18 trous saisis</b> ({holeAgg.completed18Count} parcours).
+                      {t("golfDashboard.avgScore18Hint").replace("{count}", String(holeAgg.completed18Count))}
                     </div>
                   </div>
 
@@ -2013,12 +2002,12 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 2: Répartition des scores (n + % + trend arrow) */}
             <div className="glass-card">
-              <div className="card-title">Répartition des scores</div>
+              <div className="card-title">{t("golfDashboard.scoreDistribution")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : holeAgg.distDen === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Pas assez de trous saisis pour analyser.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.notEnoughHolesForAnalysis")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
                   {[
@@ -2046,16 +2035,16 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 3: GIR / Putts / Fairways */}
             <div className="glass-card">
-              <div className="card-title">Régularité</div>
+              <div className="card-title">{t("golfDashboard.consistency")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : rounds.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={miniRow}>
-                    <div style={miniLeft}>Greens en régulation</div>
+                    <div style={miniLeft}>{t("golfDashboard.gir")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{keyKpisUI.girPct == null ? "—" : `${keyKpisUI.girPct}%`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.girArrow ?? null) : null}
@@ -2063,7 +2052,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>Moyenne de putt</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgPutts")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{keyKpisUI.puttsPerHole == null ? "—" : `${keyKpisUI.puttsPerHole}`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.puttsArrow ?? null) : null}
@@ -2071,7 +2060,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>Fairways touchés</div>
+                    <div style={miniLeft}>{t("golfDashboard.fairwaysHit")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{keyKpisUI.fwPct == null ? "—" : `${keyKpisUI.fwPct}%`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.fwArrow ?? null) : null}
@@ -2079,9 +2068,9 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    GIR basé sur <b>golf_rounds.gir</b> et calculé sur les parcours 18 trous.
+                    {t("golfDashboard.girHint1")}
                     <br />
-                    Fairways calculés sur les <b>PAR 4/5</b> où <b>fairway_hit</b> est renseigné.
+                    {t("golfDashboard.girHint2")}
                   </div>
 
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
@@ -2091,16 +2080,16 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 4: Par3/Par4/Par5 averages */}
             <div className="glass-card">
-              <div className="card-title">Scores par PAR</div>
+              <div className="card-title">{t("golfDashboard.scoresByPar")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : holeAgg.holesPlayed === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={miniRow}>
-                    <div style={miniLeft}>Score moyen PAR 3</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgPar3")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{parAvgUI.par3 ?? "—"}</div>
                       {prevRange ? deltaArrow(parAvgUI.par3Arrow ?? null) : null}
@@ -2108,7 +2097,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>Score moyen PAR 4</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgPar4")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{parAvgUI.par4 ?? "—"}</div>
                       {prevRange ? deltaArrow(parAvgUI.par4Arrow ?? null) : null}
@@ -2116,7 +2105,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>Score moyen PAR 5</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgPar5")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{parAvgUI.par5 ?? "—"}</div>
                       {prevRange ? deltaArrow(parAvgUI.par5Arrow ?? null) : null}
@@ -2124,7 +2113,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    Calcul basé sur les trous saisis (score / trou), par type de PAR.
+                    {t("golfDashboard.scoreByParHint")}
                   </div>
 
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
@@ -2134,16 +2123,16 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 5: 1-9 / 10-18 averages */}
             <div className="glass-card">
-              <div className="card-title">Front 9 vs Back 9</div>
+              <div className="card-title">{t("golfDashboard.frontBackTitle")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
               ) : holeAgg.holesPlayed === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={miniRow}>
-                    <div style={miniLeft}>Score moyen 1 à 9</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgFront9")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{sideAvgUI.front ?? "—"}</div>
                       {prevRange ? deltaArrow(sideAvgUI.frontArrow ?? null) : null}
@@ -2151,7 +2140,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>Score moyen 10 à 18</div>
+                    <div style={miniLeft}>{t("golfDashboard.avgBack9")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{sideAvgUI.back ?? "—"}</div>
                       {prevRange ? deltaArrow(sideAvgUI.backArrow ?? null) : null}
@@ -2159,7 +2148,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    Calcul basé sur les trous saisis (score / trou) sur chaque moitié.
+                    {t("golfDashboard.frontBackHint")}
                   </div>
 
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}

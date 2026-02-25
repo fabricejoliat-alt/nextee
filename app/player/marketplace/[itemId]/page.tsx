@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
   id: string;
@@ -36,13 +37,13 @@ function getIdFromPathname(pathname: string): string | null {
   return last;
 }
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
-function priceLabel(it: Item) {
-  if (it.is_free) return "À donner";
+function priceLabel(it: Item, t: (key: string) => string) {
+  if (it.is_free) return t("marketplace.free");
   if (it.price == null) return "—";
   return `${it.price} CHF`;
 }
@@ -57,6 +58,8 @@ function compactMeta(it: Item) {
 }
 
 export default function MarketplaceDetailPage() {
+  const { t, locale } = useI18n();
+  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
   const params = useParams();
   const pathname = usePathname();
 
@@ -92,7 +95,7 @@ export default function MarketplaceDetailPage() {
   async function load() {
     if (!itemId) {
       setLoading(false);
-      setError("Identifiant d’annonce introuvable.");
+      setError(t("marketplace.idNotFound"));
       return;
     }
 
@@ -113,7 +116,7 @@ export default function MarketplaceDetailPage() {
         .maybeSingle();
 
       if (itRes.error) throw new Error(itRes.error.message);
-      if (!itRes.data) throw new Error("Annonce introuvable.");
+      if (!itRes.data) throw new Error(t("marketplace.notFound"));
 
       const it = itRes.data as Item;
       setItem(it);
@@ -136,7 +139,7 @@ export default function MarketplaceDetailPage() {
         setImages(urls);
       }
     } catch (e: any) {
-      setError(e?.message ?? "Erreur.");
+      setError(e?.message ?? t("common.errorLoading"));
       setItem(null);
       setImages([]);
       setIsMine(false);
@@ -182,7 +185,7 @@ export default function MarketplaceDetailPage() {
       <div className="player-dashboard-bg">
         <div className="app-shell marketplace-page">
           <div className="glass-section">
-            <div className="glass-card">Chargement…</div>
+            <div className="glass-card">{t("common.loading")}</div>
           </div>
         </div>
       </div>
@@ -195,12 +198,12 @@ export default function MarketplaceDetailPage() {
         <div className="app-shell marketplace-page">
           <div className="glass-section">
             <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-              <div className="card-title">Marketplace</div>
+              <div className="card-title">{t("nav.marketplace")}</div>
               <div style={{ color: "rgba(0,0,0,0.65)", fontWeight: 800, fontSize: 13 }}>
-                {error ?? "Impossible d’afficher l’annonce."}
+                {error ?? t("marketplace.cannotDisplay")}
               </div>
               <Link className="btn" href="/player/marketplace">
-                Retour
+                {t("common.back")}
               </Link>
             </div>
           </div>
@@ -213,7 +216,7 @@ export default function MarketplaceDetailPage() {
   const mainImg = images[0] ?? placeholderSvg;
 
   // ✅ Header title: Marketplace - Catégorie
-  const headerTitle = `Marketplace${item.category ? ` - ${item.category}` : ""}`;
+  const headerTitle = `${t("nav.marketplace")}${item.category ? ` - ${item.category}` : ""}`;
 
   return (
     <div className="player-dashboard-bg">
@@ -226,18 +229,18 @@ export default function MarketplaceDetailPage() {
                 {headerTitle}
               </div>
               <div className="marketplace-filter-label" style={{ marginTop: 0 }}>
-                {fmtDate(item.created_at)}
+                {fmtDate(item.created_at, dateLocale)}
               </div>
             </div>
 
             <div className="marketplace-actions">
               {isMine && (
                 <Link className="cta-green cta-green-inline" href={`/player/marketplace/edit/${item.id}`}>
-                  Modifier
+                  {t("common.edit")}
                 </Link>
               )}
               <Link className="cta-green cta-green-inline" href="/player/marketplace">
-                Retour
+                {t("common.back")}
               </Link>
             </div>
           </div>
@@ -320,7 +323,7 @@ export default function MarketplaceDetailPage() {
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 900, fontSize: 12 }}>
                   {item.is_active ? "Disponible" : "Annonce inactive"}
                 </div>
-                <div className="marketplace-price-pill">{priceLabel(item)}</div>
+                <div className="marketplace-price-pill">{priceLabel(item, t)}</div>
               </div>
             </div>
 
@@ -346,7 +349,7 @@ export default function MarketplaceDetailPage() {
                 </div>
 
                 <div style={{ display: "grid", gap: 6 }}>
-                  <div style={fieldLabelStyle}>Téléphone</div>
+                  <div style={fieldLabelStyle}>{t("marketplace.phone")}</div>
                   <div style={fieldValueStyle}>{item.contact_phone ?? "—"}</div>
                 </div>
               </div>

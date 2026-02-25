@@ -161,6 +161,17 @@ a { color: inherit; text-decoration: none; }
 
 .icon-btn:active{ transform: scale(0.95); }
 
+.lang-toggle{
+  min-width: 40px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(255,255,255,0.24);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
 /* Brand */
 .brand{
   display: inline-flex;
@@ -1453,6 +1464,54 @@ input[type="radio"]{
   opacity: 1;
   background: var(--green-dark) !important;
   box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+}
+
+/* =========================================================
+   12c) ADMIN TYPO TUNING (aligné coach/player)
+   ========================================================= */
+
+.admin-shell{
+  font-family: var(--font-ibm-plex-sans), var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  width: min(1120px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: calc(var(--header-h) + var(--safe-top) + 24px);
+  padding-left: clamp(16px, 3.2vw, 44px);
+  padding-right: clamp(16px, 3.2vw, 44px);
+}
+
+.admin-shell .section-title{
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.55px;
+}
+
+.admin-shell h1,
+.admin-shell h2{
+  letter-spacing: 0.2px;
+}
+
+.admin-shell .btn{
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  height: 36px;
+  background: var(--green-dark) !important;
+  color: #fff !important;
+  border-color: #2f4035 !important;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+}
+
+.admin-shell .btn:hover{
+  background: #2f4035 !important;
+}
+
+.admin-shell .btn:active{
+  background: #27362d !important;
+}
+
+.admin-page{
+  min-height: 100vh;
+  background: #f5f6f8;
 }
 
 /* =========================================================

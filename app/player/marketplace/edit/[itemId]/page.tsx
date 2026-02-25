@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const BUCKET = "marketplace";
 const MAX_IMAGES = 5;
@@ -21,14 +22,14 @@ const CATEGORIES = [
   "Sac",
   "Chariot",
   "GPS / montre",
-  "Télémètre",
+  "Rangefinder",
   "Chaussures",
   "Textile",
   "Accessoires",
   "Divers",
 ] as const;
 
-const CONDITIONS = ["Neuf", "Comme neuf", "Bon état", "À réparer"] as const;
+const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
 
 type Item = {
   id: string;
@@ -88,6 +89,7 @@ function safeExtFromFileName(name: string) {
 }
 
 export default function MarketplaceEditPage() {
+  const { t } = useI18n();
   const params = useParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -563,7 +565,7 @@ export default function MarketplaceEditPage() {
                 {/* Catégorie / État */}
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Catégorie</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.byCategory")}</span>
                     <select
                       value={form.category}
                       onChange={(e) => set("category", e.target.value)}
@@ -579,7 +581,7 @@ export default function MarketplaceEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>État</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.condition")}</span>
                     <select
                       value={form.condition}
                       onChange={(e) => set("condition", e.target.value)}
@@ -603,7 +605,7 @@ export default function MarketplaceEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Modèle (optionnel)</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.modelOptional")}</span>
                     <input value={form.model} onChange={(e) => set("model", e.target.value)} disabled={saving || busyImages} />
                   </label>
                 </div>
@@ -634,7 +636,7 @@ export default function MarketplaceEditPage() {
                         onChange={() => setMode("SELL")}
                         disabled={saving || busyImages}
                       />
-                      <span>À vendre</span>
+                      <span>{t("marketplace.sell")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(saleMode === "GIVE" ? chipRadioActive : {}) }}>
@@ -645,7 +647,7 @@ export default function MarketplaceEditPage() {
                         onChange={() => setMode("GIVE")}
                         disabled={saving || busyImages}
                       />
-                      <span>À donner</span>
+                      <span>{t("marketplace.free")}</span>
                     </label>
                   </div>
 
@@ -679,7 +681,7 @@ export default function MarketplaceEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Téléphone</span>
+                    <span style={fieldLabelStyle}>{t("marketplace.phone")}</span>
                     <input
                       value={form.contact_phone}
                       onChange={(e) => set("contact_phone", e.target.value)}
@@ -768,7 +770,7 @@ export default function MarketplaceEditPage() {
                               opacity: dragIndex === idx ? 0.7 : 1,
                               cursor: saving || busyImages ? "not-allowed" : "grab",
                             }}
-                            title="Glisse pour réordonner"
+                            title={t("marketplace.dragToReorder")}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img

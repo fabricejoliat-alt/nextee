@@ -65,7 +65,7 @@ function isAllowedImage(file: File) {
   return okTypes.includes(file.type);
 }
 
-/** Catégories juniors (SwissGolf-style):
+/** Categorys juniors (SwissGolf-style):
  *  - enfants nés en 2016 et + : U10
  *  - 2014 et + : U12
  *  - 2012 et + : U14
@@ -346,7 +346,7 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    setInfo("Profil enregistré ✅");
+    setInfo("Profile saved ✅");
     setBusy(false);
   }
 
@@ -366,7 +366,7 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     if (!isAllowedImage(file)) {
-      setError("Format non supporté. Utilise JPG, PNG ou WEBP.");
+      setError("Unsupported format. Use JPG, PNG or WEBP.");
       return;
     }
 
@@ -416,7 +416,7 @@ export default function PlayerProfilePage() {
       // ✅ REFRESH: bump de la clé juste après succès => l'image se recharge tout de suite
       setAvatarRefreshKey(Date.now());
 
-      setInfo("Photo de profil mise à jour ✅");
+      setInfo("Profile photo updated ✅");
     } catch (err: any) {
       setError(err?.message ?? "Erreur lors de l’upload de l’avatar.");
     } finally {
@@ -566,7 +566,7 @@ export default function PlayerProfilePage() {
                   </div>
 
                   <div className="grid-2">
-                    <Field label="Prénom">
+                    <Field label="First name">
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                     </Field>
 
@@ -584,8 +584,8 @@ export default function PlayerProfilePage() {
                     />
                   </Field>
 
-                  {/* ✅ Catégorie sur une ligne */}
-                  <Field label="Catégorie">
+                  {/* ✅ Category sur une ligne */}
+                  <Field label="Category">
                     <input value={juniorCategory} disabled />
                   </Field>
 
@@ -600,7 +600,7 @@ export default function PlayerProfilePage() {
                     </Field>
 
                     {/* ✅ NEW */}
-                    <Field label="Dextérité">
+                    <Field label="Handedness">
                       <select
                         value={handedness}
                         onChange={(e) => setHandedness(e.target.value as any)}
@@ -640,7 +640,7 @@ export default function PlayerProfilePage() {
                   </div>
 
                   <div className="grid-2">
-                    <Field label="Téléphone">
+                    <Field label="Phone">
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
@@ -667,7 +667,7 @@ export default function PlayerProfilePage() {
                       <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
-                    <Field label="Localité">
+                    <Field label="City">
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
                     </Field>
                   </div>
@@ -696,10 +696,10 @@ export default function PlayerProfilePage() {
 
                   <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 1</div>
                   <div className="grid-2">
-                    <Field label="Nom & prénom">
+                    <Field label="Full name">
                       <input value={parent1Name} onChange={(e) => setParent1Name(e.target.value)} />
                     </Field>
-                    <Field label="Téléphone">
+                    <Field label="Phone">
                       <input
                         value={parent1Phone}
                         onChange={(e) => setParent1Phone(e.target.value)}
@@ -718,10 +718,10 @@ export default function PlayerProfilePage() {
 
                   <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 2</div>
                   <div className="grid-2">
-                    <Field label="Nom & prénom">
+                    <Field label="Full name">
                       <input value={parent2Name} onChange={(e) => setParent2Name(e.target.value)} />
                     </Field>
-                    <Field label="Téléphone">
+                    <Field label="Phone">
                       <input
                         value={parent2Phone}
                         onChange={(e) => setParent2Phone(e.target.value)}
@@ -920,7 +920,7 @@ async function getCroppedImageBlob(
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas non supporté.");
+  if (!ctx) throw new Error("Canvas not supported.");
 
   const outSize = 512;
   canvas.width = outSize;
@@ -941,7 +941,7 @@ async function getCroppedImageBlob(
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (!blob) return reject(new Error("Impossible de générer l’image recadrée."));
+        if (!blob) return reject(new Error("Cannot generate cropped image."));
         resolve(blob);
       },
       "image/jpeg",

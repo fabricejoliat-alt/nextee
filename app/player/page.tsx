@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Profile = {
   id: string;
@@ -64,24 +65,10 @@ type GolfRoundRow = {
   total_putts: number | null;
 };
 
-const TRAINING_CAT_LABEL: Record<TrainingItemRow["category"], string> = {
-  warmup_mobility: "Échauffement",
-  long_game: "Long jeu",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Mental",
-  fitness: "Fitness",
-  other: "Autre",
-};
-
-function displayHello(p?: Profile | null) {
+function displayHello(p: Profile | null | undefined, t: (key: string) => string) {
   const f = (p?.first_name ?? "").trim();
-  if (!f) return "Salut";
-  return `Salut ${f}`;
+  if (!f) return t("playerHome.hello");
+  return `${t("playerHome.hello")} ${f}`;
 }
 
 function getInitials(p?: Profile | null) {
@@ -116,12 +103,12 @@ function monthRangeLocal(now = new Date()) {
   return { start, end };
 }
 
-function monthTitle(now = new Date()) {
-  return new Intl.DateTimeFormat("fr-CH", { month: "long", year: "numeric" }).format(now).toUpperCase();
+function monthTitle(now = new Date(), locale = "fr-CH") {
+  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now).toUpperCase();
 }
 
-function priceLabel(it: Item) {
-  if (it.is_free) return "À donner";
+function priceLabel(it: Item, t: (key: string) => string) {
+  if (it.is_free) return t("marketplace.free");
   if (it.price == null) return "—";
   return `${it.price} CHF`;
 }
@@ -215,6 +202,8 @@ function deltaLastVsPrev(values: Array<number | null | undefined>) {
 }
 
 export default function PlayerHomePage() {
+  const { t, locale } = useI18n();
+  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -246,7 +235,7 @@ export default function PlayerHomePage() {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  const thisMonthTitle = useMemo(() => monthTitle(new Date()), []);
+  const thisMonthTitle = useMemo(() => monthTitle(new Date(), dateLocale), [dateLocale]);
 
   const heroClubLine = useMemo(() => {
     const names = clubs.map((c) => c.name).filter(Boolean) as string[];
@@ -268,7 +257,7 @@ export default function PlayerHomePage() {
     const top = Object.entries(byCat)
       .map(([cat, minutes]) => ({
         cat: cat as TrainingItemRow["category"],
-        label: TRAINING_CAT_LABEL[cat as TrainingItemRow["category"]] ?? cat,
+        label: t(`cat.${cat}`),
         minutes,
       }))
       .sort((a, b) => b.minutes - a.minutes)
@@ -296,7 +285,7 @@ export default function PlayerHomePage() {
       deltaDifficulty,
       deltaSatisfaction,
     };
-  }, [monthSessions, monthItems]);
+  }, [monthSessions, monthItems, t]);
 
   const topMax = useMemo(() => {
     const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
@@ -357,7 +346,7 @@ export default function PlayerHomePage() {
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide.");
+      setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
       return;
     }
@@ -549,7 +538,7 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(profile)} 👋`}</div>
+            <div className="hero-title">{loading ? `${t("playerHome.hello")}…` : `${displayHello(profile, t)} 👋`}</div>
 
             <div className="hero-sub">
               <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
@@ -563,7 +552,7 @@ export default function PlayerHomePage() {
 
         {/* ===== Volume d’entrainement ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Volume d’entraînement</div>
+          <div className="section-title">{t("playerHome.trainingVolume")}</div>
 
           <div className="glass-card">
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12, alignItems: "center" }}>
@@ -572,15 +561,15 @@ export default function PlayerHomePage() {
 
                 <div style={{ marginTop: 6 }}>
                   <span className="big-number">{trainingsSummary.totalMinutes}</span>
-                  <span className="unit">MINUTES</span>
+                  <span className="unit">{t("playerHome.minutesUnit")}</span>
                 </div>
 
                 <div className="hr-soft" />
 
-                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Objectif : {trainingsSummary.objective} min</div>
+                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>{t("playerHome.goal")}: {trainingsSummary.objective} {t("common.min")}</div>
 
                 <div style={{ marginTop: 10 }}>
-                  <span className="pill-soft">⛳ {trainingsSummary.count} séances</span>
+                  <span className="pill-soft">⛳ {trainingsSummary.count} {t("golfDashboard.sessions")}</span>
                 </div>
               </div>
 
@@ -593,10 +582,10 @@ export default function PlayerHomePage() {
           <div className="grid-2" style={{ marginTop: 12 }}>
             {/* Top secteurs */}
             <div className="glass-card">
-              <div className="card-title">Top Secteurs</div>
+              <div className="card-title">{t("playerHome.topSections")}</div>
 
               {trainingsSummary.top.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Pas encore de données ce mois-ci.</div>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("playerHome.noDataThisMonth")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   {trainingsSummary.top.map((x) => {
@@ -619,12 +608,12 @@ export default function PlayerHomePage() {
 
             {/* ✅ Sensations : moyenne du mois + flèche vs séance précédente */}
             <div className="glass-card">
-              <div className="card-title">Sensations</div>
+              <div className="card-title">{t("trainingDetail.feelings")}</div>
 
               <div style={{ display: "grid", gap: 14 }}>
                 <div>
                   <div className="sense-row">
-                    <div>Motivation</div>
+                    <div>{t("common.motivation")}</div>
                     <div style={senseRightStyle}>
                       <span className="sense-val">{trainingsSummary.motivationAvg ?? "—"}</span>
                       <ArrowOnly delta={trainingsSummary.deltaMotivation} />
@@ -637,7 +626,7 @@ export default function PlayerHomePage() {
 
                 <div>
                   <div className="sense-row">
-                    <div>Difficulté</div>
+                    <div>{t("common.difficulty")}</div>
                     <div style={senseRightStyle}>
                       <span className="sense-val">{trainingsSummary.difficultyAvg ?? "—"}</span>
                       <ArrowOnly delta={trainingsSummary.deltaDifficulty} />
@@ -650,7 +639,7 @@ export default function PlayerHomePage() {
 
                 <div>
                   <div className="sense-row">
-                    <div>Satisfaction</div>
+                    <div>{t("common.satisfaction")}</div>
                     <div style={senseRightStyle}>
                       <span className="sense-val">{trainingsSummary.satisfactionAvg ?? "—"}</span>
                       <ArrowOnly delta={trainingsSummary.deltaSatisfaction} />
@@ -666,13 +655,13 @@ export default function PlayerHomePage() {
 
           <Link href="/player/golf/trainings/new" className="cta-green">
             <PlusCircle size={18} />
-            Ajouter un entraînement
+            {t("player.newTraining")}
           </Link>
         </section>
 
         {/* ===== Volume de jeu ===== */}
         <section className="glass-section">
-          <div className="section-title">Volume de jeu</div>
+          <div className="section-title">{t("golfDashboard.playVolume")}</div>
 
           <div className="glass-card">
             <div
@@ -714,7 +703,7 @@ export default function PlayerHomePage() {
                     letterSpacing: 1,
                   }}
                 >
-                  PARCOURS
+                  {t("playerHome.rounds").toUpperCase()}
                 </div>
               </div>
 
@@ -748,18 +737,18 @@ export default function PlayerHomePage() {
                     letterSpacing: 1,
                   }}
                 >
-                  TROUS
+                  {t("playerHome.holes").toUpperCase()}
                 </div>
               </div>
             </div>
           </div>
 
           <div className="glass-card" style={{ marginTop: 12 }}>
-            <div className="card-title">Focus</div>
+            <div className="card-title">{t("playerHome.focus")}</div>
 
             <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
               <div className="sense-row">
-                <div>Greens en régulation</div>
+                <div>{t("golfDashboard.gir")}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                   <div className="sense-val">{focusFromRounds.girAvg == null ? "—" : `${focusFromRounds.girAvg}`}</div>
                   <ArrowOnly delta={focusDelta.gir} />
@@ -767,7 +756,7 @@ export default function PlayerHomePage() {
               </div>
 
               <div className="sense-row">
-                <div>Moyenne de putt</div>
+                <div>{t("golfDashboard.avgPutts")}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                   <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
                   {/* ✅ inverse couleurs (baisse = bon = vert) */}
@@ -776,7 +765,7 @@ export default function PlayerHomePage() {
               </div>
 
               <div className="sense-row">
-                <div>Fairways touchés</div>
+                <div>{t("golfDashboard.fairwaysHit")}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                   <div className="sense-val">{focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`}</div>
                   <ArrowOnly delta={focusDelta.fw} />
@@ -787,18 +776,18 @@ export default function PlayerHomePage() {
 
           <Link href="/player/golf/rounds/new" className="cta-green">
             <PlusCircle size={18} />
-            Ajouter un parcours
+            {t("player.newRound")}
           </Link>
         </section>
 
         {/* ===== Marketplace ===== */}
         <section className="glass-section">
-          <div className="section-title">Marketplace</div>
+          <div className="section-title">{t("nav.marketplace")}</div>
 
           {loading ? (
-            <div style={{ opacity: 0.8, fontWeight: 800 }}>Chargement…</div>
+            <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
           ) : latestItems.length === 0 ? (
-            <div style={{ opacity: 0.8, fontWeight: 800 }}>Aucune annonce pour le moment.</div>
+            <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("marketplace.none")}</div>
           ) : (
             <div className="marketplace-list" style={{ marginTop: 10 }}>
               {latestItems.map((it) => {
@@ -819,7 +808,7 @@ export default function PlayerHomePage() {
                           {meta && <div className="marketplace-meta">{meta}</div>}
 
                           <div className="marketplace-price-row">
-                            <div className="marketplace-price-pill">{priceLabel(it)}</div>
+                            <div className="marketplace-price-pill">{priceLabel(it, t)}</div>
                           </div>
                         </div>
                       </div>
@@ -832,7 +821,7 @@ export default function PlayerHomePage() {
 
           <Link href="/player/marketplace/new" className="cta-green">
             <PlusCircle size={18} />
-            Publier une annonce
+            {t("player.newListing")}
           </Link>
         </section>
 

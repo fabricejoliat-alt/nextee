@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -31,23 +32,23 @@ type ProfileLite = { id: string; first_name: string | null; last_name: string | 
 type CoachOption = {
   id: string;
   label: string;
-  roleLabel: "Coach" | "Coach supplémentaire";
+  roleLabel: string;
   isHead: boolean;
 };
 
-const TRAINING_CATEGORIES: { value: string; label: string }[] = [
-  { value: "warmup_mobility", label: "Échauffement / mobilité" },
-  { value: "long_game", label: "Long jeu" },
-  { value: "putting", label: "Putting" },
-  { value: "wedging", label: "Wedging" },
-  { value: "pitching", label: "Pitching" },
-  { value: "chipping", label: "Chipping" },
-  { value: "bunker", label: "Bunker" },
-  { value: "course", label: "Parcours" },
-  { value: "mental", label: "Mental" },
-  { value: "fitness", label: "Fitness" },
-  { value: "other", label: "Autre" },
-];
+const TRAINING_CATEGORY_VALUES = [
+  "warmup_mobility",
+  "long_game",
+  "putting",
+  "wedging",
+  "pitching",
+  "chipping",
+  "bunker",
+  "course",
+  "mental",
+  "fitness",
+  "other",
+] as const;
 
 function buildMinuteOptions() {
   const opts: number[] = [];
@@ -103,8 +104,18 @@ function uniq<T>(arr: T[]) {
 }
 
 export default function PlayerTrainingNewPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const sp = useSearchParams();
+
+  const TRAINING_CATEGORIES: { value: string; label: string }[] = useMemo(
+    () =>
+      TRAINING_CATEGORY_VALUES.map((value) => ({
+        value,
+        label: t(`cat.${value}`),
+      })),
+    [t]
+  );
 
   // ✅ support both param names
   const clubEventId = String(sp.get("club_event_id") ?? sp.get("eventId") ?? "").trim();
@@ -172,10 +183,10 @@ export default function PlayerTrainingNewPage() {
     const assistNames = assists.map((c) => c.label).filter(Boolean);
 
     const lines: string[] = [];
-    if (headNames.length > 0) lines.push(`Coach : ${headNames.join(", ")}`);
-    if (assistNames.length > 0) lines.push(`Coachs supplémentaires : ${assistNames.join(", ")}`);
+    if (headNames.length > 0) lines.push(`${t("common.coach")} : ${headNames.join(", ")}`);
+    if (assistNames.length > 0) lines.push(`${t("trainingNew.extraCoaches")} : ${assistNames.join(", ")}`);
     return lines.join(" • ");
-  }, [linkedEvent, coachOptions]);
+  }, [linkedEvent, coachOptions, t]);
 
   const nonPlannedCoachSummary = useMemo(() => {
     if (linkedEvent) return "";
@@ -184,8 +195,8 @@ export default function PlayerTrainingNewPage() {
     const selected = coachOptions.filter((c) => selectedCoachIds.includes(c.id));
     const names = selected.map((c) => c.label).filter(Boolean);
     if (names.length === 0) return "";
-    return `Coach : ${names.join(", ")}`;
-  }, [linkedEvent, sessionType, coachOptions, selectedCoachIds]);
+    return `${t("common.coach")} : ${names.join(", ")}`;
+  }, [linkedEvent, sessionType, coachOptions, selectedCoachIds, t]);
 
   const coachNameForSave = useMemo(() => {
     // ✅ planned: save read-only summary based on event coaches
@@ -193,8 +204,8 @@ export default function PlayerTrainingNewPage() {
       const heads = coachOptions.filter((c) => c.isHead).map((c) => c.label).filter((x) => x && x !== "—");
       const assists = coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter((x) => x && x !== "—");
       const parts: string[] = [];
-      if (heads.length) parts.push(`Coach: ${heads.join(", ")}`);
-      if (assists.length) parts.push(`Coachs supplémentaires: ${assists.join(", ")}`);
+      if (heads.length) parts.push(`${t("common.coach")}: ${heads.join(", ")}`);
+      if (assists.length) parts.push(`${t("trainingNew.extraCoaches")}: ${assists.join(", ")}`);
       return parts.length ? parts.join(" • ") : null;
     }
 
@@ -208,7 +219,7 @@ export default function PlayerTrainingNewPage() {
 
     // private/individual: none
     return null;
-  }, [linkedEvent, sessionType, coachOptions, selectedCoachIds]);
+  }, [linkedEvent, sessionType, coachOptions, selectedCoachIds, t]);
 
   const canSave = useMemo(() => {
     if (busy) return false;
@@ -352,7 +363,7 @@ export default function PlayerTrainingNewPage() {
         id,
         label,
         isHead,
-        roleLabel: isHead ? "Coach" : "Coach supplémentaire",
+        roleLabel: isHead ? t("common.coach") : t("trainingNew.extraCoach"),
       };
     });
 }
@@ -405,7 +416,7 @@ export default function PlayerTrainingNewPage() {
         id,
         label: p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—",
         isHead: false,
-        roleLabel: "Coach",
+        roleLabel: t("common.coach"),
       };
     });
   }
@@ -690,7 +701,7 @@ export default function PlayerTrainingNewPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Ajouter un entraînement
+                {t("trainingNew.title")}
               </div>
 
               
@@ -698,10 +709,10 @@ export default function PlayerTrainingNewPage() {
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                Retour
+                {t("common.back")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                Mes entraînements
+                {t("trainings.title")}
               </Link>
             </div>
           </div>
@@ -710,7 +721,7 @@ export default function PlayerTrainingNewPage() {
 
           {sessionType === "club" && clubIds.length === 0 && !loading && (
             <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
-              ⚠️ Ton compte n’est lié à aucun club actif : impossible d’enregistrer un entraînement “Club”.
+              {t("trainingNew.noActiveClub")}
             </div>
           )}
         </div>
@@ -718,7 +729,7 @@ export default function PlayerTrainingNewPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <div>{t("common.loading")}</div>
             ) : (
               <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
                 {/* ✅ planned info + absence toggle */}
@@ -734,8 +745,8 @@ export default function PlayerTrainingNewPage() {
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>Séance planifiée</div>
-                      <div className="pill-soft">{plannedMinutes} min planifiés</div>
+                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{t("trainingNew.plannedSession")}</div>
+                      <div className="pill-soft">{plannedMinutes} {t("trainingNew.plannedMin")}</div>
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -757,13 +768,13 @@ export default function PlayerTrainingNewPage() {
                         }}
                       >
                         <input type="checkbox" checked={isAbsent} onChange={(e) => setIsAbsent(e.target.checked)} disabled={busy} />
-                        Je serai absent
+                        {t("trainingNew.iWillBeAbsent")}
                       </label>
                     </div>
 
                     {isAbsent ? (
                       <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(160,0,0,0.80)" }}>
-                        ⚠️ La saisie est désactivée. Clique “Enregistrer mon absence”.
+                        {t("trainingNew.absenceDisabledHint")}
                       </div>
                     ) : null}
                   </div>
@@ -772,13 +783,13 @@ export default function PlayerTrainingNewPage() {
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>
-                      Date {linkedEvent ? <span style={{ opacity: 0.7 }}>(réel)</span> : null}
+                      {t("common.date")} {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.real")})</span> : null}
                     </span>
                     <input type="date" value={startDate} onChange={(e) => updateStartDate(e.target.value)} disabled={inputsDisabled} />
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Heure</span>
+                    <span style={fieldLabelStyle}>{t("common.time")}</span>
                     <select value={startTime} onChange={(e) => updateStartTime(e.target.value)} disabled={inputsDisabled}>
                       {QUARTER_HOUR_OPTIONS.map((t) => (
                         <option key={t} value={t}>
@@ -791,26 +802,26 @@ export default function PlayerTrainingNewPage() {
 
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>
-                    Lieu{" "}
-                    {linkedEvent ? <span style={{ opacity: 0.7 }}>(planifié)</span> : <span style={{ opacity: 0.7 }}>(optionnel)</span>}
+                    {t("common.place")}{" "}
+                    {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.planned")})</span> : <span style={{ opacity: 0.7 }}>({t("common.optional")})</span>}
                   </span>
                   <input
                     value={place}
                     onChange={(e) => setPlace(e.target.value)}
                     disabled={inputsDisabled || Boolean(linkedEvent)}
-                    placeholder="Ex: Practice / Putting green / Parcours"
+                    placeholder={t("trainingNew.placePlaceholder")}
                   />
                 </label>
 
                 <div className="hr-soft" />
 
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>Type d’entraînement</div>
+                  <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <label style={{ ...chipRadioStyle, ...(sessionType === "club" ? chipRadioActive : {}), opacity: linkedEvent ? 0.7 : 1 }}>
                       <input type="radio" checked={sessionType === "club"} onChange={() => setType("club")} disabled={inputsDisabled || Boolean(linkedEvent)} />
-                      <span>Entraînement Club</span>
+                      <span>{t("trainingDetail.typeClub")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
@@ -820,7 +831,7 @@ export default function PlayerTrainingNewPage() {
                         onChange={() => setType("private")}
                         disabled={inputsDisabled || Boolean(linkedEvent)}
                       />
-                      <span>Cours privé</span>
+                      <span>{t("trainingDetail.typePrivate")}</span>
                     </label>
 
                     <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
@@ -830,14 +841,14 @@ export default function PlayerTrainingNewPage() {
                         onChange={() => setType("individual")}
                         disabled={inputsDisabled || Boolean(linkedEvent)}
                       />
-                      <span>Entraînement individuel</span>
+                      <span>{t("trainingDetail.typeIndividual")}</span>
                     </label>
                   </div>
 
                   {sessionType === "club" && (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>
-                        Club {linkedEvent ? <span style={{ opacity: 0.7 }}>(planifié)</span> : null}
+                        {t("common.club")} {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.planned")})</span> : null}
                       </span>
                       <select
                         value={clubIdForTraining}
@@ -861,7 +872,7 @@ export default function PlayerTrainingNewPage() {
                   */}
                   {showCoachSectionPlannedReadOnly ? (
                     <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Coach (planifié)</span>
+                      <span style={fieldLabelStyle}>{t("trainingNew.coachPlanned")}</span>
                       <div
                         style={{
                           borderRadius: 12,
@@ -875,11 +886,11 @@ export default function PlayerTrainingNewPage() {
                         }}
                       >
                         {coachOptions.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, opacity: 0.65 }}>— Aucun coach renseigné sur cette séance —</div>
+                          <div style={{ fontSize: 12, fontWeight: 850, opacity: 0.65 }}>{t("trainingNew.noCoachOnSession")}</div>
                         ) : (
                           <>
                             <div style={{ display: "grid", gap: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Head coach</div>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("trainingNew.headCoach")}</div>
                               <div style={{ fontSize: 13 }}>
                                 {coachOptions.filter((c) => c.isHead).map((c) => c.label).filter(Boolean).join(", ") || "—"}
                               </div>
@@ -888,7 +899,7 @@ export default function PlayerTrainingNewPage() {
                             <div className="hr-soft" style={{ margin: "2px 0" }} />
 
                             <div style={{ display: "grid", gap: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>Coachs supplémentaires</div>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("trainingNew.extraCoaches")}</div>
                               <div style={{ fontSize: 13 }}>
                                 {coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter(Boolean).join(", ") || "—"}
                               </div>
@@ -905,7 +916,7 @@ export default function PlayerTrainingNewPage() {
 
                   {showCoachSectionAsCheckboxes ? (
                     <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Coach (optionnel)</span>
+                      <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
 
                       <div
                         style={{
@@ -920,7 +931,7 @@ export default function PlayerTrainingNewPage() {
                       >
                         {coachOptions.length === 0 ? (
                           <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
-                            — Aucun coach trouvé dans ce club —
+                            {t("trainingNew.noCoachInClub")}
                           </div>
                         ) : (
                           <>
@@ -931,7 +942,7 @@ export default function PlayerTrainingNewPage() {
                                 disabled={inputsDisabled}
                                 onClick={() => setSelectedCoachIds(coachOptions.map((c) => c.id))}
                               >
-                                Tout sélectionner
+                                {t("trainingNew.selectAll")}
                               </button>
                               <button
                                 type="button"
@@ -939,7 +950,7 @@ export default function PlayerTrainingNewPage() {
                                 disabled={inputsDisabled}
                                 onClick={() => setSelectedCoachIds([])}
                               >
-                                Aucun
+                                {t("trainingNew.none")}
                               </button>
                             </div>
 
@@ -1000,7 +1011,7 @@ export default function PlayerTrainingNewPage() {
                               <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{nonPlannedCoachSummary}</div>
                             ) : (
                               <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
-                                Astuce : tu peux ne rien cocher si tu veux.
+                                {t("trainingNew.tipNoCoach")}
                               </div>
                             )}
                           </>
@@ -1013,7 +1024,7 @@ export default function PlayerTrainingNewPage() {
                 <div className="hr-soft" />
 
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>Structure de l&apos;entraînement</div>
+                  <div style={fieldLabelStyle}>{t("trainingNew.trainingStructure")}</div>
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div
@@ -1033,14 +1044,14 @@ export default function PlayerTrainingNewPage() {
                     >
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                         <span>{totalMinutes}</span>
-                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min effectifs</span>
+                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("trainingNew.actualMin")}</span>
                       </div>
                     </div>
                   </div>
 
                   {items.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Ajoute un poste pour structurer ton entraînement.
+                      {t("trainingNew.addSectionHint")}
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
@@ -1059,7 +1070,7 @@ export default function PlayerTrainingNewPage() {
                         >
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Poste</span>
+                              <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
                               <select value={it.category} onChange={(e) => updateLine(idx, { category: e.target.value })} disabled={inputsDisabled}>
                                 <option value="">-</option>
                                 {TRAINING_CATEGORIES.map((c) => (
@@ -1071,7 +1082,7 @@ export default function PlayerTrainingNewPage() {
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Durée</span>
+                              <span style={fieldLabelStyle}>{t("trainingNew.duration")}</span>
                               <select value={it.minutes} onChange={(e) => updateLine(idx, { minutes: e.target.value })} disabled={inputsDisabled}>
                                 <option value="">-</option>
                                 {MINUTE_OPTIONS.map((m) => (
@@ -1084,19 +1095,19 @@ export default function PlayerTrainingNewPage() {
                           </div>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Note (optionnel)</span>
+                            <span style={fieldLabelStyle}>{t("trainingNew.noteOptional")}</span>
                             <input
                               value={it.note}
                               onChange={(e) => updateLine(idx, { note: e.target.value })}
                               disabled={inputsDisabled}
-                              placeholder="Ex: focus wedging 60–80m"
+                              placeholder={t("trainingNew.notePlaceholder")}
                             />
                           </label>
 
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                            <div className="pill-soft">Poste {idx + 1}</div>
+                            <div className="pill-soft">{t("trainingNew.section")} {idx + 1}</div>
                             <button type="button" className="btn btn-danger soft" onClick={() => removeLine(idx)} disabled={inputsDisabled}>
-                              Supprimer
+                              {t("common.delete")}
                             </button>
                           </div>
                         </div>
@@ -1106,7 +1117,7 @@ export default function PlayerTrainingNewPage() {
 
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <button type="button" className="btn" onClick={addLine} disabled={inputsDisabled}>
-                      + Ajouter un poste
+                      + {t("trainingNew.addSection")}
                     </button>
                   </div>
                 </div>
@@ -1115,7 +1126,7 @@ export default function PlayerTrainingNewPage() {
 
                 <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Motivation avant l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
                     <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={inputsDisabled}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -1127,7 +1138,7 @@ export default function PlayerTrainingNewPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Difficulté de l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={inputsDisabled}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -1139,7 +1150,7 @@ export default function PlayerTrainingNewPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Satisfaction après l&apos;entraînement</span>
+                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
                     <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={inputsDisabled}>
                       <option value="">-</option>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
@@ -1154,12 +1165,12 @@ export default function PlayerTrainingNewPage() {
                 <div className="hr-soft" />
 
                 <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
-                  <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     disabled={inputsDisabled}
-                    placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                    placeholder={t("roundsNew.notesPlaceholder")}
                     style={{ minHeight: 110 }}
                   />
                 </label>
@@ -1173,7 +1184,7 @@ export default function PlayerTrainingNewPage() {
                     disabled={!canSaveAbsence || busy}
                     style={{ width: "100%", background: "rgba(160,0,0,0.95)", borderColor: "rgba(160,0,0,0.95)", color: "#fff" }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer mon absence"}
+                    {busy ? t("trainingNew.saving") : t("trainingNew.saveAbsence")}
                   </button>
                 ) : (
                   <button
@@ -1182,7 +1193,7 @@ export default function PlayerTrainingNewPage() {
                     disabled={!canSave || busy}
                     style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer"}
+                    {busy ? t("trainingNew.saving") : t("common.save")}
                   </button>
                 )}
               </form>

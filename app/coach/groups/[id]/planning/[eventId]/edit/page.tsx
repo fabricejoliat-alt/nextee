@@ -214,7 +214,7 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
-      if (!groupId || !eventId) throw new Error("Paramètres manquants.");
+      if (!groupId || !eventId) throw new Error("Missing parameters.");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
       if (uErr || !uRes.user) throw new Error("Session invalide.");
@@ -228,7 +228,7 @@ export default function CoachEventEditPage() {
         .maybeSingle();
 
       if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Entraînement introuvable.");
+      if (!eRes.data) throw new Error("Training not found.");
       const ev = eRes.data as EventRow;
       setEvent(ev);
 
@@ -473,7 +473,7 @@ export default function CoachEventEditPage() {
     if (!event?.series_id || !series || !group) return;
 
     const ok = window.confirm(
-      "Mettre à jour la récurrence ?\n\n⚠️ Cela va supprimer toutes les occurrences FUTURES de cette récurrence (à partir d’aujourd’hui), puis les recréer avec les nouveaux paramètres."
+      "Update recurrence?\n\n⚠️ This will delete all FUTURE occurrences of this recurrence (from today), then recreate them with the new settings."
     );
     if (!ok) return;
 
@@ -481,8 +481,8 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
-      if (!startDate || !endDate) throw new Error("Dates de la récurrence manquantes.");
-      if (endDate < startDate) throw new Error("La date de fin doit être après la date de début.");
+      if (!startDate || !endDate) throw new Error("Missing recurrence dates.");
+      if (endDate < startDate) throw new Error("End date must be after start date.");
 
       // 1) update series template
       const updS = await supabase
@@ -542,7 +542,7 @@ export default function CoachEventEditPage() {
       }
 
       if (seriesActive && occurrences.length === 0) {
-        throw new Error("Aucune occurrence future générée (vérifie dates/jour/heure).");
+        throw new Error("No future occurrence generated (check date/day/time).");
       }
 
       let createdEventIds: string[] = [];
@@ -576,13 +576,13 @@ export default function CoachEventEditPage() {
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);
     } catch (e: any) {
-      setError(e?.message ?? "Erreur mise à jour récurrence.");
+      setError(e?.message ?? "Recurrence update error.");
       setBusy(false);
     }
   }
 
   async function removeThisEvent() {
-    const ok = window.confirm("Supprimer CET entraînement planifié ? (irréversible)");
+    const ok = window.confirm("Delete THIS planned training? (irreversible)");
     if (!ok) return;
 
     setBusy(true);
@@ -599,7 +599,7 @@ export default function CoachEventEditPage() {
     if (!event?.series_id) return;
 
     const ok = window.confirm(
-      "Supprimer la RÉCURRENCE entière ?\n\n⚠️ Cela supprime la série + toutes ses occurrences (passées et futures)."
+      "Delete full RECURRENCE?\n\n⚠️ This deletes the series and all its occurrences (past and future)."
     );
     if (!ok) return;
 
@@ -616,7 +616,7 @@ export default function CoachEventEditPage() {
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);
     } catch (e: any) {
-      setError(e?.message ?? "Erreur suppression récurrence.");
+      setError(e?.message ?? "Recurrence deletion error.");
       setBusy(false);
     }
   }
@@ -650,7 +650,7 @@ export default function CoachEventEditPage() {
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
             ) : !event ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (
               <>
                 {/* Scope switch if recurring */}
@@ -708,7 +708,7 @@ export default function CoachEventEditPage() {
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Durée</span>
+                        <span style={fieldLabelStyle}>Duration</span>
                         <select
                           value={durationMinutes}
                           onChange={(e) => setDurationMinutes(Number(e.target.value))}
@@ -788,7 +788,7 @@ export default function CoachEventEditPage() {
 
                         <div className="grid-2">
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Durée</span>
+                            <span style={fieldLabelStyle}>Duration</span>
                             <select
                               value={durationMinutes}
                               onChange={(e) => setDurationMinutes(Number(e.target.value))}
@@ -965,7 +965,7 @@ export default function CoachEventEditPage() {
                     <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
 
                     {players.length > 0 && candidatesPlayers.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>No result.</div>
                     ) : candidatesPlayers.length > 0 ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         {candidatesPlayers.map((p) => (
@@ -1017,7 +1017,7 @@ export default function CoachEventEditPage() {
                     onClick={saveOccurrenceOnly}
                     style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer cette occurrence"}
+                    {busy ? "Saving…" : "Enregistrer cette occurrence"}
                   </button>
                 ) : (
                   <button
@@ -1027,7 +1027,7 @@ export default function CoachEventEditPage() {
                     onClick={saveSeriesAndRegenerateFuture}
                     style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer la récurrence (futur)"}
+                    {busy ? "Saving…" : "Save recurrence (future)"}
                   </button>
                 )}
 

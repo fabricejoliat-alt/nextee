@@ -102,7 +102,7 @@ function nameOf(first: string | null, last: string | null) {
 
 function categoryLabel(cat: string) {
   const map: Record<string, string> = {
-    warmup_mobility: "Échauffement / mobilité",
+    warmup_mobility: "Warmup / mobility",
     long_game: "Long jeu",
     putting: "Putting",
     wedging: "Wedging",
@@ -146,7 +146,7 @@ export default function CoachEventPlayerDetailPage() {
     setError(null);
 
     try {
-      if (!eventId || !playerId) throw new Error("Paramètres manquants.");
+      if (!eventId || !playerId) throw new Error("Missing parameters.");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
       if (uErr || !uRes.user) throw new Error("Session invalide.");
@@ -160,7 +160,7 @@ export default function CoachEventPlayerDetailPage() {
         .maybeSingle();
 
       if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Entraînement introuvable.");
+      if (!eRes.data) throw new Error("Training not found.");
       const ev = eRes.data as EventRow;
       setEvent(ev);
 
@@ -257,7 +257,7 @@ export default function CoachEventPlayerDetailPage() {
   }, [eventId, playerId]);
 
   const title = useMemo(() => {
-    if (!player) return "Détail joueur";
+    if (!player) return "Player detail";
     return `Détail — ${nameOf(player.first_name, player.last_name)}`;
   }, [player]);
 
@@ -299,7 +299,7 @@ export default function CoachEventPlayerDetailPage() {
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
             ) : !event || !player ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
                 {/* Event summary */}
@@ -312,7 +312,7 @@ export default function CoachEventPlayerDetailPage() {
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <span className="pill-soft">{clubName || "Club"}</span>
-                  {event.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
+                  {event.series_id ? <span className="pill-soft">Recurring</span> : <span className="pill-soft">Single</span>}
                   {attendance ? <span className="pill-soft">{attendance.status}</span> : null}
                   {event.location_text ? (
                     <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>📍 {event.location_text}</span>
@@ -405,10 +405,10 @@ export default function CoachEventPlayerDetailPage() {
 
                 {/* Coach feedback */}
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Évaluation coach</div>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Coach evaluation</div>
 
                   {!coachFb ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Pas encore évalué.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Not evaluated yet.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
@@ -454,7 +454,7 @@ export default function CoachEventPlayerDetailPage() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          <b>Privé coach :</b>
+                          <b>Coach private:</b>
                           <div style={{ height: 8 }} />
                           {coachFb.private_note}
                         </div>

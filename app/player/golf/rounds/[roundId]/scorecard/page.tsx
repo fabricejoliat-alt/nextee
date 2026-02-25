@@ -271,7 +271,7 @@ export default function ScorecardPage() {
   const configLine = useMemo(() => {
     if (!round) return "";
     const parts: string[] = [];
-    parts.push(round.round_type === "competition" ? "Compétition" : "Entraînement");
+    parts.push(round.round_type === "competition" ? "Competition" : "Training");
     if (round.course_name) parts.push(round.course_name);
     if (round.tee_name) parts.push(round.tee_name);
     return parts.filter(Boolean).join(" • ");

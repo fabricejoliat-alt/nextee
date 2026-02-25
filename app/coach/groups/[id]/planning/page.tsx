@@ -442,7 +442,7 @@ export default function CoachGroupPlanningPage() {
       await load();
       setBusy(false);
     } catch (e: any) {
-      setError(e?.message ?? "Erreur création.");
+      setError(e?.message ?? "Creation error.");
       setBusy(false);
     }
   }
@@ -470,8 +470,8 @@ export default function CoachGroupPlanningPage() {
     setError(null);
 
     try {
-      if (!startDate || !endDate) throw new Error("Dates de la récurrence manquantes.");
-      if (endDate < startDate) throw new Error("La date de fin doit être après la date de début.");
+      if (!startDate || !endDate) throw new Error("Missing recurrence dates.");
+      if (endDate < startDate) throw new Error("End date must be after start date.");
 
       const seriesPayload: SeriesInsert = {
         group_id: group.id,
@@ -517,7 +517,7 @@ export default function CoachGroupPlanningPage() {
         cursor = addDays(cursor, intervalWeeks * 7);
       }
 
-      if (occurrences.length === 0) throw new Error("Aucune occurrence générée (vérifie jour/horaires).");
+      if (occurrences.length === 0) throw new Error("No occurrence generated (check day/time).");
 
       const eIns = await supabase.from("club_events").insert(occurrences).select("id");
       if (eIns.error) throw new Error(eIns.error.message);
@@ -542,13 +542,13 @@ export default function CoachGroupPlanningPage() {
       await load();
       setBusy(false);
     } catch (e: any) {
-      setError(e?.message ?? "Erreur création récurrence.");
+      setError(e?.message ?? "Recurrence creation error.");
       setBusy(false);
     }
   }
 
   async function deleteEvent(eventId: string) {
-    const ok = window.confirm("Supprimer cet entraînement planifié ? (irréversible)");
+    const ok = window.confirm("Delete this planned training? (irreversible)");
     if (!ok) return;
 
     setBusy(true);
@@ -601,7 +601,7 @@ export default function CoachGroupPlanningPage() {
                     disabled={busy}
                     style={mode === "single" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
                   >
-                    Unique
+                    Single
                   </button>
                   <button
                     type="button"
@@ -611,7 +611,7 @@ export default function CoachGroupPlanningPage() {
                     style={mode === "series" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
                   >
                     <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                    Récurrent
+                    Recurring
                   </button>
                 </div>
               </div>
@@ -635,7 +635,7 @@ export default function CoachGroupPlanningPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Durée</span>
+                    <span style={fieldLabelStyle}>Duration</span>
                     <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                       {DURATION_OPTIONS.map((m) => (
                         <option key={m} value={m}>
@@ -681,7 +681,7 @@ export default function CoachGroupPlanningPage() {
 
                   <div className="grid-2">
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Durée</span>
+                      <span style={fieldLabelStyle}>Duration</span>
                       <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                         {DURATION_OPTIONS.map((m) => (
                           <option key={m} value={m}>
@@ -801,7 +801,7 @@ export default function CoachGroupPlanningPage() {
                 {players.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
                 ) : selectedPlayersList.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>No selected player.</div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
                     {selectedPlayersList.map((p) => (
@@ -840,7 +840,7 @@ export default function CoachGroupPlanningPage() {
                 <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
 
                 {players.length > 0 && candidatesPlayers.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>No result.</div>
                 ) : candidatesPlayers.length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
                     {candidatesPlayers.map((p) => (
@@ -891,7 +891,7 @@ export default function CoachGroupPlanningPage() {
               style={{ width: "100%", justifyContent: "center" }}
             >
               <PlusCircle size={18} />
-              {busy ? "Enregistrement…" : mode === "single" ? "Créer l’entraînement" : "Créer la récurrence"}
+              {busy ? "Saving…" : mode === "single" ? "Create training" : "Create recurrence"}
             </button>
           </div>
         </div>
@@ -953,8 +953,8 @@ export default function CoachGroupPlanningPage() {
             ) : (
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
                 {filterMode === "upcoming"
-                  ? "Fenêtre par défaut : 90 prochains jours."
-                  : "Fenêtre par défaut : 90 derniers jours."}
+                  ? "Default window: next 90 days."
+                  : "Default window: last 90 days."}
               </div>
             )}
           </div>
@@ -968,10 +968,10 @@ export default function CoachGroupPlanningPage() {
             ) : events.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
                 {filterMode === "upcoming"
-                  ? "Aucun entraînement à venir (sur 90 jours)."
+                  ? "No upcoming training (90 days)."
                   : filterMode === "past"
-                  ? "Aucun entraînement passé (sur 90 jours)."
-                  : "Aucun entraînement sur cette plage de dates."}
+                  ? "No past training (90 days)."
+                  : "No training in this date range."}
               </div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
@@ -988,7 +988,7 @@ export default function CoachGroupPlanningPage() {
 
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <span className="pill-soft">{clubName || "Club"}</span>
-                        {e.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
+                        {e.series_id ? <span className="pill-soft">Recurring</span> : <span className="pill-soft">Single</span>}
                         {e.location_text ? (
                           <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>📍 {e.location_text}</span>
                         ) : null}

@@ -30,9 +30,9 @@ function fullName(p?: Profile | null) {
   return `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
 }
 
-export default function ClubMembersAdmin() {
-  const params = useParams<{ clubId: string }>();
-  const clubId = params.clubId;
+export default function OrganizationMembersAdmin() {
+  const params = useParams<{ organizationId: string }>();
+  const organizationId = params.organizationId;
 
   const [club, setClub] = useState<Club | null>(null);
 
@@ -56,7 +56,7 @@ export default function ClubMembersAdmin() {
     const clubRes = await supabase
       .from("clubs")
       .select("id,name,slug")
-      .eq("id", clubId)
+      .eq("id", organizationId)
       .maybeSingle();
 
     if (clubRes.error) {
@@ -80,7 +80,7 @@ export default function ClubMembersAdmin() {
     const memRes = await supabase
       .from("club_members")
       .select("id,club_id,user_id,role,is_active,created_at")
-      .eq("club_id", clubId)
+      .eq("club_id", organizationId)
       .order("created_at", { ascending: false });
 
     if (memRes.error) {
@@ -132,10 +132,10 @@ export default function ClubMembersAdmin() {
   }
 
   useEffect(() => {
-    if (!clubId) return;
+    if (!organizationId) return;
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId]);
+  }, [organizationId]);
 
   const memberUserIdSet = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
 
@@ -157,14 +157,14 @@ export default function ClubMembersAdmin() {
 
     // UI anti-doublon
     if (memberUserIdSet.has(selectedUserId)) {
-      setError("Cet utilisateur est déjà membre de ce club.");
+      setError("Cet utilisateur est déjà membre de cette organisation.");
       return;
     }
 
     setBusy(true);
 
     const { error } = await supabase.from("club_members").insert({
-      club_id: clubId,
+      club_id: organizationId,
       user_id: selectedUserId,
       role: selectedRole,
       is_active: true,
@@ -202,7 +202,7 @@ export default function ClubMembersAdmin() {
   }
 
   async function removeMember(memberId: string) {
-    if (!confirm("Supprimer ce membre du club ?")) return;
+    if (!confirm("Supprimer ce membre de l’organisation ?")) return;
 
     setError(null);
     setBusy(true);
@@ -240,10 +240,10 @@ export default function ClubMembersAdmin() {
     );
   }
 
-  if (!clubId) {
+  if (!organizationId) {
     return (
       <div className="card">
-        <b>Erreur :</b> clubId manquant dans l’URL.
+        <b>Erreur :</b> organizationId manquant dans l’URL.
       </div>
     );
   }
@@ -252,10 +252,10 @@ export default function ClubMembersAdmin() {
     <div style={{ display: "grid", gap: 16 }}>
       <div>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>
-          {club ? club.name : "Club"}
+          {club ? club.name : "Organisation"}
         </h1>
         <p style={{ marginTop: 6, color: "var(--muted)" }}>
-          Ajoute des utilisateurs existants à ce club et définis leur rôle.
+          Ajoute des utilisateurs existants à cette organisation et définis leur rôle.
         </p>
       </div>
 
@@ -315,7 +315,7 @@ export default function ClubMembersAdmin() {
           </label>
 
           <button className="btn" type="submit" disabled={!selectedUserId || busy}>
-            Ajouter au club
+            Ajouter à l’organisation
           </button>
 
           {addableUsers.length === 0 && !loading && (

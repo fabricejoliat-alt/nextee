@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type ApiCourseLite = {
   id: string | number;
@@ -160,6 +161,7 @@ function localContainsFilter(list: ApiCourseLite[], query: string) {
 }
 
 export default function NewRoundPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const debounceRef = useRef<any>(null);
 
@@ -196,7 +198,7 @@ export default function NewRoundPage() {
 
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userRes.user) {
-        setError("Session invalide. Reconnecte-toi.");
+        setError(t("roundsNew.error.invalidSession"));
         return;
       }
 
@@ -216,7 +218,7 @@ export default function NewRoundPage() {
   async function fetchSearch(query: string): Promise<ApiCourseLite[]> {
     const r = await fetch(`/api/golfcourse/search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
     const j = await r.json().catch(() => null);
-    if (!r.ok) throw new Error(j?.error ?? "Erreur recherche API");
+    if (!r.ok) throw new Error(j?.error ?? t("roundsNew.error.searchApi"));
     return normalizeCourses(j);
   }
 
@@ -244,7 +246,7 @@ export default function NewRoundPage() {
       setResults(final);
     } catch (e: any) {
       setResults([]);
-      setError(e?.message ?? "Erreur recherche");
+      setError(e?.message ?? t("roundsNew.error.search"));
     } finally {
       setSearching(false);
     }
@@ -271,14 +273,14 @@ export default function NewRoundPage() {
     try {
       const r = await fetch(`/api/golfcourse/course/${encodeURIComponent(String(c.id))}`, { cache: "no-store" });
       const j = await r.json().catch(() => null);
-      if (!r.ok) throw new Error(j?.error ?? "Erreur détail parcours API");
+      if (!r.ok) throw new Error(j?.error ?? t("roundsNew.error.courseApi"));
 
       setCourseDetail(j);
       const teeList = normalizeTees(j);
       setTees(teeList);
       setSelectedTeeId("");
     } catch (e: any) {
-      setError(e?.message ?? "Erreur détail parcours");
+      setError(e?.message ?? t("roundsNew.error.course"));
     }
   }
 
@@ -314,34 +316,34 @@ export default function NewRoundPage() {
 
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
-      setError("Date/heure invalide.");
+      setError(t("roundsNew.error.invalidDate"));
       setBusy(false);
       return;
     }
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide. Reconnecte-toi.");
+      setError(t("roundsNew.error.invalidSession"));
       setBusy(false);
       return;
     }
 
     if (!selectedCourse) {
-      setError("Choisis un parcours.");
+      setError(t("roundsNew.error.chooseCourse"));
       setBusy(false);
       return;
     }
 
     const selectedTeeObj = tees.find((t) => t.id === selectedTeeId) ?? null;
     if (!selectedTeeObj) {
-      setError("Choisis un tee de départ.");
+      setError(t("roundsNew.error.chooseTee"));
       setBusy(false);
       return;
     }
 
     const handicap_start = handicapStart.trim() === "" ? null : Number(handicapStart);
     if (handicap_start !== null && Number.isNaN(handicap_start)) {
-      setError("Handicap invalide.");
+      setError(t("roundsNew.error.invalidHandicap"));
       setBusy(false);
       return;
     }
@@ -371,7 +373,7 @@ export default function NewRoundPage() {
 
     const id = ins.data?.id;
     if (!id) {
-      setError("Création impossible.");
+      setError(t("roundsNew.error.createFailed"));
       setBusy(false);
       return;
     }
@@ -409,19 +411,19 @@ export default function NewRoundPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Ajouter un parcours
+                {t("roundsNew.title")}
               </div>
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
-                Recherche du parcours + tee de départ, puis création du scorecard.
+                {t("roundsNew.subtitle")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
-                Retour
+                {t("common.back")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
-                Mes parcours
+                {t("rounds.title")}
               </Link>
             </div>
           </div>
@@ -434,12 +436,12 @@ export default function NewRoundPage() {
             <form onSubmit={createRound} style={{ display: "grid", gap: 12 }}>
               <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Date & heure</span>
+                  <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
                   <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={busy} />
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Handicap au départ (éditable)</span>
+                  <span style={fieldLabelStyle}>{t("roundsNew.startHandicap")}</span>
                   <input
                     inputMode="decimal"
                     value={handicapStart}
@@ -453,12 +455,12 @@ export default function NewRoundPage() {
               <div className="hr-soft" />
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div style={fieldLabelStyle}>Type de parcours</div>
+                <div style={fieldLabelStyle}>{t("roundsNew.roundType")}</div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <label style={{ ...chipRadioStyle, ...(roundType === "training" ? chipRadioActive : {}) }}>
                     <input type="radio" checked={roundType === "training"} onChange={() => setRoundType("training")} disabled={busy} />
-                    <span>Entraînement</span>
+                    <span>{t("rounds.training")}</span>
                   </label>
 
                   <label style={{ ...chipRadioStyle, ...(roundType === "competition" ? chipRadioActive : {}) }}>
@@ -468,13 +470,13 @@ export default function NewRoundPage() {
                       onChange={() => setRoundType("competition")}
                       disabled={busy}
                     />
-                    <span>Compétition</span>
+                    <span>{t("rounds.competition")}</span>
                   </label>
                 </div>
 
                 {roundType === "competition" && (
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Nom de la compétition</span>
+                    <span style={fieldLabelStyle}>{t("roundsNew.competitionName")}</span>
                     <input value={competitionName} onChange={(e) => setCompetitionName(e.target.value)} disabled={busy} />
                   </label>
                 )}
@@ -488,7 +490,7 @@ export default function NewRoundPage() {
                 {!selectedCourse ? (
                   <>
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Rechercher un parcours</span>
+                      <span style={fieldLabelStyle}>{t("roundsNew.searchCourse")}</span>
                       <input
                         value={q}
                         onChange={(e) => {
@@ -496,10 +498,10 @@ export default function NewRoundPage() {
                           resetCourse();
                         }}
                         disabled={busy}
-                        placeholder="Ex: Lau…"
+                        placeholder={t("roundsNew.searchPlaceholder")}
                       />
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        {searching ? "Recherche…" : results.length > 0 ? `${results.length} résultat(s)` : " "}
+                        {searching ? t("roundsNew.searching") : results.length > 0 ? `${results.length} ${t("roundsNew.results")}` : " "}
                       </div>
                     </label>
 
@@ -592,14 +594,14 @@ export default function NewRoundPage() {
                       </div>
 
                       <button type="button" className="btn" onClick={resetCourse} disabled={busy}>
-                        Changer
+                        {t("common.change")}
                       </button>
                     </div>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Tee de départ</span>
+                      <span style={fieldLabelStyle}>{t("roundsNew.startTee")}</span>
                       <select value={selectedTeeId} onChange={(e) => applyTee(e.target.value)} disabled={busy}>
-                        <option value="">— Choisir —</option>
+                        <option value="">{t("common.choose")}</option>
                         {tees.map((t) => (
                           <option key={t.id} value={t.id}>
                             {teeLabel(t)}
@@ -609,13 +611,13 @@ export default function NewRoundPage() {
 
                       {!courseDetail && (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Chargement du détail…
+                          {t("common.loading")}
                         </div>
                       )}
 
                       {courseDetail && tees.length === 0 && (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun des 4 tees requis trouvé (blanc/jaune homme, bleu/rouge femme) dans l’API.
+                          {t("roundsNew.noRequiredTees")}
                         </div>
                       )}
                     </label>
@@ -627,7 +629,7 @@ export default function NewRoundPage() {
                       </div>
 
                       <div style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Course rating</span>
+                        <span style={fieldLabelStyle}>{t("roundsNew.courseRating")}</span>
                         <div style={readOnlyPillStyle}>{selectedTee?.course_rating ?? "—"}</div>
                       </div>
                     </div>
@@ -640,12 +642,12 @@ export default function NewRoundPage() {
               <div className="hr-soft" />
 
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={fieldLabelStyle}>Remarques (optionnel)</span>
+                <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   disabled={busy}
-                  placeholder="Hydratation, alimentation, attitude, points clés, objectifs…"
+                  placeholder={t("roundsNew.notesPlaceholder")}
                   style={{ minHeight: 110 }}
                 />
               </label>
@@ -661,12 +663,12 @@ export default function NewRoundPage() {
                   color: "#fff",
                 }}
               >
-                {busy ? "Création…" : "Créer et saisir les trous"}
+                {busy ? t("roundsNew.creating") : t("roundsNew.createAndEnter")}
               </button>
 
               <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
                 <Link className="btn" href="/player/golf/rounds">
-                  Annuler
+                  {t("common.cancel")}
                 </Link>
               </div>
             </form>

@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 export default function LoginPage() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,8 +17,21 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
+    const resolveRes = await fetch("/api/auth/resolve-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier }),
+    });
+    const resolveJson = await resolveRes.json().catch(() => ({}));
+
+    if (!resolveRes.ok || !resolveJson.email) {
+      setError("Identifiant ou mot de passe invalide.");
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: resolveJson.email,
       password,
     });
 
@@ -54,13 +67,12 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="auth-form">
             <div className="field auth-field">
-              <label>Email</label>
+              <label>Email ou username</label>
               <input
-                type="email"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                autoComplete="username"
               />
             </div>
 

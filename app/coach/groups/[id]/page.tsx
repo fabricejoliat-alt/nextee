@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search, Trash2, Users, Tag, User, X } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Role = "coach" | "manager" | "player";
 
@@ -275,6 +276,7 @@ function SearchSelect({
 }
 
 export default function CoachGroupEditPage() {
+  const { t } = useI18n();
   const params = useParams();
   const router = useRouter();
   const groupId = String((params as any)?.id ?? "");
@@ -379,7 +381,7 @@ export default function CoachGroupEditPage() {
       .maybeSingle();
 
     if (linkErr || !linkRow) {
-      setErr("Accès refusé ou groupe introuvable.");
+      setErr(t("coachGroupEdit.accessDeniedOrNotFound"));
       setLoading(false);
       return;
     }
@@ -759,7 +761,7 @@ export default function CoachGroupEditPage() {
                           value={groupName}
                           onChange={(e) => setGroupName(e.target.value)}
                           disabled={busy}
-                          placeholder="Ex: Juniors U14, Compétition, Adultes…"
+                          placeholder={t("coachGroupNew.categoryPlaceholder")}
                         />
                       </label>
 
@@ -815,7 +817,7 @@ export default function CoachGroupEditPage() {
                               onClick={() => removeCategory(c.id)}
                               disabled={busy}
                               style={{ padding: "8px 10px" }}
-                              aria-label="Supprimer catégorie"
+                              aria-label={t("coachGroupNew.removeCategory")}
                               title="Supprimer"
                             >
                               <Trash2 size={16} />
@@ -830,7 +832,7 @@ export default function CoachGroupEditPage() {
                         value={newCat}
                         onChange={(e) => setNewCat(e.target.value)}
                         disabled={busy}
-                        placeholder="Ajouter une catégorie (ex: U14, Adultes, Elite…)"
+                        placeholder={t("coachGroupEdit.addCategoryPlaceholder")}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
@@ -855,7 +857,7 @@ export default function CoachGroupEditPage() {
                           opacity: busy || savingCat || !canAddCat ? 0.6 : 1,
                           pointerEvents: busy || savingCat || !canAddCat ? "none" : "auto",
                         }}
-                        aria-label="Ajouter catégorie"
+                        aria-label={t("coachGroupNew.addCategory")}
                         title="Ajouter"
                       >
                         <PlusCircle size={18} />
@@ -965,8 +967,7 @@ export default function CoachGroupEditPage() {
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Le <b>Head coach</b> ne peut pas être retiré. Les coachs supplémentaires sont <b>uniquement</b> des profils{" "}
-                      <b>coach</b>.
+                      {t("coachGroupEdit.headCoachFixed")}
                     </div>
 
                     <SearchSelect
@@ -1000,7 +1001,7 @@ export default function CoachGroupEditPage() {
                                       {fullName(p)}
                                     </div>
                                       <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                      {row.is_head ? "Head coach" : "Coach supplémentaire"}
+                                      {row.is_head ? t("trainingNew.headCoach") : t("trainingNew.extraCoach")}
                                       </div>
                                     </div>
                                   </div>
@@ -1031,7 +1032,7 @@ export default function CoachGroupEditPage() {
 
                 {/* PLANNING */}
                 <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">Planification des entraînements</div>
+                  <div className="card-title">{t("coachGroupEdit.trainingPlanning")}</div>
 
                   <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1050,7 +1051,7 @@ export default function CoachGroupEditPage() {
                             hour: "2-digit",
                             minute: "2-digit",
                           }).format(new Date(planningSummary.nextStartsAt))}`
-                        : "Aucun entraînement à venir."}
+                        : t("coachGroupEdit.noUpcomingTraining")}
                     </div>
 
                     <Link
