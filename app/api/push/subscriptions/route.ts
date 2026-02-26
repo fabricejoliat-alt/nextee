@@ -15,7 +15,7 @@ type PushSubscriptionJson = {
   };
 };
 
-async function getCaller(req: Request, supabaseAdmin: ReturnType<typeof createClient>) {
+async function getCaller(req: Request, supabaseAdmin: any) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
 
