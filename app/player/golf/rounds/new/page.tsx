@@ -26,6 +26,7 @@ type ApiTee = {
 type ProfileRow = {
   handicap: number | null;
 };
+type PlayHolesMode = "9" | "18";
 
 function safeStr(v: any) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -131,16 +132,23 @@ function teeLabel(t: ApiTee) {
   return parts.join(" • ");
 }
 
-function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string) {
+function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string, playMode: PlayHolesMode) {
   const t = tees.find((x) => x.id === selectedTeeId);
   const holes = t?.holes;
   if (!t || !Array.isArray(holes) || holes.length === 0) return null;
 
-  return holes.slice(0, 18).map((h: any, i: number) => ({
+  const base = holes.slice(0, 18).map((h: any, i: number) => ({
     hole_no: i + 1,
     par: h?.par == null ? null : Number(h.par),
     stroke_index: h?.handicap == null ? null : Number(h.handicap),
   }));
+
+  if (base.length === 9 && playMode === "18") {
+    const back9 = base.map((h, i) => ({ ...h, hole_no: i + 10 }));
+    return [...base, ...back9];
+  }
+
+  return base;
 }
 
 function localContainsFilter(list: ApiCourseLite[], query: string) {
@@ -189,8 +197,19 @@ export default function NewRoundPage() {
   const [courseDetail, setCourseDetail] = useState<any | null>(null);
   const [tees, setTees] = useState<ApiTee[]>([]);
   const [selectedTeeId, setSelectedTeeId] = useState("");
+  const [playHolesMode, setPlayHolesMode] = useState<PlayHolesMode>("18");
 
   const selectedTee = useMemo(() => tees.find((t) => t.id === selectedTeeId) ?? null, [tees, selectedTeeId]);
+  const selectedTeeHolesCount = selectedTee?.holes?.length ?? 0;
+  const selectedTeeIsNineHoles = selectedTeeHolesCount === 9;
+
+  useEffect(() => {
+    if (selectedTeeIsNineHoles) {
+      setPlayHolesMode("9");
+      return;
+    }
+    setPlayHolesMode("18");
+  }, [selectedTeeIsNineHoles, selectedTeeId]);
 
   useEffect(() => {
     (async () => {
@@ -378,7 +397,7 @@ export default function NewRoundPage() {
       return;
     }
 
-    const holes = teeHolesPrefill(tees, selectedTeeId);
+    const holes = teeHolesPrefill(tees, selectedTeeId, playHolesMode);
     if (holes) {
       const rows = holes.map((h) => ({
         round_id: id,
@@ -621,6 +640,33 @@ export default function NewRoundPage() {
                         </div>
                       )}
                     </label>
+
+                    {selectedTeeIsNineHoles && (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <span style={fieldLabelStyle}>{t("roundsNew.playMode")}</span>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                          <label style={{ ...chipRadioStyle, ...(playHolesMode === "9" ? chipRadioActive : {}) }}>
+                            <input
+                              type="radio"
+                              checked={playHolesMode === "9"}
+                              onChange={() => setPlayHolesMode("9")}
+                              disabled={busy}
+                            />
+                            <span>{t("roundsNew.play9")}</span>
+                          </label>
+
+                          <label style={{ ...chipRadioStyle, ...(playHolesMode === "18" ? chipRadioActive : {}) }}>
+                            <input
+                              type="radio"
+                              checked={playHolesMode === "18"}
+                              onChange={() => setPlayHolesMode("18")}
+                              disabled={busy}
+                            />
+                            <span>{t("roundsNew.play2x9")}</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid-2">
                       <div style={{ display: "grid", gap: 6 }}>

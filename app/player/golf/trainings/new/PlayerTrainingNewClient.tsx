@@ -13,6 +13,12 @@ type TrainingItemDraft = {
   minutes: string;
   note: string;
 };
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
 
 type ClubRow = { id: string; name: string | null };
 type ClubMemberRow = { club_id: string };
@@ -505,6 +511,27 @@ export default function PlayerTrainingNewPage() {
           const opts: CoachOption[] = await loadCoachOptionsForPlannedEvent(ev);
           setCoachOptions(opts);
           setSelectedCoachIds([]); // pas utilisé en planned
+
+          // ✅ prefill structure ("postes") configured by coach on planned event
+          const structureRes = await supabase
+            .from("club_event_structure_items")
+            .select("category,minutes,note,position")
+            .eq("event_id", ev.id)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true });
+
+          if (!structureRes.error) {
+            const rows = (structureRes.data ?? []) as EventStructureItemRow[];
+            if (rows.length > 0) {
+              setItems(
+                rows.map((r) => ({
+                  category: r.category ?? "",
+                  minutes: String(r.minutes ?? ""),
+                  note: r.note ?? "",
+                }))
+              );
+            }
+          }
 
           // ✅ load my current attendee status to pre-toggle "absent" if already set
           const aRes = await supabase

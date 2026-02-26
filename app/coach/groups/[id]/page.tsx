@@ -711,27 +711,19 @@ export default function CoachGroupEditPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        {/* Header like creation page */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Éditer un groupe
-              </div>
+              <div className="section-title" style={{ marginBottom: 0 }}>{groupName || "Éditer un groupe"}</div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <button
-                type="button"
-                className="cta-green cta-green-inline"
-                onClick={() => router.back()}
-                disabled={busy}
-              >
-                Retour
-              </button>
-
               <Link className="cta-green cta-green-inline" href="/coach/groups">
                 Mes groupes
+              </Link>
+
+              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning`}>
+                Planification
               </Link>
             </div>
           </div>
@@ -742,10 +734,10 @@ export default function CoachGroupEditPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <div>{t("common.loading")}</div>
             ) : !group ? (
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                Groupe introuvable.
+                {t("coachGroupEdit.accessDeniedOrNotFound")}
               </div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
@@ -761,7 +753,7 @@ export default function CoachGroupEditPage() {
                           value={groupName}
                           onChange={(e) => setGroupName(e.target.value)}
                           disabled={busy}
-                          placeholder={t("coachGroupNew.categoryPlaceholder")}
+                          placeholder="Nom du groupe"
                         />
                       </label>
 
@@ -962,7 +954,7 @@ export default function CoachGroupEditPage() {
                 <div className="glass-card" style={{ padding: 14 }}>
                   <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <User size={18} />
-                    Coach
+                    Coachs
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
@@ -1007,7 +999,7 @@ export default function CoachGroupEditPage() {
                                   </div>
 
                                 {row.is_head ? (
-                                  <span className="pill-soft">Head</span>
+                                  <span className="pill-soft">{t("trainingNew.headCoach")}</span>
                                 ) : (
                                     <button
                                       type="button"
@@ -1043,7 +1035,7 @@ export default function CoachGroupEditPage() {
 
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                       {planningSummary.nextStartsAt
-                        ? `Prochain entraînement: ${new Intl.DateTimeFormat("fr-CH", {
+                        ? `Prochain événement: ${new Intl.DateTimeFormat("fr-CH", {
                             weekday: "short",
                             day: "2-digit",
                             month: "short",
@@ -1051,6 +1043,8 @@ export default function CoachGroupEditPage() {
                             hour: "2-digit",
                             minute: "2-digit",
                           }).format(new Date(planningSummary.nextStartsAt))}`
+                        : planningSummary.totalScheduled > 0
+                        ? `${planningSummary.totalScheduled} événement${planningSummary.totalScheduled > 1 ? "s" : ""} planifié${planningSummary.totalScheduled > 1 ? "s" : ""}.`
                         : t("coachGroupEdit.noUpcomingTraining")}
                     </div>
 
@@ -1059,7 +1053,7 @@ export default function CoachGroupEditPage() {
                       href={`/coach/groups/${groupId}/planning`}
                       style={{ width: "100%" }}
                     >
-                      Planification
+                      Gérer la planification
                     </Link>
                   </div>
                 </div>

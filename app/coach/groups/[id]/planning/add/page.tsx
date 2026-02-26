@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
@@ -11,7 +11,6 @@ import {
   Repeat,
   Trash2,
   Pencil,
-  AlertTriangle,
   Users,
   Search,
   SlidersHorizontal,
@@ -47,6 +46,7 @@ type EventRow = {
   group_id: string;
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title?: string | null;
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number;
@@ -60,11 +60,6 @@ type EventCoachRow = {
   coach_id: string;
 };
 type EventAttendeeRow = {
-  event_id: string;
-  player_id: string;
-  status: "expected" | "present" | "absent" | "excused" | null;
-};
-type EventCoachFeedbackLite = {
   event_id: string;
   player_id: string;
 };
@@ -292,51 +287,13 @@ const fieldLabelStyle: React.CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
-const filterButtonBaseStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  borderRadius: 12,
-  border: "1px solid #ddd",
-  background: "#f2f2f2",
-  color: "#111",
-  padding: "8px 12px",
-  fontSize: 14,
-  fontWeight: 700,
-  lineHeight: 1,
-  textDecoration: "none",
-  cursor: "pointer",
-};
-
-const selectedFilterStyle: React.CSSProperties = {
-  background: "rgba(31,41,55,0.92)",
-  borderColor: "rgba(17,24,39,0.98)",
-  color: "rgba(255,255,255,0.96)",
-};
-
-const pendingFilterStyle: React.CSSProperties = {
-  background: "rgba(249,115,22,0.16)",
-  borderColor: "rgba(249,115,22,0.45)",
-  color: "rgba(124,45,18,1)",
-  fontWeight: 900,
-};
-
-const pendingFilterActiveStyle: React.CSSProperties = {
-  background: "rgba(249,115,22,0.95)",
-  borderColor: "rgba(194,65,12,1)",
-  color: "#fff",
-  fontWeight: 900,
-};
-
 type FilterMode = "upcoming" | "past" | "range";
-type EventTypeFilter = "all" | "training" | "interclub" | "camp" | "session" | "event";
-type FilterCounts = { upcoming: number; past: number; range: number };
 
 export default function CoachGroupPlanningPage() {
   const { locale, t } = useI18n();
   const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const groupId = String(params?.id ?? "").trim();
 
   const [loading, setLoading] = useState(true);
@@ -355,9 +312,6 @@ export default function CoachGroupPlanningPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventCoachIds, setEventCoachIds] = useState<Record<string, string[]>>({});
   const [eventAttendeeIds, setEventAttendeeIds] = useState<Record<string, string[]>>({});
-  const [eventPresentPlayerIds, setEventPresentPlayerIds] = useState<Record<string, string[]>>({});
-  const [eventEvaluatedPlayerIds, setEventEvaluatedPlayerIds] = useState<Record<string, string[]>>({});
-  const [pendingEvaluationCount, setPendingEvaluationCount] = useState(0);
   const [coachEditBusy, setCoachEditBusy] = useState<Record<string, boolean>>({});
 
   // Coaches selected (simple chips)
@@ -383,6 +337,7 @@ export default function CoachGroupPlanningPage() {
     return normalizeToQuarterHour(isoToLocalInput(start.toISOString()));
   });
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
+  const [eventTitle, setEventTitle] = useState<string>("");
   const [locationText, setLocationText] = useState<string>("");
   const [coachNote, setCoachNote] = useState<string>("");
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
@@ -396,11 +351,8 @@ export default function CoachGroupPlanningPage() {
 
   // ✅ NEW — filter
   const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
-  const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilter>("all");
   const [rangeFrom, setRangeFrom] = useState<string>(() => toYMD(addDays(new Date(), -30)));
   const [rangeTo, setRangeTo] = useState<string>(() => toYMD(addDays(new Date(), 30)));
-  const [filterCounts, setFilterCounts] = useState<FilterCounts>({ upcoming: 0, past: 0, range: 0 });
-  const [pendingEvaluationsOnly, setPendingEvaluationsOnly] = useState(false);
 
   const eventTypeLabelLocalized = (v: string | null | undefined) => {
     if (v === "training") return tr("Entraînement", "Training");
@@ -539,32 +491,16 @@ export default function CoachGroupPlanningPage() {
 
   const playerIdSet = useMemo(() => new Set(players.map((p) => p.id)), [players]);
   const coachIdSet = useMemo(() => new Set(coaches.map((c) => c.id)), [coaches]);
-  const personById = useMemo(() => {
-    const map = new Map<string, ProfileLite | CoachLite | ClubMemberLite>();
-    players.forEach((p) => map.set(p.id, p));
-    coaches.forEach((c) => map.set(c.id, c));
+  const personNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    players.forEach((p) => map.set(p.id, fullName(p)));
+    coaches.forEach((c) => map.set(c.id, fullName(c as any)));
     clubMembers.forEach((m) => {
-      if (!map.has(m.id)) map.set(m.id, m);
+      if (!map.has(m.id)) map.set(m.id, fullName(m as any));
     });
     return map;
   }, [players, coaches, clubMembers]);
 
-  const eventNeedsEvaluation = (e: EventRow) => {
-    const presentPlayerIds = Array.from(new Set(eventPresentPlayerIds[e.id] ?? []));
-    const evaluatedPlayerIds = new Set(eventEvaluatedPlayerIds[e.id] ?? []);
-    const nowTs = Date.now();
-    const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
-    const isPastOccurrence = endTs < nowTs;
-    const requiresEvaluationCheck = e.event_type === "training" || e.event_type === "camp" || e.event_type === "interclub";
-    if (!isPastOccurrence || !requiresEvaluationCheck) return false;
-    const missingEvalCount = presentPlayerIds.filter((pid) => !evaluatedPlayerIds.has(pid)).length;
-    return missingEvalCount > 0;
-  };
-
-  const listedEvents = useMemo(
-    () => (pendingEvaluationsOnly ? events.filter((e) => eventNeedsEvaluation(e)) : events),
-    [events, pendingEvaluationsOnly, eventPresentPlayerIds, eventEvaluatedPlayerIds]
-  );
   function toggleInList(list: string[], id: string) {
     return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   }
@@ -732,9 +668,13 @@ export default function CoachGroupPlanningPage() {
 
       if (filterMode === "upcoming") {
         const from = new Date();
+        const to = addDays(from, 90);
         isoFrom = from.toISOString();
+        isoTo = to.toISOString();
       } else if (filterMode === "past") {
         const to = new Date(); // now
+        const from = addDays(to, -90);
+        isoFrom = from.toISOString();
         isoTo = to.toISOString();
       } else {
         // range
@@ -750,100 +690,11 @@ export default function CoachGroupPlanningPage() {
 
       if (isoFrom) q = q.gte("starts_at", isoFrom);
       if (isoTo) q = q.lt("starts_at", isoTo);
-      if (eventTypeFilter !== "all") q = q.eq("event_type", eventTypeFilter);
 
       const eRes = await q;
       if (eRes.error) throw new Error(eRes.error.message);
       const eList = (eRes.data ?? []) as EventRow[];
       setEvents(eList);
-
-      const nowIso = new Date().toISOString();
-      const withType = (qq: any) => (eventTypeFilter !== "all" ? qq.eq("event_type", eventTypeFilter) : qq);
-
-      const upCountQ = withType(
-        supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId).gte("starts_at", nowIso)
-      );
-      const pastCountQ = withType(
-        supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId).lt("starts_at", nowIso)
-      );
-      let rangeCountQ = withType(
-        supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId)
-      );
-      if (rangeFrom) rangeCountQ = rangeCountQ.gte("starts_at", startOfDayISO(rangeFrom));
-      if (rangeTo) rangeCountQ = rangeCountQ.lt("starts_at", nextDayStartISO(rangeTo));
-
-      const [upCountRes, pastCountRes, rangeCountRes] = await Promise.all([upCountQ, pastCountQ, rangeCountQ]);
-      if (upCountRes.error) throw new Error(upCountRes.error.message);
-      if (pastCountRes.error) throw new Error(pastCountRes.error.message);
-      if (rangeCountRes.error) throw new Error(rangeCountRes.error.message);
-      setFilterCounts({
-        upcoming: upCountRes.count ?? 0,
-        past: pastCountRes.count ?? 0,
-        range: rangeCountRes.count ?? 0,
-      });
-
-      // Count past events requiring evaluation (independent from current visible filter)
-      const pastEvalEventsRes = await supabase
-        .from("club_events")
-        .select("id,event_type,starts_at,ends_at")
-        .eq("group_id", groupId)
-        .in("event_type", ["training", "interclub", "camp"]);
-      if (pastEvalEventsRes.error) throw new Error(pastEvalEventsRes.error.message);
-
-      const nowTs = Date.now();
-      const pastEvalEvents = ((pastEvalEventsRes.data ?? []) as Array<{
-        id: string;
-        event_type: "training" | "interclub" | "camp" | "session" | "event";
-        starts_at: string;
-        ends_at: string | null;
-      }>).filter((ev) => {
-        const endTs = ev.ends_at ? new Date(ev.ends_at).getTime() : new Date(ev.starts_at).getTime();
-        return endTs < nowTs;
-      });
-
-      const pastEvalEventIds = pastEvalEvents.map((ev) => ev.id);
-      if (pastEvalEventIds.length === 0) {
-        setPendingEvaluationCount(0);
-      } else {
-        const [pastAttendeesRes, pastFeedbackRes] = await Promise.all([
-          supabase
-            .from("club_event_attendees")
-            .select("event_id,player_id,status")
-            .in("event_id", pastEvalEventIds),
-          supabase
-            .from("club_event_coach_feedback")
-            .select("event_id,player_id")
-            .eq("coach_id", uRes.user.id)
-            .in("event_id", pastEvalEventIds),
-        ]);
-
-        if (pastAttendeesRes.error) throw new Error(pastAttendeesRes.error.message);
-        if (pastFeedbackRes.error) throw new Error(pastFeedbackRes.error.message);
-
-        const presentByEvent: Record<string, Set<string>> = {};
-        ((pastAttendeesRes.data ?? []) as EventAttendeeRow[]).forEach((r) => {
-          if (r.status !== "present") return;
-          if (!presentByEvent[r.event_id]) presentByEvent[r.event_id] = new Set<string>();
-          presentByEvent[r.event_id].add(r.player_id);
-        });
-
-        const evaluatedByEvent: Record<string, Set<string>> = {};
-        ((pastFeedbackRes.data ?? []) as EventCoachFeedbackLite[]).forEach((r) => {
-          if (!evaluatedByEvent[r.event_id]) evaluatedByEvent[r.event_id] = new Set<string>();
-          evaluatedByEvent[r.event_id].add(r.player_id);
-        });
-
-        const pendingCount = pastEvalEventIds.reduce((acc, eventId) => {
-          const presentSet = presentByEvent[eventId] ?? new Set<string>();
-          if (presentSet.size === 0) return acc;
-          const evaluatedSet = evaluatedByEvent[eventId] ?? new Set<string>();
-          for (const pid of presentSet) {
-            if (!evaluatedSet.has(pid)) return acc + 1;
-          }
-          return acc;
-        }, 0);
-        setPendingEvaluationCount(pendingCount);
-      }
 
       const eventIds = eList.map((e) => e.id);
       if (eventIds.length > 0) {
@@ -861,39 +712,18 @@ export default function CoachGroupPlanningPage() {
 
         const eaRes = await supabase
           .from("club_event_attendees")
-          .select("event_id,player_id,status")
+          .select("event_id,player_id")
           .in("event_id", eventIds);
         if (eaRes.error) throw new Error(eaRes.error.message);
         const attendeesByEvent: Record<string, string[]> = {};
-        const presentByEvent: Record<string, string[]> = {};
         ((eaRes.data ?? []) as EventAttendeeRow[]).forEach((r) => {
           if (!attendeesByEvent[r.event_id]) attendeesByEvent[r.event_id] = [];
           attendeesByEvent[r.event_id].push(r.player_id);
-          if (r.status === "present") {
-            if (!presentByEvent[r.event_id]) presentByEvent[r.event_id] = [];
-            presentByEvent[r.event_id].push(r.player_id);
-          }
         });
         setEventAttendeeIds(attendeesByEvent);
-        setEventPresentPlayerIds(presentByEvent);
-
-        const cfRes = await supabase
-          .from("club_event_coach_feedback")
-          .select("event_id,player_id")
-          .in("event_id", eventIds)
-          .eq("coach_id", uRes.user.id);
-        if (cfRes.error) throw new Error(cfRes.error.message);
-        const evaluatedByEvent: Record<string, string[]> = {};
-        ((cfRes.data ?? []) as EventCoachFeedbackLite[]).forEach((r) => {
-          if (!evaluatedByEvent[r.event_id]) evaluatedByEvent[r.event_id] = [];
-          evaluatedByEvent[r.event_id].push(r.player_id);
-        });
-        setEventEvaluatedPlayerIds(evaluatedByEvent);
       } else {
         setEventCoachIds({});
         setEventAttendeeIds({});
-        setEventPresentPlayerIds({});
-        setEventEvaluatedPlayerIds({});
       }
 
       setLoading(false);
@@ -907,10 +737,6 @@ export default function CoachGroupPlanningPage() {
       setEvents([]);
       setEventCoachIds({});
       setEventAttendeeIds({});
-      setEventPresentPlayerIds({});
-      setEventEvaluatedPlayerIds({});
-      setPendingEvaluationCount(0);
-      setFilterCounts({ upcoming: 0, past: 0, range: 0 });
       setSelectedPlayers({});
       setCoachIdsSelected([]);
       setLoading(false);
@@ -920,7 +746,7 @@ export default function CoachGroupPlanningPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, filterMode, eventTypeFilter, rangeFrom, rangeTo]);
+  }, [groupId, filterMode, rangeFrom, rangeTo]);
 
   async function createSingleEvent() {
     if (!group || busy) return;
@@ -928,6 +754,10 @@ export default function CoachGroupPlanningPage() {
     setError(null);
 
     try {
+      if ((eventType === "session" || eventType === "event") && !eventTitle.trim()) {
+        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+      }
+
       const startDt = new Date(startsAtLocal);
       if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
       let endDt = new Date(endsAtLocal);
@@ -950,6 +780,7 @@ export default function CoachGroupPlanningPage() {
           group_id: group.id,
           club_id: group.club_id,
           event_type: eventType,
+          title: eventTitle.trim() || null,
           starts_at: startDt.toISOString(),
           ends_at: endDt.toISOString(),
           duration_minutes: durationForDb,
@@ -980,8 +811,9 @@ export default function CoachGroupPlanningPage() {
 
       await saveStructureForEvents([eventId]);
 
-      await load();
       setBusy(false);
+      router.push(`/coach/groups/${groupId}/planning/${eventId}`);
+      return;
     } catch (e: any) {
       setError(e?.message ?? "Creation error.");
       setBusy(false);
@@ -1011,6 +843,9 @@ export default function CoachGroupPlanningPage() {
     setError(null);
 
     try {
+      if ((eventType === "session" || eventType === "event") && !eventTitle.trim()) {
+        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+      }
       if (!startDate || !endDate) throw new Error(tr("Dates de récurrence manquantes.", "Missing recurrence dates."));
       if (endDate < startDate) throw new Error(tr("La date de fin doit être après la date de début.", "End date must be after start date."));
 
@@ -1018,7 +853,7 @@ export default function CoachGroupPlanningPage() {
         group_id: group.id,
         club_id: group.club_id,
         event_type: eventType,
-        title: null,
+        title: eventTitle.trim() || null,
         location_text: locationText.trim() || null,
         coach_note: coachNote.trim() || null,
         duration_minutes: durationMinutes,
@@ -1051,6 +886,7 @@ export default function CoachGroupPlanningPage() {
           group_id: group.id,
           club_id: group.club_id,
           event_type: eventType,
+          title: eventTitle.trim() || null,
           starts_at: dt.toISOString(),
           ends_at: endDt.toISOString(),
           duration_minutes: durationMinutes,
@@ -1089,8 +925,12 @@ export default function CoachGroupPlanningPage() {
 
       await saveStructureForEvents(createdEventIds);
 
-      await load();
       setBusy(false);
+      if (createdEventIds.length > 0) {
+        router.push(`/coach/groups/${groupId}/planning/${createdEventIds[0]}`);
+        return;
+      }
+      await load();
     } catch (e: any) {
       setError(e?.message ?? tr("Erreur de création de la récurrence.", "Recurrence creation error."));
       setBusy(false);
@@ -1158,17 +998,14 @@ export default function CoachGroupPlanningPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {tr("Planification", "Planning")} — {group?.name ?? tr("Groupe", "Group")}
+                {tr("Ajouter un événement", "Add event")} — {group?.name ?? tr("Groupe", "Group")}
               </div>
               <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>{t("common.club")}: {clubName}</div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}`}>
+              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning`}>
                 {t("common.back")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/add`}>
-                {tr("Ajouter un événement", "Add event")}
               </Link>
             </div>
           </div>
@@ -1176,271 +1013,661 @@ export default function CoachGroupPlanningPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        {/* ✅ Filters for list */}
+        {/* Create */}
         <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-              <SlidersHorizontal size={16} />
-              {tr("Filtrer les évènements", "Filter events")}
-            </div>
+          <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Calendar size={16} />
+                  {tr("Créer un événement", "Create event")}
+                </div>
+
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setMode("single")}
+                    disabled={busy}
+                    style={mode === "single" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                  >
+                    {tr("Unique", "Single")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setMode("series")}
+                    disabled={busy}
+                    style={mode === "series" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                  >
+                    <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                    {tr("Récurrent", "Recurring")}
+                  </button>
+                </div>
+              </div>
+
+              {mode === "single" ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
+                    <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                      {EVENT_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {eventTypeLabelLocalized(opt.value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {(eventType === "session" || eventType === "event") ? (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>
+                        {eventType === "session" ? tr("Nom de la séance", "Session name") : tr("Nom de l’événement", "Event name")}
+                      </span>
+                      <input
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                        disabled={busy}
+                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                      />
+                    </label>
+                  ) : null}
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Date de début", "Start date")}</span>
+                      <input type="date" value={singleDate} onChange={(e) => updateSingleDate(e.target.value)} disabled={busy} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Heure de début", "Start time")}</span>
+                      <select value={singleTime} onChange={(e) => updateSingleTime(e.target.value)} disabled={busy}>
+                        {QUARTER_HOUR_OPTIONS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {eventType === "training" ? (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                      <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
+                        {DURATION_OPTIONS.map((m) => (
+                          <option key={m} value={m}>
+                            {m} {t("common.min")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="grid-2">
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{tr("Date de fin", "End date")}</span>
+                        <input type="date" value={singleEndDate} onChange={(e) => updateSingleEndDate(e.target.value)} disabled={busy} />
+                      </label>
+
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{tr("Heure de fin", "End time")}</span>
+                        <select value={singleEndTime} onChange={(e) => updateSingleEndTime(e.target.value)} disabled={busy}>
+                          {QUARTER_HOUR_OPTIONS.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {mode === "series" ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
+                    <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                      {EVENT_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {eventTypeLabelLocalized(opt.value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {(eventType === "session" || eventType === "event") ? (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>
+                        {eventType === "session" ? tr("Nom de la séance", "Session name") : tr("Nom de l’événement", "Event name")}
+                      </span>
+                      <input
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                        disabled={busy}
+                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                      />
+                    </label>
+                  ) : null}
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Jour", "Day")}</span>
+                      <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
+                        <option value={1}>{tr("Lundi", "Monday")}</option>
+                        <option value={2}>{tr("Mardi", "Tuesday")}</option>
+                        <option value={3}>{tr("Mercredi", "Wednesday")}</option>
+                        <option value={4}>{tr("Jeudi", "Thursday")}</option>
+                        <option value={5}>{tr("Vendredi", "Friday")}</option>
+                        <option value={6}>{tr("Samedi", "Saturday")}</option>
+                        <option value={0}>{tr("Dimanche", "Sunday")}</option>
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Heure de début", "Start time")}</span>
+                      <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy}>
+                        {QUARTER_HOUR_OPTIONS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{t("common.from")}</span>
+                      <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{t("common.to")}</span>
+                      <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={busy} />
+                    </label>
+                  </div>
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                      <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
+                        {DURATION_OPTIONS.map((m) => (
+                          <option key={m} value={m}>
+                            {m} {t("common.min")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{tr("Rythme", "Frequency")}</span>
+                      <select value={intervalWeeks} onChange={(e) => setIntervalWeeks(Number(e.target.value))} disabled={busy}>
+                        {[1, 2, 3, 4].map((w) => (
+                          <option key={w} value={w}>
+                            {locale === "en" ? `Every ${w} week${w > 1 ? "s" : ""}` : `Toutes les ${w} semaine${w > 1 ? "s" : ""}`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    {tr("⚠️ On matérialise les occurrences (max 80) pour que ce soit simple à éditer/supprimer par événement.", "⚠️ Occurrences are materialized (max 80) to keep per-event edit/delete simple.")}
+                  </div>
+                </div>
+              ) : null}
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={fieldLabelStyle}>{tr("Lieu (optionnel)", "Location (optional)")}</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} placeholder={tr("Ex: Practice / putting / parcours", "E.g. range / putting / course")} />
+              </label>
 
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
-              <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value as EventTypeFilter)} disabled={busy}>
-                <option value="all">{tr("Tous les types", "All types")}</option>
-                <option value="training">{tr("Entraînement", "Training")}</option>
-                <option value="interclub">{tr("Interclub", "Interclub")}</option>
-                <option value="camp">{tr("Stage", "Camp")}</option>
-                <option value="session">{tr("Séance", "Session")}</option>
-                <option value="event">{tr("Événement", "Event")}</option>
-              </select>
-            </label>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("upcoming");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "upcoming" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("À venir", "Upcoming")} ({filterCounts.upcoming})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("past");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "past" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("Passés", "Past")} ({filterCounts.past})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("range");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "range" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("Plage de dates", "Date range")} ({filterCounts.range})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setFilterMode("past");
-                  setEventTypeFilter("all");
-                  setPendingEvaluationsOnly((prev) => !prev);
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(pendingEvaluationsOnly ? pendingFilterActiveStyle : pendingFilterStyle),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("À évaluer", "To evaluate")} ({pendingEvaluationCount})
-              </button>
+                <span style={fieldLabelStyle}>{tr("Renseignements événement (optionnel)", "Event notes (optional)")}</span>
+                <textarea
+                  value={coachNote}
+                  onChange={(e) => setCoachNote(e.target.value)}
+                  disabled={busy}
+                  placeholder={tr("Ex: matériel à prévoir, tenue, consignes logistiques…", "E.g. equipment needed, dress code, logistics…")}
+                  style={{ minHeight: 96 }}
+                />
+              </label>
             </div>
 
-            {filterMode === "range" ? (
-              <>
-                <div className="hr-soft" />
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.from")}</span>
-                    <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} disabled={busy} />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.to")}</span>
-                    <input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} disabled={busy} />
-                  </label>
+            {eventType === "training" ? (
+              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  {tr("Structure de l’entraînement (postes)", "Training structure (stations)")}
                 </div>
-              </>
-            ) : null}
-          </div>
-        </div>
 
-        {/* List */}
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-            ) : listedEvents.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {pendingEvaluationsOnly
-                  ? tr("Aucun événement passé à évaluer.", "No past event to evaluate.")
-                  : filterMode === "upcoming"
-                  ? tr("Aucun événement à venir.", "No upcoming event.")
-                  : filterMode === "past"
-                  ? tr("Aucun événement passé.", "No past event.")
-                  : tr("Aucun événement sur cette plage de dates.", "No event in this date range.")}
-              </div>
-            ) : (
-              <div className="marketplace-list marketplace-list-top">
-                {listedEvents.map((e) => (
-                  <div key={e.id} className="marketplace-item">
-                    {(() => {
-                      const coachIds = Array.from(new Set(eventCoachIds[e.id] ?? []));
-                      const attendeeIds = Array.from(new Set(eventAttendeeIds[e.id] ?? []));
-                      const showEvaluationWarning = eventNeedsEvaluation(e);
-                      const playerIds = attendeeIds.filter((id) => playerIdSet.has(id));
-                      const inviteIds = attendeeIds.filter((id) => !playerIdSet.has(id) && !coachIdSet.has(id));
+                {structureItems.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    {tr("Ajoute des postes si tu veux préremplir l’entraînement des joueurs.", "Add stations if you want to prefill players' training.")}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {structureItems.map((it, idx) => (
+                      <div key={idx} style={lightRowCardStyle}>
+                        <div style={{ display: "grid", gap: 10, width: "100%" }}>
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>{tr("Poste", "Station")}</span>
+                              <select value={it.category} onChange={(e) => updateStructureLine(idx, { category: e.target.value })} disabled={busy}>
+                                <option value="">-</option>
+                                {TRAINING_CATEGORY_VALUES.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {TRAINING_CATEGORY_LABELS[cat] ?? cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
 
-                      const renderPeopleLine = (label: string, ids: string[]) => {
-                        const people = ids
-                          .map((id) => personById.get(id))
-                          .filter(Boolean) as Array<ProfileLite | CoachLite | ClubMemberLite>;
-                        const preview = people.slice(0, 8);
-                        const hasMore = people.length > 8;
-                        return (
-                          <div style={{ display: "grid", gap: 2 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.04em", color: "rgba(0,0,0,0.58)" }}>
-                              {label.toUpperCase()}
-                            </div>
-                            <div>
-                              {people.length === 0 ? (
-                                <span style={{ color: "rgba(0,0,0,0.50)" }}>{tr("Aucun", "None")}</span>
-                              ) : (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                                  {preview.map((person, idx) => (
-                                    <div
-                                      key={`${label}-${person.id}-${idx}`}
-                                      style={{
-                                        border: "1px solid rgba(0,0,0,0.10)",
-                                        borderRadius: 10,
-                                        background: "rgba(255,255,255,0.74)",
-                                        padding: "4px 8px",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        maxWidth: 180,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          width: 22,
-                                          height: 22,
-                                          borderRadius: 999,
-                                          overflow: "hidden",
-                                          background: "rgba(255,255,255,0.75)",
-                                          border: "1px solid rgba(0,0,0,0.10)",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          justifyContent: "center",
-                                          fontWeight: 950,
-                                          color: "var(--green-dark)",
-                                          flexShrink: 0,
-                                          fontSize: 10,
-                                        }}
-                                      >
-                                        {avatarNode(person as any)}
-                                      </div>
-                                      <span className="truncate" style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.78)" }}>
-                                        {fullName(person as any)}
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {hasMore ? <span style={{ color: "rgba(0,0,0,0.55)", fontSize: 12, fontWeight: 800 }}>{tr("Afficher plus...", "Show more...")}</span> : null}
-                                </div>
-                              )}
-                            </div>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                              <select value={it.minutes} onChange={(e) => updateStructureLine(idx, { minutes: e.target.value })} disabled={busy}>
+                                <option value="">-</option>
+                                {MINUTE_OPTIONS.map((m) => (
+                                  <option key={m} value={String(m)}>
+                                      {m} {t("common.min")}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                           </div>
-                        );
-                      };
 
-                      return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {fmtDateTimeRange(e.starts_at, e.ends_at)}
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>{tr("Note (optionnel)", "Note (optional)")}</span>
+                            <input value={it.note} onChange={(e) => updateStructureLine(idx, { note: e.target.value })} disabled={busy} />
+                          </label>
+
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <button type="button" className="btn btn-danger soft" onClick={() => removeStructureLine(idx)} disabled={busy}>
+                              {t("common.delete")}
+                            </button>
+                          </div>
                         </div>
-
-                        <div className="marketplace-price-pill">{e.duration_minutes} min</div>
                       </div>
+                    ))}
+                  </div>
+                )}
 
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="pill-soft">{eventTypeLabelLocalized(e.event_type)}</span>
-                        <span className="pill-soft">{clubName || "Club"}</span>
-                        {e.series_id ? <span className="pill-soft">{tr("Récurrent", "Recurring")}</span> : <span className="pill-soft">{tr("Unique", "Single")}</span>}
-                        {showEvaluationWarning ? (
-                          <span
-                            className="pill-soft"
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              color: "rgba(127,29,29,1)",
-                              background: "rgba(239,68,68,0.16)",
-                              borderColor: "rgba(239,68,68,0.35)",
-                              fontWeight: 900,
-                            }}
-                          >
-                            <AlertTriangle size={14} />
-                            {tr("Évaluation", "Evaluation")}
-                          </span>
-                        ) : null}
-                        {e.location_text ? (
-                          <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>📍 {e.location_text}</span>
-                        ) : null}
-                      </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" className="btn" onClick={addStructureLine} disabled={busy}>
+                    + {tr("Ajouter un poste", "Add a station")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
-                      <div style={{ display: "grid", gap: 6 }}>
-                        {renderPeopleLine(tr("Coachs", "Coaches"), coachIds)}
-                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Joueurs", "Players"), playerIds)}
-                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Invités", "Guests"), inviteIds)}
-                      </div>
+            {/* Select coaches */}
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Users size={16} /> {tr("Coachs attendus", "Expected coaches")}
+              </div>
 
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                        <Link className="btn" href={`/coach/groups/${groupId}/planning/${e.id}`}>
-                          {tr("Ouvrir", "Open")}
-                        </Link>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || coaches.length === 0 || allCoachesSelected}
+                  onClick={() => setCoachIdsSelected(coaches.map((c) => c.id))}
+                >
+                  {tr("Tout sélectionner", "Select all")}
+                </button>
 
-                        <Link className="btn" href={`/coach/groups/${groupId}/planning/${e.id}/edit`}>
-                          <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                          {t("common.edit")}
-                        </Link>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || coaches.length === 0 || coachIdsSelected.length === 0}
+                  onClick={() => setCoachIdsSelected([])}
+                >
+                  {tr("Tout désélectionner", "Unselect all")}
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedCoachesList.length})</div>
+
+                {coaches.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun coach dans ce groupe.", "No coach in this group.")}</div>
+                ) : selectedCoachesList.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun coach sélectionné.", "No coach selected.")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {selectedCoachesList.map((c) => (
+                      <div key={c.id} style={lightRowCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <div style={avatarBoxStyle} aria-hidden="true">
+                            {avatarNode(c as any)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>{fullName(c)}</div>
+                          </div>
+                        </div>
 
                         <button
                           type="button"
                           className="btn btn-danger soft"
+                          onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))}
                           disabled={busy}
-                          onClick={() => deleteEvent(e.id)}
-                          title="Supprimer"
+                          style={{ padding: "10px 12px" }}
+                          aria-label="Retirer coach"
+                          title="Retirer"
                         >
-                          <Trash2 size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                          {t("common.delete")}
+                          <Trash2 size={18} />
                         </button>
                       </div>
-                    </div>
-                      );
-                    })()}
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">{t("common.add")} ({candidateCoaches.length})</div>
+
+                {coaches.length > 0 && candidateCoaches.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                ) : candidateCoaches.length > 0 ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {candidateCoaches.map((c) => (
+                      <div key={c.id} style={lightRowCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <div style={avatarBoxStyle} aria-hidden="true">
+                            {avatarNode(c as any)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>{fullName(c)}</div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="glass-btn"
+                          onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])}
+                          disabled={busy}
+                          style={{
+                            width: 44,
+                            height: 42,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "rgba(255,255,255,0.70)",
+                            border: "1px solid rgba(0,0,0,0.08)",
+                          }}
+                          aria-label="Ajouter coach"
+                          title="Ajouter"
+                        >
+                          <PlusCircle size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Select players */}
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Users size={16} /> {tr("Joueurs attendus", "Expected players")}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || players.length === 0 || allPlayersSelected}
+                  onClick={() => {
+                    const map: Record<string, ProfileLite> = {};
+                    players.forEach((p) => (map[p.id] = p));
+                    setSelectedPlayers(map);
+                  }}
+                >
+                  {tr("Tout sélectionner", "Select all")}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
+                  onClick={() => setSelectedPlayers({})}
+                >
+                  {tr("Tout désélectionner", "Unselect all")}
+                </button>
+              </div>
+
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: "absolute",
+                    left: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    opacity: 0.7,
+                  }}
+                />
+                <input
+                  value={queryPlayers}
+                  onChange={(e) => setQueryPlayers(e.target.value)}
+                  disabled={busy}
+                  placeholder={tr("Rechercher un joueur (nom, handicap)…", "Search a player (name, handicap)…")}
+                  style={{ paddingLeft: 44 }}
+                />
+              </div>
+
+              {/* Selected */}
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedPlayersList.length})</div>
+
+                {players.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun joueur dans ce groupe.", "No player in this group.")}</div>
+                ) : selectedPlayersList.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun joueur sélectionné.", "No selected player.")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {selectedPlayersList.map((p) => (
+                      <div key={p.id} style={lightRowCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <div style={avatarBoxStyle} aria-hidden="true">
+                            {avatarNode(p)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
+                              Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-danger soft"
+                          onClick={() => toggleSelectedPlayer(p)}
+                          disabled={busy}
+                          style={{ padding: "10px 12px" }}
+                          aria-label="Retirer"
+                          title="Retirer"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add */}
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">{t("common.add")} ({candidatesPlayers.length})</div>
+
+                {players.length > 0 && candidatesPlayers.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                ) : candidatesPlayers.length > 0 ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {candidatesPlayers.map((p) => (
+                      <div key={p.id} style={lightRowCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <div style={avatarBoxStyle} aria-hidden="true">
+                            {avatarNode(p)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
+                              Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="glass-btn"
+                          onClick={() => toggleSelectedPlayer(p)}
+                          disabled={busy}
+                          style={{
+                            width: 44,
+                            height: 42,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "rgba(255,255,255,0.70)",
+                            border: "1px solid rgba(0,0,0,0.08)",
+                          }}
+                          aria-label="Ajouter joueur"
+                          title="Ajouter"
+                        >
+                          <PlusCircle size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Club members visible as guests */}
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Users size={16} /> {tr("Invités", "Guests")}
+              </div>
+
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: "absolute",
+                    left: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    opacity: 0.7,
+                  }}
+                />
+                <input
+                  value={queryGuests}
+                  onChange={(e) => setQueryGuests(e.target.value)}
+                  disabled={busy}
+                  placeholder={tr("Rechercher un invité (nom, rôle)…", "Search a guest (name, role)…")}
+                  style={{ paddingLeft: 44 }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedGuestsList.length})</div>
+                {selectedGuestsList.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun invité sélectionné.", "No guest selected.")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {selectedGuestsList.map((m) => (
+                      <div key={m.id} style={lightRowCardStyle}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                          <div style={avatarBoxStyle} aria-hidden="true">
+                            {avatarNode(m as any)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-danger soft"
+                          onClick={() => toggleSelectedGuest(m)}
+                          disabled={busy}
+                          style={{ padding: "10px 12px" }}
+                          aria-label="Retirer invité"
+                          title="Retirer"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {queryGuests.trim().length > 0 ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="pill-soft">{t("common.add")} ({candidateGuests.length})</div>
+                  {candidateGuests.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {candidateGuests.map((m) => (
+                        <div key={m.id} style={lightRowCardStyle}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                            <div style={avatarBoxStyle} aria-hidden="true">
+                              {avatarNode(m as any)}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                              <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="glass-btn"
+                            onClick={() => toggleSelectedGuest(m)}
+                            disabled={busy}
+                            style={{
+                              width: 44,
+                              height: 42,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "rgba(255,255,255,0.70)",
+                              border: "1px solid rgba(0,0,0,0.08)",
+                            }}
+                            aria-label="Ajouter invité"
+                            title="Ajouter"
+                          >
+                            <PlusCircle size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                  {tr("Saisis une recherche pour ajouter des invités.", "Type a search to add guests.")}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="cta-green cta-green-inline"
+              disabled={busy || loading || !group}
+              onClick={() => (mode === "single" ? createSingleEvent() : createSeries())}
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              <PlusCircle size={18} />
+              {busy ? tr("Enregistrement…", "Saving…") : mode === "single" ? tr("Créer l’événement", "Create event") : tr("Créer la récurrence", "Create recurrence")}
+            </button>
           </div>
         </div>
 

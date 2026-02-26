@@ -1000,6 +1000,7 @@ function presetToSelectValue(p: Preset): Preset {
     // completed rounds: only if 18 holes exist in golf_round_holes
     const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = rounds.filter((r) => completedRoundIds.has(r.id));
+    const completedHoles = holes.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
@@ -1022,7 +1023,7 @@ function presetToSelectValue(p: Preset): Preset {
     }
 
     // putts avg (per hole)
-    const puttVals = holes.map((h) => (typeof h.putts === "number" ? h.putts : null));
+    const puttVals = completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null));
     const avgPuttsPerHole = avg(puttVals);
 
     // fairways (par 4/5 only; count only where fairway_hit not null)
@@ -1116,6 +1117,7 @@ function presetToSelectValue(p: Preset): Preset {
 
     const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = prevRounds.filter((r) => completedRoundIds.has(r.id));
+    const completedHoles = prevHoles.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
@@ -1135,7 +1137,7 @@ function presetToSelectValue(p: Preset): Preset {
       distDen += 1;
     }
 
-    const avgPuttsPerHole = avg(prevHoles.map((h) => (typeof h.putts === "number" ? h.putts : null)));
+    const avgPuttsPerHole = avg(completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null)));
 
     let fwTot = 0;
     let fwHit = 0;

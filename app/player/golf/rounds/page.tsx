@@ -311,7 +311,7 @@ export default function RoundsListPage() {
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds/new">
                 {t("common.add")}
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player">
+              <Link className="cta-green cta-green-inline" href="/player/golf">
                 {t("common.dashboard")}
               </Link>
             </div>

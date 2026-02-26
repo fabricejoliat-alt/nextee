@@ -15,6 +15,7 @@ truncate table
   public.club_event_player_feedback,
   public.club_event_coaches,
   public.club_event_attendees,
+  public.club_event_structure_items,
   public.club_events,
   public.club_event_series,
   public.club_trainings,

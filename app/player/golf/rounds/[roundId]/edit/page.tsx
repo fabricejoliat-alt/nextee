@@ -258,9 +258,12 @@ export default function EditRoundWizardPage() {
     const map = new Map<number, any>();
     (hRes.data ?? []).forEach((x: any) => map.set(x.hole_no, x));
 
+    const maxHoleNo = Math.max(0, ...(hRes.data ?? []).map((x: any) => Number(x.hole_no) || 0));
+    const holeCount = maxHoleNo > 0 && maxHoleNo <= 9 ? 9 : 18;
+
     // ✅ IMPORTANT: set real defaults in STATE (score = par, putts = 2) if null
     setHoles(
-      Array.from({ length: 18 }, (_, i) => {
+      Array.from({ length: holeCount }, (_, i) => {
         const holeNo = i + 1;
         const existing = map.get(holeNo);
 
@@ -303,8 +306,9 @@ export default function EditRoundWizardPage() {
     if (loading) return;
     if (didInitHoleRef.current) return;
     didInitHoleRef.current = true;
-    setHoleIdx(requestedHoleIdx);
-  }, [loading, requestedHoleIdx]);
+    const maxIdx = Math.max(0, holes.length - 1);
+    setHoleIdx(Math.min(requestedHoleIdx, maxIdx));
+  }, [loading, requestedHoleIdx, holes.length]);
 
   // Keep latest hole pointer updated whenever current hole changes
   useEffect(() => {
@@ -316,7 +320,7 @@ export default function EditRoundWizardPage() {
 
   // --- actions (ALL autosave) ---
   const hole = holes[holeIdx];
-  const isLastHole = holeIdx === 17;
+  const isLastHole = holeIdx === holes.length - 1;
   const fairwayChosen = hole?.fairway_hit !== null;
   const isPar3 = hole?.par === 3;
   const missLabel = isPar3 ? t("roundsEdit.missGreen") : t("roundsEdit.missFairway");
@@ -335,7 +339,7 @@ export default function EditRoundWizardPage() {
 
   async function goPrevHole() {
     if (!fairwayChosen) {
-      setUxError(`Choisis ${chooseLabel} pour continuer.`);
+      setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
     await flushSave();
@@ -344,16 +348,16 @@ export default function EditRoundWizardPage() {
 
   async function goNextHole() {
     if (!fairwayChosen) {
-      setUxError(`Choisis ${chooseLabel} pour continuer.`);
+      setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
     await flushSave();
-    if (holeIdx < 17) setHoleIdx(holeIdx + 1);
+    if (holeIdx < holes.length - 1) setHoleIdx(holeIdx + 1);
   }
 
   async function finishAndGoScorecard() {
     if (!fairwayChosen) {
-      setUxError(`Choisis ${chooseLabel} pour continuer.`);
+      setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
     await flushSave();
@@ -620,7 +624,7 @@ export default function EditRoundWizardPage() {
               {t("roundsEdit.showScorecard")}
             </Link>
 
-            <button type="button" className="btn" onClick={deleteRound} style={{ width: "100%" }} disabled={saving}>
+            <button type="button" className="btn btn-danger" onClick={deleteRound} style={{ width: "100%" }} disabled={saving}>
               {t("roundsEdit.deleteRound")}
             </button>
           </div>

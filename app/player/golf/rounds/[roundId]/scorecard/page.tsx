@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Round = {
   id: string;
@@ -43,9 +44,9 @@ function getParamString(p: any): string | null {
   return null;
 }
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
+  return new Intl.DateTimeFormat(locale === "en" ? "en-GB" : "fr-CH", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -73,7 +74,7 @@ function scoreMark(par: number | null, score: number | null): ScoreMark {
   return "none";
 }
 
-function ScoreShape({ value, mark }: { value: number | null; mark: ScoreMark }) {
+function ScoreShape({ value, mark, triplePlusTitle }: { value: number | null; mark: ScoreMark; triplePlusTitle: string }) {
   const txt = value == null ? "—" : String(value);
 
   const innerText = (
@@ -128,7 +129,7 @@ function ScoreShape({ value, mark }: { value: number | null; mark: ScoreMark }) 
         backgroundImage:
           "repeating-linear-gradient(45deg, rgba(0,0,0,0.38) 0px, rgba(0,0,0,0.38) 3px, rgba(0,0,0,0.00) 3px, rgba(0,0,0,0.00) 8px)",
       }}
-      title="Triple bogey ou +"
+      title={triplePlusTitle}
     >
       <div
         style={{
@@ -152,6 +153,7 @@ const shapeOuter: React.CSSProperties = {
 };
 
 export default function ScorecardPage() {
+  const { t, locale } = useI18n();
   const params = useParams();
   const roundId = useMemo(() => getParamString((params as any)?.roundId), [params]);
 
@@ -162,7 +164,7 @@ export default function ScorecardPage() {
 
   async function load() {
     if (!roundId) {
-      setError("Identifiant de parcours invalide.");
+      setError(t("roundsScorecard.error.invalidRoundId"));
       setLoading(false);
       return;
     }
@@ -185,7 +187,7 @@ export default function ScorecardPage() {
       return;
     }
     if (!rRes.data) {
-      setError("Parcours introuvable.");
+      setError(t("roundsScorecard.error.notFound"));
       setRound(null);
       setLoading(false);
       return;
@@ -271,25 +273,25 @@ export default function ScorecardPage() {
   const configLine = useMemo(() => {
     if (!round) return "";
     const parts: string[] = [];
-    parts.push(round.round_type === "competition" ? "Competition" : "Training");
+    parts.push(round.round_type === "competition" ? t("rounds.competition") : t("rounds.training"));
     if (round.course_name) parts.push(round.course_name);
     if (round.tee_name) parts.push(round.tee_name);
     return parts.filter(Boolean).join(" • ");
-  }, [round]);
+  }, [round, t]);
 
-  if (loading) return <div style={{ color: "var(--muted)" }}>Chargement…</div>;
+  if (loading) return <div style={{ color: "var(--muted)" }}>{t("common.loading")}</div>;
 
   if (!round) {
     return (
       <div style={{ display: "grid", gap: 12 }}>
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 900 }}>Scorecard</div>
+          <div style={{ fontWeight: 900 }}>{t("rounds.scorecard")}</div>
           <div style={{ color: "var(--muted)", fontWeight: 700, fontSize: 13 }}>
-            {error ?? "Impossible d’afficher la scorecard."}
+            {error ?? t("roundsScorecard.error.cannotDisplay")}
           </div>
         </div>
         <Link className="btn" href="/player/golf/rounds">
-          Retour
+          {t("common.back")}
         </Link>
       </div>
     );
@@ -312,16 +314,16 @@ export default function ScorecardPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Carte de scores
+                {t("rounds.scorecard")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${round.id}/edit`}>
-                Modifier
+                {t("common.edit")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
-                Mes parcours
+                {t("rounds.title")}
               </Link>
             </div>
           </div>
@@ -335,7 +337,7 @@ export default function ScorecardPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "center" }}>
               <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
                 <div style={{ fontWeight: 1100, fontSize: 16, lineHeight: 1.15 }} className="truncate">
-                  {fmtDate(round.start_at)}
+                  {fmtDate(round.start_at, locale)}
                 </div>
 
                 <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.65)", lineHeight: 1.35 }} className="truncate">
@@ -344,19 +346,19 @@ export default function ScorecardPage() {
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <div style={kvRow}>
-                    <span style={kvKey}>Slope</span>
+                    <span style={kvKey}>{t("roundsScorecard.slope")}</span>
                     <span style={kvVal}>{typeof round.slope_rating === "number" ? round.slope_rating : "—"}</span>
                   </div>
 
                   <div style={kvRow}>
-                    <span style={kvKey}>Course rating</span>
+                    <span style={kvKey}>{t("roundsScorecard.courseRating")}</span>
                     <span style={kvVal}>{typeof round.course_rating === "number" ? round.course_rating : "—"}</span>
                   </div>
                 </div>
               </div>
 
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>Score</div>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
                 <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>{computed.scoreTotal ?? "—"}</div>
                 <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
                   {diffLabel ? `(${diffLabel})` : " "}
@@ -395,10 +397,16 @@ export default function ScorecardPage() {
                       }}
                     >
                       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
-                        <div style={{ fontWeight: 1000, fontSize: 16 }}>Trou {h.hole_no}</div>
+                        <div style={{ fontWeight: 1000, fontSize: 16 }}>
+                          {t("roundsEdit.hole")} {h.hole_no}
+                        </div>
 
                         <div style={{ justifySelf: "end" }}>
-                          <ScoreShape value={h.score} mark={scoreMark(h.par, h.score)} />
+                          <ScoreShape
+                            value={h.score}
+                            mark={scoreMark(h.par, h.score)}
+                            triplePlusTitle={t("roundsScorecard.tripleBogeyOrMore")}
+                          />
                         </div>
                       </div>
 
@@ -415,7 +423,7 @@ export default function ScorecardPage() {
                               : pillRed
                           }
                         >
-                          FW {!fwKnown ? "—" : fwHit ? "Hit" : "Miss"}
+                          FW {!fwKnown ? "—" : fwHit ? t("roundsScorecard.hit") : t("roundsScorecard.miss")}
                         </span>
 
                         <span
@@ -427,7 +435,7 @@ export default function ScorecardPage() {
                               : pillRed
                           }
                         >
-                          GIR {!girKnown ? "—" : gir ? "Oui" : "Non"}
+                          GIR {!girKnown ? "—" : gir ? t("roundsScorecard.yes") : t("roundsScorecard.no")}
                         </span>
                       </div>
 
@@ -445,7 +453,7 @@ export default function ScorecardPage() {
         {/* Stats */}
         <div className="glass-section">
           <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-            <div style={{ fontWeight: 1000, fontSize: 16 }}>Statistiques</div>
+            <div style={{ fontWeight: 1000, fontSize: 16 }}>{t("roundsScorecard.statistics")}</div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={statBox}>
@@ -492,7 +500,7 @@ export default function ScorecardPage() {
 
             {typeof computed.scoreTotal === "number" && (
               <div style={statBox}>
-                <div style={statLabel}>Score total</div>
+                <div style={statLabel}>{t("roundsScorecard.totalScore")}</div>
                 <div style={statValue}>{computed.scoreTotal}</div>
               </div>
             )}

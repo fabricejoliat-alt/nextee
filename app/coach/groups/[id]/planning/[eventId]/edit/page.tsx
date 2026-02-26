@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Repeat, Trash2, PlusCircle, Search } from "lucide-react";
+import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -13,9 +13,12 @@ type EventRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   starts_at: string;
+  ends_at: string | null;
   duration_minutes: number;
   location_text: string | null;
+  coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
 };
@@ -24,8 +27,10 @@ type SeriesRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   title: string | null;
   location_text: string | null;
+  coach_note: string | null;
   duration_minutes: number;
   weekday: number; // 0..6 (JS)
   time_of_day: string; // "HH:mm:ss"
@@ -35,8 +40,22 @@ type SeriesRow = {
   is_active: boolean;
   created_by: string;
 };
+const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "session" | "event"; label: string }> = [
+  { value: "training", label: "Entraînement" },
+  { value: "interclub", label: "Interclub" },
+  { value: "camp", label: "Stage" },
+  { value: "session", label: "Séance" },
+  { value: "event", label: "Événement" },
+];
 
-type CoachLite = { id: string; first_name: string | null; last_name: string | null };
+type CoachLite = { id: string; first_name: string | null; last_name: string | null; avatar_url?: string | null };
+type ClubMemberLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url?: string | null;
+  role: string | null;
+};
 
 type ProfileLite = {
   id: string;
@@ -44,6 +63,11 @@ type ProfileLite = {
   last_name: string | null;
   handicap?: number | null;
   avatar_url?: string | null;
+};
+type TrainingItemDraft = {
+  category: string;
+  minutes: string;
+  note: string;
 };
 
 function isoToLocalInput(iso: string) {
@@ -123,6 +147,77 @@ const fieldLabelStyle: React.CSSProperties = {
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
 };
+const TRAINING_CATEGORY_VALUES = [
+  "warmup_mobility",
+  "long_game",
+  "putting",
+  "wedging",
+  "pitching",
+  "chipping",
+  "bunker",
+  "course",
+  "mental",
+  "fitness",
+  "other",
+] as const;
+const TRAINING_CATEGORY_LABELS: Record<string, string> = {
+  warmup_mobility: "Échauffement / mobilité",
+  long_game: "Long jeu",
+  putting: "Putting",
+  wedging: "Wedging",
+  pitching: "Pitching",
+  chipping: "Chipping",
+  bunker: "Bunker",
+  course: "Parcours",
+  mental: "Mental",
+  fitness: "Fitness",
+  other: "Autre",
+};
+function buildMinuteOptions() {
+  const out: number[] = [];
+  for (let m = 5; m <= 120; m += 5) out.push(m);
+  return out;
+}
+const MINUTE_OPTIONS = buildMinuteOptions();
+function buildDurationOptions() {
+  const out: number[] = [];
+  for (let m = 30; m <= 240; m += 15) out.push(m);
+  return out;
+}
+const DURATION_OPTIONS = buildDurationOptions();
+const MAX_DB_EVENT_DURATION_MINUTES = 240;
+function buildQuarterHourOptions() {
+  const out: string[] = [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let h = 0; h < 24; h += 1) {
+    for (let m = 0; m < 60; m += 15) out.push(`${pad(h)}:${pad(m)}`);
+  }
+  return out;
+}
+const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
+
+function memberRoleLabel(role: string | null | undefined) {
+  switch (role) {
+    case "owner":
+      return "Propriétaire";
+    case "admin":
+      return "Admin";
+    case "manager":
+      return "Manager";
+    case "coach":
+      return "Coach";
+    case "player":
+      return "Joueur";
+    case "parent":
+      return "Parent";
+    case "captain":
+      return "Capitaine";
+    case "staff":
+      return "Staff";
+    default:
+      return "Membre";
+  }
+}
 
 export default function CoachEventEditPage() {
   const router = useRouter();
@@ -146,8 +241,11 @@ export default function CoachEventEditPage() {
 
   // occurrence fields
   const [startsAtLocal, setStartsAtLocal] = useState("");
+  const [endsAtLocal, setEndsAtLocal] = useState("");
+  const [eventType, setEventType] = useState<"training" | "interclub" | "camp" | "session" | "event">("training");
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
   const [locationText, setLocationText] = useState<string>("");
+  const [coachNote, setCoachNote] = useState<string>("");
 
   // series fields
   const [weekday, setWeekday] = useState<number>(2);
@@ -160,15 +258,51 @@ export default function CoachEventEditPage() {
   // coaches
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [coachIdsSelected, setCoachIdsSelected] = useState<string[]>([]);
+  const [clubMembers, setClubMembers] = useState<ClubMemberLite[]>([]);
 
   // players (same design as planning page)
   const [players, setPlayers] = useState<ProfileLite[]>([]);
   const [queryPlayers, setQueryPlayers] = useState("");
   const [selectedPlayers, setSelectedPlayers] = useState<Record<string, ProfileLite>>({});
-  const [initialSelectedPlayerIds, setInitialSelectedPlayerIds] = useState<string[]>([]);
+  const [queryGuests, setQueryGuests] = useState("");
+  const [selectedGuests, setSelectedGuests] = useState<Record<string, ClubMemberLite>>({});
+  const [initialSelectedAttendeeIds, setInitialSelectedAttendeeIds] = useState<string[]>([]);
+  const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
 
-  function toggleInList(list: string[], id: string) {
-    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+  const occDate = useMemo(() => {
+    if (!startsAtLocal.includes("T")) return ymdToday();
+    return startsAtLocal.slice(0, 10) || ymdToday();
+  }, [startsAtLocal]);
+  const occTime = useMemo(() => {
+    if (!startsAtLocal.includes("T")) return "18:00";
+    const v = startsAtLocal.slice(11, 16);
+    return QUARTER_HOUR_OPTIONS.includes(v) ? v : "18:00";
+  }, [startsAtLocal]);
+  const occEndDate = useMemo(() => {
+    if (!endsAtLocal.includes("T")) return occDate;
+    return endsAtLocal.slice(0, 10) || occDate;
+  }, [endsAtLocal, occDate]);
+  const occEndTime = useMemo(() => {
+    if (!endsAtLocal.includes("T")) return occTime;
+    const v = endsAtLocal.slice(11, 16);
+    return QUARTER_HOUR_OPTIONS.includes(v) ? v : occTime;
+  }, [endsAtLocal, occTime]);
+
+  function updateOccDate(nextDate: string) {
+    if (!nextDate) return;
+    setStartsAtLocal(`${nextDate}T${occTime}`);
+  }
+  function updateOccTime(nextTime: string) {
+    if (!nextTime) return;
+    setStartsAtLocal(`${occDate}T${nextTime}`);
+  }
+  function updateOccEndDate(nextDate: string) {
+    if (!nextDate) return;
+    setEndsAtLocal(`${nextDate}T${occEndTime}`);
+  }
+  function updateOccEndTime(nextTime: string) {
+    if (!nextTime) return;
+    setEndsAtLocal(`${occEndDate}T${nextTime}`);
   }
 
   function toggleSelectedPlayer(p: ProfileLite) {
@@ -178,6 +312,60 @@ export default function CoachEventEditPage() {
       else next[p.id] = p;
       return next;
     });
+  }
+
+  function toggleSelectedGuest(m: ClubMemberLite) {
+    setSelectedGuests((prev) => {
+      const next = { ...prev };
+      if (next[m.id]) delete next[m.id];
+      else next[m.id] = m;
+      return next;
+    });
+  }
+
+  function addStructureLine() {
+    setStructureItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
+  }
+
+  function removeStructureLine(idx: number) {
+    setStructureItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateStructureLine(idx: number, patch: Partial<TrainingItemDraft>) {
+    setStructureItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  }
+
+  async function replaceStructureForEvent(targetEventId: string) {
+    const del = await supabase.from("club_event_structure_items").delete().eq("event_id", targetEventId);
+    if (del.error) throw new Error(del.error.message);
+
+    const payload = structureItems
+      .map((it, idx) => {
+        const minutes = Number(it.minutes);
+        if (!it.category || !Number.isFinite(minutes) || minutes <= 0) return null;
+        return {
+          event_id: targetEventId,
+          category: it.category,
+          minutes,
+          note: it.note?.trim() || null,
+          position: idx,
+        };
+      })
+      .filter(
+        (x): x is { event_id: string; category: string; minutes: number; note: string | null; position: number } =>
+          Boolean(x)
+      );
+
+    if (payload.length === 0) return;
+    const ins = await supabase.from("club_event_structure_items").insert(payload);
+    if (ins.error) throw new Error(ins.error.message);
+  }
+
+  async function applyStructureForEvents(eventIds: string[]) {
+    if (eventIds.length === 0) return;
+    for (const eid of eventIds) {
+      await replaceStructureForEvent(eid);
+    }
   }
 
   const selectedPlayersList = useMemo(
@@ -209,6 +397,63 @@ export default function CoachEventEditPage() {
     return total > 0 && selectedCount === total;
   }, [players.length, selectedPlayers]);
 
+  const selectedCoachesList = useMemo(
+    () =>
+      coaches
+        .filter((c) => coachIdsSelected.includes(c.id))
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
+    [coaches, coachIdsSelected]
+  );
+
+  const candidateCoaches = useMemo(
+    () =>
+      coaches
+        .filter((c) => !coachIdsSelected.includes(c.id))
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
+    [coaches, coachIdsSelected]
+  );
+
+  const allCoachesSelected = useMemo(() => {
+    const total = coaches.length;
+    const selectedCount = coachIdsSelected.length;
+    return total > 0 && selectedCount === total;
+  }, [coaches.length, coachIdsSelected.length]);
+
+  const guestBlockedIds = useMemo(() => {
+    const blocked = new Set<string>();
+    players.forEach((p) => blocked.add(p.id));
+    coaches.forEach((c) => blocked.add(c.id));
+    return blocked;
+  }, [players, coaches]);
+
+  const selectedGuestsList = useMemo(
+    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
+    [selectedGuests]
+  );
+
+  const candidateGuests = useMemo(() => {
+    const q = queryGuests.trim().toLowerCase();
+    if (!q) return [] as ClubMemberLite[];
+    const base = clubMembers.filter((m) => !guestBlockedIds.has(m.id) && !selectedGuests[m.id]);
+    return base
+      .filter((m) => {
+        const n = fullName(m).toLowerCase();
+        const role = memberRoleLabel(m.role).toLowerCase();
+        return n.includes(q) || role.includes(q);
+      })
+      .slice(0, 30);
+  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests]);
+
+  useEffect(() => {
+    setSelectedGuests((prev) => {
+      const next: Record<string, ClubMemberLite> = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (!guestBlockedIds.has(id)) next[id] = value;
+      }
+      return next;
+    });
+  }, [guestBlockedIds]);
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -223,18 +468,21 @@ export default function CoachEventEditPage() {
       // event
       const eRes = await supabase
         .from("club_events")
-        .select("id,group_id,club_id,starts_at,duration_minutes,location_text,series_id,status")
+        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
         .eq("id", eventId)
         .maybeSingle();
 
       if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Training not found.");
+      if (!eRes.data) throw new Error("Événement introuvable.");
       const ev = eRes.data as EventRow;
       setEvent(ev);
 
       setStartsAtLocal(isoToLocalInput(ev.starts_at));
+      setEndsAtLocal(isoToLocalInput(ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + ev.duration_minutes * 60000).toISOString()));
+      setEventType(ev.event_type ?? "training");
       setDurationMinutes(ev.duration_minutes);
       setLocationText(ev.location_text ?? "");
+      setCoachNote(ev.coach_note ?? "");
 
       // group
       const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
@@ -247,12 +495,45 @@ export default function CoachEventEditPage() {
       if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
       else setClubName("Club");
 
+      // all active club members (for guests)
+      const cmRes = await supabase
+        .from("club_members")
+        .select("user_id, role")
+        .eq("club_id", gRes.data.club_id)
+        .eq("is_active", true);
+      if (cmRes.error) throw new Error(cmRes.error.message);
+      const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
+      const memberIds = Array.from(new Set(cmRows.map((r) => r.user_id).filter(Boolean)));
+      const profilesById = new Map<
+        string,
+        { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
+      >();
+      if (memberIds.length > 0) {
+        const profRes = await supabase.from("profiles").select("id, first_name, last_name, avatar_url").in("id", memberIds);
+        if (profRes.error) throw new Error(profRes.error.message);
+        ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>).forEach((p) => {
+          profilesById.set(p.id, p);
+        });
+      }
+      const cmList: ClubMemberLite[] = cmRows.map((r) => {
+        const p = profilesById.get(r.user_id);
+        return {
+          id: r.user_id,
+          first_name: p?.first_name ?? null,
+          last_name: p?.last_name ?? null,
+          avatar_url: p?.avatar_url ?? null,
+          role: r.role ?? null,
+        };
+      });
+      cmList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      setClubMembers(cmList);
+
       // series
       if (ev.series_id) {
         const sRes = await supabase
           .from("club_event_series")
           .select(
-            "id,group_id,club_id,title,location_text,duration_minutes,weekday,time_of_day,interval_weeks,start_date,end_date,is_active,created_by"
+            "id,group_id,club_id,event_type,title,location_text,coach_note,duration_minutes,weekday,time_of_day,interval_weeks,start_date,end_date,is_active,created_by"
           )
           .eq("id", ev.series_id)
           .maybeSingle();
@@ -269,6 +550,8 @@ export default function CoachEventEditPage() {
           setStartDate(s.start_date ?? ymdToday());
           setEndDate(s.end_date ?? toYMD(addDays(new Date(), 60)));
           setSeriesActive(!!s.is_active);
+          setEventType(s.event_type ?? ev.event_type ?? "training");
+          setCoachNote(s.coach_note ?? ev.coach_note ?? "");
         } else {
           setEditScope("occurrence");
         }
@@ -289,6 +572,7 @@ export default function CoachEventEditPage() {
         id: r.coach_user_id,
         first_name: r.profiles?.first_name ?? null,
         last_name: r.profiles?.last_name ?? null,
+        avatar_url: r.profiles?.avatar_url ?? null,
       }));
       setCoaches(coList);
 
@@ -318,13 +602,34 @@ export default function CoachEventEditPage() {
       // selected attendees -> selectedPlayers map
       const eaRes = await supabase.from("club_event_attendees").select("player_id").eq("event_id", eventId);
       const selectedIds = !eaRes.error ? (eaRes.data ?? []).map((r: any) => r.player_id as string) : [];
-      setInitialSelectedPlayerIds(selectedIds);
+      setInitialSelectedAttendeeIds(selectedIds);
 
       const defaultSelected: Record<string, ProfileLite> = {};
       plList.forEach((p) => {
         if (selectedIds.includes(p.id)) defaultSelected[p.id] = p;
       });
       setSelectedPlayers(defaultSelected);
+
+      const guestsSelected: Record<string, ClubMemberLite> = {};
+      cmList.forEach((m) => {
+        if (selectedIds.includes(m.id) && !plList.some((p) => p.id === m.id) && !coList.some((c) => c.id === m.id)) {
+          guestsSelected[m.id] = m;
+        }
+      });
+      setSelectedGuests(guestsSelected);
+
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (!structRes.error) {
+        const rows = (structRes.data ?? []) as Array<{ category: string; minutes: number; note: string | null }>;
+        setStructureItems(rows.map((r) => ({ category: r.category ?? "", minutes: String(r.minutes ?? ""), note: r.note ?? "" })));
+      } else {
+        setStructureItems([]);
+      }
 
       setLoading(false);
     } catch (e: any) {
@@ -335,9 +640,11 @@ export default function CoachEventEditPage() {
       setSeries(null);
       setCoaches([]);
       setPlayers([]);
+      setClubMembers([]);
       setCoachIdsSelected([]);
       setSelectedPlayers({});
-      setInitialSelectedPlayerIds([]);
+      setSelectedGuests({});
+      setInitialSelectedAttendeeIds([]);
       setLoading(false);
     }
   }
@@ -347,21 +654,24 @@ export default function CoachEventEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  const playerIdsSelected = useMemo(() => Object.keys(selectedPlayers), [selectedPlayers]);
+  const attendeeIdsSelected = useMemo(
+    () => Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)])),
+    [selectedPlayers, selectedGuests]
+  );
 
-  const playersAddedOnSave = useMemo(() => {
-    const initial = new Set(initialSelectedPlayerIds);
-    return playerIdsSelected.filter((id) => !initial.has(id));
-  }, [initialSelectedPlayerIds, playerIdsSelected]);
+  const attendeesAddedOnSave = useMemo(() => {
+    const initial = new Set(initialSelectedAttendeeIds);
+    return attendeeIdsSelected.filter((id) => !initial.has(id));
+  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
 
-  const playersRemovedOnSave = useMemo(() => {
-    const current = new Set(playerIdsSelected);
-    return initialSelectedPlayerIds.filter((id) => !current.has(id));
-  }, [initialSelectedPlayerIds, playerIdsSelected]);
+  const attendeesRemovedOnSave = useMemo(() => {
+    const current = new Set(attendeeIdsSelected);
+    return initialSelectedAttendeeIds.filter((id) => !current.has(id));
+  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
 
   async function syncPlayerChangesOnFuturePlannedEvents() {
     if (!groupId) return;
-    if (playersAddedOnSave.length === 0 && playersRemovedOnSave.length === 0) return;
+    if (attendeesAddedOnSave.length === 0 && attendeesRemovedOnSave.length === 0) return;
 
     const nowIso = new Date().toISOString();
     const futureRes = await supabase
@@ -378,9 +688,9 @@ export default function CoachEventEditPage() {
       .filter(Boolean);
     if (futureEventIds.length === 0) return;
 
-    if (playersAddedOnSave.length > 0) {
+    if (attendeesAddedOnSave.length > 0) {
       const addRows = futureEventIds.flatMap((eid) =>
-        playersAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
+        attendeesAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
       );
 
       const addRes = await supabase
@@ -390,12 +700,12 @@ export default function CoachEventEditPage() {
       if (addRes.error) throw new Error(addRes.error.message);
     }
 
-    if (playersRemovedOnSave.length > 0) {
+    if (attendeesRemovedOnSave.length > 0) {
       const delRes = await supabase
         .from("club_event_attendees")
         .delete()
         .in("event_id", futureEventIds)
-        .in("player_id", playersRemovedOnSave);
+        .in("player_id", attendeesRemovedOnSave);
 
       if (delRes.error) throw new Error(delRes.error.message);
     }
@@ -405,8 +715,9 @@ export default function CoachEventEditPage() {
     if (busy || loading) return false;
     if (!event) return false;
     if (!startsAtLocal) return false;
+    if (eventType !== "training" && !endsAtLocal) return false;
     return true;
-  }, [busy, loading, event, startsAtLocal]);
+  }, [busy, loading, event, startsAtLocal, endsAtLocal, eventType]);
 
   const canSaveSeries = useMemo(() => {
     if (busy || loading) return false;
@@ -425,15 +736,30 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
-      const dt = new Date(startsAtLocal);
-      if (Number.isNaN(dt.getTime())) throw new Error("Date/heure invalide.");
+      const startDt = new Date(startsAtLocal);
+      if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
+      let endDt = new Date(endsAtLocal);
+      let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
+      if (eventType === "training") {
+        computedDuration = Math.max(30, Number(durationMinutes) || 60);
+        endDt = new Date(startDt);
+        endDt.setMinutes(endDt.getMinutes() + computedDuration);
+      } else {
+        if (Number.isNaN(endDt.getTime())) throw new Error("Date/heure invalide.");
+        if (endDt <= startDt) throw new Error("La fin doit être après le début.");
+        computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
+      }
+      const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
 
       const upd = await supabase
         .from("club_events")
         .update({
-          starts_at: dt.toISOString(),
-          duration_minutes: durationMinutes,
+          event_type: eventType,
+          starts_at: startDt.toISOString(),
+          ends_at: endDt.toISOString(),
+          duration_minutes: durationForDb,
           location_text: locationText.trim() || null,
+          coach_note: coachNote.trim() || null,
         })
         .eq("id", eventId);
 
@@ -452,12 +778,14 @@ export default function CoachEventEditPage() {
       // replace attendees
       const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
       if (delA.error) throw new Error(delA.error.message);
-      if (playerIdsSelected.length > 0) {
+      if (attendeeIdsSelected.length > 0) {
         const insA = await supabase
           .from("club_event_attendees")
-          .insert(playerIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "expected" })));
+          .insert(attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "expected" })));
         if (insA.error) throw new Error(insA.error.message);
       }
+
+      await replaceStructureForEvent(eventId);
 
       await syncPlayerChangesOnFuturePlannedEvents();
 
@@ -488,6 +816,7 @@ export default function CoachEventEditPage() {
       const updS = await supabase
         .from("club_event_series")
         .update({
+          event_type: eventType,
           weekday,
           time_of_day: timeOfDay.length === 5 ? `${timeOfDay}:00` : timeOfDay,
           interval_weeks: intervalWeeks,
@@ -495,6 +824,7 @@ export default function CoachEventEditPage() {
           end_date: endDate,
           duration_minutes: durationMinutes,
           location_text: locationText.trim() || null,
+          coach_note: coachNote.trim() || null,
           is_active: seriesActive,
         })
         .eq("id", event.series_id);
@@ -524,12 +854,17 @@ export default function CoachEventEditPage() {
         const startsIso = dt.toISOString();
 
         if (startsIso >= nowIso) {
+          const endDt = new Date(dt);
+          endDt.setMinutes(endDt.getMinutes() + durationMinutes);
           occurrences.push({
             group_id: group.id,
             club_id: group.club_id,
+            event_type: eventType,
             starts_at: startsIso,
+            ends_at: endDt.toISOString(),
             duration_minutes: durationMinutes,
             location_text: locationText.trim() || null,
+            coach_note: coachNote.trim() || null,
             series_id: event.series_id,
             created_by: meId || series.created_by,
           });
@@ -562,13 +897,15 @@ export default function CoachEventEditPage() {
           if (cIns.error) throw new Error(cIns.error.message);
         }
 
-        if (playerIdsSelected.length > 0) {
+        if (attendeeIdsSelected.length > 0) {
           const attRows = createdEventIds.flatMap((eid) =>
-            playerIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
+            attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
           );
           const aIns = await supabase.from("club_event_attendees").insert(attRows);
           if (aIns.error) throw new Error(aIns.error.message);
         }
+
+        await applyStructureForEvents(createdEventIds);
       }
 
       await syncPlayerChangesOnFuturePlannedEvents();
@@ -582,7 +919,7 @@ export default function CoachEventEditPage() {
   }
 
   async function removeThisEvent() {
-    const ok = window.confirm("Delete THIS planned training? (irreversible)");
+    const ok = window.confirm("Supprimer CET événement planifié ? (irréversible)");
     if (!ok) return;
 
     setBusy(true);
@@ -653,222 +990,434 @@ export default function CoachEventEditPage() {
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (
               <>
-                {/* Scope switch if recurring */}
-                {event.series_id ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy}
-                      onClick={() => setEditScope("occurrence")}
-                      style={
-                        editScope === "occurrence"
-                          ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                          : {}
-                      }
-                    >
-                      Cette occurrence
-                    </button>
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                  {/* Scope switch if recurring */}
+                  {event.series_id ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => setEditScope("occurrence")}
+                        style={
+                          editScope === "occurrence"
+                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
+                            : {}
+                        }
+                      >
+                        Cette occurrence
+                      </button>
 
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy || !series}
-                      onClick={() => setEditScope("series")}
-                      style={
-                        editScope === "series"
-                          ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                          : {}
-                      }
-                    >
-                      <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                      Récurrence
-                    </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={busy || !series}
+                        onClick={() => setEditScope("series")}
+                        style={
+                          editScope === "series"
+                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
+                            : {}
+                        }
+                      >
+                        <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                        Récurrence
+                      </button>
 
-                    <div style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      ℹ️ Récurrence = supprime & recrée les occurrences futures
+                      <div style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                        ℹ️ Récurrence = supprime & recrée les occurrences futures
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                <div className="hr-soft" />
+                  {event.series_id ? <div className="hr-soft" /> : null}
 
-                {/* OCCURRENCE */}
-                {editScope === "occurrence" ? (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <div className="grid-2">
+                  {/* OCCURRENCE */}
+                  {editScope === "occurrence" ? (
+                    <div style={{ display: "grid", gap: 12 }}>
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Date & heure</span>
-                        <input
-                          type="datetime-local"
-                          value={startsAtLocal}
-                          onChange={(e) => setStartsAtLocal(e.target.value)}
-                          disabled={busy}
-                        />
-                      </label>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Duration</span>
-                        <select
-                          value={durationMinutes}
-                          onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                          disabled={busy}
-                        >
-                          {[45, 60, 75, 90, 105, 120].map((m) => (
-                            <option key={m} value={m}>
-                              {m} min
+                        <span style={fieldLabelStyle}>Type d’événement</span>
+                        <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                          {EVENT_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
                             </option>
                           ))}
                         </select>
                       </label>
-                    </div>
 
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Lieu (optionnel)</span>
-                      <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
-                    </label>
-                  </div>
-                ) : null}
-
-                {/* SERIES */}
-                {editScope === "series" ? (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {!series ? (
-                      <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                        Série introuvable. Tu peux modifier l’occurrence uniquement.
-                      </div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Jour</span>
-                            <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                              <option value={1}>Lundi</option>
-                              <option value={2}>Mardi</option>
-                              <option value={3}>Mercredi</option>
-                              <option value={4}>Jeudi</option>
-                              <option value={5}>Vendredi</option>
-                              <option value={6}>Samedi</option>
-                              <option value={0}>Dimanche</option>
-                            </select>
-                          </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Heure</span>
-                            <input
-                              type="time"
-                              value={timeOfDay}
-                              onChange={(e) => setTimeOfDay(e.target.value)}
-                              disabled={busy}
-                            />
-                          </label>
-                        </div>
-
-                        <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Du</span>
-                            <input
-                              type="date"
-                              value={startDate}
-                              onChange={(e) => setStartDate(e.target.value)}
-                              disabled={busy}
-                            />
-                          </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Au</span>
-                            <input
-                              type="date"
-                              value={endDate}
-                              onChange={(e) => setEndDate(e.target.value)}
-                              disabled={busy}
-                            />
-                          </label>
-                        </div>
-
-                        <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Duration</span>
-                            <select
-                              value={durationMinutes}
-                              onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                              disabled={busy}
-                            >
-                              {[45, 60, 75, 90, 105, 120].map((m) => (
-                                <option key={m} value={m}>
-                                  {m} min
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Rythme</span>
-                            <select
-                              value={intervalWeeks}
-                              onChange={(e) => setIntervalWeeks(Number(e.target.value))}
-                              disabled={busy}
-                            >
-                              {[1, 2, 3, 4].map((w) => (
-                                <option key={w} value={w}>
-                                  Toutes les {w} semaine{w > 1 ? "s" : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
+                      <div className="grid-2">
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>Date de début</span>
+                          <input type="date" value={occDate} onChange={(e) => updateOccDate(e.target.value)} disabled={busy} />
+                        </label>
 
                         <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Lieu (optionnel)</span>
-                          <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
+                          <span style={fieldLabelStyle}>Heure de début</span>
+                          <select value={occTime} onChange={(e) => updateOccTime(e.target.value)} disabled={busy}>
+                            {QUARTER_HOUR_OPTIONS.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
                         </label>
+                      </div>
 
-                        <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 900 }}>
-                          <input
-                            type="checkbox"
-                            checked={seriesActive}
-                            onChange={(e) => setSeriesActive(e.target.checked)}
-                            disabled={busy}
-                          />
-                          Récurrence active
+                      {eventType === "training" ? (
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>Durée</span>
+                          <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
+                            {DURATION_OPTIONS.map((m) => (
+                              <option key={m} value={m}>
+                                {m} min
+                              </option>
+                            ))}
+                          </select>
                         </label>
+                      ) : (
+                        <div className="grid-2">
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Date de fin</span>
+                            <input type="date" value={occEndDate} onChange={(e) => updateOccEndDate(e.target.value)} disabled={busy} />
+                          </label>
 
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          ⚠️ En enregistrant, on supprime toutes les occurrences futures de cette récurrence et on les recrée (max 80).
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Heure de fin</span>
+                            <select value={occEndTime} onChange={(e) => updateOccEndTime(e.target.value)} disabled={busy}>
+                              {QUARTER_HOUR_OPTIONS.map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
+                      )}
+
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                        <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
+                      </label>
+
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                        <textarea
+                          value={coachNote}
+                          onChange={(e) => setCoachNote(e.target.value)}
+                          disabled={busy}
+                          placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                          style={{ minHeight: 96 }}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {/* SERIES */}
+                  {editScope === "series" ? (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {!series ? (
+                        <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                          Série introuvable. Tu peux modifier l’occurrence uniquement.
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Type d’événement</span>
+                            <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                              {EVENT_TYPE_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Jour</span>
+                              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
+                                <option value={1}>Lundi</option>
+                                <option value={2}>Mardi</option>
+                                <option value={3}>Mercredi</option>
+                                <option value={4}>Jeudi</option>
+                                <option value={5}>Vendredi</option>
+                                <option value={6}>Samedi</option>
+                                <option value={0}>Dimanche</option>
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Heure</span>
+                              <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy}>
+                                {QUARTER_HOUR_OPTIONS.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Du</span>
+                              <input
+                                type="date"
+                                value={startDate}
+                                onChange={(e) => setStartDate(e.target.value)}
+                                disabled={busy}
+                              />
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Au</span>
+                              <input
+                                type="date"
+                                value={endDate}
+                                onChange={(e) => setEndDate(e.target.value)}
+                                disabled={busy}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="grid-2">
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Durée</span>
+                              <select
+                                value={durationMinutes}
+                                onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                                disabled={busy}
+                              >
+                                {[45, 60, 75, 90, 105, 120].map((m) => (
+                                  <option key={m} value={m}>
+                                    {m} min
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Rythme</span>
+                              <select
+                                value={intervalWeeks}
+                                onChange={(e) => setIntervalWeeks(Number(e.target.value))}
+                                disabled={busy}
+                              >
+                                {[1, 2, 3, 4].map((w) => (
+                                  <option key={w} value={w}>
+                                    Toutes les {w} semaine{w > 1 ? "s" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                            <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
+                          </label>
+
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                            <textarea
+                              value={coachNote}
+                              onChange={(e) => setCoachNote(e.target.value)}
+                              disabled={busy}
+                              placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                              style={{ minHeight: 96 }}
+                            />
+                          </label>
+
+                          <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 900 }}>
+                            <input
+                              type="checkbox"
+                              checked={seriesActive}
+                              onChange={(e) => setSeriesActive(e.target.checked)}
+                              disabled={busy}
+                            />
+                            Récurrence active
+                          </label>
+
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                            ⚠️ En enregistrant, on supprime toutes les occurrences futures de cette récurrence et on les recrée (max 80).
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+                {eventType === "training" ? (
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    Structure de l’entraînement (postes)
+                  </div>
+
+                  {structureItems.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      Aucun poste configuré pour cet entraînement.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {structureItems.map((it, idx) => (
+                        <div key={idx} style={lightRowCardStyle}>
+                          <div style={{ display: "grid", gap: 10, width: "100%" }}>
+                            <div className="grid-2">
+                              <label style={{ display: "grid", gap: 6 }}>
+                                <span style={fieldLabelStyle}>Poste</span>
+                                <select value={it.category} onChange={(e) => updateStructureLine(idx, { category: e.target.value })} disabled={busy}>
+                                  <option value="">-</option>
+                                  {TRAINING_CATEGORY_VALUES.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                      {TRAINING_CATEGORY_LABELS[cat] ?? cat}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label style={{ display: "grid", gap: 6 }}>
+                                <span style={fieldLabelStyle}>Durée</span>
+                                <select value={it.minutes} onChange={(e) => updateStructureLine(idx, { minutes: e.target.value })} disabled={busy}>
+                                  <option value="">-</option>
+                                  {MINUTE_OPTIONS.map((m) => (
+                                    <option key={m} value={String(m)}>
+                                      {m} min
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>Note (optionnel)</span>
+                              <input value={it.note} onChange={(e) => updateStructureLine(idx, { note: e.target.value })} disabled={busy} />
+                            </label>
+
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <button type="button" className="btn btn-danger soft" onClick={() => removeStructureLine(idx)} disabled={busy}>
+                                Supprimer
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="button" className="btn" onClick={addStructureLine} disabled={busy}>
+                      + Ajouter un poste
+                    </button>
+                  </div>
+                </div>
+                ) : null}
+
+                {/* Coachs attendus */}
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} /> Coachs attendus
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy || coaches.length === 0 || allCoachesSelected}
+                      onClick={() => setCoachIdsSelected(coaches.map((c) => c.id))}
+                    >
+                      Tout sélectionner
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy || coaches.length === 0 || coachIdsSelected.length === 0}
+                      onClick={() => setCoachIdsSelected([])}
+                    >
+                      Tout désélectionner
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div className="pill-soft">Sélection ({selectedCoachesList.length})</div>
+                    {coaches.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach dans ce groupe.</div>
+                    ) : selectedCoachesList.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach sélectionné.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {selectedCoachesList.map((c) => (
+                          <div key={c.id} style={lightRowCardStyle}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                              <div style={avatarBoxStyle} aria-hidden="true">
+                                {avatarNode(c as any)}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-danger soft"
+                              onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))}
+                              disabled={busy}
+                              style={{ padding: "10px 12px" }}
+                              aria-label="Retirer coach"
+                              title="Retirer"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                ) : null}
 
-                <div className="hr-soft" />
-
-                {/* Coaches */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>Coachs</div>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {coaches.map((c) => {
-                      const on = coachIdsSelected.includes(c.id);
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className="btn"
-                          disabled={busy}
-                          onClick={() => setCoachIdsSelected((prev) => toggleInList(prev, c.id))}
-                          style={on ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
-                        >
-                          {nameOf(c.first_name, c.last_name)}
-                        </button>
-                      );
-                    })}
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div className="pill-soft">Ajouter ({candidateCoaches.length})</div>
+                    {coaches.length > 0 && candidateCoaches.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                    ) : candidateCoaches.length > 0 ? (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {candidateCoaches.map((c) => (
+                          <div key={c.id} style={lightRowCardStyle}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                              <div style={avatarBoxStyle} aria-hidden="true">
+                                {avatarNode(c as any)}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="glass-btn"
+                              onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])}
+                              disabled={busy}
+                              style={{
+                                width: 44,
+                                height: 42,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: "rgba(255,255,255,0.70)",
+                                border: "1px solid rgba(0,0,0,0.08)",
+                              }}
+                              aria-label="Ajouter coach"
+                              title="Ajouter"
+                            >
+                              <PlusCircle size={18} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
-                {/* Players — SAME DESIGN AS PLANNING PAGE */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-                    Joueurs attendus
+                {/* Joueurs attendus */}
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} /> Joueurs attendus
                   </div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -915,18 +1464,13 @@ export default function CoachEventEditPage() {
                     />
                   </div>
 
-                  {/* Selected */}
                   <div style={{ display: "grid", gap: 10 }}>
                     <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
 
                     {players.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        Aucun joueur dans ce groupe.
-                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
                     ) : selectedPlayersList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        Aucun joueur sélectionné.
-                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
                         {selectedPlayersList.map((p) => (
@@ -960,12 +1504,11 @@ export default function CoachEventEditPage() {
                     )}
                   </div>
 
-                  {/* Add */}
                   <div style={{ display: "grid", gap: 10 }}>
                     <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
 
                     {players.length > 0 && candidatesPlayers.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>No result.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
                     ) : candidatesPlayers.length > 0 ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         {candidatesPlayers.map((p) => (
@@ -1006,6 +1549,117 @@ export default function CoachEventEditPage() {
                       </div>
                     ) : null}
                   </div>
+                </div>
+
+                {/* Invités */}
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} /> Invités
+                  </div>
+
+                  <div style={{ position: "relative" }}>
+                    <Search
+                      size={18}
+                      style={{
+                        position: "absolute",
+                        left: 14,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        opacity: 0.7,
+                      }}
+                    />
+                    <input
+                      value={queryGuests}
+                      onChange={(e) => setQueryGuests(e.target.value)}
+                      disabled={busy}
+                      placeholder="Rechercher un invité (nom, rôle)…"
+                      style={{ paddingLeft: 44 }}
+                    />
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div className="pill-soft">Sélection ({selectedGuestsList.length})</div>
+                    {selectedGuestsList.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun invité sélectionné.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {selectedGuestsList.map((m) => (
+                          <div key={m.id} style={lightRowCardStyle}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                              <div style={avatarBoxStyle} aria-hidden="true">
+                                {avatarNode(m as any)}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="btn btn-danger soft"
+                              onClick={() => toggleSelectedGuest(m)}
+                              disabled={busy}
+                              style={{ padding: "10px 12px" }}
+                              aria-label="Retirer invité"
+                              title="Retirer"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {queryGuests.trim().length > 0 ? (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div className="pill-soft">Ajouter ({candidateGuests.length})</div>
+                      {candidateGuests.length === 0 ? (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          {candidateGuests.map((m) => (
+                            <div key={m.id} style={lightRowCardStyle}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                <div style={avatarBoxStyle} aria-hidden="true">
+                                  {avatarNode(m as any)}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="glass-btn"
+                                onClick={() => toggleSelectedGuest(m)}
+                                disabled={busy}
+                                style={{
+                                  width: 44,
+                                  height: 42,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  background: "rgba(255,255,255,0.70)",
+                                  border: "1px solid rgba(0,0,0,0.08)",
+                                }}
+                                aria-label="Ajouter invité"
+                                title="Ajouter"
+                              >
+                                <PlusCircle size={18} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      Saisis une recherche pour ajouter des invités.
+                    </div>
+                  )}
                 </div>
 
                 {/* Save */}

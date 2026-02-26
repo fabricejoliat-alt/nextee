@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Flame, Mountain, Smile, Target } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -25,6 +26,7 @@ type ProfileRow = {
   first_name: string | null;
   last_name: string | null;
   handicap: number | null;
+  avatar_url: string | null;
 };
 
 type AttendeeRow = {
@@ -117,6 +119,48 @@ function categoryLabel(cat: string) {
   return map[cat] ?? cat;
 }
 
+function initials(p?: { first_name: string | null; last_name: string | null } | null) {
+  const f = (p?.first_name ?? "").trim();
+  const l = (p?.last_name ?? "").trim();
+  const fi = f ? f[0].toUpperCase() : "";
+  const li = l ? l[0].toUpperCase() : "";
+  return (fi + li) || "👤";
+}
+
+function PlayerAvatar({ player }: { player: ProfileRow | null }) {
+  if (player?.avatar_url) {
+    return (
+      <img
+        src={player.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(player);
+}
+
+function StatBar({ icon, label, value }: { icon: ReactNode; label: string; value: number | null }) {
+  const v = typeof value === "number" ? value : 0;
+  const pct = Math.max(0, Math.min(100, (v / 6) * 100));
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ display: "inline-flex" }}>{icon}</span>
+          <span style={{ fontWeight: 950, fontSize: 12, color: "rgba(0,0,0,0.72)" }}>{label}</span>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)", width: 34, textAlign: "right" }}>
+          {value ?? "—"}
+        </div>
+      </div>
+      <div className="bar">
+        <span style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export default function CoachEventPlayerDetailPage() {
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
   const groupId = String(params?.id ?? "").trim();
@@ -173,7 +217,7 @@ export default function CoachEventPlayerDetailPage() {
       // player
       const pRes = await supabase
         .from("profiles")
-        .select("id,first_name,last_name,handicap")
+        .select("id,first_name,last_name,handicap,avatar_url")
         .eq("id", playerId)
         .maybeSingle();
       if (pRes.error) throw new Error(pRes.error.message);
@@ -261,6 +305,22 @@ export default function CoachEventPlayerDetailPage() {
     return `Détail — ${nameOf(player.first_name, player.last_name)}`;
   }, [player]);
 
+  const attendanceLabel = useMemo(() => {
+    if (!attendance) return "Non défini";
+    if (attendance.status === "present") return "Présent";
+    if (attendance.status === "absent") return "Absent";
+    if (attendance.status === "excused") return "Excusé";
+    return "Attendu";
+  }, [attendance]);
+
+  const attendanceStyle = useMemo((): React.CSSProperties => {
+    if (!attendance) return { background: "rgba(0,0,0,0.08)", color: "rgba(0,0,0,0.72)" };
+    if (attendance.status === "present") return { background: "rgba(34,197,94,0.16)", color: "rgba(20,83,45,1)" };
+    if (attendance.status === "absent") return { background: "rgba(239,68,68,0.16)", color: "rgba(127,29,29,1)" };
+    if (attendance.status === "excused") return { background: "rgba(245,158,11,0.16)", color: "rgba(120,53,15,1)" };
+    return { background: "rgba(59,130,246,0.12)", color: "rgba(30,64,175,1)" };
+  }, [attendance]);
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -269,23 +329,12 @@ export default function CoachEventPlayerDetailPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>{title}</div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                {event ? `${fmtDateTime(event.starts_at)} • ${clubName} • ${groupName}` : ""}
-              </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/${eventId}`}>
                 <ArrowLeft size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                 Retour
-              </Link>
-
-              <Link
-                className="cta-green cta-green-inline"
-                href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}/edit`}
-              >
-                <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                Évaluer
               </Link>
             </div>
           </div>
@@ -295,57 +344,71 @@ export default function CoachEventPlayerDetailPage() {
 
         {/* Content */}
         <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
-            ) : !event || !player ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {/* Event summary */}
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                  <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
-                    {fmtDateTime(event.starts_at)}
+          {loading ? (
+            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+          ) : !event || !player ? (
+            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div className="glass-card" style={{ padding: 16, display: "grid", gap: 14 }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: 68,
+                        height: 68,
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        background: "rgba(255,255,255,0.80)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 950,
+                        color: "var(--green-dark)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <PlayerAvatar player={player} />
+                    </div>
+                    <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+                      <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>FICHE JOUEUR</div>
+                      <div style={{ fontWeight: 980, fontSize: 20 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
+                        Handicap {typeof player.handicap === "number" ? Number(player.handicap).toFixed(1) : "—"}
+                      </div>
+                    </div>
                   </div>
-                  <div className="marketplace-price-pill">{event.duration_minutes} min</div>
+
+                  <span className="pill-soft" style={{ ...attendanceStyle, fontWeight: 950 }}>{attendanceLabel}</span>
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
+                  <span className="pill-soft">{event.duration_minutes} min</span>
                   <span className="pill-soft">{clubName || "Club"}</span>
-                  {event.series_id ? <span className="pill-soft">Recurring</span> : <span className="pill-soft">Single</span>}
-                  {attendance ? <span className="pill-soft">{attendance.status}</span> : null}
-                  {event.location_text ? (
-                    <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>📍 {event.location_text}</span>
-                  ) : null}
+                  <span className="pill-soft">{groupName || "Groupe"}</span>
+                  {event.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
+                  {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
                 </div>
+              </div>
 
-                <div className="hr-soft" />
-
-                {/* Player info */}
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Joueur</div>
-                  <div style={{ fontWeight: 950 }}>{nameOf(player.first_name, player.last_name)}</div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                    Handicap {typeof player.handicap === "number" ? Number(player.handicap).toFixed(1) : "—"}
-                  </div>
-                </div>
-
-                <div className="hr-soft" />
-
-                {/* Training structure */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>
-                    Structure de l’entraînement (postes)
-                  </div>
-
+              <div
+                style={{
+                  display: "grid",
+                  gap: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                  alignItems: "start",
+                }}
+              >
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
                   {!session ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Le joueur n’a pas encore saisi son entraînement (aucune session liée à cet événement).
+                      Le joueur n’a pas encore saisi son entraînement.
                     </div>
                   ) : items.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Session trouvée, mais aucun poste enregistré.
-                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Session trouvée, mais aucun poste enregistré.</div>
                   ) : (
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                       {items.map((it) => {
@@ -361,23 +424,15 @@ export default function CoachEventPlayerDetailPage() {
                   )}
                 </div>
 
-                <div className="hr-soft" />
-
-                {/* Player feedback */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Retour joueur</div>
-
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>
                   {!playerFb ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                        Sensations :{" "}
-                        <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>
-                          M {playerFb.motivation ?? "—"} • D {playerFb.difficulty ?? "—"} • S {playerFb.satisfaction ?? "—"}
-                        </span>
-                      </div>
-
+                      <StatBar icon={<Flame size={16} />} label="Motivation" value={playerFb.motivation} />
+                      <StatBar icon={<Mountain size={16} />} label="Difficulté" value={playerFb.difficulty} />
+                      <StatBar icon={<Smile size={16} />} label="Satisfaction" value={playerFb.satisfaction} />
                       {playerFb.player_note ? (
                         <div
                           style={{
@@ -401,25 +456,18 @@ export default function CoachEventPlayerDetailPage() {
                   )}
                 </div>
 
-                <div className="hr-soft" />
-
-                {/* Coach feedback */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>Coach evaluation</div>
-
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach</div>
                   {!coachFb ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Not evaluated yet.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non évalué.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                        Engagement <b>{coachFb.engagement ?? "—"}</b> • Attitude <b>{coachFb.attitude ?? "—"}</b> • Performance{" "}
-                        <b>{coachFb.performance ?? "—"}</b>
-                      </div>
-
+                      <StatBar icon={<Target size={16} />} label="Engagement" value={coachFb.engagement} />
+                      <StatBar icon={<Smile size={16} />} label="Attitude" value={coachFb.attitude} />
+                      <StatBar icon={<Mountain size={16} />} label="Performance" value={coachFb.performance} />
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <span className="pill-soft">{coachFb.visible_to_player ? "Visible joueur" : "Invisible joueur"}</span>
                       </div>
-
                       {coachFb.player_note ? (
                         <div
                           style={{
@@ -439,7 +487,6 @@ export default function CoachEventPlayerDetailPage() {
                           {coachFb.player_note}
                         </div>
                       ) : null}
-
                       {coachFb.private_note ? (
                         <div
                           style={{
@@ -454,7 +501,7 @@ export default function CoachEventPlayerDetailPage() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          <b>Coach private:</b>
+                          <b>Note privée coach :</b>
                           <div style={{ height: 8 }} />
                           {coachFb.private_note}
                         </div>
@@ -462,18 +509,17 @@ export default function CoachEventPlayerDetailPage() {
                     </div>
                   )}
                 </div>
+              </div>
 
+              <div className="glass-card" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
                   <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}`}>
                     Retour participants
                   </Link>
-                  <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}/edit`}>
-                    Évaluer
-                  </Link>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
