@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
+import { getNotificationMessage } from "@/lib/notificationMessages";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -111,7 +112,7 @@ function uniq<T>(arr: T[]) {
 }
 
 export default function PlayerTrainingNewPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -630,11 +631,12 @@ export default function PlayerTrainingNewPage() {
     try {
       const coachIds = await getEventCoachUserIds(linkedEvent.id, linkedEvent.group_id);
       if (coachIds.length > 0) {
+        const msg = await getNotificationMessage("notif.playerMarkedAbsent", locale);
         await createAppNotification({
           actorUserId: userId,
           kind: "player_marked_absent",
-          title: t("trainingNew.saveAbsence"),
-          body: t("trainingNew.absenceInfo"),
+          title: msg.title,
+          body: msg.body,
           data: {
             event_id: linkedEvent.id,
             group_id: linkedEvent.group_id,

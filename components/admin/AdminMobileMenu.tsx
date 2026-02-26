@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -12,16 +12,13 @@ const NAV: NavItem[] = [
   { href: "/admin/organizations", label: "Organisations" },
   { href: "/admin/users", label: "Utilisateurs" },
   { href: "/admin/settings", label: "Réglages" },
+  { href: "/admin/notifications", label: "Notifications" },
 ];
 
 export default function AdminMobileMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   async function handleLogout() {
     await supabase.auth.signOut();

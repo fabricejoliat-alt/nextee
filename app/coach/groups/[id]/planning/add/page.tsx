@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
+import { getNotificationMessage } from "@/lib/notificationMessages";
 import {
   Calendar,
   PlusCircle,
@@ -813,11 +814,15 @@ export default function CoachGroupPlanningPage() {
       await saveStructureForEvents([eventId]);
 
       if (attendeeIds.length > 0 && meId) {
+        const msg = await getNotificationMessage("notif.coachEventCreated", locale, {
+          eventType: eventTypeLabelLocalized(eventType),
+          dateTime: fmtDateTimeRange(startDt.toISOString(), endDt.toISOString()),
+        });
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_created",
-          title: tr("Nouvel événement planifié", "New event scheduled"),
-          body: `${eventTypeLabelLocalized(eventType)} · ${fmtDateTimeRange(startDt.toISOString(), endDt.toISOString())}`,
+          title: msg.title,
+          body: msg.body,
           data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: attendeeIds,
         });
@@ -938,14 +943,15 @@ export default function CoachGroupPlanningPage() {
       await saveStructureForEvents(createdEventIds);
 
       if (attendeeIds.length > 0 && meId && createdEventIds.length > 0) {
+        const msg = await getNotificationMessage("notif.coachEventsCreated", locale, {
+          count: createdEventIds.length,
+          eventType: eventTypeLabelLocalized(eventType).toLowerCase(),
+        });
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_created",
-          title: tr("Nouveaux événements planifiés", "New events scheduled"),
-          body: tr(
-            `${createdEventIds.length} occurrence(s) ${eventTypeLabelLocalized(eventType).toLowerCase()} ajoutée(s).`,
-            `${createdEventIds.length} ${eventTypeLabelLocalized(eventType).toLowerCase()} occurrence(s) added.`
-          ),
+          title: msg.title,
+          body: msg.body,
           data: { series_id: seriesId, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: attendeeIds,
         });
@@ -981,11 +987,12 @@ export default function CoachGroupPlanningPage() {
     if (del.error) setError(del.error.message);
 
     if (!del.error && recipients.length > 0 && meId) {
+      const msg = await getNotificationMessage("notif.coachEventDeleted", locale);
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",
-        title: tr("Événement supprimé", "Event deleted"),
-        body: tr("Un événement planifié a été supprimé.", "A planned event was deleted."),
+        title: msg.title,
+        body: msg.body,
         data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
         recipientUserIds: recipients,
       });

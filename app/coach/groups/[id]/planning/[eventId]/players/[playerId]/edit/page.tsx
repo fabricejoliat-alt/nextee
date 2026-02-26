@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
+import { getNotificationMessage } from "@/lib/notificationMessages";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type EventRow = {
   id: string;
@@ -87,6 +89,7 @@ const fieldLabelStyle: React.CSSProperties = {
 export default function CoachEventPlayerFeedbackEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
+  const { locale } = useI18n();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
   const playerId = String(params?.playerId ?? "").trim();
@@ -291,11 +294,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
     }
 
     if (attendanceStatus !== "absent" && meId && playerId) {
+      const msg = await getNotificationMessage("notif.coachPlayerEvaluated", locale, {
+        playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
+        dateTime: fmtDateTime(event?.starts_at ?? new Date().toISOString()),
+      });
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_player_evaluated",
-        title: "Nouvelle évaluation",
-        body: `${nameOf(player?.first_name ?? null, player?.last_name ?? null)} · ${fmtDateTime(event?.starts_at ?? new Date().toISOString())}`,
+        title: msg.title,
+        body: msg.body,
         data: {
           event_id: eventId,
           group_id: groupId,

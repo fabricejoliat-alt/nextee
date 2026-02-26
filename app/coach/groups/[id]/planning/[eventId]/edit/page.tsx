@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
 import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
+import { getNotificationMessage } from "@/lib/notificationMessages";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -223,6 +225,7 @@ function memberRoleLabel(role: string | null | undefined) {
 export default function CoachEventEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string }>();
+  const { locale } = useI18n();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
 
@@ -797,17 +800,20 @@ export default function CoachEventEditPage() {
       await syncPlayerChangesOnFuturePlannedEvents();
 
       if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_updated",
-          title: "Événement modifié",
-          body: `Date/heure/lieu mis à jour · ${new Intl.DateTimeFormat("fr-CH", {
+        const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
+          dateTime: new Intl.DateTimeFormat(locale === "en" ? "en-US" : "fr-CH", {
             day: "2-digit",
             month: "short",
             year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
-          }).format(startDt)}`,
+          }).format(startDt),
+        });
+        await createAppNotification({
+          actorUserId: meId,
+          kind: "coach_event_updated",
+          title: msg.title,
+          body: msg.body,
           data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: attendeeIdsSelected,
         });
@@ -935,11 +941,12 @@ export default function CoachEventEditPage() {
       await syncPlayerChangesOnFuturePlannedEvents();
 
       if (attendeeIdsSelected.length > 0 && meId) {
+        const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale);
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_updated",
-          title: "Récurrence modifiée",
-          body: "Planning des occurrences mis à jour.",
+          title: msg.title,
+          body: msg.body,
           data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: attendeeIdsSelected,
         });
@@ -970,11 +977,12 @@ export default function CoachEventEditPage() {
     const del = await supabase.from("club_events").delete().eq("id", eventId);
     if (del.error) setError(del.error.message);
     if (!del.error && recipients.length > 0 && meId) {
+      const msg = await getNotificationMessage("notif.coachEventDeleted", locale);
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",
-        title: "Événement supprimé",
-        body: "Un événement planifié a été supprimé.",
+        title: msg.title,
+        body: msg.body,
         data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
         recipientUserIds: recipients,
       });
@@ -1014,11 +1022,12 @@ export default function CoachEventEditPage() {
       if (delSeries.error) throw new Error(delSeries.error.message);
 
       if (recipients.length > 0 && meId) {
+        const msg = await getNotificationMessage("notif.coachSeriesDeleted", locale);
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_deleted",
-          title: "Récurrence supprimée",
-          body: "Une série d'événements planifiés a été supprimée.",
+          title: msg.title,
+          body: msg.body,
           data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: recipients,
         });
