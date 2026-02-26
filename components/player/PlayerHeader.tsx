@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
 import { Bell } from "lucide-react";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
+import { supabase } from "@/lib/supabaseClient";
+import { ensurePushSubscription } from "@/lib/pushClient";
 
 function BurgerIcon() {
   return (
@@ -21,7 +24,37 @@ function BurgerIcon() {
 
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { t } = useI18n();
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadUnread() {
+      const authRes = await supabase.auth.getUser();
+      const userId = authRes.data.user?.id;
+      if (!userId || !mounted) return;
+      try {
+        const count = await getUnreadNotificationsCount(userId);
+        if (!mounted) return;
+        setUnreadCount(count);
+        applyPwaBadge(count);
+      } catch {
+        if (!mounted) return;
+        setUnreadCount(0);
+      }
+
+      ensurePushSubscription({ prompt: false }).catch(() => {});
+    }
+
+    loadUnread();
+    const onFocus = () => loadUnread();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      mounted = false;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   return (
     <>
@@ -51,9 +84,10 @@ export default function PlayerHeader() {
             {/* RIGHT: Bell */}
             <div className="header-right header-right--icon">
               <LanguageToggle />
-              <button className="icon-btn" type="button" aria-label={t("common.notificationsSoon")}>
+              <Link className="icon-btn icon-btn-notifications" href="/player/notifications" aria-label={t("common.notificationsSoon")}>
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
-              </button>
+                {unreadCount > 0 ? <span className="icon-btn-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
+              </Link>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -624,6 +625,26 @@ export default function PlayerTrainingNewPage() {
       setError(up.error.message);
       setBusy(false);
       return;
+    }
+
+    try {
+      const coachIds = await getEventCoachUserIds(linkedEvent.id, linkedEvent.group_id);
+      if (coachIds.length > 0) {
+        await createAppNotification({
+          actorUserId: userId,
+          kind: "player_marked_absent",
+          title: t("trainingNew.saveAbsence"),
+          body: t("trainingNew.absenceInfo"),
+          data: {
+            event_id: linkedEvent.id,
+            group_id: linkedEvent.group_id,
+            url: `/coach/groups/${linkedEvent.group_id}/planning/${linkedEvent.id}`,
+          },
+          recipientUserIds: coachIds,
+        });
+      }
+    } catch {
+      // Keep absence flow resilient even if notification fails.
     }
 
     setBusy(false);

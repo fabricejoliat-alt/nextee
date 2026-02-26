@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { AlertTriangle, CalendarDays } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -26,6 +26,11 @@ type EventFeedbackLite = {
   event_id: string;
   player_id: string;
 };
+type ProfileLite = {
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+};
 
 function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
@@ -46,6 +51,7 @@ export default function CoachHomePage() {
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [pendingEvalEvents, setPendingEvalEvents] = useState<EventLite[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<EventLite[]>([]);
+  const [me, setMe] = useState<ProfileLite | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -57,8 +63,18 @@ export default function CoachHomePage() {
         setPendingEvalEvents([]);
         setUpcomingEvents([]);
         setGroupNameById({});
+        setMe(null);
         setLoading(false);
         return;
+      }
+
+      const meRes = await supabase
+        .from("profiles")
+        .select("first_name,last_name,avatar_url")
+        .eq("id", uid)
+        .maybeSingle();
+      if (!meRes.error && meRes.data) {
+        setMe(meRes.data as ProfileLite);
       }
 
       const [headGroupsRes, extraGroupsRes] = await Promise.all([
@@ -179,33 +195,66 @@ export default function CoachHomePage() {
     return tr("Événement", "Event");
   }
 
+  function displayHello() {
+    const first = (me?.first_name ?? "").trim();
+    if (!first) return `${tr("Salut", "Hello")} 👋`;
+    return `${tr("Salut", "Hello")} ${first} 👋`;
+  }
+
+  function initials() {
+    const f = (me?.first_name ?? "").trim();
+    const l = (me?.last_name ?? "").trim();
+    return `${f ? f[0].toUpperCase() : ""}${l ? l[0].toUpperCase() : ""}` || "👤";
+  }
+
+  const heroClubLine = useMemo(() => {
+    const names = Array.from(new Set(Object.values(groupNameById).filter(Boolean)));
+    if (names.length === 0) return "—";
+    return names.join(" • ");
+  }, [groupNameById]);
+
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>{t("coachHome.title")}</div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                {tr("Vue rapide de la planification et des évaluations", "Quick view of planning and evaluations")}
-              </div>
+      <div className="app-shell">
+        <div className="player-hero">
+          <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
+            <div className="avatar" aria-hidden="true" style={{ position: "relative", overflow: "hidden" }}>
+              {me?.avatar_url ? (
+                <img src={me.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: 28,
+                    letterSpacing: 1,
+                    color: "white",
+                    background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
+                  }}
+                >
+                  {initials()}
+                </div>
+              )}
             </div>
+          </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/coach/calendar">
-                {tr("Calendrier", "Calendar")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/coach/groups">
-                {tr("Mes groupes", "My groups")}
-              </Link>
+          <div style={{ minWidth: 0 }}>
+            <div className="hero-title">{loading ? `${tr("Salut", "Hello")}…` : displayHello()}</div>
+            <div className="hero-sub">
+              <div>HCP PRO</div>
             </div>
+            <div className="hero-club truncate">{heroClubLine}</div>
           </div>
         </div>
 
-        <div className="glass-section" style={{ display: "grid", gap: 14 }}>
+        <div className="glass-section" style={{ display: "grid", gap: 14, marginTop: 14 }}>
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>{tr("Évaluations en attente", "Pending evaluations")}</div>
+              <div className="card-title" style={{ marginBottom: 0, fontSize: 16 }}>{tr("Évaluations en attente", "Pending evaluations")}</div>
               <span className="pill-soft">{pendingEvalEvents.length}</span>
             </div>
 
@@ -219,7 +268,7 @@ export default function CoachHomePage() {
                   <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
                     <div className="marketplace-item">
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ fontWeight: 950 }} className="truncate">
+                        <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">
                           {eventTypeLabel(e.event_type)} — {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
                         </div>
                         <span
@@ -238,8 +287,8 @@ export default function CoachHomePage() {
                           {tr("Évaluation", "Evaluation")}
                         </span>
                       </div>
-                      <div style={{ opacity: 0.8, fontWeight: 800, marginTop: 4 }}>{fmtDateTime(e.starts_at, dateLocale)}</div>
-                      {e.location_text ? <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>📍 {e.location_text}</div> : null}
+                      <div style={{ opacity: 0.8, fontWeight: 750, fontSize: 12, marginTop: 4 }}>{fmtDateTime(e.starts_at, dateLocale)}</div>
+                      {e.location_text ? <div style={{ opacity: 0.72, fontWeight: 750, fontSize: 12, marginTop: 4 }}>📍 {e.location_text}</div> : null}
                     </div>
                   </Link>
                 ))}
@@ -249,7 +298,7 @@ export default function CoachHomePage() {
 
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>{tr("Calendrier", "Calendar")}</div>
+              <div className="card-title" style={{ marginBottom: 0, fontSize: 16 }}>{tr("Calendrier", "Calendar")}</div>
               <span className="pill-soft">{upcomingEvents.length}</span>
             </div>
 
@@ -262,19 +311,23 @@ export default function CoachHomePage() {
                 {upcomingEvents.slice(0, 5).map((e) => (
                   <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
                     <div className="marketplace-item">
-                      <div style={{ fontWeight: 950 }} className="truncate">
+                      <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">
                         {eventTypeLabel(e.event_type)} — {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
                       </div>
-                      <div style={{ opacity: 0.8, fontWeight: 800, marginTop: 4 }}>
+                      <div style={{ opacity: 0.8, fontWeight: 750, fontSize: 12, marginTop: 4 }}>
                         <CalendarDays size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                         {fmtDateTime(e.starts_at, dateLocale)}
                       </div>
-                      {e.location_text ? <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>📍 {e.location_text}</div> : null}
+                      {e.location_text ? <div style={{ opacity: 0.72, fontWeight: 750, fontSize: 12, marginTop: 4 }}>📍 {e.location_text}</div> : null}
                     </div>
                   </Link>
                 ))}
               </div>
             )}
+
+            <Link className="cta-green cta-green-inline" href="/coach/calendar" style={{ width: "100%", justifyContent: "center", marginTop: 2 }}>
+              {tr("Calendrier complet", "Full calendar")}
+            </Link>
           </div>
         </div>
       </div>

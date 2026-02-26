@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import { IBM_Plex_Sans, Inter, Inter_Tight } from "next/font/google";
 
 const inter = Inter({
@@ -31,6 +32,10 @@ export const viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+};
+
+export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

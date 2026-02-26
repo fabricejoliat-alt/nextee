@@ -473,6 +473,7 @@ export default function CoachEventDetailPage() {
                       const p = a.profile ?? null;
                       const playerName = nameOf(p?.first_name ?? null, p?.last_name ?? null);
                       const canOpenPlayerDetail = event.event_type === "training";
+                      const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent";
 
                       return (
                         <div
@@ -555,10 +556,17 @@ export default function CoachEventDetailPage() {
                                 <ArrowRight size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {tr("Voir", "View")}
                               </Link>
-                              <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/edit`}>
-                                <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                {tr("Évaluer", "Evaluate")}
-                              </Link>
+                              {canEvaluatePlayer ? (
+                                <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/edit`}>
+                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {tr("Évaluer", "Evaluate")}
+                                </Link>
+                              ) : (
+                                <button type="button" className="btn" disabled title={tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")}>
+                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {tr("Évaluer", "Evaluate")}
+                                </button>
+                              )}
                             </div>
                           ) : null}
                         </div>

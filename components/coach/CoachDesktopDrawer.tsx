@@ -12,9 +12,7 @@ const ROUTES = {
   groups: "/coach/groups",
   calendar: "/coach/calendar",
   players: "/coach/players",
-
-  // pour l’instant on pointe sur le profil player (tu pourras créer /coach/profile plus tard)
-  profileEdit: "/player/profile",
+  profileEdit: "/coach/profile",
 } as const;
 
 type Props = {

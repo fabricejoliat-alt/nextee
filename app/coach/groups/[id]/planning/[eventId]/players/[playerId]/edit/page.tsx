@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Eye, EyeOff, Save, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { createAppNotification } from "@/lib/notifications";
 
 type EventRow = {
   id: string;
@@ -36,6 +37,7 @@ type CoachFeedbackRow = {
   private_note: string | null;
   player_note: string | null;
 };
+type AttendanceStatus = "expected" | "present" | "absent" | "excused";
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -98,6 +100,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [player, setPlayer] = useState<ProfileRow | null>(null);
   const [orderedPlayerIds, setOrderedPlayerIds] = useState<string[]>([]);
+  const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
     event_id: eventId,
@@ -209,6 +213,18 @@ export default function CoachEventPlayerFeedbackEditPage() {
         });
       }
 
+      const atRes = await supabase
+        .from("club_event_attendees")
+        .select("status")
+        .eq("event_id", eventId)
+        .eq("player_id", playerId)
+        .maybeSingle();
+      if (!atRes.error && atRes.data?.status) {
+        setAttendanceStatus(atRes.data.status as AttendanceStatus);
+      } else {
+        setAttendanceStatus("present");
+      }
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? "Erreur chargement.");
@@ -240,17 +256,30 @@ export default function CoachEventPlayerFeedbackEditPage() {
     setBusy(true);
     setError(null);
 
+    if (attendanceStatus === "absent") {
+      const attUp = await supabase
+        .from("club_event_attendees")
+        .update({ status: "absent" })
+        .eq("event_id", eventId)
+        .eq("player_id", playerId);
+      if (attUp.error) {
+        setError(attUp.error.message);
+        setBusy(false);
+        return;
+      }
+    }
+
     const up = await supabase.from("club_event_coach_feedback").upsert(
       {
         event_id: eventId,
         player_id: playerId,
         coach_id: meId,
-        engagement: draft.engagement,
-        attitude: draft.attitude,
-        performance: draft.performance,
-        visible_to_player: !!draft.visible_to_player,
+        engagement: attendanceStatus === "absent" ? null : draft.engagement,
+        attitude: attendanceStatus === "absent" ? null : draft.attitude,
+        performance: attendanceStatus === "absent" ? null : draft.performance,
+        visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
         private_note: draft.private_note?.trim() || null,
-        player_note: draft.player_note?.trim() || null,
+        player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
       },
       { onConflict: "event_id,player_id,coach_id" }
     );
@@ -259,6 +288,22 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setError(up.error.message);
       setBusy(false);
       return;
+    }
+
+    if (attendanceStatus !== "absent" && meId && playerId) {
+      await createAppNotification({
+        actorUserId: meId,
+        kind: "coach_player_evaluated",
+        title: "Nouvelle évaluation",
+        body: `${nameOf(player?.first_name ?? null, player?.last_name ?? null)} · ${fmtDateTime(event?.starts_at ?? new Date().toISOString())}`,
+        data: {
+          event_id: eventId,
+          group_id: groupId,
+          player_id: playerId,
+          url: "/player/golf/trainings",
+        },
+        recipientUserIds: [playerId],
+      });
     }
 
     setBusy(false);
@@ -271,6 +316,23 @@ export default function CoachEventPlayerFeedbackEditPage() {
       return;
     }
     router.push(`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`);
+  }
+
+  async function setPresence(next: "present" | "absent") {
+    if (attendanceBusy || busy) return;
+    const prev = attendanceStatus;
+    setAttendanceStatus(next);
+    setAttendanceBusy(true);
+    const up = await supabase
+      .from("club_event_attendees")
+      .update({ status: next })
+      .eq("event_id", eventId)
+      .eq("player_id", playerId);
+    if (up.error) {
+      setAttendanceStatus(prev);
+      setError(up.error.message);
+    }
+    setAttendanceBusy(false);
   }
 
   return (
@@ -305,7 +367,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               <div className="glass-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: 1 }}>
                   <div
                     style={{
                       width: 64,
@@ -329,99 +392,148 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <div style={{ fontSize: 20, fontWeight: 980 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
                   </div>
                 </div>
+                  <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.12)", borderRadius: 10, overflow: "hidden", flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setPresence("present")}
+                      disabled={attendanceBusy || busy}
+                      style={{
+                        border: "none",
+                        borderRight: "1px solid rgba(0,0,0,0.10)",
+                        background: attendanceStatus === "present" ? "#22c55e" : "transparent",
+                        color: attendanceStatus === "present" ? "#fff" : "rgba(0,0,0,0.82)",
+                        fontWeight: 900,
+                        fontSize: 11,
+                        lineHeight: 1.1,
+                        padding: "6px 10px",
+                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Présent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPresence("absent")}
+                      disabled={attendanceBusy || busy}
+                      style={{
+                        border: "none",
+                        background: attendanceStatus === "absent" ? "#ef4444" : "transparent",
+                        color: attendanceStatus === "absent" ? "#fff" : "rgba(0,0,0,0.82)",
+                        fontWeight: 900,
+                        fontSize: 11,
+                        lineHeight: 1.1,
+                        padding: "6px 10px",
+                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Absent
+                    </button>
+                  </div>
+                </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
                   <span className="pill-soft">{event.duration_minutes} min</span>
                   {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
                 </div>
+
               </div>
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
 
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Engagement</span>
-                    <select
-                      value={draft.engagement ?? ""}
-                      onChange={(e) => setDraft((p) => ({ ...p, engagement: e.target.value ? Number(e.target.value) : null }))}
-                      disabled={busy}
-                    >
-                      <option value="">-</option>
-                      {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                {attendanceStatus === "absent" ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Joueur absent: seule la note privée coach est disponible.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid-2">
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Engagement</span>
+                        <select
+                          value={draft.engagement ?? ""}
+                          onChange={(e) => setDraft((p) => ({ ...p, engagement: e.target.value ? Number(e.target.value) : null }))}
+                          disabled={busy}
+                        >
+                          <option value="">-</option>
+                          {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Attitude</span>
-                    <select
-                      value={draft.attitude ?? ""}
-                      onChange={(e) => setDraft((p) => ({ ...p, attitude: e.target.value ? Number(e.target.value) : null }))}
-                      disabled={busy}
-                    >
-                      <option value="">-</option>
-                      {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Attitude</span>
+                        <select
+                          value={draft.attitude ?? ""}
+                          onChange={(e) => setDraft((p) => ({ ...p, attitude: e.target.value ? Number(e.target.value) : null }))}
+                          disabled={busy}
+                        >
+                          <option value="">-</option>
+                          {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Performance</span>
-                  <select
-                    value={draft.performance ?? ""}
-                    onChange={(e) => setDraft((p) => ({ ...p, performance: e.target.value ? Number(e.target.value) : null }))}
-                    disabled={busy}
-                  >
-                    <option value="">-</option>
-                    {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Performance</span>
+                      <select
+                        value={draft.performance ?? ""}
+                        onChange={(e) => setDraft((p) => ({ ...p, performance: e.target.value ? Number(e.target.value) : null }))}
+                        disabled={busy}
+                      >
+                        <option value="">-</option>
+                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
               </div>
 
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Visibilité et retour joueur</div>
+              {attendanceStatus !== "absent" ? (
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Visibilité et retour joueur</div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => setDraft((p) => ({ ...p, visible_to_player: !p.visible_to_player }))}
-                    style={
-                      draft.visible_to_player
-                        ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                        : {}
-                    }
-                  >
-                    {draft.visible_to_player ? <Eye size={16} style={{ marginRight: 6 }} /> : <EyeOff size={16} style={{ marginRight: 6 }} />}
-                    {draft.visible_to_player ? "Visible pour le joueur" : "Invisible pour le joueur"}
-                  </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      onClick={() => setDraft((p) => ({ ...p, visible_to_player: !p.visible_to_player }))}
+                      style={
+                        draft.visible_to_player
+                          ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
+                          : {}
+                      }
+                    >
+                      {draft.visible_to_player ? <Eye size={16} style={{ marginRight: 6 }} /> : <EyeOff size={16} style={{ marginRight: 6 }} />}
+                      {draft.visible_to_player ? "Visible pour le joueur" : "Invisible pour le joueur"}
+                    </button>
+                  </div>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>Commentaire pour le joueur</span>
+                    <textarea
+                      value={draft.player_note ?? ""}
+                      onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
+                      disabled={busy}
+                      style={{ minHeight: 90 }}
+                      placeholder="Feedback pour le joueur…"
+                    />
+                  </label>
                 </div>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Commentaire pour le joueur</span>
-                  <textarea
-                    value={draft.player_note ?? ""}
-                    onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
-                    disabled={busy}
-                    style={{ minHeight: 90 }}
-                    placeholder="Feedback pour le joueur…"
-                  />
-                </label>
-              </div>
+              ) : null}
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Note privée coach</div>
@@ -449,7 +561,6 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       justifyContent: "center",
                     }}
                   >
-                    <Save size={16} style={{ marginRight: 8, verticalAlign: "middle" }} />
                     {busy ? "Enregistrement…" : nextPlayerId ? "Enregistrer et passer au joueur suivant" : "Enregistrer et fermer"}
                   </button>
                   <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`} style={{ width: "100%", textAlign: "center" }}>

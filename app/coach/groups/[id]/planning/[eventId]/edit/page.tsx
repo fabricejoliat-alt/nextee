@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
+import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -750,13 +751,19 @@ export default function CoachEventEditPage() {
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
       const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
+      const nextStartIso = startDt.toISOString();
+      const nextEndIso = endDt.toISOString();
+      const hadScheduleChange =
+        event.starts_at !== nextStartIso ||
+        (event.ends_at ?? null) !== (nextEndIso ?? null) ||
+        (event.location_text ?? null) !== (locationText.trim() || null);
 
       const upd = await supabase
         .from("club_events")
         .update({
           event_type: eventType,
-          starts_at: startDt.toISOString(),
-          ends_at: endDt.toISOString(),
+          starts_at: nextStartIso,
+          ends_at: nextEndIso,
           duration_minutes: durationForDb,
           location_text: locationText.trim() || null,
           coach_note: coachNote.trim() || null,
@@ -788,6 +795,23 @@ export default function CoachEventEditPage() {
       await replaceStructureForEvent(eventId);
 
       await syncPlayerChangesOnFuturePlannedEvents();
+
+      if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
+        await createAppNotification({
+          actorUserId: meId,
+          kind: "coach_event_updated",
+          title: "Événement modifié",
+          body: `Date/heure/lieu mis à jour · ${new Intl.DateTimeFormat("fr-CH", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(startDt)}`,
+          data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
+          recipientUserIds: attendeeIdsSelected,
+        });
+      }
 
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning/${eventId}`);
@@ -910,6 +934,17 @@ export default function CoachEventEditPage() {
 
       await syncPlayerChangesOnFuturePlannedEvents();
 
+      if (attendeeIdsSelected.length > 0 && meId) {
+        await createAppNotification({
+          actorUserId: meId,
+          kind: "coach_event_updated",
+          title: "Récurrence modifiée",
+          body: "Planning des occurrences mis à jour.",
+          data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
+          recipientUserIds: attendeeIdsSelected,
+        });
+      }
+
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);
     } catch (e: any) {
@@ -925,8 +960,25 @@ export default function CoachEventEditPage() {
     setBusy(true);
     setError(null);
 
+    let recipients: string[] = [];
+    try {
+      recipients = await getEventAttendeeUserIds(eventId);
+    } catch {
+      recipients = [];
+    }
+
     const del = await supabase.from("club_events").delete().eq("id", eventId);
     if (del.error) setError(del.error.message);
+    if (!del.error && recipients.length > 0 && meId) {
+      await createAppNotification({
+        actorUserId: meId,
+        kind: "coach_event_deleted",
+        title: "Événement supprimé",
+        body: "Un événement planifié a été supprimé.",
+        data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
+        recipientUserIds: recipients,
+      });
+    }
 
     setBusy(false);
     router.push(`/coach/groups/${groupId}/planning`);
@@ -944,11 +996,33 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
+      const seriesEventsRes = await supabase.from("club_events").select("id").eq("series_id", event.series_id);
+      if (seriesEventsRes.error) throw new Error(seriesEventsRes.error.message);
+      const seriesEventIds = (seriesEventsRes.data ?? []).map((r: any) => String(r.id ?? "").trim()).filter(Boolean);
+
+      let recipients: string[] = [];
+      if (seriesEventIds.length > 0) {
+        const attRes = await supabase.from("club_event_attendees").select("player_id,event_id").in("event_id", seriesEventIds);
+        if (attRes.error) throw new Error(attRes.error.message);
+        recipients = Array.from(new Set((attRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean)));
+      }
+
       const delEvents = await supabase.from("club_events").delete().eq("series_id", event.series_id);
       if (delEvents.error) throw new Error(delEvents.error.message);
 
       const delSeries = await supabase.from("club_event_series").delete().eq("id", event.series_id);
       if (delSeries.error) throw new Error(delSeries.error.message);
+
+      if (recipients.length > 0 && meId) {
+        await createAppNotification({
+          actorUserId: meId,
+          kind: "coach_event_deleted",
+          title: "Récurrence supprimée",
+          body: "Une série d'événements planifiés a été supprimée.",
+          data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
+          recipientUserIds: recipients,
+        });
+      }
 
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);
