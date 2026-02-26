@@ -30,7 +30,7 @@ export async function ensurePushSubscription(options?: { prompt?: boolean }) {
   const permission = Notification.permission;
   if (permission === "denied") return { ok: false as const, reason: "denied" as const };
 
-  let finalPermission = permission;
+  let finalPermission: NotificationPermission = permission;
   if (permission === "default" && options?.prompt) {
     finalPermission = await Notification.requestPermission();
   }
