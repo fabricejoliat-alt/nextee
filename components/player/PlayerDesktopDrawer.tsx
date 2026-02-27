@@ -26,6 +26,7 @@ const ROUTES = {
   golfDashboard: "/player/golf",
   
   trainingsList: "/player/golf/trainings",
+  trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
 
   roundsList: "/player/golf/rounds",
@@ -52,9 +53,10 @@ function isActive(pathname: string, href: string) {
 export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
+  const [pendingEvalCount, setPendingEvalCount] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -93,6 +95,101 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
     })();
   }, [open, t]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) {
+        setPendingEvalCount(0);
+        return;
+      }
+
+      const sRes = await supabase
+        .from("training_sessions")
+        .select("id,start_at,club_event_id,motivation,difficulty,satisfaction")
+        .eq("user_id", uid);
+      if (sRes.error) {
+        setPendingEvalCount(0);
+        return;
+      }
+      const sessions = sRes.data ?? [];
+      const sessionIds = sessions.map((s: any) => s.id as string);
+
+      const sessionItemsById: Record<string, { minutes: number }[]> = {};
+      if (sessionIds.length > 0) {
+        const itemsRes = await supabase
+          .from("training_session_items")
+          .select("session_id,minutes")
+          .in("session_id", sessionIds);
+        if (!itemsRes.error) {
+          for (const row of itemsRes.data ?? []) {
+            const sid = row.session_id as string;
+            if (!sessionItemsById[sid]) sessionItemsById[sid] = [];
+            sessionItemsById[sid].push({ minutes: Number(row.minutes ?? 0) });
+          }
+        }
+      }
+
+      const completeSessionIds = new Set<string>();
+      for (const s of sessions as any[]) {
+        const items = sessionItemsById[s.id] ?? [];
+        const hasPoste = items.some((it) => (it.minutes ?? 0) > 0);
+        const hasSensations =
+          typeof s.motivation === "number" &&
+          typeof s.difficulty === "number" &&
+          typeof s.satisfaction === "number";
+        if (hasPoste && hasSensations) completeSessionIds.add(s.id);
+      }
+
+      const nowTs = Date.now();
+      const incompletePastSessionsCount = (sessions as any[])
+        .filter((s) => new Date(String(s.start_at)).getTime() < nowTs)
+        .filter((s) => !completeSessionIds.has(String(s.id))).length;
+
+      const completedEventIds = new Set(
+        (sessions as any[])
+          .filter((s) => completeSessionIds.has(String(s.id)))
+          .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
+          .filter((x): x is string => !!x)
+      );
+      const eventIdsWithAnySession = new Set(
+        (sessions as any[])
+          .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
+          .filter((x): x is string => !!x)
+      );
+
+      const aRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id")
+        .eq("player_id", uid);
+      if (aRes.error) {
+        setPendingEvalCount(incompletePastSessionsCount);
+        return;
+      }
+      const eventIds = Array.from(new Set((aRes.data ?? []).map((r: any) => String(r.event_id))));
+
+      let incompleteEventsCount = 0;
+      if (eventIds.length > 0) {
+        const eRes = await supabase
+          .from("club_events")
+          .select("id,event_type,starts_at,status")
+          .in("id", eventIds);
+        if (!eRes.error) {
+          incompleteEventsCount = (eRes.data ?? [])
+            .filter((ev: any) => ev.status === "scheduled")
+            .filter((ev: any) => ev.event_type === "training")
+            .filter((ev: any) => new Date(String(ev.starts_at)).getTime() < nowTs)
+            .filter((ev: any) => !completedEventIds.has(String(ev.id)))
+            .filter((ev: any) => !eventIdsWithAnySession.has(String(ev.id))).length;
+        }
+      }
+
+      setPendingEvalCount(incompletePastSessionsCount + incompleteEventsCount);
+    })();
+  }, [open]);
+
   const nav = useMemo(
     () => [
       {
@@ -105,8 +202,24 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         icon: Flag,
         children: [
           { label: "Dashboard", icon: Home, href: ROUTES.golfDashboard },
-          { label: t("player.trainings"), icon: ClipboardList, href: ROUTES.trainingsList },
-          { label: t("player.newTraining"), icon: PlusCircle, href: ROUTES.trainingsNew },
+          {
+            label:
+              locale === "fr"
+                ? `Entr. à évaluer (${pendingEvalCount})`
+                : `To complete (${pendingEvalCount})`,
+            icon: ClipboardList,
+            href: ROUTES.trainingsToComplete,
+          },
+          {
+            label: locale === "fr" ? "Mon activité" : "My activity",
+            icon: ClipboardList,
+            href: ROUTES.trainingsList,
+          },
+          {
+            label: locale === "fr" ? "Ajouter une activité" : "Add activity",
+            icon: PlusCircle,
+            href: ROUTES.trainingsNew,
+          },
           { label: t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
         ],
@@ -121,7 +234,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
     ],
-    [t]
+    [t, locale, pendingEvalCount]
   );
 
   async function handleLogout() {
@@ -200,7 +313,15 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                       >
                         <span className="drawer-item-left">
                           <CIcon size={16} strokeWidth={2} />
-                          <span>{c.label}</span>
+                          <span
+                            style={
+                              c.href === ROUTES.trainingsToComplete && pendingEvalCount > 0
+                                ? { color: "#b91c1c", fontWeight: 900 }
+                                : undefined
+                            }
+                          >
+                            {c.label}
+                          </span>
                         </span>
                       </Link>
                     );

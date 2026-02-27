@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { Flame, Mountain, Smile, SlidersHorizontal, CalendarClock, Pencil } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarClock, Pencil, CalendarDays, List, Grid3X3, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionRow = {
@@ -33,20 +33,37 @@ type SessionItemRow = {
 
 type PlannedEventRow = {
   id: string; // club_events.id
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
+  title: string | null;
   starts_at: string;
   duration_minutes: number;
   location_text: string | null;
   club_id: string;
-  group_id: string;
+  group_id: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
 };
 
-type FilterMode = "to_complete" | "planned" | "past";
+type PlayerActivityEventRow = {
+  id: string;
+  user_id: string;
+  event_type: "competition" | "camp";
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  location_text: string | null;
+  status: "scheduled" | "cancelled";
+  created_at: string;
+};
+
+type FilterMode = "planned" | "past";
+type ViewMode = "list" | "calendar";
+type CalendarMode = "week" | "month";
 
 type DisplayItem =
   | { kind: "session"; key: string; dateIso: string; session: SessionRow }
-  | { kind: "event"; key: string; dateIso: string; event: PlannedEventRow };
+  | { kind: "event"; key: string; dateIso: string; event: PlannedEventRow }
+  | { kind: "competition"; key: string; dateIso: string; competition: PlayerActivityEventRow };
 
 const PAGE_SIZE = 10;
 
@@ -60,6 +77,29 @@ function fmtDateTime(iso: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+function eventTypeLabel(v: PlannedEventRow["event_type"], locale: "fr" | "en") {
+  if (locale === "en") {
+    if (v === "training") return "Training";
+    if (v === "interclub") return "Interclub";
+    if (v === "camp") return "Camp";
+    if (v === "session") return "Session";
+    return "Event";
+  }
+  if (v === "training") return "Entraînement";
+  if (v === "interclub") return "Interclubs";
+  if (v === "camp") return "Stage";
+  if (v === "session") return "Réunion";
+  return "Événement";
+}
+
+function eventTypeColor(v: PlannedEventRow["event_type"]) {
+  if (v === "training") return { bg: "rgba(34,197,94,0.16)", border: "rgba(34,197,94,0.48)", text: "rgba(20,83,45,1)" };
+  if (v === "interclub") return { bg: "rgba(59,130,246,0.16)", border: "rgba(59,130,246,0.46)", text: "rgba(30,64,175,1)" };
+  if (v === "camp") return { bg: "rgba(245,158,11,0.16)", border: "rgba(245,158,11,0.50)", text: "rgba(120,53,15,1)" };
+  if (v === "session") return { bg: "rgba(168,85,247,0.16)", border: "rgba(168,85,247,0.46)", text: "rgba(88,28,135,1)" };
+  return { bg: "rgba(15,23,42,0.10)", border: "rgba(15,23,42,0.24)", text: "rgba(15,23,42,1)" };
 }
 
 function typeLabel(t: SessionRow["session_type"]) {
@@ -79,6 +119,39 @@ function clamp(n: number, a: number, b: number) {
 }
 
 const MAX_SCORE = 6;
+
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+function endOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function startOfWeek(d: Date) {
+  const x = startOfDay(d);
+  const day = x.getDay();
+  const diff = (day + 6) % 7;
+  return addDays(x, -diff);
+}
+function endOfWeek(d: Date) {
+  return endOfDay(addDays(startOfWeek(d), 6));
+}
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+}
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+function ymd(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function RatingBar({
   icon,
@@ -117,14 +190,28 @@ export default function TrainingsListPage() {
 
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [attendeeEvents, setAttendeeEvents] = useState<PlannedEventRow[]>([]);
+  const [competitionEvents, setCompetitionEvents] = useState<PlayerActivityEventRow[]>([]);
 
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
+  const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [itemsBySessionId, setItemsBySessionId] = useState<Record<string, SessionItemRow[]>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("planned");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>("month");
+  const [anchorDate, setAnchorDate] = useState<Date>(new Date());
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string>("");
+
+  const [showCompetitionForm, setShowCompetitionForm] = useState(false);
+  const [activityCreateType, setActivityCreateType] = useState<"competition" | "camp">("competition");
+  const [compTitle, setCompTitle] = useState("");
+  const [compPlace, setCompPlace] = useState("");
+  const [compStartDate, setCompStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [compEndDate, setCompEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [creatingCompetition, setCreatingCompetition] = useState(false);
 
   const categoryLabel = (cat: string) => {
     const map: Record<string, string> = {
@@ -165,37 +252,35 @@ export default function TrainingsListPage() {
     return set;
   }, [sessions, itemsBySessionId]);
 
-  const completedEventIds = useMemo(() => {
-    return new Set(
-      sessions
-        .filter((s) => completeSessionIds.has(s.id))
-        .map((s) => s.club_event_id)
-        .filter((x): x is string => !!x)
-    );
-  }, [sessions, completeSessionIds]);
-
-  const eventIdsWithAnySession = useMemo(() => {
-    return new Set(sessions.map((s) => s.club_event_id).filter((x): x is string => !!x));
-  }, [sessions]);
-
   const scheduledEvents = useMemo(() => {
     return attendeeEvents.filter((ev) => ev.status === "scheduled");
   }, [attendeeEvents]);
 
-  const eventsToComplete = useMemo(() => {
-    return scheduledEvents
-      .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
-      .filter((ev) => !completedEventIds.has(ev.id))
-      .filter((ev) => !eventIdsWithAnySession.has(ev.id))
-      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
-  }, [scheduledEvents, nowTs, completedEventIds, eventIdsWithAnySession]);
-
   const plannedEvents = useMemo(() => {
     return scheduledEvents
       .filter((ev) => new Date(ev.starts_at).getTime() >= nowTs)
-      .filter((ev) => !completedEventIds.has(ev.id))
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-  }, [scheduledEvents, nowTs, completedEventIds]);
+  }, [scheduledEvents, nowTs]);
+
+  const pastAttendeeEvents = useMemo(() => {
+    return scheduledEvents
+      .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
+  }, [scheduledEvents, nowTs]);
+
+  const plannedCompetitions = useMemo(() => {
+    return competitionEvents
+      .filter((ev) => ev.status === "scheduled")
+      .filter((ev) => new Date(ev.starts_at).getTime() >= nowTs)
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }, [competitionEvents, nowTs]);
+
+  const pastCompetitions = useMemo(() => {
+    return competitionEvents
+      .filter((ev) => ev.status === "scheduled")
+      .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
+  }, [competitionEvents, nowTs]);
 
   const futureSessions = useMemo(() => {
     return sessions
@@ -203,31 +288,7 @@ export default function TrainingsListPage() {
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
   }, [sessions, nowTs]);
 
-  const incompletePastSessions = useMemo(() => {
-    return pastSessions.filter((s) => !completeSessionIds.has(s.id));
-  }, [pastSessions, completeSessionIds]);
-
   const displayItems = useMemo<DisplayItem[]>(() => {
-    if (filterMode === "to_complete") {
-      const incompleteSessionItems: DisplayItem[] = incompletePastSessions.map((session) => ({
-        kind: "session",
-        key: `session-${session.id}`,
-        dateIso: session.start_at,
-        session,
-      }));
-
-      const incompleteEventItems: DisplayItem[] = eventsToComplete.map((event) => ({
-        kind: "event",
-        key: `event-${event.id}`,
-        dateIso: event.starts_at,
-        event,
-      }));
-
-      return [...incompleteSessionItems, ...incompleteEventItems].sort(
-        (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
-      );
-    }
-
     if (filterMode === "planned") {
       const plannedEventItems: DisplayItem[] = plannedEvents.map((event) => ({
         kind: "event",
@@ -243,7 +304,14 @@ export default function TrainingsListPage() {
         session,
       }));
 
-      return [...plannedEventItems, ...futureSessionItems].sort(
+      const plannedCompetitionItems: DisplayItem[] = plannedCompetitions.map((competition) => ({
+        kind: "competition",
+        key: `competition-${competition.id}`,
+        dateIso: competition.starts_at,
+        competition,
+      }));
+
+      return [...plannedEventItems, ...futureSessionItems, ...plannedCompetitionItems].sort(
         (a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()
       );
     }
@@ -255,21 +323,27 @@ export default function TrainingsListPage() {
       session,
     }));
 
-    const pastEventItems: DisplayItem[] = eventsToComplete.map((event) => ({
+    const pastEventItems: DisplayItem[] = pastAttendeeEvents.map((event) => ({
       kind: "event",
       key: `event-${event.id}`,
       dateIso: event.starts_at,
       event,
     }));
 
-    return [...pastSessionItems, ...pastEventItems].sort(
+    const pastCompetitionItems: DisplayItem[] = pastCompetitions.map((competition) => ({
+      kind: "competition",
+      key: `competition-${competition.id}`,
+      dateIso: competition.starts_at,
+      competition,
+    }));
+
+    return [...pastSessionItems, ...pastEventItems, ...pastCompetitionItems].sort(
       (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
     );
-  }, [filterMode, incompletePastSessions, eventsToComplete, plannedEvents, futureSessions, pastSessions]);
+  }, [filterMode, plannedEvents, futureSessions, pastSessions, plannedCompetitions, pastCompetitions, pastAttendeeEvents]);
 
-  const toCompleteCount = incompletePastSessions.length + eventsToComplete.length;
-  const plannedCount = plannedEvents.length + futureSessions.length;
-  const pastCount = pastSessions.length + eventsToComplete.length;
+  const plannedCount = plannedEvents.length + futureSessions.length + plannedCompetitions.length;
+  const pastCount = pastSessions.length + pastAttendeeEvents.length + pastCompetitions.length;
   const totalCount = displayItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -316,7 +390,7 @@ export default function TrainingsListPage() {
       if (eventIds.length > 0) {
         const eRes = await supabase
           .from("club_events")
-          .select("id,starts_at,duration_minutes,location_text,club_id,group_id,series_id,status")
+          .select("id,event_type,title,starts_at,duration_minutes,location_text,club_id,group_id,series_id,status")
           .in("id", eventIds)
           .order("starts_at", { ascending: false });
 
@@ -324,6 +398,14 @@ export default function TrainingsListPage() {
         events = (eRes.data ?? []) as PlannedEventRow[];
       }
       setAttendeeEvents(events);
+
+      const compRes = await supabase
+        .from("player_activity_events")
+        .select("id,user_id,event_type,title,starts_at,ends_at,location_text,status,created_at")
+        .eq("user_id", uid)
+        .order("starts_at", { ascending: false });
+      if (compRes.error) throw new Error(compRes.error.message);
+      setCompetitionEvents((compRes.data ?? []) as PlayerActivityEventRow[]);
 
       // clubs names (sessions + all attendee events)
       const clubIds = Array.from(
@@ -348,6 +430,25 @@ export default function TrainingsListPage() {
         }
       } else {
         setClubNameById({});
+      }
+
+      // group names
+      const groupIds = Array.from(
+        new Set(events.map((e) => uuidOrNull(e.group_id)).filter((x): x is string => typeof x === "string" && x.length > 0))
+      );
+      if (groupIds.length > 0) {
+        const gRes = await supabase.from("coach_groups").select("id,name").in("id", groupIds);
+        if (!gRes.error) {
+          const map: Record<string, string> = {};
+          (gRes.data ?? []).forEach((g: any) => {
+            map[g.id] = (g.name ?? "Groupe") as string;
+          });
+          setGroupNameById(map);
+        } else {
+          setGroupNameById({});
+        }
+      } else {
+        setGroupNameById({});
       }
 
       // items for all sessions (needed in past list)
@@ -380,7 +481,9 @@ export default function TrainingsListPage() {
       setError(message);
       setSessions([]);
       setAttendeeEvents([]);
+      setCompetitionEvents([]);
       setClubNameById({});
+      setGroupNameById({});
       setItemsBySessionId({});
       setLoading(false);
     }
@@ -423,6 +526,107 @@ export default function TrainingsListPage() {
     await load();
   }
 
+  async function createActivityEvent() {
+    if (creatingCompetition) return;
+    const title = compTitle.trim();
+    if (!title) {
+      setError(
+        locale === "fr"
+          ? activityCreateType === "camp"
+            ? "Nom du stage requis."
+            : "Nom de la compétition requis."
+          : activityCreateType === "camp"
+          ? "Camp title is required."
+          : "Competition title is required."
+      );
+      return;
+    }
+    if (!compStartDate || !compEndDate) {
+      setError(locale === "fr" ? "Dates de début et fin requises." : "Start and end dates are required.");
+      return;
+    }
+    const startsAt = new Date(`${compStartDate}T08:00:00`);
+    const endsAt = new Date(`${compEndDate}T18:00:00`);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      setError(locale === "fr" ? "Dates invalides." : "Invalid dates.");
+      return;
+    }
+    if (endsAt.getTime() < startsAt.getTime()) {
+      setError(locale === "fr" ? "La date de fin doit être après la date de début." : "End date must be after start date.");
+      return;
+    }
+
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userRes.user) {
+      setError(t("trainings.error.invalidSession"));
+      return;
+    }
+
+    setCreatingCompetition(true);
+    setError(null);
+    const ins = await supabase.from("player_activity_events").insert({
+      user_id: userRes.user.id,
+      event_type: activityCreateType,
+      title,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      location_text: compPlace.trim() || null,
+      status: "scheduled",
+    });
+    if (ins.error) {
+      setError(ins.error.message);
+      setCreatingCompetition(false);
+      return;
+    }
+
+    setCompTitle("");
+    setCompPlace("");
+    setCompStartDate(new Date().toISOString().slice(0, 10));
+    setCompEndDate(new Date().toISOString().slice(0, 10));
+    setShowCompetitionForm(false);
+    setActivityCreateType("competition");
+    setCreatingCompetition(false);
+    await load();
+  }
+
+  const calendarDays = useMemo(() => {
+    if (calendarMode === "week") {
+      const from = startOfWeek(anchorDate);
+      return Array.from({ length: 7 }, (_, i) => addDays(from, i));
+    }
+    const first = startOfMonth(anchorDate);
+    const last = endOfMonth(anchorDate);
+    const from = startOfWeek(first);
+    const to = endOfWeek(last);
+    const out: Date[] = [];
+    for (let d = new Date(from); d.getTime() <= to.getTime(); d = addDays(d, 1)) out.push(new Date(d));
+    return out;
+  }, [anchorDate, calendarMode]);
+
+  const itemsByDay = useMemo(() => {
+    const map: Record<string, DisplayItem[]> = {};
+    for (const it of displayItems) {
+      const dt = new Date(it.dateIso);
+      if (Number.isNaN(dt.getTime())) continue;
+      const key = ymd(dt);
+      if (!map[key]) map[key] = [];
+      map[key].push(it);
+    }
+    Object.values(map).forEach((arr) => arr.sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()));
+    return map;
+  }, [displayItems]);
+
+  const nowDayKey = ymd(new Date());
+
+  function goPrevRange() {
+    if (calendarMode === "week") setAnchorDate((d) => addDays(d, -7));
+    else setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  }
+  function goNextRange() {
+    if (calendarMode === "week") setAnchorDate((d) => addDays(d, 7));
+    else setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -430,92 +634,138 @@ export default function TrainingsListPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              {t("trainings.title")}
-            </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings/new">
-                {t("common.add")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player">
-                {t("common.dashboard")}
-              </Link>
+              {locale === "fr" ? "Mon activité" : "My activity"}
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="glass-card" style={{ marginTop: 12, padding: 14, overflow: "hidden" }}>
-            <div style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <SlidersHorizontal size={16} />
-                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>{t("trainings.display")}</div>
+          <div style={{ marginTop: 10, position: "relative" }}>
+            <button
+              type="button"
+              className="cta-green"
+              onClick={() => setShowAddMenu((v) => !v)}
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              {locale === "fr" ? "Ajouter" : "Add"}
+              <ChevronDown size={14} style={{ marginLeft: 8 }} />
+            </button>
+
+            {showAddMenu && (
+              <div
+                className="glass-card"
+                style={{
+                  marginTop: 8,
+                  padding: 8,
+                  display: "grid",
+                  gap: 6,
+                  border: "1px solid rgba(0,0,0,0.10)",
+                  background: "rgba(255,255,255,0.92)",
+                }}
+              >
+                <Link
+                  className="btn"
+                  href="/player/golf/trainings/new"
+                  onClick={() => setShowAddMenu(false)}
+                  style={{ justifyContent: "flex-start" }}
+                >
+                  {locale === "fr" ? "Entraînement" : "Training"}
+                </Link>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setActivityCreateType("competition");
+                    setShowCompetitionForm(true);
+                    setShowAddMenu(false);
+                  }}
+                  style={{ justifyContent: "flex-start" }}
+                >
+                  {locale === "fr" ? "Compétition" : "Competition"}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setActivityCreateType("camp");
+                    setShowCompetitionForm(true);
+                    setShowAddMenu(false);
+                  }}
+                  style={{ justifyContent: "flex-start" }}
+                >
+                  {locale === "fr" ? "Stage" : "Camp"}
+                </button>
               </div>
+            )}
+          </div>
 
-              <div style={{ display: "grid", gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setFilterMode("past")}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    justifyContent: "flex-start",
-                    background: filterMode === "past" ? "var(--green-dark)" : undefined,
-                    borderColor: filterMode === "past" ? "var(--green-dark)" : undefined,
-                    color: filterMode === "past" ? "#fff" : undefined,
-                    boxShadow: filterMode === "past" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
-                  }}
-                >
-                  {t("trainings.done")} ({pastCount})
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setFilterMode("to_complete")}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    justifyContent: "flex-start",
-                    background: filterMode === "to_complete" ? "var(--green-dark)" : undefined,
-                    borderColor: filterMode === "to_complete" ? "var(--green-dark)" : undefined,
-                    color: filterMode === "to_complete" ? "#fff" : undefined,
-                    boxShadow: filterMode === "to_complete" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
-                  }}
-                >
-                  {t("trainings.toComplete")}{" "}
-                  <span
-                    style={{
-                      color:
-                        toCompleteCount > 0 && filterMode !== "to_complete"
-                          ? "#c62828"
-                          : undefined,
-                      fontWeight: 950,
-                    }}
-                  >
-                    ({toCompleteCount})
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setFilterMode("planned")}
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    justifyContent: "flex-start",
-                    background: filterMode === "planned" ? "var(--green-dark)" : undefined,
-                    borderColor: filterMode === "planned" ? "var(--green-dark)" : undefined,
-                    color: filterMode === "planned" ? "#fff" : undefined,
-                    boxShadow: filterMode === "planned" ? "0 0 0 2px rgba(25,112,61,0.22)" : undefined,
-                  }}
-                >
-                  {t("trainings.planned")} ({plannedCount})
-                </button>
+          {showCompetitionForm && (
+            <div className="glass-card" style={{ marginTop: 12, padding: 14 }}>
+              <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
+                <div style={{ fontSize: 13, fontWeight: 950 }}>
+                  {activityCreateType === "camp"
+                    ? locale === "fr"
+                      ? "Nouveau stage"
+                      : "New camp"
+                    : locale === "fr"
+                    ? "Nouvelle compétition"
+                    : "New competition"}
+                </div>
+                <input
+                  placeholder={
+                    activityCreateType === "camp"
+                      ? locale === "fr"
+                        ? "Nom du stage"
+                        : "Camp title"
+                      : locale === "fr"
+                      ? "Nom de la compétition"
+                      : "Competition title"
+                  }
+                  value={compTitle}
+                  onChange={(e) => setCompTitle(e.target.value)}
+                />
+                <input
+                  placeholder={
+                    activityCreateType === "camp"
+                      ? locale === "fr"
+                        ? "Lieu du stage"
+                        : "Camp place"
+                      : locale === "fr"
+                      ? "Lieu de la compétition"
+                      : "Competition place"
+                  }
+                  value={compPlace}
+                  onChange={(e) => setCompPlace(e.target.value)}
+                />
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 850 }}>{locale === "fr" ? "Date début" : "Start date"}</span>
+                    <input type="date" value={compStartDate} onChange={(e) => setCompStartDate(e.target.value)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 850 }}>{locale === "fr" ? "Date fin" : "End date"}</span>
+                    <input type="date" value={compEndDate} onChange={(e) => setCompEndDate(e.target.value)} />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="btn" type="button" onClick={() => setShowCompetitionForm(false)} disabled={creatingCompetition}>
+                    {t("common.cancel")}
+                  </button>
+                  <button className="btn" type="button" onClick={createActivityEvent} disabled={creatingCompetition}>
+                    {creatingCompetition
+                      ? locale === "fr"
+                        ? "Création…"
+                        : "Creating…"
+                      : activityCreateType === "camp"
+                      ? locale === "fr"
+                        ? "Créer le stage"
+                        : "Create camp"
+                      : locale === "fr"
+                      ? "Créer la compétition"
+                      : "Create competition"}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {error && <div className="marketplace-error">{error}</div>}
         </div>
@@ -523,41 +773,204 @@ export default function TrainingsListPage() {
         {/* List */}
         <div className="glass-section">
           <div className="glass-card">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
+                <button
+                  type="button"
+                  className={`btn ${viewMode === "list" ? "btn-active-green" : ""}`}
+                  onClick={() => setViewMode("list")}
+                  style={{
+                    borderRadius: 0,
+                    border: "none",
+                    fontWeight: 900,
+                  }}
+                >
+                  <List size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  {locale === "fr" ? "Liste" : "List"}
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${viewMode === "calendar" ? "btn-active-green" : ""}`}
+                  onClick={() => setViewMode("calendar")}
+                  style={{
+                    borderRadius: 0,
+                    border: "none",
+                    fontWeight: 900,
+                  }}
+                >
+                  <Grid3X3 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  {locale === "fr" ? "Calendrier" : "Calendar"}
+                </button>
+              </div>
+
+              <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
+                {viewMode === "calendar" ? (
+                  (["week", "month"] as CalendarMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`btn ${calendarMode === mode ? "btn-active-dark" : ""}`}
+                      onClick={() => setCalendarMode(mode)}
+                      style={{
+                        borderRadius: 0,
+                        border: "none",
+                        fontWeight: 900,
+                      }}
+                    >
+                      {mode === "week" ? (locale === "fr" ? "Semaine" : "Week") : (locale === "fr" ? "Mois" : "Month")}
+                    </button>
+                  ))
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={`btn ${filterMode === "past" ? "btn-active-dark" : ""}`}
+                      onClick={() => setFilterMode("past")}
+                      disabled={loading}
+                      style={{ borderRadius: 0, border: "none", fontWeight: 900 }}
+                    >
+                      {locale === "fr" ? "Passés" : "Past"} ({pastCount})
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${filterMode === "planned" ? "btn-active-dark" : ""}`}
+                      onClick={() => setFilterMode("planned")}
+                      disabled={loading}
+                      style={{ borderRadius: 0, border: "none", fontWeight: 900 }}
+                    >
+                      {locale === "fr" ? "À venir" : "Upcoming"} ({plannedCount})
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : totalCount === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("trainings.nonePlanned")}</div>
+            ) : viewMode === "calendar" ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 900, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <CalendarDays size={15} />
+                    {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+                      month: "long",
+                      year: "numeric",
+                    }).format(anchorDate)}
+                  </div>
+                  <div style={{ display: "inline-flex", gap: 6 }}>
+                    <button className="btn" type="button" onClick={goPrevRange}>
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button className="btn" type="button" onClick={() => setAnchorDate(new Date())}>
+                      {locale === "fr" ? "Aujourd’hui" : "Today"}
+                    </button>
+                    <button className="btn" type="button" onClick={goNextRange}>
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 6,
+                    gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  }}
+                >
+                    {calendarDays.map((day) => {
+                      const dayKey = ymd(day);
+                      const items = itemsByDay[dayKey] ?? [];
+                      const isToday = dayKey === nowDayKey;
+                      const outOfMonth = calendarMode === "month" && day.getMonth() !== anchorDate.getMonth();
+                      return (
+                        <div
+                          key={dayKey}
+                          style={{
+                            border: isToday ? "2px solid rgba(17,24,39,0.55)" : "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 10,
+                            padding: 8,
+                            minHeight: 110,
+                            background: outOfMonth ? "rgba(243,244,246,0.55)" : "rgba(255,255,255,0.78)",
+                            opacity: outOfMonth ? 0.75 : 1,
+                            display: "grid",
+                            gap: 6,
+                            alignContent: "start",
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 900 }}>{new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", { weekday: "short", day: "2-digit" }).format(day)}</div>
+                          {items.slice(0, 3).map((it) => {
+                            const title =
+                              it.kind === "event"
+                                ? eventTypeLabel(it.event.event_type, locale === "fr" ? "fr" : "en")
+                                : it.kind === "competition"
+                                ? it.competition.event_type === "camp"
+                                  ? (locale === "fr" ? "Stage" : "Camp")
+                                  : (locale === "fr" ? "Compétition" : "Competition")
+                                : (it.session.session_type === "club" ? (locale === "fr" ? "Entraînement club" : "Club training") : typeLabel(it.session.session_type));
+                            return (
+                              <div key={it.key} style={{ fontSize: 10, fontWeight: 800, borderRadius: 8, padding: "3px 6px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.24)" }} className="truncate">
+                                {title}
+                              </div>
+                            );
+                          })}
+                          {items.length > 3 ? (
+                            <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>+{items.length - 3}</div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+              </div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pagedItems.map((item) => {
                   if (item.kind === "event") {
                     const e = item.event;
                     const clubName = clubNameById[e.club_id] ?? t("common.club");
+                    const groupName = e.group_id ? groupNameById[e.group_id] : null;
                     const isPlanned = new Date(e.starts_at).getTime() >= nowTs;
+                    const eventTone = eventTypeColor(e.event_type);
+                    const eventType = eventTypeLabel(e.event_type, locale === "fr" ? "fr" : "en");
+                    const eventTitle = eventType;
 
                     return (
                       <div
                         key={item.key}
                         className="marketplace-item"
-                        style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)" }}
+                        style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
                       >
                         <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
-                                weekday: "short",
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }).format(new Date(e.starts_at))}
+                              {eventTitle}
                             </div>
                             <div className="marketplace-price-pill">{e.duration_minutes} min</div>
                           </div>
 
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
+                            {fmtDateTime(e.starts_at)}
+                          </div>
+
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                borderRadius: 999,
+                                padding: "4px 10px",
+                                border: `1px solid ${eventTone.border}`,
+                                background: eventTone.bg,
+                                color: eventTone.text,
+                                fontWeight: 900,
+                                fontSize: 11,
+                              }}
+                            >
+                              {eventType}
+                            </span>
                             <span className="pill-soft">{clubName}</span>
+                            {groupName ? <span className="pill-soft">{groupName}</span> : null}
                             <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                               <CalendarClock size={14} />
                               {isPlanned ? t("trainings.statusPlanned") : t("trainings.statusToComplete")}
@@ -574,6 +987,49 @@ export default function TrainingsListPage() {
                               <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                               {t("trainings.enter")}
                             </Link>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (item.kind === "competition") {
+                    const c = item.competition;
+                    const isPlanned = new Date(c.starts_at).getTime() >= nowTs;
+                    const typeLabelComp =
+                      c.event_type === "camp"
+                        ? locale === "fr"
+                          ? "Stage"
+                          : "Camp"
+                        : locale === "fr"
+                        ? "Compétition"
+                        : "Competition";
+                    return (
+                      <div
+                        key={item.key}
+                        className="marketplace-item"
+                        style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
+                      >
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                              {c.title}
+                            </div>
+                            <span className="pill-soft">{typeLabelComp}</span>
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
+                            {fmtDateTime(c.starts_at)} → {fmtDateTime(c.ends_at)}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <CalendarClock size={14} />
+                              {isPlanned ? (locale === "fr" ? "À venir" : "Upcoming") : (locale === "fr" ? "Passé" : "Past")}
+                            </span>
+                            {c.location_text ? (
+                              <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                📍 {c.location_text}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -675,7 +1131,7 @@ export default function TrainingsListPage() {
             )}
           </div>
 
-          {totalCount > 0 && (
+          {viewMode === "list" && totalCount > 0 && (
             <div className="glass-section">
               <div className="marketplace-pagination">
                 <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
