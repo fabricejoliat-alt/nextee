@@ -685,19 +685,16 @@ export default function CoachGroupEditPage() {
     }
 
     const ok = window.confirm(
-      `Supprimer définitivement le groupe "${group.name}" ?\n\nCette action est irréversible.`
+      `Supprimer le groupe "${group.name}" ?\n\nLes événements futurs de ce groupe seront supprimés.\nL'historique passé sera conservé.`
     );
     if (!ok) return;
 
     setBusy(true);
     setErr(null);
 
-    // Best-effort cascade
-    await supabase.from("coach_group_categories").delete().eq("group_id", group.id);
-    await supabase.from("coach_group_players").delete().eq("group_id", group.id);
-    await supabase.from("coach_group_coaches").delete().eq("group_id", group.id);
-
-    const { error } = await supabase.from("coach_groups").delete().eq("id", group.id);
+    const { error } = await supabase.rpc("coach_group_delete_keep_history", {
+      p_group_id: group.id,
+    });
 
     if (error) {
       setErr(error.message);

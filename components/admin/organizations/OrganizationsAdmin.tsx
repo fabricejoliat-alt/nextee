@@ -334,6 +334,12 @@ export default function OrganizationsAdmin() {
                         >
                           Gérer
                         </Link>
+                        <Link
+                          href={`/admin/organizations/${org.id}/groups`}
+                          className="btn"
+                        >
+                          Groupes
+                        </Link>
                         <button
                           className="btn"
                           onClick={() => startEdit(org)}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 type Club = {
@@ -257,6 +258,11 @@ export default function OrganizationMembersAdmin() {
         <p style={{ marginTop: 6, color: "var(--muted)" }}>
           Ajoute des utilisateurs existants à cette organisation et définis leur rôle.
         </p>
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link href={`/admin/organizations/${organizationId}/groups`} className="btn">
+            Gestion des groupes
+          </Link>
+        </div>
       </div>
 
       {error && (

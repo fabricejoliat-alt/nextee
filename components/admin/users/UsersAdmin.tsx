@@ -7,7 +7,7 @@ type AppRole = "manager" | "coach" | "player" | "parent" | "captain" | "staff";
 
 type UserRow = {
   id: string;
-  email: string;
+  email: string | null;
   first_name: string | null;
   last_name: string | null;
   username: string | null;
@@ -32,7 +32,7 @@ export default function UsersAdmin() {
   const [cRole, setCRole] = useState<AppRole>("player");
   const [createdCreds, setCreatedCreds] = useState<{ username: string; tempPassword: string } | null>(null);
 
-  const canCreate = useMemo(() => cFirst.trim() && cLast.trim() && cEmail.trim(), [cFirst, cLast, cEmail]);
+  const canCreate = useMemo(() => cFirst.trim() && cLast.trim(), [cFirst, cLast]);
 
   // edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -124,7 +124,7 @@ export default function UsersAdmin() {
     setAuthPassword("");
     setForm({
       id: u.id,
-      email: u.email,
+      email: u.email ?? "",
       first_name: u.first_name ?? "",
       last_name: u.last_name ?? "",
       username: u.username ?? "",
@@ -155,7 +155,6 @@ export default function UsersAdmin() {
       userId: editingId,
       first_name: (form.first_name ?? "").toString().trim() || null,
       last_name: (form.last_name ?? "").toString().trim() || null,
-      email: (form.email ?? "").toString().trim().toLowerCase() || null,
       username: (form.username ?? "").toString().trim().toLowerCase() || null,
       role: (form.role ?? "player").toString().trim().toLowerCase(),
       auth_password: authPassword || null,
@@ -208,7 +207,7 @@ export default function UsersAdmin() {
         <form onSubmit={createUser} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
           <input placeholder="Prénom" value={cFirst} onChange={(e) => setCFirst(e.target.value)} style={inputStyle} />
           <input placeholder="Nom" value={cLast} onChange={(e) => setCLast(e.target.value)} style={inputStyle} />
-          <input placeholder="Adresse e-mail" value={cEmail} onChange={(e) => setCEmail(e.target.value)} style={inputStyle} />
+          <input placeholder="Adresse e-mail (optionnel)" value={cEmail} onChange={(e) => setCEmail(e.target.value)} style={inputStyle} />
           <select value={cRole} onChange={(e) => setCRole(e.target.value as AppRole)} style={inputStyle}>
             <option value="player">Joueur</option>
             <option value="coach">Coach</option>
@@ -261,7 +260,7 @@ export default function UsersAdmin() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <div>
                         <div style={{ fontWeight: 900 }}>{labelName(u)}</div>
-                        <div style={{ color: "var(--muted)", fontSize: 13 }}>{u.email}</div>
+                        <div style={{ color: "var(--muted)", fontSize: 13 }}>{u.email ?? "—"}</div>
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           username: {u.username ?? "—"} • rôle: {u.role ?? "player"}
                         </div>
@@ -287,13 +286,6 @@ export default function UsersAdmin() {
                           style={inputStyle}
                         />
                       </div>
-
-                      <input
-                        placeholder="Adresse e-mail"
-                        value={(form.email ?? "") as string}
-                        onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                        style={inputStyle}
-                      />
 
                       <input
                         placeholder="Username"
@@ -349,4 +341,3 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   background: "white",
 };
-

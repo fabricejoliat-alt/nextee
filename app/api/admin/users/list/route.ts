@@ -42,34 +42,13 @@ export async function GET(req: Request) {
     if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
 
     const filtered = (profiles ?? []).filter((p: any) => !adminIds.has(p.id));
-    const ids = filtered.map((p: any) => p.id);
-
-    // Auth emails (admin listUsers is paginated; for MVP we fetch first pages only if needed)
-    // We'll fetch up to 1000 users by paging.
-    const authEmailById = new Map<string, string>();
-    let page = 1;
-    const perPage = 1000;
-
-    while (true) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-
-      for (const u of data.users) {
-        if (ids.includes(u.id)) authEmailById.set(u.id, u.email ?? "");
-      }
-
-      if (data.users.length < perPage) break;
-      page += 1;
-      if (page > 10) break; // garde-fou MVP
-    }
-
     const out = filtered.map((p: any) => ({
       id: p.id,
       first_name: p.first_name ?? null,
       last_name: p.last_name ?? null,
       username: p.username ?? null,
       role: p.app_role ?? "player",
-      email: authEmailById.get(p.id) ?? "",
+      email: null,
     }));
 
     return NextResponse.json({ users: out });

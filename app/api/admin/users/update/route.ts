@@ -56,13 +56,11 @@ export async function POST(req: NextRequest) {
     if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
 
     // Update auth email/password/metadata (optional)
-    const nextEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const nextPassword = typeof body.auth_password === "string" ? body.auth_password : "";
     const hasRoleOrUsername = Boolean(nextRole || nextUsername);
 
-    if (nextEmail || nextPassword || hasRoleOrUsername) {
+    if (nextPassword || hasRoleOrUsername) {
       const patch: any = {};
-      if (nextEmail) patch.email = nextEmail;
       if (nextPassword) patch.password = nextPassword;
       if (hasRoleOrUsername) {
         patch.user_metadata = {

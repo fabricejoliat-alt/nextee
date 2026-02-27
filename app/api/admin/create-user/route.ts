@@ -48,15 +48,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const email = String(body.email || "").trim().toLowerCase();
+    const emailInput = String(body.email || "").trim().toLowerCase();
     const first_name = String(body.first_name || "").trim();
     const last_name = String(body.last_name || "").trim();
     const role = String(body.role || "player").trim().toLowerCase();
     const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);
 
-    if (!email || !first_name || !last_name) {
+    if (!first_name || !last_name) {
       return NextResponse.json(
-        { error: "Prénom, nom et email requis." },
+        { error: "Prénom et nom requis." },
         { status: 400 }
       );
     }
@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
 
     // Créer utilisateur Auth (mot de passe temporaire MVP)
     const username = await generateUniqueUsername(supabaseAdmin, first_name, last_name);
+    const email = emailInput || `${username}.${Date.now()}@noemail.local`;
     const tempPassword = randomPassword();
     const { data: created, error: createErr } =
       await supabaseAdmin.auth.admin.createUser({
@@ -136,7 +137,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      user: { id: newUserId, email },
+      user: { id: newUserId, email: emailInput || null },
       tempPassword,
       username,
       role,
