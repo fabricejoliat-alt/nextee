@@ -49,10 +49,20 @@ export default function PlayerHeader() {
 
     loadUnread();
     const onFocus = () => loadUnread();
+    const onNotificationsChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ unreadCount?: number }>;
+      const next = custom.detail?.unreadCount;
+      if (typeof next === "number" && Number.isFinite(next)) {
+        setUnreadCount(Math.max(0, next));
+        applyPwaBadge(Math.max(0, next));
+      }
+    };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("notifications:changed", onNotificationsChanged);
     return () => {
       mounted = false;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("notifications:changed", onNotificationsChanged);
     };
   }, []);
 

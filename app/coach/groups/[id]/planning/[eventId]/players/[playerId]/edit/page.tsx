@@ -307,7 +307,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
           event_id: eventId,
           group_id: groupId,
           player_id: playerId,
-          url: "/player/golf/trainings",
+          url: `/player/golf/trainings/new?club_event_id=${eventId}`,
         },
         recipientUserIds: [playerId],
       });

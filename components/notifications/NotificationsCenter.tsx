@@ -96,7 +96,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
     try {
       await markNotificationRead(id);
       setRows((prev) => prev.map((r) => (r.recipient.id === id ? { ...r, recipient: { ...r.recipient, is_read: true } } : r)));
-      applyPwaBadge(Math.max(0, unreadCount - 1));
+      const nextUnread = Math.max(0, unreadCount - 1);
+      applyPwaBadge(nextUnread);
+      window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: nextUnread } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
     }
@@ -111,7 +113,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       await deleteNotificationRecipient(id);
       setRows((prev) => prev.filter((r) => r.recipient.id !== id));
       const nextUnread = unreadCount - (target && !target.recipient.is_read ? 1 : 0);
-      applyPwaBadge(Math.max(0, nextUnread));
+      const normalized = Math.max(0, nextUnread);
+      applyPwaBadge(normalized);
+      window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: normalized } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
     }
@@ -125,6 +129,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       await markAllNotificationsRead(userId);
       setRows((prev) => prev.map((r) => ({ ...r, recipient: { ...r.recipient, is_read: true } })));
       applyPwaBadge(0);
+      window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: 0 } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
     }

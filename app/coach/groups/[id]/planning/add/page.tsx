@@ -823,7 +823,11 @@ export default function CoachGroupPlanningPage() {
           kind: "coach_event_created",
           title: msg.title,
           body: msg.body,
-          data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
+          data: {
+            event_id: eventId,
+            group_id: groupId,
+            url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+          },
           recipientUserIds: attendeeIds,
         });
       }

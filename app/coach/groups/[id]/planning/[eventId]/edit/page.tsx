@@ -814,7 +814,11 @@ export default function CoachEventEditPage() {
           kind: "coach_event_updated",
           title: msg.title,
           body: msg.body,
-          data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
+          data: {
+            event_id: eventId,
+            group_id: groupId,
+            url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+          },
           recipientUserIds: attendeeIdsSelected,
         });
       }
