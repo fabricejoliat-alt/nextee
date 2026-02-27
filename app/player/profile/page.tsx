@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type ProfileRow = {
   id: string;
@@ -43,10 +44,10 @@ type ProfileRow = {
 type ClubMember = { club_id: string };
 type Club = { id: string; name: string | null };
 
-function displayHello(firstName?: string | null) {
+function displayHello(firstName: string | null | undefined, helloLabel: string) {
   const f = (firstName ?? "").trim();
-  if (!f) return "Salut";
-  return `Salut ${f}`;
+  if (!f) return helloLabel;
+  return `${helloLabel} ${f}`;
 }
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
@@ -89,6 +90,7 @@ function getJuniorCategory(birthDateISO: string) {
 
 export default function PlayerProfilePage() {
   const router = useRouter();
+  const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -174,7 +176,7 @@ export default function PlayerProfilePage() {
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide. Reconnecte-toi.");
+      setError(t("playerProfile.error.invalidSession"));
       setLoading(false);
       return;
     }
@@ -302,7 +304,7 @@ export default function PlayerProfilePage() {
 
     const hc = parseHandicap();
     if (handicap.trim() !== "" && hc === null) {
-      setError("Handicap invalide (nombre attendu).");
+      setError(t("playerProfile.error.invalidHandicap"));
       setBusy(false);
       return;
     }
@@ -346,7 +348,7 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    setInfo("Profile saved ✅");
+    setInfo(t("playerProfile.saved"));
     setBusy(false);
   }
 
@@ -366,13 +368,13 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     if (!isAllowedImage(file)) {
-      setError("Unsupported format. Use JPG, PNG or WEBP.");
+      setError(t("playerProfile.error.unsupportedFormat"));
       return;
     }
 
     // 4MB limit (ajuste si tu veux)
     if (file.size > 4 * 1024 * 1024) {
-      setError("Image trop lourde (max 4 Mo).");
+      setError(t("playerProfile.error.imageTooLarge"));
       return;
     }
 
@@ -416,9 +418,9 @@ export default function PlayerProfilePage() {
       // ✅ REFRESH: bump de la clé juste après succès => l'image se recharge tout de suite
       setAvatarRefreshKey(Date.now());
 
-      setInfo("Profile photo updated ✅");
+      setInfo(t("playerProfile.photoUpdated"));
     } catch (err: any) {
-      setError(err?.message ?? "Erreur lors de l’upload de l’avatar.");
+      setError(err?.message ?? t("playerProfile.error.avatarUpload"));
     } finally {
       setAvatarBusy(false);
     }
@@ -451,7 +453,7 @@ export default function PlayerProfilePage() {
                 position: "relative",
                 overflow: "hidden",
               }}
-              title={loading ? "" : "Changer la photo"}
+              title={loading ? "" : t("playerProfile.changePhoto")}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarDbUrl ? (
@@ -502,7 +504,7 @@ export default function PlayerProfilePage() {
                 opacity: loading ? 0.6 : 1,
               }}
             >
-              {avatarBusy ? "Upload…" : "Changer"}
+              {avatarBusy ? t("playerProfile.uploading") : t("common.change")}
             </button>
           </div>
 
@@ -531,7 +533,11 @@ export default function PlayerProfilePage() {
           />
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(firstName)} 👋`}</div>
+            <div className="hero-title">
+              {loading
+                ? `${t("playerProfile.hello")}…`
+                : `${displayHello(firstName, t("playerProfile.hello"))} 👋`}
+            </div>
 
             <div className="hero-sub">
               <div>
@@ -552,31 +558,31 @@ export default function PlayerProfilePage() {
 
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Mon profil</div>
+          <div className="section-title">{t("common.profile")}</div>
 
           <div className="glass-card">
             {loading ? (
-              <div style={{ opacity: 0.85, fontWeight: 800 }}>Chargement…</div>
+              <div style={{ opacity: 0.85, fontWeight: 800 }}>{t("common.loading")}</div>
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
                 {/* Identité */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Identité
+                    {t("playerProfile.identity")}
                   </div>
 
                   <div className="grid-2">
-                    <Field label="First name">
+                    <Field label={t("playerProfile.firstName")}>
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                     </Field>
 
-                    <Field label="Nom">
+                    <Field label={t("playerProfile.lastName")}>
                       <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
                     </Field>
                   </div>
 
                   {/* ✅ Date de naissance sur une ligne */}
-                  <Field label="Date de naissance">
+                  <Field label={t("playerProfile.birthDate")}>
                     <input
                       type="date"
                       value={birthDate}
@@ -585,36 +591,36 @@ export default function PlayerProfilePage() {
                   </Field>
 
                   {/* ✅ Category sur une ligne */}
-                  <Field label="Category">
+                  <Field label={t("playerProfile.category")}>
                     <input value={juniorCategory} disabled />
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Sexe">
+                    <Field label={t("playerProfile.sex")}>
                       <select value={sex} onChange={(e) => setSex(e.target.value)}>
                         <option value="">—</option>
-                        <option value="male">Homme</option>
-                        <option value="female">Femme</option>
-                        <option value="other">Autre</option>
+                        <option value="male">{t("playerProfile.sexMale")}</option>
+                        <option value="female">{t("playerProfile.sexFemale")}</option>
+                        <option value="other">{t("playerProfile.sexOther")}</option>
                       </select>
                     </Field>
 
                     {/* ✅ NEW */}
-                    <Field label="Handedness">
+                    <Field label={t("playerProfile.handedness")}>
                       <select
                         value={handedness}
                         onChange={(e) => setHandedness(e.target.value as any)}
                       >
                         <option value="">—</option>
-                        <option value="right">Droite</option>
-                        <option value="left">Gauche</option>
+                        <option value="right">{t("playerProfile.handednessRight")}</option>
+                        <option value="left">{t("playerProfile.handednessLeft")}</option>
                       </select>
                     </Field>
                   </div>
 
                   {/* ✅ Handicap en plus grand, sur sa ligne */}
                   <div style={{ marginTop: 6 }}>
-                    <Field label="Handicap">
+                    <Field label={t("playerProfile.handicap")}>
                       <input
                         inputMode="decimal"
                         placeholder="ex: 25.4"
@@ -635,16 +641,14 @@ export default function PlayerProfilePage() {
 
                 {/* Contact */}
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    Contact
-                  </div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.contact")}</div>
 
                   <div className="grid-2">
-                    <Field label="Phone">
+                    <Field label={t("playerProfile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
-                    <Field label="Email (login)">
+                    <Field label={t("playerProfile.emailLogin")}>
                       <input value={email} disabled />
                     </Field>
                   </div>
@@ -654,20 +658,18 @@ export default function PlayerProfilePage() {
 
                 {/* Adresse */}
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    Adresse
-                  </div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.addressSection")}</div>
 
-                  <Field label="Adresse">
+                  <Field label={t("playerProfile.address")}>
                     <input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Code postal">
+                    <Field label={t("playerProfile.postalCode")}>
                       <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
-                    <Field label="City">
+                    <Field label={t("playerProfile.city")}>
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
                     </Field>
                   </div>
@@ -678,10 +680,10 @@ export default function PlayerProfilePage() {
                 {/* ✅ Admin */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Administratif
+                    {t("playerProfile.administrative")}
                   </div>
 
-                  <Field label="No AVS">
+                  <Field label={t("playerProfile.avsNo")}>
                     <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
                   </Field>
                 </div>
@@ -690,23 +692,23 @@ export default function PlayerProfilePage() {
 
                 {/* ✅ Parents */}
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    Coordonnées des parents
-                  </div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.parents")}</div>
 
-                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 1</div>
+                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>
+                    {t("playerProfile.parent1")}
+                  </div>
                   <div className="grid-2">
-                    <Field label="Full name">
+                    <Field label={t("playerProfile.fullName")}>
                       <input value={parent1Name} onChange={(e) => setParent1Name(e.target.value)} />
                     </Field>
-                    <Field label="Phone">
+                    <Field label={t("playerProfile.phone")}>
                       <input
                         value={parent1Phone}
                         onChange={(e) => setParent1Phone(e.target.value)}
                       />
                     </Field>
                   </div>
-                  <Field label="Email">
+                  <Field label={t("playerProfile.email")}>
                     <input
                       inputMode="email"
                       value={parent1Email}
@@ -716,19 +718,21 @@ export default function PlayerProfilePage() {
 
                   <div className="hr-soft" style={{ margin: "6px 0" }} />
 
-                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>Parent 2</div>
+                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>
+                    {t("playerProfile.parent2")}
+                  </div>
                   <div className="grid-2">
-                    <Field label="Full name">
+                    <Field label={t("playerProfile.fullName")}>
                       <input value={parent2Name} onChange={(e) => setParent2Name(e.target.value)} />
                     </Field>
-                    <Field label="Phone">
+                    <Field label={t("playerProfile.phone")}>
                       <input
                         value={parent2Phone}
                         onChange={(e) => setParent2Phone(e.target.value)}
                       />
                     </Field>
                   </div>
-                  <Field label="Email">
+                  <Field label={t("playerProfile.email")}>
                     <input
                       inputMode="email"
                       value={parent2Email}
@@ -746,7 +750,7 @@ export default function PlayerProfilePage() {
                     disabled={!canSave}
                     style={compactBtnStyle}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer"}
+                    {busy ? t("playerProfile.saving") : t("common.save")}
                   </button>
                 </div>
               </div>
@@ -794,6 +798,7 @@ type CropAvatarModalProps = {
 };
 
 function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvatarModalProps) {
+  const { t } = useI18n();
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
@@ -842,7 +847,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
         }}
       >
         <div style={{ padding: 14, fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
-          Recadrer la photo
+          {t("playerProfile.cropTitle")}
         </div>
 
         <div style={{ position: "relative", height: 340, background: "rgba(0,0,0,0.35)" }}>
@@ -862,7 +867,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
         <div style={{ padding: 14, display: "grid", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,0.85)" }}>
-              Zoom
+              {t("playerProfile.zoom")}
             </div>
             <input
               type="range"
@@ -884,7 +889,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
               className="btn"
               style={{ width: "100%", opacity: busy ? 0.65 : 1 }}
             >
-              Annuler
+              {t("common.cancel")}
             </button>
 
             <button
@@ -899,12 +904,12 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
                 onClose();
               }}
             >
-              {busy ? "Enregistrement…" : "Valider"}
+              {busy ? t("playerProfile.saving") : t("playerProfile.validate")}
             </button>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.7)" }}>
-            Astuce : centre le visage / logo dans le cercle.
+            {t("playerProfile.cropHint")}
           </div>
         </div>
       </div>

@@ -215,11 +215,29 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
                         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           {!r.recipient.is_read ? (
-                            <button className="btn" type="button" disabled={busy} onClick={() => onRead(r.recipient.id)}>
+                            <button
+                              className="btn"
+                              type="button"
+                              disabled={busy}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void onRead(r.recipient.id);
+                              }}
+                            >
                               {tr("Marquer lu", "Mark read")}
                             </button>
                           ) : null}
-                          <button className="btn btn-danger soft" type="button" disabled={busy} onClick={() => onDelete(r.recipient.id)}>
+                          <button
+                            className="btn btn-danger soft"
+                            type="button"
+                            disabled={busy}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void onDelete(r.recipient.id);
+                            }}
+                          >
                             <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                             {tr("Effacer", "Delete")}
                           </button>
