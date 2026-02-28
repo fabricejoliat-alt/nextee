@@ -182,6 +182,7 @@ export default function PlayerTrainingNewPage() {
 
   const plannedMinutes = linkedEvent?.duration_minutes ?? 0;
   const inputsDisabled = busy || isAbsent;
+  const isCoachPlannedTraining = Boolean(linkedEvent);
 
   const plannedCoachSummary = useMemo(() => {
     if (!linkedEvent) return "";
@@ -689,9 +690,9 @@ export default function PlayerTrainingNewPage() {
       return;
     }
 
-    const mot = motivation ? Number(motivation) : null;
-    const dif = difficulty ? Number(difficulty) : null;
-    const sat = satisfaction ? Number(satisfaction) : null;
+    const mot = isCoachPlannedTraining ? null : motivation ? Number(motivation) : null;
+    const dif = isCoachPlannedTraining ? null : difficulty ? Number(difficulty) : null;
+    const sat = isCoachPlannedTraining ? null : satisfaction ? Number(satisfaction) : null;
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
@@ -727,7 +728,7 @@ export default function PlayerTrainingNewPage() {
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
-        notes: notes.trim() || null,
+        notes: isCoachPlannedTraining ? null : notes.trim() || null,
 
         // ✅ total minutes
         total_minutes: totalMinutes,
@@ -857,12 +858,21 @@ export default function PlayerTrainingNewPage() {
                     <span style={fieldLabelStyle}>
                       {t("common.date")} {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.real")})</span> : null}
                     </span>
-                    <input type="date" value={startDate} onChange={(e) => updateStartDate(e.target.value)} disabled={inputsDisabled} />
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => updateStartDate(e.target.value)}
+                      disabled={inputsDisabled || isCoachPlannedTraining}
+                    />
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>{t("common.time")}</span>
-                    <select value={startTime} onChange={(e) => updateStartTime(e.target.value)} disabled={inputsDisabled}>
+                    <select
+                      value={startTime}
+                      onChange={(e) => updateStartTime(e.target.value)}
+                      disabled={inputsDisabled || isCoachPlannedTraining}
+                    >
                       {QUARTER_HOUR_OPTIONS.map((t) => (
                         <option key={t} value={t}>
                           {t}
@@ -889,33 +899,15 @@ export default function PlayerTrainingNewPage() {
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "club" ? chipRadioActive : {}), opacity: linkedEvent ? 0.7 : 1 }}>
-                      <input type="radio" checked={sessionType === "club"} onChange={() => setType("club")} disabled={inputsDisabled || Boolean(linkedEvent)} />
-                      <span>{t("trainingDetail.typeClub")}</span>
-                    </label>
-
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
-                      <input
-                        type="radio"
-                        checked={sessionType === "private"}
-                        onChange={() => setType("private")}
-                        disabled={inputsDisabled || Boolean(linkedEvent)}
-                      />
-                      <span>{t("trainingDetail.typePrivate")}</span>
-                    </label>
-
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}), opacity: linkedEvent ? 0.5 : 1 }}>
-                      <input
-                        type="radio"
-                        checked={sessionType === "individual"}
-                        onChange={() => setType("individual")}
-                        disabled={inputsDisabled || Boolean(linkedEvent)}
-                      />
-                      <span>{t("trainingDetail.typeIndividual")}</span>
-                    </label>
-                  </div>
+                  <select
+                    value={sessionType}
+                    onChange={(e) => setType(e.target.value as SessionType)}
+                    disabled={inputsDisabled || Boolean(linkedEvent)}
+                  >
+                    <option value="club">{t("trainingDetail.typeClub")}</option>
+                    <option value="private">{t("trainingDetail.typePrivate")}</option>
+                    <option value="individual">{t("trainingDetail.typeIndividual")}</option>
+                  </select>
 
                   {sessionType === "club" && (
                     <label style={{ display: "grid", gap: 6 }}>
@@ -1194,58 +1186,62 @@ export default function PlayerTrainingNewPage() {
                   </div>
                 </div>
 
-                <div className="hr-soft" />
+                {!isCoachPlannedTraining ? (
+                  <>
+                    <div className="hr-soft" />
 
-                <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
-                    <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={inputsDisabled}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
+                        <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={inputsDisabled}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
-                    <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={inputsDisabled}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
+                        <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={inputsDisabled}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
-                    <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={inputsDisabled}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
+                        <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={inputsDisabled}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
 
-                <div className="hr-soft" />
+                    <div className="hr-soft" />
 
-                <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
-                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    disabled={inputsDisabled}
-                    placeholder={t("roundsNew.notesPlaceholder")}
-                    style={{ minHeight: 110 }}
-                  />
-                </label>
+                    <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
+                      <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        disabled={inputsDisabled}
+                        placeholder={t("roundsNew.notesPlaceholder")}
+                        style={{ minHeight: 110 }}
+                      />
+                    </label>
+                  </>
+                ) : null}
 
                 {/* ✅ action buttons */}
                 {isAbsent && linkedEvent ? (
@@ -1281,24 +1277,4 @@ const fieldLabelStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
-};
-
-const chipRadioStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  border: "1px solid rgba(0,0,0,0.12)",
-  borderRadius: 999,
-  padding: "8px 12px",
-  background: "rgba(255,255,255,0.70)",
-  fontWeight: 900,
-  fontSize: 13,
-  color: "rgba(0,0,0,0.78)",
-  cursor: "pointer",
-  userSelect: "none",
-};
-
-const chipRadioActive: CSSProperties = {
-  borderColor: "rgba(53,72,59,0.35)",
-  background: "rgba(53,72,59,0.10)",
 };

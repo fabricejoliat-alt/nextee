@@ -31,6 +31,7 @@ type SessionDbRow = {
   satisfaction: number | null;
   notes: string | null;
   total_minutes: number | null;
+  club_event_id?: string | null;
 };
 
 type ItemDbRow = {
@@ -95,6 +96,7 @@ export default function PlayerTrainingEditPage() {
   const [sessionType, setSessionType] = useState<SessionType>("club");
   const [coachName, setCoachName] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [isCoachPlannedTraining, setIsCoachPlannedTraining] = useState(false);
 
   // sensations 1..6
   const [motivation, setMotivation] = useState<string>("");
@@ -187,7 +189,7 @@ export default function PlayerTrainingEditPage() {
       const sRes = await supabase
         .from("training_sessions")
         .select(
-          "id,user_id,start_at,location_text,session_type,club_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes"
+          "id,user_id,start_at,location_text,session_type,club_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes,club_event_id"
         )
         .eq("id", sessionId)
         .maybeSingle();
@@ -221,6 +223,7 @@ export default function PlayerTrainingEditPage() {
       setMotivation(typeof sess.motivation === "number" ? String(sess.motivation) : "");
       setDifficulty(typeof sess.difficulty === "number" ? String(sess.difficulty) : "");
       setSatisfaction(typeof sess.satisfaction === "number" ? String(sess.satisfaction) : "");
+      setIsCoachPlannedTraining(Boolean(sess.club_event_id));
 
       const cid = sess.session_type === "club" ? (sess.club_id ?? "") : "";
       if (sess.session_type === "club") {
@@ -291,9 +294,9 @@ export default function PlayerTrainingEditPage() {
       return;
     }
 
-    const mot = motivation ? Number(motivation) : null;
-    const dif = difficulty ? Number(difficulty) : null;
-    const sat = satisfaction ? Number(satisfaction) : null;
+    const mot = isCoachPlannedTraining ? null : motivation ? Number(motivation) : null;
+    const dif = isCoachPlannedTraining ? null : difficulty ? Number(difficulty) : null;
+    const sat = isCoachPlannedTraining ? null : satisfaction ? Number(satisfaction) : null;
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
@@ -305,11 +308,11 @@ export default function PlayerTrainingEditPage() {
         location_text: place.trim() || null,
         session_type: sessionType,
         club_id,
-        coach_name: coachName.trim() || null,
+        coach_name: isCoachPlannedTraining ? coachName || null : coachName.trim() || null,
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
-        notes: notes.trim() || null,
+        notes: isCoachPlannedTraining ? null : notes.trim() || null,
         total_minutes: totalMinutes,
       })
       .eq("id", sessionId);
@@ -390,7 +393,7 @@ export default function PlayerTrainingEditPage() {
                       type="datetime-local"
                       value={startAt}
                       onChange={(e) => setStartAt(e.target.value)}
-                      disabled={busy}
+                      disabled={busy || isCoachPlannedTraining}
                     />
                   </label>
 
@@ -421,7 +424,7 @@ export default function PlayerTrainingEditPage() {
                   <input
                     value={place}
                     onChange={(e) => setPlace(e.target.value)}
-                    disabled={busy}
+                    disabled={busy || isCoachPlannedTraining}
                     placeholder={t("trainingNew.placePlaceholder")}
                   />
                 </label>
@@ -430,33 +433,15 @@ export default function PlayerTrainingEditPage() {
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "club" ? chipRadioActive : {}) }}>
-                      <input type="radio" checked={sessionType === "club"} onChange={() => setType("club")} disabled={busy} />
-                      <span>{t("trainingDetail.typeClub")}</span>
-                    </label>
-
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "private" ? chipRadioActive : {}) }}>
-                      <input
-                        type="radio"
-                        checked={sessionType === "private"}
-                        onChange={() => setType("private")}
-                        disabled={busy}
-                      />
-                      <span>{t("trainingDetail.typePrivate")}</span>
-                    </label>
-
-                    <label style={{ ...chipRadioStyle, ...(sessionType === "individual" ? chipRadioActive : {}) }}>
-                      <input
-                        type="radio"
-                        checked={sessionType === "individual"}
-                        onChange={() => setType("individual")}
-                        disabled={busy}
-                      />
-                      <span>{t("trainingDetail.typeIndividual")}</span>
-                    </label>
-                  </div>
+                  <select
+                    value={sessionType}
+                    onChange={(e) => setType(e.target.value as SessionType)}
+                    disabled={busy || isCoachPlannedTraining}
+                  >
+                    <option value="club">{t("trainingDetail.typeClub")}</option>
+                    <option value="private">{t("trainingDetail.typePrivate")}</option>
+                    <option value="individual">{t("trainingDetail.typeIndividual")}</option>
+                  </select>
 
                   {sessionType === "club" && (
                     <label style={{ display: "grid", gap: 6 }}>
@@ -464,7 +449,7 @@ export default function PlayerTrainingEditPage() {
                       <select
                         value={clubIdForTraining}
                         onChange={(e) => setClubIdForTraining(e.target.value)}
-                        disabled={busy || clubIds.length === 0}
+                        disabled={busy || clubIds.length === 0 || isCoachPlannedTraining}
                       >
                         <option value="">-</option>
                         {clubIds.map((id) => (
@@ -481,7 +466,7 @@ export default function PlayerTrainingEditPage() {
                     <input
                       value={coachName}
                       onChange={(e) => setCoachName(e.target.value)}
-                      disabled={busy}
+                      disabled
                       placeholder={t("trainingEdit.coachPlaceholder")}
                     />
                   </label>
@@ -578,58 +563,62 @@ export default function PlayerTrainingEditPage() {
                   </div>
                 </div>
 
-                <div className="hr-soft" />
+                {!isCoachPlannedTraining ? (
+                  <>
+                    <div className="hr-soft" />
 
-                <div style={{ display: "grid", gap: 10 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
-                    <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={busy}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
+                        <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={busy}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
-                    <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={busy}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
+                        <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={busy}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
-                    <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={busy}>
-                      <option value="">-</option>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                        <option key={v} value={String(v)}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
+                        <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={busy}>
+                          <option value="">-</option>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
+                            <option key={v} value={String(v)}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
 
-                <div className="hr-soft" />
+                    <div className="hr-soft" />
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    disabled={busy}
-                    placeholder={t("roundsNew.notesPlaceholder")}
-                    style={{ minHeight: 110 }}
-                  />
-                </label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        disabled={busy}
+                        placeholder={t("roundsNew.notesPlaceholder")}
+                        style={{ minHeight: 110 }}
+                      />
+                    </label>
+                  </>
+                ) : null}
 
                 <button
                   className="btn"
@@ -657,24 +646,4 @@ const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
-};
-
-const chipRadioStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  border: "1px solid rgba(0,0,0,0.12)",
-  borderRadius: 999,
-  padding: "8px 12px",
-  background: "rgba(255,255,255,0.70)",
-  fontWeight: 900,
-  fontSize: 13,
-  color: "rgba(0,0,0,0.78)",
-  cursor: "pointer",
-  userSelect: "none",
-};
-
-const chipRadioActive: React.CSSProperties = {
-  borderColor: "rgba(53,72,59,0.35)",
-  background: "rgba(53,72,59,0.10)",
 };

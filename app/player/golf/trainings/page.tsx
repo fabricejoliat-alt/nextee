@@ -34,6 +34,15 @@ type SessionItemRow = {
   created_at?: string;
 };
 
+type EventStructureItemRow = {
+  event_id: string;
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+  created_at?: string;
+};
+
 type PlannedEventRow = {
   id: string; // club_events.id
   event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
@@ -117,6 +126,20 @@ function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
 }
 
+function fmtDateLabelNoTimeShort(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      day: "numeric",
+      month: "long",
+    }).format(d);
+  }
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "short" }).format(d);
+  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
+}
+
 function fmtHourLabel(iso: string, locale: "fr" | "en") {
   const d = new Date(iso);
   if (locale === "en") {
@@ -125,6 +148,11 @@ function fmtHourLabel(iso: string, locale: "fr" | "en") {
   const h = d.getHours();
   const m = d.getMinutes();
   return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
+function hasDisplayableTime(iso: string) {
+  const d = new Date(iso);
+  return d.getHours() !== 0 || d.getMinutes() !== 0;
 }
 
 function sameDay(aIso: string, bIso: string) {
@@ -148,10 +176,10 @@ function eventTypeLabel(v: PlannedEventRow["event_type"], locale: "fr" | "en") {
   return "Événement";
 }
 
-function typeLabel(t: SessionRow["session_type"]) {
-  if (t === "club") return "Club";
-  if (t === "private") return "Private";
-  return "Individual";
+function typeLabel(t: SessionRow["session_type"], locale: "fr" | "en") {
+  if (t === "club") return locale === "fr" ? "Entraînement club" : "Club training";
+  if (t === "private") return locale === "fr" ? "Cours privé" : "Private lesson";
+  return locale === "fr" ? "Entraînement individuel" : "Individual training";
 }
 
 function uuidOrNull(v: any) {
@@ -242,6 +270,7 @@ export default function TrainingsListPage() {
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [itemsBySessionId, setItemsBySessionId] = useState<Record<string, SessionItemRow[]>>({});
+  const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, EventStructureItemRow[]>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("planned");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -459,6 +488,27 @@ export default function TrainingsListPage() {
 
         if (eRes.error) throw new Error(eRes.error.message);
         events = (eRes.data ?? []) as PlannedEventRow[];
+
+        const esRes = await supabase
+          .from("club_event_structure_items")
+          .select("event_id,category,minutes,note,position,created_at")
+          .in("event_id", eventIds)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true });
+        if (!esRes.error) {
+          const map: Record<string, EventStructureItemRow[]> = {};
+          (esRes.data ?? []).forEach((r: any) => {
+            const eid = String(r.event_id ?? "");
+            if (!eid) return;
+            if (!map[eid]) map[eid] = [];
+            map[eid].push(r as EventStructureItemRow);
+          });
+          setEventStructureByEventId(map);
+        } else {
+          setEventStructureByEventId({});
+        }
+      } else {
+        setEventStructureByEventId({});
       }
       setAttendeeEvents(events);
 
@@ -564,6 +614,7 @@ export default function TrainingsListPage() {
       setClubNameById({});
       setGroupNameById({});
       setItemsBySessionId({});
+      setEventStructureByEventId({});
       setLoading(false);
     }
   }
@@ -1047,7 +1098,7 @@ export default function TrainingsListPage() {
                                 ? it.competition.event_type === "camp"
                                   ? (locale === "fr" ? "Stage" : "Camp")
                                   : (locale === "fr" ? "Compétition" : "Competition")
-                                : (it.session.session_type === "club" ? (locale === "fr" ? "Entraînement club" : "Club training") : typeLabel(it.session.session_type));
+                                : typeLabel(it.session.session_type, locale === "fr" ? "fr" : "en");
                             return (
                               <div key={it.key} style={{ fontSize: 10, fontWeight: 800, borderRadius: 8, padding: "3px 6px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.24)" }} className="truncate">
                                 {title}
@@ -1076,6 +1127,9 @@ export default function TrainingsListPage() {
                     const eventType = eventTypeLabel(e.event_type, locale === "fr" ? "fr" : "en");
                     const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                     const isTraining = e.event_type === "training";
+                    const isCollapsedTraining = isTraining && attendanceStatus === "absent";
+                    const eventStructure = eventStructureByEventId[e.id] ?? [];
+                    const showEventStructure = isTraining && attendanceStatus === "present" && eventStructure.length > 0;
                     let eventTitle = eventType;
                     const customName = (e.title ?? "").trim();
                     if (e.event_type === "training") {
@@ -1096,11 +1150,77 @@ export default function TrainingsListPage() {
                       >
                         <div style={{ display: "grid", gap: 10 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: 2,
+                                fontSize: 12,
+                                fontWeight: 950,
+                                color: "rgba(0,0,0,0.82)",
+                              }}
+                            >
+                              {isMultiDay ? (
+                                <div>
+                                  {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(eventEnd, locale === "fr" ? "fr" : "en")}
+                                </div>
+                              ) : (
+                                <div>
+                                  {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                                  <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                    {locale === "fr"
+                                      ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
+                                      : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            {isTraining ? (
+                              <button
+                                type="button"
+                                aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
+                                role="switch"
+                                aria-checked={attendanceStatus === "present"}
+                                onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                                disabled={attendanceBusyEventId === e.id}
+                                style={{
+                                  width: 46,
+                                  height: 26,
+                                  borderRadius: 999,
+                                  border: "1px solid rgba(0,0,0,0.18)",
+                                  background:
+                                    attendanceStatus === "present"
+                                      ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
+                                      : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
+                                  padding: 2,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
+                                  transition: "all 180ms ease",
+                                  cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
+                                  flex: "0 0 auto",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: "50%",
+                                    background: "#fff",
+                                    boxShadow: "0 1px 3px rgba(0,0,0,0.24)",
+                                  }}
+                                />
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                                 {eventTitle}
                               </div>
-                              {isTraining ? (
+                              {isTraining && !isCollapsedTraining ? (
                                 <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
                                   {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
                                 </div>
@@ -1108,88 +1228,46 @@ export default function TrainingsListPage() {
                             </div>
                           </div>
 
-                          <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
-                            {isMultiDay ? (
-                              <>
-                                <div>{locale === "fr" ? "Du" : "From"} {fmtDateAtLabel(e.starts_at, locale === "fr" ? "fr" : "en")}</div>
-                                <div>{locale === "fr" ? "au" : "to"}</div>
-                                <div>{fmtDateAtLabel(eventEnd, locale === "fr" ? "fr" : "en")}</div>
-                              </>
-                            ) : (
-                              <div>
-                                {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")}{" "}
-                                <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                  {locale === "fr"
-                                    ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
-                                    : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                          {!isCollapsedTraining ? (
+                            <>
+                              {e.location_text ? (
+                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                  📍 {e.location_text}
+                                </div>
+                              ) : null}
 
-                          {e.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                              📍 {e.location_text}
-                            </div>
+                              {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
+
+                              {showEventStructure ? (
+                                <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                                  {eventStructure.map((p, i) => {
+                                    const extra = (p.note ?? "").trim();
+                                    return (
+                                      <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                        {categoryLabel(p.category)} — {p.minutes} min
+                                        {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : null}
+
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "flex-start",
+                                  gap: 8,
+                                  flexWrap: "wrap",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {locale === "fr" ? "Éditer" : "Edit"}
+                                </Link>
+                              </div>
+                            </>
                           ) : null}
-
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: isTraining ? "space-between" : "flex-start",
-                              gap: 8,
-                              flexWrap: "wrap",
-                              alignItems: "center",
-                            }}
-                          >
-                            <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
-                              <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                              {locale === "fr" ? "Éditer" : "Edit"}
-                            </Link>
-                            {isTraining ? (
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ fontSize: 11, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                  {attendanceStatus === "present"
-                                    ? (locale === "fr" ? "Présent" : "Present")
-                                    : (locale === "fr" ? "Absent" : "Absent")}
-                                </span>
-                                <button
-                                  type="button"
-                                  aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
-                                  role="switch"
-                                  aria-checked={attendanceStatus === "present"}
-                                  onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
-                                  disabled={attendanceBusyEventId === e.id}
-                                  style={{
-                                    width: 46,
-                                    height: 26,
-                                    borderRadius: 999,
-                                    border: "1px solid rgba(0,0,0,0.18)",
-                                    background:
-                                      attendanceStatus === "present"
-                                        ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
-                                        : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
-                                    padding: 2,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
-                                    transition: "all 180ms ease",
-                                    cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      width: 20,
-                                      height: 20,
-                                      borderRadius: "50%",
-                                      background: "#fff",
-                                      boxShadow: "0 1px 3px rgba(0,0,0,0.24)",
-                                    }}
-                                  />
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
                         </div>
                       </div>
                     );
@@ -1213,21 +1291,28 @@ export default function TrainingsListPage() {
                         style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
                       >
                         <div style={{ display: "grid", gap: 10 }}>
+                          <div
+                            style={{
+                              display: "grid",
+                              gap: 2,
+                              fontSize: 12,
+                              fontWeight: 950,
+                              color: "rgba(0,0,0,0.82)",
+                            }}
+                          >
+                            {sameDay(c.starts_at, c.ends_at) ? (
+                              <div>{fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                            ) : (
+                              <div>
+                                {fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(c.ends_at, locale === "fr" ? "fr" : "en")}
+                              </div>
+                            )}
+                          </div>
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                               {competitionTitle}
                             </div>
-                          </div>
-                          <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
-                            {sameDay(c.starts_at, c.ends_at) ? (
-                              <div>{fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
-                            ) : (
-                              <>
-                                <div>{locale === "fr" ? "Du" : "From"} {fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
-                                <div>{locale === "fr" ? "au" : "to"}</div>
-                                <div>{fmtDateLabelNoTime(c.ends_at, locale === "fr" ? "fr" : "en")}</div>
-                              </>
-                            )}
                           </div>
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                             {c.location_text ? (
@@ -1245,32 +1330,39 @@ export default function TrainingsListPage() {
                   const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
                   const deleting = deletingId === s.id;
                   const postes = itemsBySessionId[s.id] ?? [];
+                  const sessionTitle =
+                    s.session_type === "club"
+                      ? `${locale === "fr" ? "Entraînement" : "Training"}${clubName ? ` • ${clubName}` : ""}`
+                      : `${typeLabel(s.session_type, locale === "fr" ? "fr" : "en")}`;
 
                   return (
                     <Link key={item.key} href={`/player/golf/trainings/${s.id}`} className="marketplace-link">
                       <div className="marketplace-item">
                         <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
-                                weekday: "short",
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }).format(new Date(s.start_at))}
-                            </div>
-                            <div className="marketplace-price-pill">{(s.total_minutes ?? 0) > 0 ? `${s.total_minutes} ${t("common.min")}` : "—"}</div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gap: 2,
+                              fontSize: 12,
+                              fontWeight: 950,
+                              color: "rgba(0,0,0,0.82)",
+                            }}
+                          >
+                            <div>{fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")}</div>
+                            {hasDisplayableTime(s.start_at) ? (
+                              <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                {fmtHourLabel(s.start_at, locale === "fr" ? "fr" : "en")}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {sessionTitle}
                           </div>
 
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                            {s.session_type === "club" ? (
-                              clubName && <span className="pill-soft">{clubName}</span>
-                            ) : (
-                              <span className="pill-soft">{typeLabel(s.session_type)}</span>
-                            )}
-
                             {s.club_event_id ? <span className="pill-soft">{t("common.coach")}</span> : null}
 
                             {s.location_text && (
