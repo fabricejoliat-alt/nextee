@@ -1756,6 +1756,22 @@ input[type="radio"]{
 
 /* Mobile web browser only: lift bottom nav a bit and improve readability */
 @media (display-mode: browser) and (max-width: 899px) {
+  html{
+    background-image: none;
+  }
+
+  body::before{
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: url("/background.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
   .mobile-nav{
     left: 8px;
     right: 8px;
