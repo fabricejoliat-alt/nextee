@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
-import { Flame, Mountain, Smile, CalendarClock, Pencil, CalendarDays, List, Grid3X3, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionRow = {
@@ -70,8 +70,17 @@ type PlayerActivityEventRow = {
 };
 
 type FilterMode = "planned" | "past";
-type ViewMode = "list" | "calendar";
-type CalendarMode = "week" | "month";
+type PlannedTypeFilter =
+  | "all"
+  | "training"
+  | "interclub"
+  | "camp"
+  | "session"
+  | "event"
+  | "competition"
+  | "club"
+  | "private"
+  | "individual";
 
 type DisplayItem =
   | { kind: "session"; key: string; dateIso: string; session: SessionRow }
@@ -194,39 +203,6 @@ function clamp(n: number, a: number, b: number) {
 
 const MAX_SCORE = 6;
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
-function endOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-function addDays(d: Date, n: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-function startOfWeek(d: Date) {
-  const x = startOfDay(d);
-  const day = x.getDay();
-  const diff = (day + 6) % 7;
-  return addDays(x, -diff);
-}
-function endOfWeek(d: Date) {
-  return endOfDay(addDays(startOfWeek(d), 6));
-}
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-}
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-function ymd(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function RatingBar({
   icon,
   label,
@@ -273,9 +249,7 @@ export default function TrainingsListPage() {
   const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, EventStructureItemRow[]>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("planned");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>("month");
-  const [anchorDate, setAnchorDate] = useState<Date>(new Date());
+  const [plannedTypeFilter, setPlannedTypeFilter] = useState<PlannedTypeFilter>("all");
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const [page, setPage] = useState(1);
@@ -391,7 +365,18 @@ export default function TrainingsListPage() {
         competition,
       }));
 
-      return [...plannedEventItems, ...futureSessionItems, ...plannedCompetitionItems].sort(
+      const allPlannedItems = [...plannedEventItems, ...futureSessionItems, ...plannedCompetitionItems];
+      const filteredPlannedItems =
+        plannedTypeFilter === "all"
+          ? allPlannedItems
+          : allPlannedItems.filter((it) => {
+              if (it.kind === "event") return it.event.event_type === plannedTypeFilter;
+              if (it.kind === "competition") return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
+              if (it.kind === "session") return it.session.session_type === plannedTypeFilter;
+              return true;
+            });
+
+      return filteredPlannedItems.sort(
         (a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()
       );
     }
@@ -420,7 +405,7 @@ export default function TrainingsListPage() {
     return [...pastSessionItems, ...pastEventItems, ...pastCompetitionItems].sort(
       (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
     );
-  }, [filterMode, plannedEvents, futureSessions, pastSessions, plannedCompetitions, pastCompetitions, pastAttendeeEvents]);
+  }, [filterMode, plannedEvents, futureSessions, pastSessions, plannedCompetitions, pastCompetitions, pastAttendeeEvents, plannedTypeFilter]);
 
   const plannedCount = plannedEvents.length + futureSessions.length + plannedCompetitions.length;
   const pastCount = pastSessions.length + pastAttendeeEvents.length + pastCompetitions.length;
@@ -629,7 +614,7 @@ export default function TrainingsListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filterMode]);
+  }, [filterMode, plannedTypeFilter]);
 
   async function handleDelete(sessionId: string) {
     const ok = window.confirm(t("trainings.confirmDelete"));
@@ -773,44 +758,6 @@ export default function TrainingsListPage() {
     }
 
     setAttendanceBusyEventId("");
-  }
-
-  const calendarDays = useMemo(() => {
-    if (calendarMode === "week") {
-      const from = startOfWeek(anchorDate);
-      return Array.from({ length: 7 }, (_, i) => addDays(from, i));
-    }
-    const first = startOfMonth(anchorDate);
-    const last = endOfMonth(anchorDate);
-    const from = startOfWeek(first);
-    const to = endOfWeek(last);
-    const out: Date[] = [];
-    for (let d = new Date(from); d.getTime() <= to.getTime(); d = addDays(d, 1)) out.push(new Date(d));
-    return out;
-  }, [anchorDate, calendarMode]);
-
-  const itemsByDay = useMemo(() => {
-    const map: Record<string, DisplayItem[]> = {};
-    for (const it of displayItems) {
-      const dt = new Date(it.dateIso);
-      if (Number.isNaN(dt.getTime())) continue;
-      const key = ymd(dt);
-      if (!map[key]) map[key] = [];
-      map[key].push(it);
-    }
-    Object.values(map).forEach((arr) => arr.sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()));
-    return map;
-  }, [displayItems]);
-
-  const nowDayKey = ymd(new Date());
-
-  function goPrevRange() {
-    if (calendarMode === "week") setAnchorDate((d) => addDays(d, -7));
-    else setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  }
-  function goNextRange() {
-    if (calendarMode === "week") setAnchorDate((d) => addDays(d, 7));
-    else setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
   }
 
   return (
@@ -960,159 +907,69 @@ export default function TrainingsListPage() {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
+        <div className="glass-section">
+          <div
+            style={{
+              border: "1px solid rgba(0,0,0,0.10)",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.70)",
+              padding: 12,
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>
+              <Filter size={14} />
+              {locale === "fr" ? "Filtrer mon activité" : "Filter my activity"}
+            </div>
+
+            <select
+              value={plannedTypeFilter}
+              onChange={(e) => setPlannedTypeFilter(e.target.value as PlannedTypeFilter)}
+              disabled={loading}
+            >
+              <option value="all">{locale === "fr" ? "Tous" : "All"}</option>
+              <option value="training">{locale === "fr" ? "Entraînement" : "Training"}</option>
+              <option value="interclub">{locale === "fr" ? "Interclubs" : "Interclub"}</option>
+              <option value="camp">{locale === "fr" ? "Stage" : "Camp"}</option>
+              <option value="session">{locale === "fr" ? "Réunion" : "Session"}</option>
+              <option value="event">{locale === "fr" ? "Événement" : "Event"}</option>
+              <option value="competition">{locale === "fr" ? "Compétition" : "Competition"}</option>
+              <option value="club">{locale === "fr" ? "Entraînement club" : "Club training"}</option>
+              <option value="private">{locale === "fr" ? "Cours privé" : "Private lesson"}</option>
+              <option value="individual">{locale === "fr" ? "Entraînement individuel" : "Individual training"}</option>
+            </select>
+
+            <div style={{ display: "inline-flex", width: "100%", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
+              <button
+                type="button"
+                className={`btn ${filterMode === "past" ? "btn-active-dark" : ""}`}
+                onClick={() => setFilterMode("past")}
+                disabled={loading}
+                style={{ borderRadius: 0, border: "none", fontWeight: 900, width: "50%" }}
+              >
+                {locale === "fr" ? "Passés" : "Past"} ({pastCount})
+              </button>
+              <button
+                type="button"
+                className={`btn ${filterMode === "planned" ? "btn-active-dark" : ""}`}
+                onClick={() => setFilterMode("planned")}
+                disabled={loading}
+                style={{ borderRadius: 0, border: "none", fontWeight: 900, width: "50%" }}
+              >
+                {locale === "fr" ? "À venir" : "Upcoming"} ({plannedCount})
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* List */}
         <div className="glass-section">
           <div className="glass-card">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-              <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
-                <button
-                  type="button"
-                  className={`btn ${viewMode === "list" ? "btn-active-green" : ""}`}
-                  onClick={() => setViewMode("list")}
-                  style={{
-                    borderRadius: 0,
-                    border: "none",
-                    fontWeight: 900,
-                  }}
-                >
-                  <List size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  {locale === "fr" ? "Liste" : "List"}
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${viewMode === "calendar" ? "btn-active-green" : ""}`}
-                  onClick={() => setViewMode("calendar")}
-                  style={{
-                    borderRadius: 0,
-                    border: "none",
-                    fontWeight: 900,
-                  }}
-                >
-                  <Grid3X3 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  {locale === "fr" ? "Calendrier" : "Calendar"}
-                </button>
-              </div>
-
-              <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
-                {viewMode === "calendar" ? (
-                  (["week", "month"] as CalendarMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={`btn ${calendarMode === mode ? "btn-active-dark" : ""}`}
-                      onClick={() => setCalendarMode(mode)}
-                      style={{
-                        borderRadius: 0,
-                        border: "none",
-                        fontWeight: 900,
-                      }}
-                    >
-                      {mode === "week" ? (locale === "fr" ? "Semaine" : "Week") : (locale === "fr" ? "Mois" : "Month")}
-                    </button>
-                  ))
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className={`btn ${filterMode === "past" ? "btn-active-dark" : ""}`}
-                      onClick={() => setFilterMode("past")}
-                      disabled={loading}
-                      style={{ borderRadius: 0, border: "none", fontWeight: 900 }}
-                    >
-                      {locale === "fr" ? "Passés" : "Past"} ({pastCount})
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn ${filterMode === "planned" ? "btn-active-dark" : ""}`}
-                      onClick={() => setFilterMode("planned")}
-                      disabled={loading}
-                      style={{ borderRadius: 0, border: "none", fontWeight: 900 }}
-                    >
-                      {locale === "fr" ? "À venir" : "Upcoming"} ({plannedCount})
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
             {loading ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : totalCount === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("trainings.nonePlanned")}</div>
-            ) : viewMode === "calendar" ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 900, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <CalendarDays size={15} />
-                    {new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
-                      month: "long",
-                      year: "numeric",
-                    }).format(anchorDate)}
-                  </div>
-                  <div style={{ display: "inline-flex", gap: 6 }}>
-                    <button className="btn" type="button" onClick={goPrevRange}>
-                      <ChevronLeft size={14} />
-                    </button>
-                    <button className="btn" type="button" onClick={() => setAnchorDate(new Date())}>
-                      {locale === "fr" ? "Aujourd’hui" : "Today"}
-                    </button>
-                    <button className="btn" type="button" onClick={goNextRange}>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 6,
-                    gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                  }}
-                >
-                    {calendarDays.map((day) => {
-                      const dayKey = ymd(day);
-                      const items = itemsByDay[dayKey] ?? [];
-                      const isToday = dayKey === nowDayKey;
-                      const outOfMonth = calendarMode === "month" && day.getMonth() !== anchorDate.getMonth();
-                      return (
-                        <div
-                          key={dayKey}
-                          style={{
-                            border: isToday ? "2px solid rgba(17,24,39,0.55)" : "1px solid rgba(0,0,0,0.10)",
-                            borderRadius: 10,
-                            padding: 8,
-                            minHeight: 110,
-                            background: outOfMonth ? "rgba(243,244,246,0.55)" : "rgba(255,255,255,0.78)",
-                            opacity: outOfMonth ? 0.75 : 1,
-                            display: "grid",
-                            gap: 6,
-                            alignContent: "start",
-                          }}
-                        >
-                          <div style={{ fontSize: 11, fontWeight: 900 }}>{new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", { weekday: "short", day: "2-digit" }).format(day)}</div>
-                          {items.slice(0, 3).map((it) => {
-                            const title =
-                              it.kind === "event"
-                                ? eventTypeLabel(it.event.event_type, locale === "fr" ? "fr" : "en")
-                                : it.kind === "competition"
-                                ? it.competition.event_type === "camp"
-                                  ? (locale === "fr" ? "Stage" : "Camp")
-                                  : (locale === "fr" ? "Compétition" : "Competition")
-                                : typeLabel(it.session.session_type, locale === "fr" ? "fr" : "en");
-                            return (
-                              <div key={it.key} style={{ fontSize: 10, fontWeight: 800, borderRadius: 8, padding: "3px 6px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.24)" }} className="truncate">
-                                {title}
-                              </div>
-                            );
-                          })}
-                          {items.length > 3 ? (
-                            <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>+{items.length - 3}</div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-              </div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pagedItems.map((item) => {
@@ -1428,7 +1285,7 @@ export default function TrainingsListPage() {
             )}
           </div>
 
-          {viewMode === "list" && totalCount > 0 && (
+          {totalCount > 0 && (
             <div className="glass-section">
               <div className="marketplace-pagination">
                 <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
