@@ -93,8 +93,9 @@ a { color: inherit; text-decoration: none; }
   --header-h: 60px;
   --footer-h: 72px;
 
-  --safe-top: env(safe-area-inset-top);
-  --safe-bottom: env(safe-area-inset-bottom);
+  /* Web browser (Safari/Chrome): no extra safe-area padding by default */
+  --safe-top: 0px;
+  --safe-bottom: 0px;
 }
 
 /* =========================================================
@@ -1678,6 +1679,11 @@ input[type="radio"]{
    ========================================================= */
 
 @media (display-mode: standalone), (display-mode: fullscreen) {
+  :root{
+    /* Installed app only */
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+  }
 
   .mobile-nav{
     /* ⬇️ un peu plus bas uniquement en PWA */
