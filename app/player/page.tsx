@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
+import { getNotificationMessage } from "@/lib/notificationMessages";
 import { PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -66,6 +68,61 @@ type GolfRoundRow = {
   total_putts: number | null;
 };
 
+type MarketplaceImageRow = {
+  item_id: string;
+  path: string;
+  sort_order: number;
+};
+
+type AttendeeStatusRow = {
+  event_id: string;
+  status: "expected" | "present" | "absent" | "excused" | null;
+};
+
+type HomeSessionRow = {
+  id: string;
+  start_at: string;
+  location_text: string | null;
+  session_type: "club" | "private" | "individual";
+  club_id: string | null;
+  club_event_id: string | null;
+};
+
+type HomePlannedEventRow = {
+  id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  duration_minutes: number;
+  location_text: string | null;
+  club_id: string;
+  group_id: string | null;
+  status: "scheduled" | "cancelled";
+};
+
+type HomePlayerActivityRow = {
+  id: string;
+  event_type: "competition" | "camp";
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  location_text: string | null;
+  status: "scheduled" | "cancelled";
+};
+
+type HomeEventStructureItem = {
+  event_id: string;
+  category: string;
+  minutes: number;
+  note: string | null;
+};
+
+type HomeUpcomingItem =
+  | { kind: "event"; key: string; dateIso: string; event: HomePlannedEventRow }
+  | { kind: "session"; key: string; dateIso: string; session: HomeSessionRow }
+  | { kind: "competition"; key: string; dateIso: string; competition: HomePlayerActivityRow };
+
 function displayHello(p: Profile | null | undefined, t: (key: string) => string) {
   const f = (p?.first_name ?? "").trim();
   if (!f) return t("playerHome.hello");
@@ -106,6 +163,56 @@ function monthRangeLocal(now = new Date()) {
 
 function monthTitle(now = new Date(), locale = "fr-CH") {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now).toUpperCase();
+}
+
+function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(d);
+  }
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
+}
+
+function fmtHourLabel(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
+  }
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
+function hasDisplayableTime(iso: string) {
+  const d = new Date(iso);
+  return d.getHours() !== 0 || d.getMinutes() !== 0;
+}
+
+function sameDay(aIso: string, bIso: string) {
+  const a = new Date(aIso);
+  const b = new Date(bIso);
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: "fr" | "en") {
+  if (locale === "en") {
+    if (v === "training") return "Training";
+    if (v === "interclub") return "Interclub";
+    if (v === "camp") return "Camp";
+    if (v === "session") return "Session";
+    return "Event";
+  }
+  if (v === "training") return "Entraînement";
+  if (v === "interclub") return "Interclubs";
+  if (v === "camp") return "Stage";
+  if (v === "session") return "Réunion";
+  return "Événement";
 }
 
 function priceLabel(it: Item, t: (key: string) => string) {
@@ -211,7 +318,6 @@ export default function PlayerHomePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const [clubs, setClubs] = useState<Club[]>([]);
-  const [clubIds, setClubIds] = useState<string[]>([]);
 
   const [latestItems, setLatestItems] = useState<Item[]>([]);
   const [thumbByItemId, setThumbByItemId] = useState<Record<string, string>>({});
@@ -222,6 +328,15 @@ export default function PlayerHomePage() {
   // ✅ Rounds month + previous month (pour tendances focus)
   const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
   const [roundsPrevMonth, setRoundsPrevMonth] = useState<GolfRoundRow[]>([]);
+  const [viewerUserId, setViewerUserId] = useState<string>("");
+  const [effectiveUserId, setEffectiveUserId] = useState<string>("");
+  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
+  const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
+  const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
+  const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, HomeEventStructureItem[]>>({});
+  const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
+  const [upcomingIndex, setUpcomingIndex] = useState(0);
+  const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
 
   const bucket = "marketplace";
 
@@ -346,9 +461,13 @@ export default function PlayerHomePage() {
     setError(null);
 
     let effectiveUid = "";
+    let viewerUid = "";
     try {
       const ctx = await resolveEffectivePlayerContext();
       effectiveUid = ctx.effectiveUserId;
+      viewerUid = ctx.viewerUserId;
+      setViewerUserId(viewerUid);
+      setEffectiveUserId(effectiveUid);
     } catch {
       setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
@@ -367,7 +486,6 @@ export default function PlayerHomePage() {
     if (memRes.error) {
       setError(memRes.error.message);
       setClubs([]);
-      setClubIds([]);
       setLatestItems([]);
       setThumbByItemId({});
       setMonthSessions([]);
@@ -379,7 +497,6 @@ export default function PlayerHomePage() {
     }
 
     const cids = ((memRes.data ?? []) as ClubMember[]).map((m) => m.club_id).filter(Boolean);
-    setClubIds(cids);
 
     if (cids.length > 0) {
       const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
@@ -412,7 +529,7 @@ export default function PlayerHomePage() {
 
           if (!imgRes.error) {
             const map: Record<string, string> = {};
-            (imgRes.data ?? []).forEach((r: any) => {
+            (imgRes.data ?? []).forEach((r: MarketplaceImageRow) => {
               const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
               if (data?.publicUrl) map[r.item_id] = data.publicUrl;
             });
@@ -455,6 +572,132 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
+    // Upcoming activities (same family as /player/golf/trainings planned list)
+    const nowIso = new Date().toISOString();
+    const futureSessionsRes = await supabase
+      .from("training_sessions")
+      .select("id,start_at,location_text,session_type,club_id,club_event_id")
+      .eq("user_id", effectiveUid)
+      .gte("start_at", nowIso)
+      .order("start_at", { ascending: true });
+    const futureSessions = !futureSessionsRes.error ? (futureSessionsRes.data ?? []) as HomeSessionRow[] : [];
+
+    const attendeeRes = await supabase
+      .from("club_event_attendees")
+      .select("event_id,status")
+      .eq("player_id", effectiveUid);
+    const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+    const attendeeEventIds = new Set<string>();
+    if (!attendeeRes.error) {
+      (attendeeRes.data ?? []).forEach((r: AttendeeStatusRow) => {
+        const eid = String(r.event_id ?? "");
+        if (!eid) return;
+        attendeeEventIds.add(eid);
+        statusMap[eid] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
+      });
+    }
+    setAttendeeStatusByEventId(statusMap);
+
+    let plannedEvents: HomePlannedEventRow[] = [];
+    if (attendeeEventIds.size > 0) {
+      const plannedRes = await supabase
+        .from("club_events")
+        .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
+        .in("id", Array.from(attendeeEventIds))
+        .eq("status", "scheduled")
+        .gte("starts_at", nowIso)
+        .order("starts_at", { ascending: true });
+      if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
+    }
+
+    const plannedCompetitionsRes = await supabase
+      .from("player_activity_events")
+      .select("id,event_type,title,starts_at,ends_at,location_text,status")
+      .eq("user_id", effectiveUid)
+      .eq("status", "scheduled")
+      .gte("starts_at", nowIso)
+      .order("starts_at", { ascending: true });
+    const plannedCompetitions = !plannedCompetitionsRes.error
+      ? (plannedCompetitionsRes.data ?? []) as HomePlayerActivityRow[]
+      : [];
+
+    const clubIdSet = new Set<string>();
+    plannedEvents.forEach((e) => clubIdSet.add(e.club_id));
+    futureSessions.forEach((s) => {
+      if (s.club_id) clubIdSet.add(s.club_id);
+    });
+    if (clubIdSet.size > 0) {
+      const clubRes = await supabase.from("clubs").select("id,name").in("id", Array.from(clubIdSet));
+      const map: Record<string, string> = {};
+      if (!clubRes.error) {
+        (clubRes.data ?? []).forEach((c: Club) => {
+          map[String(c.id)] = c.name ?? t("common.club");
+        });
+      }
+      setClubNameById(map);
+    } else {
+      setClubNameById({});
+    }
+
+    const groupIds = Array.from(new Set(plannedEvents.map((e) => e.group_id).filter((x): x is string => Boolean(x))));
+    if (groupIds.length > 0) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (token) {
+        const query = new URLSearchParams({
+          ids: groupIds.join(","),
+          child_id: effectiveUid,
+        });
+        const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const gJson = await gRes.json().catch(() => ({}));
+        const gMap: Record<string, string> = {};
+        ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
+          gMap[g.id] = g.name ?? "Groupe";
+        });
+        setGroupNameById(gMap);
+      } else {
+        setGroupNameById({});
+      }
+    } else {
+      setGroupNameById({});
+    }
+
+    if (plannedEvents.length > 0) {
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("event_id,category,minutes,note")
+        .in("event_id", plannedEvents.map((e) => e.id));
+      const map: Record<string, HomeEventStructureItem[]> = {};
+      if (!structRes.error) {
+        (structRes.data ?? []).forEach((r: HomeEventStructureItem) => {
+          const eid = String(r.event_id ?? "");
+          if (!eid) return;
+          if (!map[eid]) map[eid] = [];
+          map[eid].push(r);
+        });
+      }
+      setEventStructureByEventId(map);
+    } else {
+      setEventStructureByEventId({});
+    }
+
+    const upcoming: HomeUpcomingItem[] = [
+      ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
+      ...futureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
+      ...plannedCompetitions.map((competition) => ({
+        kind: "competition" as const,
+        key: `competition-${competition.id}`,
+        dateIso: competition.starts_at,
+        competition,
+      })),
+    ].sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
+    setUpcomingActivities(upcoming);
+    setUpcomingIndex(0);
+
     // Rounds month + prev month (GIR/fairways/putts)
     try {
       const { start: curStart, end: curEnd } = monthRangeLocal(new Date());
@@ -494,6 +737,77 @@ export default function PlayerHomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function updateTrainingAttendance(event: HomePlannedEventRow, nextStatus: "present" | "absent") {
+    if (!effectiveUserId || attendanceBusyEventId) return;
+    setAttendanceBusyEventId(event.id);
+    setError(null);
+
+    const upd = await supabase
+      .from("club_event_attendees")
+      .update({ status: nextStatus })
+      .eq("event_id", event.id)
+      .eq("player_id", effectiveUserId);
+
+    if (upd.error) {
+      setError(upd.error.message);
+      setAttendanceBusyEventId("");
+      return;
+    }
+
+    setAttendeeStatusByEventId((prev) => ({ ...prev, [event.id]: nextStatus }));
+
+    try {
+      const coachRecipientIds = await getEventCoachUserIds(event.id, event.group_id);
+      if (coachRecipientIds.length > 0 && viewerUserId) {
+        const localeKey = locale === "fr" ? "fr" : "en";
+        const type = eventTypeLabel(event.event_type, localeKey);
+        const eventEnd =
+          event.ends_at ??
+          new Date(new Date(event.starts_at).getTime() + Math.max(1, event.duration_minutes) * 60_000).toISOString();
+        const profRes = await supabase
+          .from("profiles")
+          .select("first_name,last_name")
+          .eq("id", effectiveUserId)
+          .maybeSingle();
+        const playerName =
+          `${String(profRes.data?.first_name ?? "").trim()} ${String(profRes.data?.last_name ?? "").trim()}`.trim() ||
+          (locale === "fr" ? "Joueur" : "Player");
+
+        if (nextStatus === "absent") {
+          const msg = await getNotificationMessage("notif.playerMarkedAbsent", localeKey, {
+            playerName,
+            eventType: type,
+            dateTime: `${fmtDateLabelNoTime(event.starts_at, localeKey)} • ${fmtHourLabel(event.starts_at, localeKey)} → ${fmtHourLabel(eventEnd, localeKey)}`,
+          });
+          await createAppNotification({
+            actorUserId: viewerUserId,
+            kind: "player_marked_absent",
+            title: msg.title,
+            body: msg.body,
+            data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
+            recipientUserIds: coachRecipientIds,
+          });
+        } else {
+          await createAppNotification({
+            actorUserId: viewerUserId,
+            kind: "player_marked_present",
+            title: locale === "fr" ? "Présence confirmée" : "Attendance confirmed",
+            body:
+              locale === "fr"
+                ? `${playerName} présent · ${type} · ${fmtDateLabelNoTime(event.starts_at, "fr")} ${fmtHourLabel(event.starts_at, "fr")}`
+                : `${playerName} present · ${type} · ${fmtDateLabelNoTime(event.starts_at, "en")} ${fmtHourLabel(event.starts_at, "en")}`,
+            data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
+            recipientUserIds: coachRecipientIds,
+          });
+        }
+      }
+    } catch {
+      // keep attendance update resilient
+    }
+
+    setAttendanceBusyEventId("");
+  }
+
   const avatarUrl = useMemo(() => {
     const base = profile?.avatar_url?.trim() || "";
     if (!base) return null;
@@ -511,6 +825,23 @@ export default function PlayerHomePage() {
 
   const roundsMonthCount = roundsMonth.length;
   const holesMonthCountApprox = roundsMonthCount * 18;
+  const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
+  const activityCategoryLabel = (cat: string) => {
+    const map: Record<string, string> = {
+      warmup_mobility: t("cat.warmup_mobility"),
+      long_game: t("cat.long_game"),
+      putting: t("cat.putting"),
+      wedging: t("cat.wedging"),
+      pitching: t("cat.pitching"),
+      chipping: t("cat.chipping"),
+      bunker: t("cat.bunker"),
+      course: t("cat.course"),
+      mental: t("cat.mental"),
+      fitness: t("cat.fitness"),
+      other: t("cat.other"),
+    };
+    return map[cat] ?? cat;
+  };
 
   return (
     <div className="player-dashboard-bg">
@@ -552,6 +883,211 @@ export default function PlayerHomePage() {
         </div>
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
+
+        <section className="glass-section" style={{ marginTop: 14 }}>
+          <div className="section-title">{locale === "fr" ? "Prochaine activité" : "Upcoming activity"}</div>
+
+          <div className="glass-card">
+            {currentUpcoming ? (
+              <>
+                {currentUpcoming.kind === "event" ? (() => {
+                  const e = currentUpcoming.event;
+                  const clubName = clubNameById[e.club_id] ?? t("common.club");
+                  const groupName = e.group_id ? groupNameById[e.group_id] : null;
+                  const eventEnd =
+                    e.ends_at ??
+                    new Date(new Date(e.starts_at).getTime() + Math.max(1, Number(e.duration_minutes ?? 0)) * 60_000).toISOString();
+                  const isMultiDay = !sameDay(e.starts_at, eventEnd);
+                  const eventType = eventTypeLabel(e.event_type, locale === "fr" ? "fr" : "en");
+                  const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
+                  const isTraining = e.event_type === "training";
+                  const isCollapsedTraining = isTraining && attendanceStatus === "absent";
+                  const eventStructure = eventStructureByEventId[e.id] ?? [];
+                  const showEventStructure = isTraining && attendanceStatus === "present" && eventStructure.length > 0;
+                  let eventTitle = eventType;
+                  const customName = (e.title ?? "").trim();
+                  if (e.event_type === "training") {
+                    const trainingGroupLabel = groupName || (locale === "fr" ? "Groupe" : "Group");
+                    eventTitle = `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`;
+                  }
+                  if (e.event_type !== "training") {
+                    eventTitle = customName ? `${eventType} • ${customName}` : eventType;
+                  }
+                  return (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                        <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                          {isMultiDay ? (
+                            <div>
+                              {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(eventEnd, locale === "fr" ? "fr" : "en")}
+                            </div>
+                          ) : (
+                            <div>
+                              {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                              <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                {locale === "fr"
+                                  ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
+                                  : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {isTraining ? (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={attendanceStatus === "present"}
+                            onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                            disabled={attendanceBusyEventId === e.id}
+                            style={{
+                              width: 46,
+                              height: 26,
+                              borderRadius: 999,
+                              border: "1px solid rgba(0,0,0,0.18)",
+                              background:
+                                attendanceStatus === "present"
+                                  ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
+                                  : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
+                              padding: 2,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
+                            }}
+                          >
+                            <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.24)" }} />
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                          {eventTitle}
+                        </div>
+                        {isTraining && !isCollapsedTraining ? (
+                          <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
+                            {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {!isCollapsedTraining ? (
+                        <>
+                          {e.location_text ? (
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                              📍 {e.location_text}
+                            </div>
+                          ) : null}
+                          {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
+                          {showEventStructure ? (
+                            <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                              {eventStructure.map((p, i) => {
+                                const extra = (p.note ?? "").trim();
+                                return (
+                                  <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                    {activityCategoryLabel(p.category)} — {p.minutes} min
+                                    {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
+
+                {currentUpcoming.kind === "competition" ? (() => {
+                  const c = currentUpcoming.competition;
+                  const typeLabelComp =
+                    c.event_type === "camp"
+                      ? locale === "fr"
+                        ? "Stage"
+                        : "Camp"
+                      : locale === "fr"
+                      ? "Compétition"
+                      : "Competition";
+                  const title = `${typeLabelComp}${(c.title ?? "").trim() ? ` • ${(c.title ?? "").trim()}` : ""}`;
+                  return (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                        {sameDay(c.starts_at, c.ends_at) ? (
+                          <div>{fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                        ) : (
+                          <div>
+                            {fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(c.ends_at, locale === "fr" ? "fr" : "en")}
+                          </div>
+                        )}
+                      </div>
+                      <div className="hr-soft" style={{ margin: "1px 0" }} />
+                      <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                        {title}
+                      </div>
+                      {c.location_text ? (
+                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                          📍 {c.location_text}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
+
+                {currentUpcoming.kind === "session" ? (() => {
+                  const s = currentUpcoming.session;
+                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
+                  const sessionTitle =
+                    s.session_type === "club"
+                      ? `${locale === "fr" ? "Entraînement" : "Training"}${clubName ? ` • ${clubName}` : ""}`
+                      : `${s.session_type === "private" ? (locale === "fr" ? "Cours privé" : "Private lesson") : (locale === "fr" ? "Entraînement individuel" : "Individual training")}`;
+                  return (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                        <div>{fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")}</div>
+                        {hasDisplayableTime(s.start_at) ? (
+                          <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{fmtHourLabel(s.start_at, locale === "fr" ? "fr" : "en")}</div>
+                        ) : null}
+                      </div>
+                      <div className="hr-soft" style={{ margin: "1px 0" }} />
+                      <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                        {sessionTitle}
+                      </div>
+                      {s.location_text ? (
+                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                          📍 {s.location_text}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
+              </>
+            ) : (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                {locale === "fr" ? "Aucune activité planifiée." : "No upcoming activity."}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setUpcomingIndex((i) => Math.max(0, i - 1))}
+              disabled={upcomingIndex <= 0 || upcomingActivities.length === 0}
+            >
+              {locale === "fr" ? "Précédent" : "Previous"}
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setUpcomingIndex((i) => Math.min(upcomingActivities.length - 1, i + 1))}
+              disabled={upcomingIndex >= upcomingActivities.length - 1 || upcomingActivities.length === 0}
+            >
+              {locale === "fr" ? "Suivant" : "Next"}
+            </button>
+          </div>
+        </section>
 
         {/* ===== Volume d’entrainement ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
