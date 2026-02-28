@@ -1753,3 +1753,45 @@ input[type="radio"]{
   }
 
 }
+
+/* Mobile web browser only: lift bottom nav a bit and improve readability */
+@media (display-mode: browser) and (max-width: 899px) {
+  .mobile-nav{
+    left: 8px;
+    right: 8px;
+    bottom: 10px;
+    height: auto;
+    min-height: 58px;
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+    border-radius: 16px;
+    background: rgba(53, 72, 59, 0.96);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.32);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .mobile-nav-item{
+    padding: 6px 4px;
+    border-radius: 10px;
+  }
+
+  .mobile-nav-item.active{
+    background: rgba(255,255,255,0.20);
+  }
+
+  .mobile-nav-item svg{
+    stroke: #fff;
+  }
+
+  .mobile-nav-label{
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+    opacity: 0.98;
+  }
+
+  .app-shell{
+    padding-bottom: calc(var(--footer-h) + var(--safe-bottom) + 20px);
+  }
+}
