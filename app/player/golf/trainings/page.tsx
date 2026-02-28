@@ -103,6 +103,30 @@ function fmtDateAtLabel(iso: string, locale: "fr" | "en") {
   return `${weekCap} ${dayMonth} à ${hh}`;
 }
 
+function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(d);
+  }
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
+}
+
+function fmtHourLabel(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
+  }
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
 function sameDay(aIso: string, bIso: string) {
   const a = new Date(aIso);
   const b = new Date(bIso);
@@ -471,20 +495,35 @@ export default function TrainingsListPage() {
         setClubNameById({});
       }
 
-      // group names
+      // group names (via server endpoint to avoid coach_groups RLS blocking on client)
       const groupIds = Array.from(
         new Set(events.map((e) => uuidOrNull(e.group_id)).filter((x): x is string => typeof x === "string" && x.length > 0))
       );
       if (groupIds.length > 0) {
-        const gRes = await supabase.from("coach_groups").select("id,name").in("id", groupIds);
-        if (!gRes.error) {
-          const map: Record<string, string> = {};
-          (gRes.data ?? []).forEach((g: any) => {
-            map[g.id] = (g.name ?? "Groupe") as string;
-          });
-          setGroupNameById(map);
-        } else {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) {
           setGroupNameById({});
+        } else {
+          const query = new URLSearchParams({
+            ids: groupIds.join(","),
+            child_id: uid,
+          });
+          const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const gJson = await gRes.json().catch(() => ({}));
+          if (!gRes.ok) {
+            setGroupNameById({});
+          } else {
+            const map: Record<string, string> = {};
+            ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
+              map[g.id] = g.name ?? "Groupe";
+            });
+            setGroupNameById(map);
+          }
         }
       } else {
         setGroupNameById({});
@@ -1038,10 +1077,15 @@ export default function TrainingsListPage() {
                     const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                     const isTraining = e.event_type === "training";
                     let eventTitle = eventType;
-                    if (e.event_type === "training") eventTitle = `${locale === "fr" ? "Entraînement" : "Training"} • ${groupName ?? (locale === "fr" ? "Groupe" : "Group")}`;
-                    if (e.event_type === "interclub") eventTitle = locale === "fr" ? "Interclub" : "Interclub";
-                    if (e.event_type === "camp" || e.event_type === "session" || e.event_type === "event") {
-                      eventTitle = (e.title ?? "").trim() || eventType;
+                    const customName = (e.title ?? "").trim();
+                    if (e.event_type === "training") {
+                      const trainingGroupLabel =
+                        groupName ||
+                        (locale === "fr" ? "Groupe" : "Group");
+                      eventTitle = `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`;
+                    }
+                    if (e.event_type !== "training") {
+                      eventTitle = customName ? `${eventType} • ${customName}` : eventType;
                     }
 
                     return (
@@ -1062,28 +1106,6 @@ export default function TrainingsListPage() {
                                 </div>
                               ) : null}
                             </div>
-                            {isTraining ? (
-                              <div style={{ display: "inline-flex", gap: 6 }}>
-                                <button
-                                  type="button"
-                                  className={`btn ${attendanceStatus === "present" ? "btn-active-green" : ""}`}
-                                  onClick={() => updateTrainingAttendance(e, "present")}
-                                  disabled={attendanceBusyEventId === e.id}
-                                  style={{ height: 30, padding: "6px 10px !important" }}
-                                >
-                                  {locale === "fr" ? "Présent" : "Present"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`btn ${attendanceStatus === "absent" ? "btn-active-red" : ""}`}
-                                  onClick={() => updateTrainingAttendance(e, "absent")}
-                                  disabled={attendanceBusyEventId === e.id}
-                                  style={{ height: 30, padding: "6px 10px !important" }}
-                                >
-                                  {locale === "fr" ? "Absent" : "Absent"}
-                                </button>
-                              </div>
-                            ) : null}
                           </div>
 
                           <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
@@ -1094,7 +1116,14 @@ export default function TrainingsListPage() {
                                 <div>{fmtDateAtLabel(eventEnd, locale === "fr" ? "fr" : "en")}</div>
                               </>
                             ) : (
-                              <div>{fmtDateAtLabel(e.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                              <div>
+                                {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                                <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                  {locale === "fr"
+                                    ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
+                                    : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
+                                </span>
+                              </div>
                             )}
                           </div>
 
@@ -1104,16 +1133,62 @@ export default function TrainingsListPage() {
                             </div>
                           ) : null}
 
-                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                            {isTraining ? (
-                              <div style={{ marginRight: "auto", fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                {locale === "fr" ? "Durée prévue" : "Planned duration"}: {e.duration_minutes} min
-                              </div>
-                            ) : null}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: isTraining ? "space-between" : "flex-start",
+                              gap: 8,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                            }}
+                          >
                             <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
                               <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                               {locale === "fr" ? "Éditer" : "Edit"}
                             </Link>
+                            {isTraining ? (
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 11, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
+                                  {attendanceStatus === "present"
+                                    ? (locale === "fr" ? "Présent" : "Present")
+                                    : (locale === "fr" ? "Absent" : "Absent")}
+                                </span>
+                                <button
+                                  type="button"
+                                  aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
+                                  role="switch"
+                                  aria-checked={attendanceStatus === "present"}
+                                  onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                                  disabled={attendanceBusyEventId === e.id}
+                                  style={{
+                                    width: 46,
+                                    height: 26,
+                                    borderRadius: 999,
+                                    border: "1px solid rgba(0,0,0,0.18)",
+                                    background:
+                                      attendanceStatus === "present"
+                                        ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
+                                        : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
+                                    padding: 2,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
+                                    transition: "all 180ms ease",
+                                    cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      width: 20,
+                                      height: 20,
+                                      borderRadius: "50%",
+                                      background: "#fff",
+                                      boxShadow: "0 1px 3px rgba(0,0,0,0.24)",
+                                    }}
+                                  />
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1122,7 +1197,6 @@ export default function TrainingsListPage() {
 
                   if (item.kind === "competition") {
                     const c = item.competition;
-                    const isPlanned = new Date(c.starts_at).getTime() >= nowTs;
                     const typeLabelComp =
                       c.event_type === "camp"
                         ? locale === "fr"
@@ -1131,6 +1205,7 @@ export default function TrainingsListPage() {
                         : locale === "fr"
                         ? "Compétition"
                         : "Competition";
+                    const competitionTitle = `${typeLabelComp}${(c.title ?? "").trim() ? ` • ${(c.title ?? "").trim()}` : ""}`;
                     return (
                       <div
                         key={item.key}
@@ -1140,26 +1215,21 @@ export default function TrainingsListPage() {
                         <div style={{ display: "grid", gap: 10 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {c.title}
+                              {competitionTitle}
                             </div>
-                            <span className="pill-soft">{typeLabelComp}</span>
                           </div>
                           <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
                             {sameDay(c.starts_at, c.ends_at) ? (
-                              <div>{fmtDateAtLabel(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                              <div>{fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
                             ) : (
                               <>
-                                <div>{locale === "fr" ? "Du" : "From"} {fmtDateAtLabel(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                                <div>{locale === "fr" ? "Du" : "From"} {fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
                                 <div>{locale === "fr" ? "au" : "to"}</div>
-                                <div>{fmtDateAtLabel(c.ends_at, locale === "fr" ? "fr" : "en")}</div>
+                                <div>{fmtDateLabelNoTime(c.ends_at, locale === "fr" ? "fr" : "en")}</div>
                               </>
                             )}
                           </div>
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                            <span className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                              <CalendarClock size={14} />
-                              {isPlanned ? (locale === "fr" ? "À venir" : "Upcoming") : (locale === "fr" ? "Passé" : "Past")}
-                            </span>
                             {c.location_text ? (
                               <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }} className="truncate">
                                 📍 {c.location_text}
