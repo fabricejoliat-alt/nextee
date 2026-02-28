@@ -117,8 +117,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: nextUnread } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function onDelete(id: number) {
@@ -134,8 +135,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: normalized } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function onReadAll() {
@@ -148,8 +150,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: 0 } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function onEnablePush() {
@@ -281,23 +284,25 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                     </div>
                   );
 
-                  if (href) {
-                    return (
-                      <Link
-                        key={r.recipient.id}
-                        href={href}
-                        className="marketplace-link"
-                        onClick={() => {
-                          applyChildContextFromNotification(n, href);
-                          if (!r.recipient.is_read) onRead(r.recipient.id);
-                        }}
-                      >
-                        {card}
-                      </Link>
-                    );
-                  }
-
-                  return <div key={r.recipient.id}>{card}</div>;
+                  return (
+                    <div key={r.recipient.id}>
+                      {card}
+                      {href ? (
+                        <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                          <Link
+                            href={href}
+                            className="btn"
+                            onClick={() => {
+                              applyChildContextFromNotification(n, href);
+                              if (!r.recipient.is_read) void onRead(r.recipient.id);
+                            }}
+                          >
+                            {tr("Ouvrir", "Open")}
+                          </Link>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
                 })}
               </div>
             )}
