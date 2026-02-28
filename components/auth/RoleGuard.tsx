@@ -17,6 +17,14 @@ export default function RoleGuard({
   const [ok, setOk] = useState(false);
 
   useEffect(() => {
+    const goLogin = () => {
+      if (typeof window !== "undefined") {
+        window.location.assign("/");
+        return;
+      }
+      router.replace("/");
+    };
+
     (async () => {
       const allowed = Array.isArray(allow) ? allow : [allow];
 
@@ -24,7 +32,7 @@ export default function RoleGuard({
       const token = data.session?.access_token;
 
       if (!token) {
-        router.replace("/");
+        goLogin();
         return;
       }
 
@@ -38,7 +46,7 @@ export default function RoleGuard({
       const json = await res.json();
 
       if (!res.ok) {
-        router.replace("/");
+        goLogin();
         return;
       }
 
@@ -77,6 +85,18 @@ export default function RoleGuard({
       else if (role === "coach") router.replace("/coach");
       else router.replace("/player");
     })();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session || event === "SIGNED_OUT") {
+        goLogin();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [allow, router]);
 
   if (!ok) {

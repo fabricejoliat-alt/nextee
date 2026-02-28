@@ -66,6 +66,56 @@ export default function PlayerHeader() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      window.matchMedia?.("(display-mode: fullscreen)").matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    const isMobile = window.matchMedia?.("(max-width: 899px)").matches;
+
+    // Web mobile browser only (do not impact installed app)
+    if (isStandalone || !isMobile) return;
+
+    let lastY = window.scrollY;
+    let ticking = false;
+
+    const apply = () => {
+      const y = window.scrollY;
+      const headerEl = document.querySelector(".app-header");
+      const navEl = document.querySelector(".mobile-nav");
+      if (!headerEl || !navEl) return;
+
+      const nearTop = y < 12;
+      if (nearTop || y < lastY) {
+        headerEl.classList.remove("hidden");
+        navEl.classList.remove("hidden");
+      } else if (y > lastY + 4) {
+        headerEl.classList.add("hidden");
+        navEl.classList.add("hidden");
+      }
+      lastY = y;
+    };
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        apply();
+        ticking = false;
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      const headerEl = document.querySelector(".app-header");
+      const navEl = document.querySelector(".mobile-nav");
+      headerEl?.classList.remove("hidden");
+      navEl?.classList.remove("hidden");
+    };
+  }, []);
+
   return (
     <>
       <header className="app-header">
