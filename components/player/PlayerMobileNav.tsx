@@ -45,10 +45,21 @@ export default function MobileFooter() {
     { href: "/player/profile", label: t("nav.profile"), Icon: User },
   ];
 
+  function isActive(path: string, href: string) {
+    if (href === "/player") return path === "/player";
+    if (href === "/player/golf/trainings") return path === href || path.startsWith(href + "/");
+    if (href === "/player/golf") {
+      const inGolf = path === href || path.startsWith(href + "/");
+      const inTrainings = path === "/player/golf/trainings" || path.startsWith("/player/golf/trainings/");
+      return inGolf && !inTrainings;
+    }
+    return path === href || path.startsWith(href + "/");
+  }
+
   return (
     <nav className="mobile-nav" aria-label={t("common.navigation")}>
       {items.map(({ href, label, Icon }) => {
-        const active = pathname === href || pathname.startsWith(href + "/");
+        const active = isActive(pathname, href);
         return (
           <Link
             key={href}
