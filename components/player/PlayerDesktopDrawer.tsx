@@ -44,6 +44,13 @@ type Props = {
   onClose: () => void;
 };
 
+type ParentChildLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  is_primary: boolean;
+};
+
 function isActive(pathname: string, href: string) {
   // Active exact match or prefix match (useful for nested pages)
   if (href === "/player") return pathname === "/player";
@@ -57,6 +64,14 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
   const [pendingEvalCount, setPendingEvalCount] = useState(0);
+  const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
+  const [parentChildren, setParentChildren] = useState<ParentChildLite[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState("");
+
+  async function authHeader() {
+    const { data } = await supabase.auth.getSession();
+    return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -74,8 +89,32 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
-      const userId = auth.user?.id;
-      if (!userId) {
+      let displayUserId = auth.user?.id ?? "";
+      const headers = await authHeader();
+      const meRes = await fetch("/api/auth/me", { method: "GET", headers, cache: "no-store" });
+      const meJson = await meRes.json().catch(() => ({}));
+      const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
+      if (role === "parent") {
+        setViewerRole("parent");
+        const childrenRes = await fetch("/api/parent/children", { method: "GET", headers, cache: "no-store" });
+        const childrenJson = await childrenRes.json().catch(() => ({}));
+        const list = (childrenRes.ok ? (childrenJson?.children ?? []) : []) as ParentChildLite[];
+        setParentChildren(list);
+        const stored = window.localStorage.getItem("parent:selected_child_id");
+        const selected =
+          (stored && list.some((c) => c.id === stored) && stored) ||
+          list.find((c) => c.is_primary)?.id ||
+          list[0]?.id ||
+          "";
+        setSelectedChildId(selected);
+        if (selected) window.localStorage.setItem("parent:selected_child_id", selected);
+      } else {
+        setViewerRole("player");
+        setParentChildren([]);
+        setSelectedChildId("");
+      }
+
+      if (!displayUserId) {
         setFullName(t("common.defaultName"));
         return;
       }
@@ -84,7 +123,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("first_name,last_name")
-        .eq("id", userId)
+        .eq("id", displayUserId)
         .maybeSingle();
 
       const fn = (profile?.first_name ?? "").trim();
@@ -96,11 +135,19 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   }, [open, t]);
 
   useEffect(() => {
+    if (viewerRole !== "parent" || !selectedChildId) return;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("parent:selected_child_id", selectedChildId);
+    }
+  }, [viewerRole, selectedChildId]);
+
+  useEffect(() => {
     if (!open) return;
 
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
-      const uid = auth.user?.id;
+      let uid = auth.user?.id ?? "";
+      if (viewerRole === "parent" && selectedChildId) uid = selectedChildId;
       if (!uid) {
         setPendingEvalCount(0);
         return;
@@ -188,7 +235,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
       setPendingEvalCount(incompletePastSessionsCount + incompleteEventsCount);
     })();
-  }, [open]);
+  }, [open, viewerRole, selectedChildId]);
 
   const nav = useMemo(
     () => [
@@ -335,6 +382,37 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         {/* Account section bottom */}
         <div className="drawer-account">
           <div className="drawer-account-name">{fullName}</div>
+
+          {viewerRole === "parent" && parentChildren.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.8, marginBottom: 6 }}>
+                Enfant sélectionné
+              </div>
+              <select
+                value={selectedChildId}
+                onChange={(e) => setSelectedChildId(e.target.value)}
+                style={{
+                  width: "100%",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.28)",
+                  background: "rgba(255,255,255,0.1)",
+                  color: "white",
+                  padding: "8px 10px",
+                  fontSize: 13,
+                }}
+              >
+                {parentChildren.map((c) => {
+                  const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Joueur";
+                  return (
+                    <option key={c.id} value={c.id} style={{ color: "#111827" }}>
+                      {name}
+                      {c.is_primary ? " (principal)" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
 
           <Link href={ROUTES.profileEdit} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profileEdit) ? "active" : ""}`} onClick={onClose}>
             <span className="drawer-item-left">

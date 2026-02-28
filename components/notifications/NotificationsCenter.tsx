@@ -33,6 +33,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
   const [rows, setRows] = useState<Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>>([]);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [viewerRole, setViewerRole] = useState<string>("player");
 
   function toErrorMessage(e: unknown, fallback: string) {
     if (e instanceof Error && e.message) return e.message;
@@ -69,6 +70,21 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const res = await fetch("/api/auth/me", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setViewerRole(String(json?.membership?.role ?? "player"));
+    })();
   }, []);
 
   useEffect(() => {
@@ -147,6 +163,25 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
     }
     if (res.reason === "denied") {
       setError(tr("Permission notification refusée dans le navigateur.", "Notification permission denied in browser."));
+    }
+  }
+
+  function applyChildContextFromNotification(notification: NotificationRow | null, href?: string | null) {
+    if (typeof window === "undefined") return;
+    if (viewerRole !== "parent") return;
+
+    const data = (notification?.data ?? {}) as Record<string, unknown>;
+    let childId = String(data.child_id ?? "").trim();
+    if (!childId && href) {
+      try {
+        const u = new URL(href, window.location.origin);
+        childId = String(u.searchParams.get("child_id") ?? "").trim();
+      } catch {
+        // ignore
+      }
+    }
+    if (childId) {
+      window.localStorage.setItem("parent:selected_child_id", childId);
     }
   }
 
@@ -248,7 +283,15 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
 
                   if (href) {
                     return (
-                      <Link key={r.recipient.id} href={href} className="marketplace-link" onClick={() => !r.recipient.is_read && onRead(r.recipient.id)}>
+                      <Link
+                        key={r.recipient.id}
+                        href={href}
+                        className="marketplace-link"
+                        onClick={() => {
+                          applyChildContextFromNotification(n, href);
+                          if (!r.recipient.is_read) onRead(r.recipient.id);
+                        }}
+                      >
                         {card}
                       </Link>
                     );

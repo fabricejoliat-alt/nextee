@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
@@ -148,14 +149,7 @@ export default function PlayerTrainingEditPage() {
         return;
       }
 
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) {
-        setError(t("trainingDetail.error.invalidSession"));
-        setLoading(false);
-        return;
-      }
-
-      const uid = userRes.user.id;
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
 
       // 1) load memberships + clubs

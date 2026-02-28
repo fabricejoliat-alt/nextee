@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
   ResponsiveContainer,
@@ -444,9 +445,7 @@ export default function GolfDashboardPage() {
       setError(null);
 
       try {
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
-        const uid = userRes.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         let q = supabase
           .from("training_sessions")
@@ -495,9 +494,7 @@ export default function GolfDashboardPage() {
 
       setLoadingPrev(true);
       try {
-        const { data: userRes } = await supabase.auth.getUser();
-        const uid = userRes?.user?.id;
-        if (!uid) throw new Error("Session invalide.");
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         let q = supabase
           .from("training_sessions")
@@ -524,9 +521,7 @@ export default function GolfDashboardPage() {
     (async () => {
       setLoadingRounds(true);
       try {
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
-        const uid = userRes.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         let q = supabase
           .from("golf_rounds")
@@ -562,9 +557,7 @@ export default function GolfDashboardPage() {
 
       setLoadingPrevRounds(true);
       try {
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
-        const uid = userRes.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         let q = supabase
           .from("golf_rounds")
@@ -648,9 +641,7 @@ export default function GolfDashboardPage() {
     (async () => {
       setLoadingTrainLookback(true);
       try {
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error("Session invalide. Reconnecte-toi.");
-        const uid = userRes.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         const now = new Date();
         const fallbackFrom = isoToYMD(new Date(now.getFullYear(), now.getMonth() - 2, 1));

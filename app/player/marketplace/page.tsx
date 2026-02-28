@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
@@ -90,14 +91,7 @@ export default function PlayerMarketplaceHome() {
     setLoading(true);
     setError(null);
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) {
-      setError(t("roundsNew.error.invalidSession"));
-      setLoading(false);
-      return;
-    }
-
-    const uid = userRes.user.id;
+    const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
     setUserId(uid);
 
     const memRes = await supabase

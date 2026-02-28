@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
@@ -29,6 +30,7 @@ type ClubEventRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   starts_at: string;
   duration_minutes: number;
   location_text: string | null;
@@ -434,14 +436,7 @@ export default function PlayerTrainingNewPage() {
       setLoading(true);
       setError(null);
 
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) {
-        setError("Session invalide. Reconnecte-toi.");
-        setLoading(false);
-        return;
-      }
-
-      const uid = userRes.user.id;
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
 
       // memberships
@@ -478,7 +473,7 @@ export default function PlayerTrainingNewPage() {
       if (clubEventId) {
         const eRes = await supabase
           .from("club_events")
-          .select("id,group_id,club_id,starts_at,duration_minutes,location_text,status")
+          .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status")
           .eq("id", clubEventId)
           .maybeSingle();
 
@@ -631,7 +626,34 @@ export default function PlayerTrainingNewPage() {
     try {
       const coachIds = await getEventCoachUserIds(linkedEvent.id, linkedEvent.group_id);
       if (coachIds.length > 0) {
-        const msg = await getNotificationMessage("notif.playerMarkedAbsent", locale);
+        const profileRes = await supabase
+          .from("profiles")
+          .select("first_name,last_name")
+          .eq("id", userId)
+          .maybeSingle();
+        const playerName = `${String(profileRes.data?.first_name ?? "").trim()} ${String(profileRes.data?.last_name ?? "").trim()}`.trim() || (locale === "fr" ? "Un joueur" : "A player");
+        const eventTypeLabel =
+          linkedEvent.event_type === "camp"
+            ? locale === "fr" ? "Stage" : "Camp"
+            : linkedEvent.event_type === "interclub"
+            ? locale === "fr" ? "Interclubs" : "Interclub"
+            : linkedEvent.event_type === "session"
+            ? locale === "fr" ? "Séance" : "Session"
+            : linkedEvent.event_type === "event"
+            ? locale === "fr" ? "Événement" : "Event"
+            : locale === "fr" ? "Entraînement" : "Training";
+        const dateTime = new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(linkedEvent.starts_at));
+        const msg = await getNotificationMessage("notif.playerMarkedAbsent", locale, {
+          playerName,
+          eventType: eventTypeLabel,
+          dateTime,
+        });
         await createAppNotification({
           actorUserId: userId,
           kind: "player_marked_absent",

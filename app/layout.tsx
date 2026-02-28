@@ -2,6 +2,7 @@ import "./globals.css";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Inter, Inter_Tight } from "next/font/google";
+import RouteLoadingIndicator from "@/components/ui/RouteLoadingIndicator";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -44,7 +45,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       lang="fr"
       className={`${inter.className} ${inter.variable} ${interTight.variable} ${ibmPlexSans.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <RouteLoadingIndicator />
+        {children}
+      </body>
     </html>
   );
 }

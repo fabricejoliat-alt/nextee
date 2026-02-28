@@ -30,6 +30,42 @@ body{
   -webkit-font-smoothing: antialiased;
 }
 
+.route-loading-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.58) 35%, rgba(255,255,255,0.48) 100%);
+  backdrop-filter: blur(2px);
+}
+
+.route-loading-spinner{
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 4px solid rgba(53, 72, 59, 0.18);
+  border-top-color: #35483b;
+  border-right-color: #6b856f;
+  animation: route-spin 0.82s linear infinite;
+  justify-self: center;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.route-loading-text{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(0,0,0,0.72);
+  letter-spacing: 0.2px;
+}
+
+@keyframes route-spin{
+  to { transform: rotate(360deg); }
+}
+
 a { color: inherit; text-decoration: none; }
 
 /* Scrollbars (optionnel) */
@@ -1562,6 +1598,56 @@ input[type="radio"]{
 
 .admin-shell .btn:active{
   background: #27362d !important;
+}
+
+/* Manager shell: same desktop framing as admin, no photo background */
+.manager-page{
+  min-height: 100dvh;
+  background: #f5f6f8;
+}
+
+.manager-shell{
+  width: min(1120px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: calc(var(--header-h) + var(--safe-top) + 24px);
+  padding-left: clamp(16px, 3.2vw, 44px);
+  padding-right: clamp(16px, 3.2vw, 44px);
+  padding-bottom: 16px;
+}
+
+.manager-page .player-dashboard-bg{
+  background: transparent !important;
+  min-height: auto !important;
+}
+
+.manager-page .player-dashboard-bg .app-shell{
+  width: min(1120px, 100%) !important;
+  max-width: 1120px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: clamp(16px, 3.2vw, 44px) !important;
+  padding-right: clamp(16px, 3.2vw, 44px) !important;
+}
+
+.manager-page .player-dashboard-bg::before{
+  display: none !important;
+}
+
+.manager-page .player-dashboard-bg > *{
+  position: static !important;
+  z-index: auto !important;
+}
+
+.manager-page .section-title,
+.manager-page .card-title,
+.manager-page .hero-title,
+.manager-page .hero-sub,
+.manager-page .hero-club,
+.manager-page h1,
+.manager-page h2,
+.manager-page h3{
+  color: #111827 !important;
 }
 
 .admin-page{

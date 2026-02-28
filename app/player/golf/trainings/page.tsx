@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { Flame, Mountain, Smile, CalendarClock, Pencil, CalendarDays, List, Grid3X3, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -358,9 +359,7 @@ export default function TrainingsListPage() {
     setError(null);
 
     try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error(t("trainings.error.invalidSession"));
-      const uid = userRes.user.id;
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
       // all player-owned sessions (local filtering + pagination by mode)
       const sRes = await supabase
@@ -556,16 +555,12 @@ export default function TrainingsListPage() {
       return;
     }
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) {
-      setError(t("trainings.error.invalidSession"));
-      return;
-    }
+    const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
     setCreatingCompetition(true);
     setError(null);
     const ins = await supabase.from("player_activity_events").insert({
-      user_id: userRes.user.id,
+      user_id: uid,
       event_type: activityCreateType,
       title,
       starts_at: startsAt.toISOString(),

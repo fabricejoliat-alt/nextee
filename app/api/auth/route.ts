@@ -83,9 +83,25 @@ export async function POST(req: NextRequest) {
 
     if (!membership) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
 
-    const role = membership.role as "manager" | "coach" | "player";
+    const role = membership.role as "manager" | "coach" | "player" | "parent";
     if (role === "manager") return NextResponse.json({ redirectTo: "/manager" }, { headers });
     if (role === "coach") return NextResponse.json({ redirectTo: "/coach" }, { headers });
+    if (role === "parent") {
+      const { data: linkRow, error: linkErr } = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id")
+        .eq("guardian_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (linkErr) {
+        return NextResponse.json(
+          { error: linkErr.message },
+          { status: 400, headers }
+        );
+      }
+      if (!linkRow?.player_id) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
+      return NextResponse.json({ redirectTo: "/player" }, { headers });
+    }
     return NextResponse.json({ redirectTo: "/player" }, { headers });
   } catch (e: any) {
     return NextResponse.json(

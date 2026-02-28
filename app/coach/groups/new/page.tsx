@@ -65,6 +65,7 @@ export default function CoachGroupNewPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
+  const [currentClubRole, setCurrentClubRole] = useState<Role | null>(null);
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubId, setClubId] = useState<string>("");
@@ -165,6 +166,8 @@ if (clubIds.length === 0) {
     }
 
     const members = (mem as ClubMemberRow[] | null) ?? [];
+    const meInClub = members.find((m) => m.user_id === userId);
+    setCurrentClubRole((meInClub?.role as Role | undefined) ?? null);
 
     const uniq = (arr: string[]) => Array.from(new Set(arr)).filter(Boolean);
 
@@ -216,6 +219,8 @@ if (clubIds.length === 0) {
     if (groupName.trim().length < 2) return false;
     return true;
   }, [busy, userId, clubId, groupName]);
+
+  const canManagePlayers = useMemo(() => currentClubRole === "manager", [currentClubRole]);
 
   function addCategory() {
     const v = catInput.trim();
@@ -305,6 +310,7 @@ async function handleCreate(e: React.FormEvent) {
  
 
   const role = String(pre.data?.role ?? "");
+  setCurrentClubRole((role as Role) ?? null);
   if (!pre.data?.is_active || (role !== "coach" && role !== "manager")) {
     setError(`Droits insuffisants sur le club sélectionné (${role || "—"}).`);
     setBusy(false);
@@ -370,7 +376,7 @@ async function handleCreate(e: React.FormEvent) {
 
   // ✅ players (optionnel)
   const playerIds = Object.keys(selectedPlayers);
-  if (playerIds.length > 0) {
+  if (canManagePlayers && playerIds.length > 0) {
     const rows = playerIds.map((pid) => ({ group_id: groupIdNew, player_user_id: pid }));
     const pRes = await supabase.from("coach_group_players").insert(rows);
     if (pRes.error) setError(`Groupe créé, mais erreur ajout joueurs: ${pRes.error.message}`);
@@ -539,6 +545,11 @@ async function handleCreate(e: React.FormEvent) {
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                    {!canManagePlayers ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
+                        Seul un manager peut ajouter/retirer des juniors du groupe.
+                      </div>
+                    ) : null}
                     <div style={{ position: "relative" }}>
                       <Search
                         size={18}
@@ -553,7 +564,7 @@ async function handleCreate(e: React.FormEvent) {
                       <input
                         value={queryPlayers}
                         onChange={(e) => setQueryPlayers(e.target.value)}
-                        disabled={busy}
+                        disabled={busy || !canManagePlayers}
                         placeholder="Rechercher un joueur (nom, handicap)…"
                         style={{ paddingLeft: 44 }}
                       />
@@ -582,17 +593,19 @@ async function handleCreate(e: React.FormEvent) {
                                 </div>
                               </div>
 
-                              <button
-                                type="button"
-                                className="btn btn-danger soft"
-                                onClick={() => toggleSelected(setSelectedPlayers, p)}
-                                disabled={busy}
-                                style={{ padding: "10px 12px" }}
-                                aria-label="Retirer"
-                                title="Retirer"
-                              >
-                                <Trash2 size={18} />
-                              </button>
+                              {canManagePlayers ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-danger soft"
+                                  onClick={() => toggleSelected(setSelectedPlayers, p)}
+                                  disabled={busy}
+                                  style={{ padding: "10px 12px" }}
+                                  aria-label="Retirer"
+                                  title="Retirer"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -630,7 +643,7 @@ async function handleCreate(e: React.FormEvent) {
                                 type="button"
                                 className="glass-btn"
                                 onClick={() => toggleSelected(setSelectedPlayers, p)}
-                                disabled={busy}
+                                disabled={busy || !canManagePlayers}
                                 style={{
                                   width: 44,
                                   height: 42,

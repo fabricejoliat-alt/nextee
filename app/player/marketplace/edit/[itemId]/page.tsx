@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const BUCKET = "marketplace";
@@ -89,7 +90,7 @@ function safeExtFromFileName(name: string) {
 }
 
 export default function MarketplaceEditPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const params = useParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -129,6 +130,23 @@ export default function MarketplaceEditPage() {
   // drag reorder (same as NEW)
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const conditionOptions = useMemo(
+    () =>
+      CONDITIONS.map((value) => ({
+        value,
+        label:
+          locale === "fr"
+            ? value === "New"
+              ? "Neuf"
+              : value === "Like new"
+              ? "Comme neuf"
+              : value === "Good condition"
+              ? "Bon état"
+              : "À réparer"
+            : value,
+      })),
+    [locale]
+  );
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((p) => ({ ...p, [k]: v }));
@@ -150,10 +168,7 @@ export default function MarketplaceEditPage() {
     setError(null);
 
     try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw new Error(userErr.message);
-      const uid = userRes.user?.id ?? null;
-      if (!uid) throw new Error("Session invalide.");
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
       const itRes = await supabase
         .from("marketplace_items")
@@ -588,9 +603,9 @@ export default function MarketplaceEditPage() {
                       disabled={saving || busyImages}
                     >
                       <option value="">-</option>
-                      {CONDITIONS.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
+                      {conditionOptions.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
                         </option>
                       ))}
                     </select>

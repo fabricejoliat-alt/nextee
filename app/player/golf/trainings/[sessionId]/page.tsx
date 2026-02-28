@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { Flame, Mountain, Smile, Award } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -159,9 +160,7 @@ export default function PlayerTrainingDetailPage() {
       try {
         if (!sessionId) throw new Error(t("trainingDetail.error.missingId"));
 
-        const { data: userRes, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userRes.user) throw new Error(t("trainingDetail.error.invalidSession"));
-        const uid = userRes.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         const sRes = await supabase
           .from("training_sessions")

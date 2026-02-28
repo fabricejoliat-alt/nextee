@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type ApiCourseLite = {
@@ -215,13 +216,8 @@ export default function NewRoundPage() {
     (async () => {
       setError(null);
 
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) {
-        setError(t("roundsNew.error.invalidSession"));
-        return;
-      }
-
-      const profRes = await supabase.from("profiles").select("handicap").eq("id", userRes.user.id).maybeSingle();
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+      const profRes = await supabase.from("profiles").select("handicap").eq("id", uid).maybeSingle();
       if (profRes.error) {
         console.warn("profile handicap load failed:", profRes.error.message);
         return;
@@ -340,12 +336,7 @@ export default function NewRoundPage() {
       return;
     }
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) {
-      setError(t("roundsNew.error.invalidSession"));
-      setBusy(false);
-      return;
-    }
+    const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
     if (!selectedCourse) {
       setError(t("roundsNew.error.chooseCourse"));
@@ -368,7 +359,7 @@ export default function NewRoundPage() {
     }
 
     const payload: any = {
-      user_id: userRes.user.id,
+      user_id: uid,
       start_at: dt.toISOString(),
       location: null,
       round_type: roundType,

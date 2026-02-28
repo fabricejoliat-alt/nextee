@@ -16,6 +16,47 @@ function randomPassword(len = 10) {
   return out;
 }
 
+function normalizeToken(input: string) {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/\.{2,}/g, ".");
+}
+
+async function generateUniqueUsername(
+  supabaseAdmin: any,
+  firstName: string,
+  lastName: string,
+  ignoreUserId?: string
+) {
+  const first = normalizeToken(firstName);
+  const last = normalizeToken(lastName);
+  const baseRaw = [first, last].filter(Boolean).join(".");
+  const base = baseRaw || `user.${Date.now().toString().slice(-6)}`;
+
+  let candidate = base;
+  let suffix = 1;
+  while (suffix <= 500) {
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .ilike("username", candidate)
+      .limit(5);
+
+    if (error) throw new Error(error.message);
+    const takenByOther = (data ?? []).some((r: any) => String(r.id) !== String(ignoreUserId ?? ""));
+    if (!takenByOther) return candidate;
+
+    suffix += 1;
+    candidate = `${base}${suffix}`;
+  }
+
+  throw new Error("Impossible de générer un username unique.");
+}
+
 export async function POST(req: NextRequest, ctx: any) {
   try {
     const supabaseUrl = mustEnv("SUPABASE_URL");
@@ -31,13 +72,13 @@ const clubId: string | undefined = params?.clubId;
     }
 
     const body = await req.json().catch(() => null);
-    const email = (body?.email ?? "").trim().toLowerCase();
+    const emailInput = (body?.email ?? "").trim().toLowerCase();
     const first_name = (body?.first_name ?? "").trim();
     const last_name = (body?.last_name ?? "").trim();
-    const role = (body?.role ?? "").trim(); // manager | coach | player
+    const phone = (body?.phone ?? "").trim();
+    const role = (body?.role ?? "").trim(); // manager | coach | player | parent
 
-    if (!email) return NextResponse.json({ error: "Missing email" }, { status: 400 });
-    if (!role || !["manager", "coach", "player"].includes(role)) {
+    if (!role || !["manager", "coach", "player", "parent"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
@@ -97,17 +138,44 @@ const clubId: string | undefined = params?.clubId;
       return NextResponse.json({ error: listErr.message }, { status: 400 });
     }
 
-    const existing = (listData.users ?? []).find((u) => (u.email ?? "").toLowerCase() === email);
+    const existing = emailInput
+      ? (listData.users ?? []).find((u) => (u.email ?? "").toLowerCase() === emailInput)
+      : null;
+    const email = emailInput || `member.${Date.now()}.${Math.floor(Math.random() * 10000)}@noemail.local`;
 
     let userId: string;
+    let username: string | null = null;
 
     if (existing) {
       userId = existing.id;
+      const { data: existingProfile, error: existingProfileErr } = await supabaseAdmin
+        .from("profiles")
+        .select("username,first_name,last_name")
+        .eq("id", userId)
+        .maybeSingle();
+      if (existingProfileErr) {
+        return NextResponse.json({ error: existingProfileErr.message }, { status: 400 });
+      }
+
+      username =
+        (typeof existingProfile?.username === "string" && existingProfile.username.trim() !== ""
+          ? existingProfile.username.trim().toLowerCase()
+          : null);
+      if (!username) {
+        const fn = first_name || existingProfile?.first_name || "parent";
+        const ln = last_name || existingProfile?.last_name || "user";
+        username = await generateUniqueUsername(supabaseAdmin, fn, ln, userId);
+      }
     } else {
+      username = await generateUniqueUsername(supabaseAdmin, first_name, last_name);
       const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
         email,
         password: tempPassword,
         email_confirm: true,
+        user_metadata: {
+          username,
+          role,
+        },
       });
 
       if (createErr || !created.user) {
@@ -125,6 +193,9 @@ const clubId: string | undefined = params?.clubId;
           id: userId,
           first_name: first_name || null,
           last_name: last_name || null,
+          phone: phone || null,
+          username,
+          app_role: role || null,
         },
         { onConflict: "id" }
       );
@@ -150,8 +221,9 @@ const clubId: string | undefined = params?.clubId;
     // Réponse (on ne renvoie le mot de passe que si user nouveau)
     return NextResponse.json(
       {
-        user: { id: userId, email },
+        user: { id: userId, email: emailInput || null },
         tempPassword: existing ? null : tempPassword,
+        username,
       },
       { status: 200 }
     );

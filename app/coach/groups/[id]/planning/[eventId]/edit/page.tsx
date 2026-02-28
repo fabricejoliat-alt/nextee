@@ -222,6 +222,46 @@ function memberRoleLabel(role: string | null | undefined) {
   }
 }
 
+function fmtDateTime(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function fmtDateTimeRange(startIso: string, endIso: string | null, locale: "fr" | "en") {
+  if (!endIso) return fmtDateTime(startIso, locale);
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const sameDay = start.toDateString() === end.toDateString();
+  const localeTag = locale === "fr" ? "fr-CH" : "en-US";
+
+  if (sameDay) {
+    const datePart = new Intl.DateTimeFormat(localeTag, {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(start);
+    const timeFmt = new Intl.DateTimeFormat(localeTag, { hour: "2-digit", minute: "2-digit" });
+    return `${datePart} • ${timeFmt.format(start)} → ${timeFmt.format(end)}`;
+  }
+  return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
+}
+
+function eventTypeLabelLocalized(v: string | null | undefined, locale: "fr" | "en") {
+  if (v === "training") return locale === "fr" ? "Entraînement" : "Training";
+  if (v === "interclub") return "Interclub";
+  if (v === "camp") return locale === "fr" ? "Stage" : "Camp";
+  if (v === "session") return locale === "fr" ? "Séance" : "Session";
+  return locale === "fr" ? "Événement" : "Event";
+}
+
 export default function CoachEventEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string }>();
@@ -800,14 +840,30 @@ export default function CoachEventEditPage() {
       await syncPlayerChangesOnFuturePlannedEvents();
 
       if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
+        const oldStart = new Date(event.starts_at);
+        const oldEnd = event.ends_at
+          ? new Date(event.ends_at)
+          : new Date(new Date(event.starts_at).getTime() + Math.max(0, event.duration_minutes || 0) * 60_000);
+        const oldRange = fmtDateTimeRange(oldStart.toISOString(), oldEnd.toISOString(), locale);
+        const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
+        const oldDuration = Math.max(0, Number(event.duration_minutes ?? 0));
+        const newDuration = Math.max(0, Number(durationForDb ?? 0));
+        const oldLoc = (event.location_text ?? "").trim() || "—";
+        const newLoc = locationText.trim() || "—";
+        const pieces =
+          locale === "fr"
+            ? [
+                `Date/heure: ${oldRange} -> ${newRange}`,
+                `Durée: ${oldDuration} min -> ${newDuration} min`,
+                `Lieu: ${oldLoc} -> ${newLoc}`,
+              ]
+            : [
+                `Date/time: ${oldRange} -> ${newRange}`,
+                `Duration: ${oldDuration} min -> ${newDuration} min`,
+                `Location: ${oldLoc} -> ${newLoc}`,
+              ];
         const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
-          dateTime: new Intl.DateTimeFormat(locale === "en" ? "en-US" : "fr-CH", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }).format(startDt),
+          changesSummary: pieces.join(" · "),
         });
         await createAppNotification({
           actorUserId: meId,
@@ -945,7 +1001,14 @@ export default function CoachEventEditPage() {
       await syncPlayerChangesOnFuturePlannedEvents();
 
       if (attendeeIdsSelected.length > 0 && meId) {
-        const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale);
+        const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
+        const summary =
+          locale === "fr"
+            ? `Nouvelle récurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "sans lieu"}`
+            : `New recurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "no location"}`;
+        const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale, {
+          changesSummary: summary,
+        });
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_updated",
@@ -981,7 +1044,15 @@ export default function CoachEventEditPage() {
     const del = await supabase.from("club_events").delete().eq("id", eventId);
     if (del.error) setError(del.error.message);
     if (!del.error && recipients.length > 0 && meId) {
-      const msg = await getNotificationMessage("notif.coachEventDeleted", locale);
+      const eventStart = event?.starts_at ?? new Date().toISOString();
+      const eventEnd =
+        event?.ends_at ??
+        new Date(new Date(eventStart).getTime() + Math.max(0, Number(event?.duration_minutes ?? 0)) * 60_000).toISOString();
+      const msg = await getNotificationMessage("notif.coachEventDeleted", locale, {
+        eventType: eventTypeLabelLocalized(event?.event_type ?? "training", locale),
+        dateTime: fmtDateTimeRange(eventStart, eventEnd, locale),
+        locationPart: event?.location_text ? ` · ${event.location_text}` : "",
+      });
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",
@@ -1026,7 +1097,13 @@ export default function CoachEventEditPage() {
       if (delSeries.error) throw new Error(delSeries.error.message);
 
       if (recipients.length > 0 && meId) {
-        const msg = await getNotificationMessage("notif.coachSeriesDeleted", locale);
+        const summary =
+          locale === "fr"
+            ? `Récurrence supprimée: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`
+            : `Recurrence deleted: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`;
+        const msg = await getNotificationMessage("notif.coachSeriesDeleted", locale, {
+          changesSummary: summary,
+        });
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_deleted",

@@ -54,10 +54,25 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: memErr.message }, { status: 400 });
     }
 
+    let parentHasChildren = true;
+    if (membership?.role === "parent") {
+      const { data: linkRow, error: linkErr } = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id")
+        .eq("guardian_user_id", userId)
+        .limit(1)
+        .maybeSingle();
+      if (linkErr) {
+        return NextResponse.json({ error: linkErr.message }, { status: 400 });
+      }
+      parentHasChildren = Boolean(linkRow?.player_id);
+    }
+
     return NextResponse.json({
       userId,
       isSuperAdmin: false,
       membership: membership ?? null, // {club_id, role, is_active}
+      parentHasChildren,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

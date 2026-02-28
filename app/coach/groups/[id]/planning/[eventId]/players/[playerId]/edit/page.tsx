@@ -13,6 +13,7 @@ type EventRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   starts_at: string;
   duration_minutes: number;
   location_text: string | null;
@@ -131,7 +132,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
       const eRes = await supabase
         .from("club_events")
-        .select("id,group_id,club_id,starts_at,duration_minutes,location_text,series_id,status")
+        .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,series_id,status")
         .eq("id", eventId)
         .maybeSingle();
 
@@ -294,8 +295,19 @@ export default function CoachEventPlayerFeedbackEditPage() {
     }
 
     if (attendanceStatus !== "absent" && meId && playerId) {
+      const eventTypeLabel =
+        event?.event_type === "camp"
+          ? locale === "fr" ? "Stage" : "Camp"
+          : event?.event_type === "interclub"
+          ? locale === "fr" ? "Interclubs" : "Interclub"
+          : event?.event_type === "session"
+          ? locale === "fr" ? "Séance" : "Session"
+          : event?.event_type === "event"
+          ? locale === "fr" ? "Événement" : "Event"
+          : locale === "fr" ? "Entraînement" : "Training";
       const msg = await getNotificationMessage("notif.coachPlayerEvaluated", locale, {
         playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
+        eventType: eventTypeLabel,
         dateTime: fmtDateTime(event?.starts_at ?? new Date().toISOString()),
       });
       await createAppNotification({

@@ -10,10 +10,22 @@ export type AppNotificationInput = {
   recipientUserIds: string[];
 };
 
-export async function createAppNotification(input: AppNotificationInput) {
-  const recipients = Array.from(new Set(input.recipientUserIds.filter(Boolean))).filter((id) => id !== input.actorUserId);
-  if (recipients.length === 0) return { ok: true as const, notificationId: null as string | null };
+function withChildId(url: string | undefined, childId: string) {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    u.searchParams.set("child_id", childId);
+    if (u.origin === "http://localhost" && url.startsWith("/")) {
+      return `${u.pathname}${u.search}${u.hash}`;
+    }
+    return u.toString();
+  } catch {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}child_id=${encodeURIComponent(childId)}`;
+  }
+}
 
+async function insertNotificationRow(input: AppNotificationInput) {
   const nIns = await supabase
     .from("notifications")
     .insert({
@@ -28,8 +40,14 @@ export async function createAppNotification(input: AppNotificationInput) {
     .single();
 
   if (nIns.error) throw new Error(nIns.error.message);
+  return nIns.data.id as string;
+}
 
-  const notificationId = nIns.data.id as string;
+export async function createAppNotification(input: AppNotificationInput) {
+  const recipients = Array.from(new Set(input.recipientUserIds.filter(Boolean))).filter((id) => id !== input.actorUserId);
+  if (recipients.length === 0) return { ok: true as const, notificationId: null as string | null };
+
+  const notificationId = await insertNotificationRow(input);
 
   const rIns = await supabase
     .from("notification_recipients")
@@ -45,6 +63,75 @@ export async function createAppNotification(input: AppNotificationInput) {
     url: (input.data?.url as string | undefined) ?? undefined,
     recipientUserIds: recipients,
   }).catch(() => {});
+
+  // Duplicate player notifications to linked parents (one notification per child+parent pair).
+  const gRes = await supabase
+    .from("player_guardians")
+    .select("player_id,guardian_user_id,can_view")
+    .in("player_id", recipients);
+
+  if (gRes.error) {
+    console.warn("createAppNotification: unable to expand parent recipients", gRes.error.message);
+  } else {
+    const links = (gRes.data ?? []) as Array<{
+      player_id: string | null;
+      guardian_user_id: string | null;
+      can_view: boolean | null;
+    }>;
+
+    const parentTargets = links
+      .filter((l) => !!l.player_id && !!l.guardian_user_id)
+      .filter((l) => l.can_view !== false)
+      .map((l) => ({ playerId: String(l.player_id), parentId: String(l.guardian_user_id) }))
+      .filter((x) => x.parentId !== input.actorUserId);
+
+    if (parentTargets.length > 0) {
+      const playerIds = Array.from(new Set(parentTargets.map((x) => x.playerId)));
+      const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", playerIds);
+      const nameByPlayerId = new Map<string, string>();
+      if (!pRes.error) {
+        (pRes.data ?? []).forEach((p: any) => {
+          const name = `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || "Joueur";
+          nameByPlayerId.set(String(p.id), name);
+        });
+      }
+
+      for (const target of parentTargets) {
+        const childName = nameByPlayerId.get(target.playerId) ?? "Joueur";
+        const childUrl = withChildId(input.data?.url as string | undefined, target.playerId);
+        const parentData = {
+          ...(input.data ?? {}),
+          url: childUrl ?? (input.data?.url as string | undefined),
+          child_id: target.playerId,
+          child_name: childName,
+        };
+        const parentTitle = `${input.title} — ${childName}`;
+        const parentBody = input.body ?? null;
+
+        const parentNotificationId = await insertNotificationRow({
+          ...input,
+          title: parentTitle,
+          body: parentBody,
+          data: parentData,
+          recipientUserIds: [target.parentId],
+        });
+
+        const prIns = await supabase.from("notification_recipients").insert({
+          notification_id: parentNotificationId,
+          user_id: target.parentId,
+        });
+        if (prIns.error) throw new Error(prIns.error.message);
+
+        dispatchPush({
+          notificationId: parentNotificationId,
+          title: parentTitle,
+          body: parentBody,
+          url: childUrl,
+          recipientUserIds: [target.parentId],
+        }).catch(() => {});
+      }
+    }
+  }
 
   return { ok: true as const, notificationId };
 }

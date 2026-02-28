@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const CATEGORIES = [
@@ -29,8 +30,25 @@ const CATEGORIES = [
 const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
 
 export default function MarketplaceNew() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
+  const conditionOptions = useMemo(
+    () =>
+      CONDITIONS.map((value) => ({
+        value,
+        label:
+          locale === "fr"
+            ? value === "New"
+              ? "Neuf"
+              : value === "Like new"
+              ? "Comme neuf"
+              : value === "Good condition"
+              ? "Bon état"
+              : "À réparer"
+            : value,
+      })),
+    [locale]
+  );
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -95,15 +113,14 @@ export default function MarketplaceNew() {
       setLoading(true);
       setError(null);
 
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) {
+      const { data: authRes, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authRes.user) {
         setError("Session invalide. Reconnecte-toi.");
         setLoading(false);
         return;
       }
-
-      const uid = userRes.user.id;
-      const email = userRes.user.email ?? "";
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+      const email = authRes.user.email ?? "";
       setUserId(uid);
       setContactEmail(email);
 
@@ -393,9 +410,9 @@ export default function MarketplaceNew() {
                     <span style={fieldLabelStyle}>{t("marketplace.condition")}</span>
                     <select value={condition} onChange={(e) => setCondition(e.target.value)} disabled={busy}>
                       <option value="">-</option>
-                      {CONDITIONS.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
+                      {conditionOptions.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
                         </option>
                       ))}
                     </select>

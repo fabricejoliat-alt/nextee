@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CalendarClock, Pencil } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -67,9 +68,7 @@ export default function PlayerTrainingsToCompletePage() {
       setLoading(true);
       setError(null);
       try {
-        const { data: auth, error: authErr } = await supabase.auth.getUser();
-        if (authErr || !auth.user) throw new Error(t("trainings.error.invalidSession"));
-        const uid = auth.user.id;
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
         const sRes = await supabase
           .from("training_sessions")

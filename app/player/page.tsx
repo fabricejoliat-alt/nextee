@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -344,15 +345,17 @@ export default function PlayerHomePage() {
     setLoading(true);
     setError(null);
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) {
+    let effectiveUid = "";
+    try {
+      const ctx = await resolveEffectivePlayerContext();
+      effectiveUid = ctx.effectiveUserId;
+    } catch {
       setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
       return;
     }
-    const uid = userRes.user.id;
 
-    const profRes = await supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", uid).maybeSingle();
+    const profRes = await supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", effectiveUid).maybeSingle();
     if (profRes.error) {
       setError(profRes.error.message);
       setLoading(false);
@@ -360,7 +363,7 @@ export default function PlayerHomePage() {
     }
     setProfile((profRes.data ?? null) as Profile | null);
 
-    const memRes = await supabase.from("club_members").select("club_id").eq("user_id", uid).eq("is_active", true);
+    const memRes = await supabase.from("club_members").select("club_id").eq("user_id", effectiveUid).eq("is_active", true);
     if (memRes.error) {
       setError(memRes.error.message);
       setClubs([]);
@@ -431,7 +434,7 @@ export default function PlayerHomePage() {
     const sRes = await supabase
       .from("training_sessions")
       .select("id,start_at,total_minutes,motivation,difficulty,satisfaction")
-      .eq("user_id", uid)
+      .eq("user_id", effectiveUid)
       .gte("start_at", start.toISOString())
       .lt("start_at", end.toISOString())
       .order("start_at", { ascending: false });
@@ -459,7 +462,7 @@ export default function PlayerHomePage() {
       const curR = await supabase
         .from("golf_rounds")
         .select("id,start_at,gir,fairways_hit,fairways_total,total_putts")
-        .eq("user_id", uid)
+        .eq("user_id", effectiveUid)
         .gte("start_at", curStart.toISOString())
         .lt("start_at", curEnd.toISOString())
         .order("start_at", { ascending: false });
@@ -472,7 +475,7 @@ export default function PlayerHomePage() {
       const prevR = await supabase
         .from("golf_rounds")
         .select("id,start_at,gir,fairways_hit,fairways_total,total_putts")
-        .eq("user_id", uid)
+        .eq("user_id", effectiveUid)
         .gte("start_at", prevStart.toISOString())
         .lt("start_at", prevEnd.toISOString())
         .order("start_at", { ascending: false });

@@ -11,6 +11,7 @@ type ProfileRow = {
 
   first_name: string | null;
   last_name: string | null;
+  username: string | null;
   phone: string | null;
 
   birth_date: string | null; // ISO YYYY-MM-DD
@@ -28,15 +29,6 @@ type ProfileRow = {
 
   // ✅ NEW — Admin
   avs_no: string | null;
-
-  // ✅ NEW — Parents
-  parent1_name: string | null;
-  parent1_phone: string | null;
-  parent1_email: string | null;
-
-  parent2_name: string | null;
-  parent2_phone: string | null;
-  parent2_email: string | null;
 
   avatar_url?: string | null; // ✅ NEW
 };
@@ -103,6 +95,8 @@ export default function PlayerProfilePage() {
 
   const [userId, setUserId] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -132,15 +126,6 @@ export default function PlayerProfilePage() {
 
   // ✅ NEW — Admin
   const [avsNo, setAvsNo] = useState("");
-
-  // ✅ NEW — Parents
-  const [parent1Name, setParent1Name] = useState("");
-  const [parent1Phone, setParent1Phone] = useState("");
-  const [parent1Email, setParent1Email] = useState("");
-
-  const [parent2Name, setParent2Name] = useState("");
-  const [parent2Phone, setParent2Phone] = useState("");
-  const [parent2Email, setParent2Email] = useState("");
 
   const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
 
@@ -185,6 +170,21 @@ export default function PlayerProfilePage() {
     setUserId(uid);
     setEmail(userRes.user.email ?? "");
 
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (token) {
+      const meRes = await fetch("/api/auth/me", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const meJson = await meRes.json().catch(() => ({}));
+      const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
+      setViewerRole(role === "parent" ? "parent" : "player");
+    } else {
+      setViewerRole("player");
+    }
+
     // profile
     const profRes = await supabase
       .from("profiles")
@@ -193,6 +193,7 @@ export default function PlayerProfilePage() {
           "id",
           "first_name",
           "last_name",
+          "username",
           "phone",
           "birth_date",
           "sex",
@@ -202,12 +203,6 @@ export default function PlayerProfilePage() {
           "postal_code",
           "city",
           "avs_no",
-          "parent1_name",
-          "parent1_phone",
-          "parent1_email",
-          "parent2_name",
-          "parent2_phone",
-          "parent2_email",
           "avatar_url",
         ].join(",")
       )
@@ -223,6 +218,7 @@ export default function PlayerProfilePage() {
     const row = (profRes.data ?? null) as unknown as ProfileRow | null;
     setFirstName(row?.first_name ?? "");
     setLastName(row?.last_name ?? "");
+    setUsername((row as any)?.username ?? "");
     setPhone(row?.phone ?? "");
 
     setBirthDate(row?.birth_date ?? "");
@@ -237,14 +233,6 @@ export default function PlayerProfilePage() {
     setCity(row?.city ?? "");
 
     setAvsNo(row?.avs_no ?? "");
-
-    setParent1Name(row?.parent1_name ?? "");
-    setParent1Phone(row?.parent1_phone ?? "");
-    setParent1Email(row?.parent1_email ?? "");
-
-    setParent2Name(row?.parent2_name ?? "");
-    setParent2Phone(row?.parent2_phone ?? "");
-    setParent2Email(row?.parent2_email ?? "");
 
     setAvatarDbUrl(row?.avatar_url ?? null);
 
@@ -303,44 +291,33 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     const hc = parseHandicap();
-    if (handicap.trim() !== "" && hc === null) {
+    if (viewerRole === "player" && handicap.trim() !== "" && hc === null) {
       setError(t("playerProfile.error.invalidHandicap"));
       setBusy(false);
       return;
     }
 
+    const upsertPayload: Record<string, any> = {
+      id: userId,
+      first_name: firstName.trim() || null,
+      last_name: lastName.trim() || null,
+      phone: phone.trim() || null,
+      address: address.trim() || null,
+      postal_code: postalCode.trim() || null,
+      city: city.trim() || null,
+    };
+
+    if (viewerRole === "player") {
+      upsertPayload.birth_date = birthDate.trim() || null;
+      upsertPayload.sex = sex.trim() || null;
+      upsertPayload.handedness = handedness || null;
+      upsertPayload.handicap = hc;
+      upsertPayload.avs_no = avsNo.trim() || null;
+    }
+
     const { error } = await supabase
       .from("profiles")
-      .upsert(
-        {
-          id: userId,
-          first_name: firstName.trim() || null,
-          last_name: lastName.trim() || null,
-          phone: phone.trim() || null,
-
-          birth_date: birthDate.trim() || null,
-          sex: sex.trim() || null,
-
-          handedness: handedness || null,
-
-          handicap: hc,
-
-          address: address.trim() || null,
-          postal_code: postalCode.trim() || null,
-          city: city.trim() || null,
-
-          avs_no: avsNo.trim() || null,
-
-          parent1_name: parent1Name.trim() || null,
-          parent1_phone: parent1Phone.trim() || null,
-          parent1_email: parent1Email.trim() || null,
-
-          parent2_name: parent2Name.trim() || null,
-          parent2_phone: parent2Phone.trim() || null,
-          parent2_email: parent2Email.trim() || null,
-        },
-        { onConflict: "id" }
-      );
+      .upsert(upsertPayload, { onConflict: "id" });
 
     if (error) {
       setError(error.message);
@@ -540,9 +517,11 @@ export default function PlayerProfilePage() {
             </div>
 
             <div className="hero-sub">
-              <div>
-                Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}
-              </div>
+              {viewerRole === "player" ? (
+                <div>Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</div>
+              ) : (
+                <div>Parent</div>
+              )}
 
               {/* ✅ pastille supprimée (delta-pill) */}
             </div>
@@ -581,60 +560,60 @@ export default function PlayerProfilePage() {
                     </Field>
                   </div>
 
-                  {/* ✅ Date de naissance sur une ligne */}
-                  <Field label={t("playerProfile.birthDate")}>
-                    <input
-                      type="date"
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value)}
-                    />
-                  </Field>
+                  {viewerRole === "player" && (
+                    <>
+                      <Field label={t("playerProfile.birthDate")}>
+                        <input
+                          type="date"
+                          value={birthDate}
+                          onChange={(e) => setBirthDate(e.target.value)}
+                        />
+                      </Field>
 
-                  {/* ✅ Category sur une ligne */}
-                  <Field label={t("playerProfile.category")}>
-                    <input value={juniorCategory} disabled />
-                  </Field>
+                      <Field label={t("playerProfile.category")}>
+                        <input value={juniorCategory} disabled />
+                      </Field>
 
-                  <div className="grid-2">
-                    <Field label={t("playerProfile.sex")}>
-                      <select value={sex} onChange={(e) => setSex(e.target.value)}>
-                        <option value="">—</option>
-                        <option value="male">{t("playerProfile.sexMale")}</option>
-                        <option value="female">{t("playerProfile.sexFemale")}</option>
-                        <option value="other">{t("playerProfile.sexOther")}</option>
-                      </select>
-                    </Field>
+                      <div className="grid-2">
+                        <Field label={t("playerProfile.sex")}>
+                          <select value={sex} onChange={(e) => setSex(e.target.value)}>
+                            <option value="">—</option>
+                            <option value="male">{t("playerProfile.sexMale")}</option>
+                            <option value="female">{t("playerProfile.sexFemale")}</option>
+                            <option value="other">{t("playerProfile.sexOther")}</option>
+                          </select>
+                        </Field>
 
-                    {/* ✅ NEW */}
-                    <Field label={t("playerProfile.handedness")}>
-                      <select
-                        value={handedness}
-                        onChange={(e) => setHandedness(e.target.value as any)}
-                      >
-                        <option value="">—</option>
-                        <option value="right">{t("playerProfile.handednessRight")}</option>
-                        <option value="left">{t("playerProfile.handednessLeft")}</option>
-                      </select>
-                    </Field>
-                  </div>
+                        <Field label={t("playerProfile.handedness")}>
+                          <select
+                            value={handedness}
+                            onChange={(e) => setHandedness(e.target.value as any)}
+                          >
+                            <option value="">—</option>
+                            <option value="right">{t("playerProfile.handednessRight")}</option>
+                            <option value="left">{t("playerProfile.handednessLeft")}</option>
+                          </select>
+                        </Field>
+                      </div>
 
-                  {/* ✅ Handicap en plus grand, sur sa ligne */}
-                  <div style={{ marginTop: 6 }}>
-                    <Field label={t("playerProfile.handicap")}>
-                      <input
-                        inputMode="decimal"
-                        placeholder="ex: 25.4"
-                        value={handicap}
-                        onChange={(e) => setHandicap(e.target.value)}
-                        style={{
-                          height: 46,
-                          fontSize: 18,
-                          fontWeight: 900,
-                          borderRadius: 12,
-                        }}
-                      />
-                    </Field>
-                  </div>
+                      <div style={{ marginTop: 6 }}>
+                        <Field label={t("playerProfile.handicap")}>
+                          <input
+                            inputMode="decimal"
+                            placeholder="ex: 25.4"
+                            value={handicap}
+                            onChange={(e) => setHandicap(e.target.value)}
+                            style={{
+                              height: 46,
+                              fontSize: 18,
+                              fontWeight: 900,
+                              borderRadius: 12,
+                            }}
+                          />
+                        </Field>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="hr-soft" />
@@ -652,6 +631,17 @@ export default function PlayerProfilePage() {
                       <input value={email} disabled />
                     </Field>
                   </div>
+
+                  {viewerRole === "parent" && (
+                    <>
+                      <Field label="Username">
+                        <input value={username} disabled />
+                      </Field>
+                      <div style={{ color: "var(--muted)", fontSize: 12 }}>
+                        Le mot de passe se modifie depuis l’espace manager.
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="hr-soft" />
@@ -675,71 +665,20 @@ export default function PlayerProfilePage() {
                   </div>
                 </div>
 
-                <div className="hr-soft" />
+                {viewerRole === "player" && (
+                  <>
+                    <div className="hr-soft" />
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {t("playerProfile.administrative")}
+                      </div>
 
-                {/* ✅ Admin */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    {t("playerProfile.administrative")}
-                  </div>
-
-                  <Field label={t("playerProfile.avsNo")}>
-                    <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
-                  </Field>
-                </div>
-
-                <div className="hr-soft" />
-
-                {/* ✅ Parents */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.parents")}</div>
-
-                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>
-                    {t("playerProfile.parent1")}
-                  </div>
-                  <div className="grid-2">
-                    <Field label={t("playerProfile.fullName")}>
-                      <input value={parent1Name} onChange={(e) => setParent1Name(e.target.value)} />
-                    </Field>
-                    <Field label={t("playerProfile.phone")}>
-                      <input
-                        value={parent1Phone}
-                        onChange={(e) => setParent1Phone(e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t("playerProfile.email")}>
-                    <input
-                      inputMode="email"
-                      value={parent1Email}
-                      onChange={(e) => setParent1Email(e.target.value)}
-                    />
-                  </Field>
-
-                  <div className="hr-soft" style={{ margin: "6px 0" }} />
-
-                  <div style={{ fontWeight: 900, opacity: 0.8, fontSize: 13 }}>
-                    {t("playerProfile.parent2")}
-                  </div>
-                  <div className="grid-2">
-                    <Field label={t("playerProfile.fullName")}>
-                      <input value={parent2Name} onChange={(e) => setParent2Name(e.target.value)} />
-                    </Field>
-                    <Field label={t("playerProfile.phone")}>
-                      <input
-                        value={parent2Phone}
-                        onChange={(e) => setParent2Phone(e.target.value)}
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t("playerProfile.email")}>
-                    <input
-                      inputMode="email"
-                      value={parent2Email}
-                      onChange={(e) => setParent2Email(e.target.value)}
-                    />
-                  </Field>
-                </div>
+                      <Field label={t("playerProfile.avsNo")}>
+                        <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
+                      </Field>
+                    </div>
+                  </>
+                )}
 
                 {/* ✅ ENREGISTRER à l’intérieur de la card */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>

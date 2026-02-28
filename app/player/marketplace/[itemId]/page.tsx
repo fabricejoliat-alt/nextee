@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
@@ -103,9 +104,7 @@ export default function MarketplaceDetailPage() {
     setError(null);
 
     try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw new Error(userErr.message);
-      const uid = userRes.user?.id ?? null;
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
       const itRes = await supabase
         .from("marketplace_items")
@@ -120,7 +119,7 @@ export default function MarketplaceDetailPage() {
 
       const it = itRes.data as Item;
       setItem(it);
-      setIsMine(!!uid && it.user_id === uid);
+      setIsMine(it.user_id === uid);
 
       const imgRes = await supabase
         .from("marketplace_images")

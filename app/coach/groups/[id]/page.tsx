@@ -286,6 +286,7 @@ export default function CoachGroupEditPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
+  const [clubRole, setClubRole] = useState<Role | null>(null);
 
   const [group, setGroup] = useState<CoachGroup | null>(null);
   const [cats, setCats] = useState<CategoryRow[]>([]);
@@ -405,6 +406,19 @@ export default function CoachGroupEditPage() {
 
     const g = (gRes.data ?? null) as any as CoachGroup | null;
     setGroup(g);
+    if (g?.club_id) {
+      const roleRes = await supabase
+        .from("club_members")
+        .select("role")
+        .eq("club_id", g.club_id)
+        .eq("user_id", uid)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!roleRes.error && roleRes.data) setClubRole((roleRes.data as any).role as Role);
+      else setClubRole(null);
+    } else {
+      setClubRole(null);
+    }
 
     if (g) {
       setGroupName(g.name ?? "");
@@ -472,12 +486,6 @@ export default function CoachGroupEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
 
-  const isHead = useMemo(() => {
-    if (!userId) return false;
-    if (group?.head_coach_user_id && group.head_coach_user_id === userId) return true;
-    return coaches.some((c) => c.coach_user_id === userId && c.is_head);
-  }, [userId, group, coaches]);
-
   const planningSummary = useMemo(() => {
     const now = Date.now();
     const scheduled = plannedEvents.filter((e) => e.status === "scheduled");
@@ -500,6 +508,9 @@ export default function CoachGroupEditPage() {
     if (groupName.trim().length < 2) return false;
     return true;
   }, [busy, group, groupName]);
+
+  const canManagePlayers = useMemo(() => clubRole === "manager", [clubRole]);
+  const canDeleteGroup = useMemo(() => clubRole === "manager", [clubRole]);
 
   // --------- GROUP INFO ----------
   async function saveGroupInfo(e: React.FormEvent) {
@@ -679,8 +690,8 @@ export default function CoachGroupEditPage() {
   // --------- DELETE GROUP ----------
   async function deleteGroup() {
     if (!group) return;
-    if (!isHead) {
-      setErr("Seul le Head coach peut supprimer ce groupe.");
+    if (!canDeleteGroup) {
+      setErr("Seul un manager peut supprimer ce groupe.");
       return;
     }
 
@@ -867,7 +878,7 @@ export default function CoachGroupEditPage() {
                       label="Ajouter un joueur"
                       placeholder="Tape un nom ou handicap…"
                       items={playerCandidates}
-                      disabled={busy}
+                      disabled={busy || !canManagePlayers}
                       itemSubtitle={(p) =>
                         `Handicap ${typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}`
                       }
@@ -923,20 +934,22 @@ export default function CoachGroupEditPage() {
                                   </div>
 
                                   <div style={{ display: "flex", gap: 10 }}>
-                                    <button
-                                      type="button"
-                                      className="btn btn-danger soft"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        removePlayerFromGroup(row.id);
-                                      }}
-                                      disabled={busy}
-                                      style={{ padding: "10px 12px" }}
-                                      aria-label="Retirer joueur"
-                                      title="Retirer"
-                                    >
-                                      <Trash2 size={18} />
-                                    </button>
+                                    {canManagePlayers ? (
+                                      <button
+                                        type="button"
+                                        className="btn btn-danger soft"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removePlayerFromGroup(row.id);
+                                        }}
+                                        disabled={busy}
+                                        style={{ padding: "10px 12px" }}
+                                        aria-label="Retirer joueur"
+                                        title="Retirer"
+                                      >
+                                        <Trash2 size={18} />
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </div>
                               );
@@ -1064,10 +1077,10 @@ export default function CoachGroupEditPage() {
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)", marginTop: 8 }}>
-                    {isHead ? (
-                      <span>Tu es Head coach : tu peux supprimer ce groupe.</span>
+                    {canDeleteGroup ? (
+                      <span>Tu es manager : tu peux supprimer ce groupe.</span>
                     ) : (
-                      <span>Seul le Head coach peut supprimer ce groupe.</span>
+                      <span>Seul un manager peut supprimer ce groupe.</span>
                     )}
                   </div>
 
@@ -1075,7 +1088,7 @@ export default function CoachGroupEditPage() {
                     type="button"
                     className="btn btn-danger"
                     onClick={deleteGroup}
-                    disabled={busy || !isHead}
+                    disabled={busy || !canDeleteGroup}
                     style={{ width: "100%", marginTop: 12 }}
                   >
                     <Trash2 size={18} />

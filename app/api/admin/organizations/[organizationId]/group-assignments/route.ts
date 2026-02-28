@@ -7,7 +7,7 @@ function mustEnv(name: string) {
   return v;
 }
 
-async function assertSuperadmin(req: NextRequest, supabaseAdmin: any) {
+async function assertSuperadminOrManager(req: NextRequest, supabaseAdmin: any, organizationId: string) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing Authorization token." };
 
@@ -21,7 +21,20 @@ async function assertSuperadmin(req: NextRequest, supabaseAdmin: any) {
     .eq("user_id", callerId)
     .maybeSingle();
 
-  if (isAdminErr || !isAdminRow) return { ok: false as const, status: 403, error: "Forbidden." };
+  if (!isAdminErr && isAdminRow) return { ok: true as const, callerId };
+
+  const { data: managerMembership, error: membershipErr } = await supabaseAdmin
+    .from("club_members")
+    .select("id,role,is_active")
+    .eq("club_id", organizationId)
+    .eq("user_id", callerId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (membershipErr || !managerMembership || managerMembership.role !== "manager") {
+    return { ok: false as const, status: 403, error: "Forbidden." };
+  }
+
   return { ok: true as const, callerId };
 }
 
@@ -45,11 +58,10 @@ export async function GET(
       mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
       mustEnv("SUPABASE_SERVICE_ROLE_KEY")
     );
-    const auth = await assertSuperadmin(req, supabaseAdmin);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
+    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const [
       orgRes,
@@ -137,11 +149,10 @@ export async function POST(
       mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
       mustEnv("SUPABASE_SERVICE_ROLE_KEY")
     );
-    const auth = await assertSuperadmin(req, supabaseAdmin);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
+    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
     const actorType = String(body.actorType ?? "") as "player" | "coach";
@@ -298,11 +309,10 @@ export async function DELETE(
       mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
       mustEnv("SUPABASE_SERVICE_ROLE_KEY")
     );
-    const auth = await assertSuperadmin(req, supabaseAdmin);
-    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
+    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
     const actorType = String(body.actorType ?? "") as "player" | "coach";

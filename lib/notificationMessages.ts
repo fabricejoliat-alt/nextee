@@ -8,43 +8,43 @@ type TemplatePair = {
 export const notificationTemplateDefaults: Record<string, { fr: TemplatePair; en: TemplatePair; label: string }> = {
   "notif.coachEventCreated": {
     label: "Coach: événement créé",
-    fr: { title: "Nouvel événement planifié", body: "{eventType} · {dateTime}" },
-    en: { title: "New event scheduled", body: "{eventType} · {dateTime}" },
+    fr: { title: "Nouvel événement planifié", body: "{eventType} · {dateTime}{locationPart}" },
+    en: { title: "New event scheduled", body: "{eventType} · {dateTime}{locationPart}" },
   },
   "notif.coachEventsCreated": {
     label: "Coach: récurrence créée",
-    fr: { title: "Nouveaux événements planifiés", body: "{count} occurrence(s) {eventType} ajoutée(s)." },
-    en: { title: "New events scheduled", body: "{count} {eventType} occurrence(s) added." },
+    fr: { title: "Nouveaux événements planifiés", body: "{changesSummary}" },
+    en: { title: "New events scheduled", body: "{changesSummary}" },
   },
   "notif.coachEventDeleted": {
     label: "Coach: événement supprimé",
-    fr: { title: "Événement supprimé", body: "Un événement planifié a été supprimé." },
-    en: { title: "Event deleted", body: "A planned event was deleted." },
+    fr: { title: "Événement supprimé", body: "{eventType} · {dateTime}{locationPart}" },
+    en: { title: "Event deleted", body: "{eventType} · {dateTime}{locationPart}" },
   },
   "notif.coachEventUpdated": {
     label: "Coach: événement modifié",
-    fr: { title: "Événement modifié", body: "Date/heure/lieu mis à jour · {dateTime}" },
-    en: { title: "Event updated", body: "Date/time/location updated · {dateTime}" },
+    fr: { title: "Événement modifié", body: "{changesSummary}" },
+    en: { title: "Event updated", body: "{changesSummary}" },
   },
   "notif.coachSeriesUpdated": {
     label: "Coach: récurrence modifiée",
-    fr: { title: "Récurrence modifiée", body: "Planning des occurrences mis à jour." },
-    en: { title: "Recurrence updated", body: "Occurrence schedule updated." },
+    fr: { title: "Récurrence modifiée", body: "{changesSummary}" },
+    en: { title: "Recurrence updated", body: "{changesSummary}" },
   },
   "notif.coachSeriesDeleted": {
     label: "Coach: récurrence supprimée",
-    fr: { title: "Récurrence supprimée", body: "Une série d'événements planifiés a été supprimée." },
-    en: { title: "Recurrence deleted", body: "A series of planned events was deleted." },
+    fr: { title: "Récurrence supprimée", body: "{changesSummary}" },
+    en: { title: "Recurrence deleted", body: "{changesSummary}" },
   },
   "notif.coachPlayerEvaluated": {
     label: "Coach: joueur évalué",
-    fr: { title: "Nouvelle évaluation", body: "{playerName} · {dateTime}" },
-    en: { title: "New evaluation", body: "{playerName} · {dateTime}" },
+    fr: { title: "Nouvelle évaluation", body: "{playerName} · {eventType} · {dateTime}" },
+    en: { title: "New evaluation", body: "{playerName} · {eventType} · {dateTime}" },
   },
   "notif.playerMarkedAbsent": {
     label: "Player: absent",
-    fr: { title: "Absence signalée", body: "Un joueur s'est déclaré absent pour un événement." },
-    en: { title: "Absence reported", body: "A player marked themselves absent for an event." },
+    fr: { title: "Absence signalée", body: "{playerName} absent · {eventType} · {dateTime}" },
+    en: { title: "Absence reported", body: "{playerName} absent · {eventType} · {dateTime}" },
   },
 };
 

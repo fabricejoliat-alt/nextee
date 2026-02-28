@@ -817,6 +817,7 @@ export default function CoachGroupPlanningPage() {
         const msg = await getNotificationMessage("notif.coachEventCreated", locale, {
           eventType: eventTypeLabelLocalized(eventType),
           dateTime: fmtDateTimeRange(startDt.toISOString(), endDt.toISOString()),
+          locationPart: locationText.trim() ? ` · ${locationText.trim()}` : "",
         });
         await createAppNotification({
           actorUserId: meId,
@@ -947,9 +948,14 @@ export default function CoachGroupPlanningPage() {
       await saveStructureForEvents(createdEventIds);
 
       if (attendeeIds.length > 0 && meId && createdEventIds.length > 0) {
+        const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
         const msg = await getNotificationMessage("notif.coachEventsCreated", locale, {
           count: createdEventIds.length,
           eventType: eventTypeLabelLocalized(eventType).toLowerCase(),
+          changesSummary:
+            locale === "fr"
+              ? `${createdEventIds.length} occurrence(s) · ${eventTypeLabelLocalized(eventType)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`
+              : `${createdEventIds.length} occurrence(s) · ${eventTypeLabelLocalized(eventType)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`,
         });
         await createAppNotification({
           actorUserId: meId,
@@ -991,7 +997,16 @@ export default function CoachGroupPlanningPage() {
     if (del.error) setError(del.error.message);
 
     if (!del.error && recipients.length > 0 && meId) {
-      const msg = await getNotificationMessage("notif.coachEventDeleted", locale);
+      const deleted = events.find((e) => e.id === eventId);
+      const eventStart = deleted?.starts_at ?? new Date().toISOString();
+      const eventEnd =
+        deleted?.ends_at ??
+        new Date(new Date(eventStart).getTime() + Math.max(0, Number(deleted?.duration_minutes ?? 0)) * 60_000).toISOString();
+      const msg = await getNotificationMessage("notif.coachEventDeleted", locale, {
+        eventType: eventTypeLabelLocalized(deleted?.event_type ?? "training"),
+        dateTime: fmtDateTimeRange(eventStart, eventEnd),
+        locationPart: deleted?.location_text ? ` · ${deleted.location_text}` : "",
+      });
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",

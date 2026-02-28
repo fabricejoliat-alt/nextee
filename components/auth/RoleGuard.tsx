@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-type Allowed = "admin" | "player" | "coach" | "manager";
+type Allowed = "admin" | "player" | "coach" | "manager" | "parent";
 
 export default function RoleGuard({
   allow,
@@ -59,7 +59,12 @@ export default function RoleGuard({
         return;
       }
 
-      const role = membership.role as "player" | "coach" | "manager";
+      const role = membership.role as "player" | "coach" | "manager" | "parent";
+
+      if (role === "parent" && json.parentHasChildren === false) {
+        router.replace("/no-access");
+        return;
+      }
 
       if (allowed.includes(role)) {
         setOk(true);
@@ -68,6 +73,7 @@ export default function RoleGuard({
 
       // mauvais espace → redirection vers le bon
       if (role === "manager") router.replace("/manager");
+      else if (role === "parent") router.replace("/player");
       else if (role === "coach") router.replace("/coach");
       else router.replace("/player");
     })();

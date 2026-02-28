@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { SlidersHorizontal } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -136,8 +137,7 @@ export default function RoundsListPage() {
     setError(null);
 
     try {
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error(t("rounds.error.invalidSession"));
+      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
@@ -148,6 +148,7 @@ export default function RoundsListPage() {
           "id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,gir",
           { count: "exact" }
         )
+        .eq("user_id", uid)
         .order("start_at", { ascending: false });
 
       if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
