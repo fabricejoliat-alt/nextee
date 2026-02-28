@@ -263,7 +263,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           {
             label:
               locale === "fr"
-                ? `Entr. à évaluer (${pendingEvalCount})`
+                ? `${pendingEvalCount > 1 ? "Entraînements" : "Entraînement"} à évaluer (${pendingEvalCount})`
                 : `To complete (${pendingEvalCount})`,
             icon: ClipboardList,
             href: ROUTES.trainingsToComplete,
