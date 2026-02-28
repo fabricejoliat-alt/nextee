@@ -27,6 +27,22 @@ function isInternalNavigationClick(event: MouseEvent) {
     }
   }
 
+  // Do not start loading for links pointing to the exact current URL.
+  try {
+    const targetUrl = new URL(href, window.location.origin);
+    const currentUrl = new URL(window.location.href);
+    if (
+      targetUrl.origin === currentUrl.origin &&
+      targetUrl.pathname === currentUrl.pathname &&
+      targetUrl.search === currentUrl.search &&
+      targetUrl.hash === currentUrl.hash
+    ) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
   return true;
 }
 
@@ -112,4 +128,3 @@ export default function RouteLoadingIndicator() {
     </div>
   );
 }
-
