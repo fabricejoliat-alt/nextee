@@ -74,7 +74,7 @@ function toLocalDateTimeInputValue(iso: string) {
 }
 
 export default function PlayerTrainingEditPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const params = useParams<{ sessionId: string }>();
   const sessionId = String(params?.sessionId ?? "").trim();
@@ -82,6 +82,7 @@ export default function PlayerTrainingEditPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nowTs, setNowTs] = useState<number>(() => new Date().getTime());
 
   const [userId, setUserId] = useState("");
 
@@ -118,6 +119,16 @@ export default function PlayerTrainingEditPage() {
     }, 0);
   }, [items]);
 
+  const isClubSessionPast = useMemo(() => {
+    if (sessionType !== "club") return true;
+    if (!startAt) return false;
+    const dt = new Date(startAt);
+    if (Number.isNaN(dt.getTime())) return false;
+    return dt.getTime() < nowTs;
+  }, [sessionType, startAt, nowTs]);
+
+  const evaluationDisabled = busy || !isClubSessionPast;
+
   const canSave = useMemo(() => {
     if (busy) return false;
     if (!userId) return false;
@@ -139,6 +150,11 @@ export default function PlayerTrainingEditPage() {
 
     return true;
   }, [busy, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -257,7 +273,7 @@ export default function PlayerTrainingEditPage() {
       setItems(draft.length > 0 ? draft : []);
       setLoading(false);
     })();
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   function addLine() {
     setItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
@@ -294,9 +310,9 @@ export default function PlayerTrainingEditPage() {
       return;
     }
 
-    const mot = isCoachPlannedTraining ? null : motivation ? Number(motivation) : null;
-    const dif = isCoachPlannedTraining ? null : difficulty ? Number(difficulty) : null;
-    const sat = isCoachPlannedTraining ? null : satisfaction ? Number(satisfaction) : null;
+    const mot = motivation ? Number(motivation) : null;
+    const dif = difficulty ? Number(difficulty) : null;
+    const sat = satisfaction ? Number(satisfaction) : null;
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
@@ -312,7 +328,7 @@ export default function PlayerTrainingEditPage() {
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
-        notes: isCoachPlannedTraining ? null : notes.trim() || null,
+        notes: notes.trim() || null,
         total_minutes: totalMinutes,
       })
       .eq("id", sessionId);
@@ -381,11 +397,15 @@ export default function PlayerTrainingEditPage() {
 
         {/* Form */}
         <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div>{t("common.loading")}</div>
-            ) : (
-              <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+          {loading ? (
+            <div>{t("common.loading")}</div>
+          ) : (
+            <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  {locale === "fr" ? "Date, lieu et type d'entrainement" : "Date, place and training type"}
+                </div>
+
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
@@ -398,7 +418,7 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <div style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.total")}</span>
+                    <span style={fieldLabelStyle}>{locale === "fr" ? "Total (min)" : "Total (min)"}</span>
                     <div
                       style={{
                         height: 42,
@@ -428,8 +448,6 @@ export default function PlayerTrainingEditPage() {
                     placeholder={t("trainingNew.placePlaceholder")}
                   />
                 </label>
-
-                <div className="hr-soft" />
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
@@ -462,7 +480,7 @@ export default function PlayerTrainingEditPage() {
                   )}
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
+                    <span style={fieldLabelStyle}>{locale === "fr" ? "Coach" : "Coach"}</span>
                     <input
                       value={coachName}
                       onChange={(e) => setCoachName(e.target.value)}
@@ -471,171 +489,222 @@ export default function PlayerTrainingEditPage() {
                     />
                   </label>
                 </div>
+              </div>
 
-                <div className="hr-soft" />
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>{t("trainingNew.trainingStructure")}</div>
-
-                  {items.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {t("trainingNew.addSectionHint")}
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {items.map((it, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            border: "1px solid rgba(0,0,0,0.10)",
-                            borderRadius: 14,
-                            background: "rgba(255,255,255,0.65)",
-                            padding: 12,
-                            display: "grid",
-                            gap: 10,
-                          }}
-                        >
-                          <div className="grid-2">
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
-                              <select
-                                value={it.category}
-                                onChange={(e) => updateLine(idx, { category: e.target.value })}
-                                disabled={busy}
-                              >
-                                <option value="">-</option>
-                                {TRAINING_CATEGORIES.map((c) => (
-                                  <option key={c.value} value={c.value}>
-                                    {c.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>{t("trainingNew.duration")}</span>
-                              <select
-                                value={it.minutes}
-                                onChange={(e) => updateLine(idx, { minutes: e.target.value })}
-                                disabled={busy}
-                              >
-                                <option value="">-</option>
-                                {MINUTE_OPTIONS.map((m) => (
-                                  <option key={m} value={String(m)}>
-                                    {m} min
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-
+                {items.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    {t("trainingNew.addSectionHint")}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {items.map((it, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 14,
+                          background: "rgba(255,255,255,0.65)",
+                          padding: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div className="grid-2">
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>{t("trainingNew.noteOptional")}</span>
-                            <input
-                              value={it.note}
-                              onChange={(e) => updateLine(idx, { note: e.target.value })}
-                              disabled={busy}
-                              placeholder={t("trainingNew.notePlaceholder")}
-                            />
-                          </label>
-
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                            <div className="pill-soft">{t("trainingNew.section")} {idx + 1}</div>
-
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => removeLine(idx)}
+                            <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
+                            <select
+                              value={it.category}
+                              onChange={(e) => updateLine(idx, { category: e.target.value })}
                               disabled={busy}
                             >
-                              {t("common.delete")}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                              <option value="">-</option>
+                              {TRAINING_CATEGORIES.map((c) => (
+                                <option key={c.value} value={c.value}>
+                                  {c.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
 
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="button" className="btn" onClick={addLine} disabled={busy}>
-                      + {t("trainingNew.addSection")}
-                    </button>
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>{t("trainingNew.duration")}</span>
+                            <select
+                              value={it.minutes}
+                              onChange={(e) => updateLine(idx, { minutes: e.target.value })}
+                              disabled={busy}
+                            >
+                              <option value="">-</option>
+                              {MINUTE_OPTIONS.map((m) => (
+                                <option key={m} value={String(m)}>
+                                  {m} min
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{t("trainingNew.noteOptional")}</span>
+                          <input
+                            value={it.note}
+                            onChange={(e) => updateLine(idx, { note: e.target.value })}
+                            disabled={busy}
+                            placeholder={t("trainingNew.notePlaceholder")}
+                          />
+                        </label>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <div className="pill-soft">{t("trainingNew.section")} {idx + 1}</div>
+
+                          <button
+                            type="button"
+                            className="btn btn-danger soft"
+                            onClick={() => removeLine(idx)}
+                            disabled={busy}
+                          >
+                            {t("common.delete")}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" className="btn" onClick={addLine} disabled={busy}>
+                    + {t("trainingNew.addSection")}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  {locale === "fr" ? "Sensations et remarques" : "Feelings and notes"}
                 </div>
 
-                {!isCoachPlannedTraining ? (
-                  <>
-                    <div className="hr-soft" />
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
-                        <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={busy}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
-                        <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={busy}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
-                        <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={busy}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                        const val = String(v);
+                        const active = motivation === val;
+                        return (
+                          <button
+                            key={`mot-${v}`}
+                            type="button"
+                            onClick={() => setMotivation((prev) => (prev === val ? "" : val))}
+                            disabled={evaluationDisabled}
+                            aria-pressed={active}
+                            style={{
+                              width: "100%",
+                              height: 34,
+                              borderRadius: 10,
+                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                              fontWeight: 900,
+                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </label>
 
-                    <div className="hr-soft" />
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                        const val = String(v);
+                        const active = difficulty === val;
+                        return (
+                          <button
+                            key={`dif-${v}`}
+                            type="button"
+                            onClick={() => setDifficulty((prev) => (prev === val ? "" : val))}
+                            disabled={evaluationDisabled}
+                            aria-pressed={active}
+                            style={{
+                              width: "100%",
+                              height: 34,
+                              borderRadius: 10,
+                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                              fontWeight: 900,
+                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </label>
 
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("roundsNew.notesPlaceholder")}
-                        style={{ minHeight: 110 }}
-                      />
-                    </label>
-                  </>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                        const val = String(v);
+                        const active = satisfaction === val;
+                        return (
+                          <button
+                            key={`sat-${v}`}
+                            type="button"
+                            onClick={() => setSatisfaction((prev) => (prev === val ? "" : val))}
+                            disabled={evaluationDisabled}
+                            aria-pressed={active}
+                            style={{
+                              width: "100%",
+                              height: 34,
+                              borderRadius: 10,
+                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                              fontWeight: 900,
+                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </label>
+                </div>
+
+                {sessionType === "club" && !isClubSessionPast ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
+                    {locale === "fr"
+                      ? "L'evaluation est disponible uniquement apres la seance."
+                      : "Evaluation is available only after the training session."}
+                  </div>
                 ) : null}
 
-                <button
-                  className="btn"
-                  type="submit"
-                  disabled={!canSave || busy}
-                  style={{
-                    width: "100%",
-                    background: "var(--green-dark)",
-                    borderColor: "var(--green-dark)",
-                    color: "#fff",
-                  }}
-                >
+                <label style={{ display: "grid", gap: 6, opacity: evaluationDisabled ? 0.65 : 1 }}>
+                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    disabled={evaluationDisabled}
+                    placeholder={t("roundsNew.notesPlaceholder")}
+                    style={{ minHeight: 110 }}
+                  />
+                </label>
+
+                <button className="cta-green" type="submit" disabled={!canSave || busy} style={{ width: "100%" }}>
                   {busy ? t("trainingNew.saving") : t("common.save")}
                 </button>
-              </form>
-            )}
-          </div>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { Flame, Mountain, Smile, Award } from "lucide-react";
+import { Flame, Mountain, Smile } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
@@ -54,18 +54,35 @@ type CoachProfileLite = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  avatar_url: string | null;
 };
 
-function fmtDateTime(iso: string, locale: string) {
+function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
+  if (locale === "en") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(d);
+  }
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
+  return `${weekday} ${dayMonth}`;
+}
+
+function fmtHourLabel(iso: string, locale: "fr" | "en") {
+  const d = new Date(iso);
+  if (locale === "en") return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
+}
+
+function sameDay(aIso: string, bIso: string) {
+  const a = new Date(aIso);
+  const b = new Date(bIso);
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function typeLabel(t: SessionType, tr: (key: string) => string) {
@@ -142,15 +159,11 @@ export default function PlayerTrainingDetailPage() {
   const [session, setSession] = useState<SessionDbRow | null>(null);
   const [items, setItems] = useState<ItemDbRow[]>([]);
   const [clubName, setClubName] = useState<string>("");
+  const [groupName, setGroupName] = useState<string>("");
 
   // ✅ coach feedback visible to player
   const [coachFeedback, setCoachFeedback] = useState<CoachFeedbackRow[]>([]);
   const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
-
-  const totalMinutes = useMemo(() => {
-    if (session?.total_minutes != null) return session.total_minutes;
-    return items.reduce((sum, it) => sum + (it.minutes || 0), 0);
-  }, [session?.total_minutes, items]);
 
   useEffect(() => {
     (async () => {
@@ -196,6 +209,41 @@ export default function PlayerTrainingDetailPage() {
           setClubName("");
         }
 
+        if (s.club_event_id) {
+          const evRes = await supabase
+            .from("club_events")
+            .select("group_id")
+            .eq("id", s.club_event_id)
+            .maybeSingle();
+          const eventGroupId = String((evRes.data as { group_id?: string | null } | null)?.group_id ?? "").trim();
+          if (!evRes.error && eventGroupId) {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token ?? "";
+            if (token) {
+              const q = new URLSearchParams({ ids: eventGroupId, child_id: uid });
+              const gRes = await fetch(`/api/player/group-names?${q.toString()}`, {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              });
+              const gJson = await gRes.json().catch(() => ({}));
+              if (gRes.ok) {
+                const arr = (gJson?.groups ?? []) as Array<{ id: string; name: string | null }>;
+                const found = arr.find((g) => g.id === eventGroupId);
+                setGroupName(found?.name ?? "");
+              } else {
+                setGroupName("");
+              }
+            } else {
+              setGroupName("");
+            }
+          } else {
+            setGroupName("");
+          }
+        } else {
+          setGroupName("");
+        }
+
         // ✅ coach feedback (only visible_to_player)
         if (s.club_event_id) {
           const cfRes = await supabase
@@ -213,11 +261,16 @@ export default function PlayerTrainingDetailPage() {
           // profiles (no join assumption -> 2nd query)
           const coachIds = Array.from(new Set(fb.map((r) => r.coach_id)));
           if (coachIds.length > 0) {
-            const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", coachIds);
+            const pRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds);
             if (!pRes.error) {
               const map: Record<string, CoachProfileLite> = {};
-              (pRes.data ?? []).forEach((p: any) => {
-                map[p.id] = { id: p.id, first_name: p.first_name ?? null, last_name: p.last_name ?? null };
+              (pRes.data ?? []).forEach((p: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }) => {
+                map[p.id] = {
+                  id: p.id,
+                  first_name: p.first_name ?? null,
+                  last_name: p.last_name ?? null,
+                  avatar_url: p.avatar_url ?? null,
+                };
               });
               setCoachProfilesById(map);
             } else {
@@ -232,17 +285,19 @@ export default function PlayerTrainingDetailPage() {
         }
 
         setLoading(false);
-      } catch (e: any) {
-        setError(e?.message ?? t("common.errorLoading"));
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : t("common.errorLoading");
+        setError(message);
         setSession(null);
         setItems([]);
         setClubName("");
+        setGroupName("");
         setCoachFeedback([]);
         setCoachProfilesById({});
         setLoading(false);
       }
     })();
-  }, [sessionId]);
+  }, [sessionId, t]);
 
   return (
     <div className="player-dashboard-bg">
@@ -275,187 +330,219 @@ export default function PlayerTrainingDetailPage() {
 
         {/* Content */}
         <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-            ) : !session ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div style={{ display: "grid", gap: 14 }}>
-                {/* Top line */}
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                  <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
-                    {fmtDateTime(session.start_at, locale)}
-                  </div>
-                  <div className="marketplace-price-pill">{totalMinutes > 0 ? `${totalMinutes} min` : "—"}</div>
-                </div>
-
-                {/* Type + club + location */}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  {session.session_type === "club" ? (
-                    <span className="pill-soft">{clubName || t("common.club")}</span>
-                  ) : (
-                    <span className="pill-soft">{typeLabel(session.session_type, t)}</span>
-                  )}
-
-                  {session.club_event_id ? <span className="pill-soft">{t("common.coach")}</span> : null}
-
-                  {session.location_text && (
-                    <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
-                      📍 {session.location_text}
-                    </span>
-                  )}
-                </div>
-
-                {/* Coach (optional, your existing field) */}
-                {session.coach_name && (
-                  <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                    👤 {t("common.coach")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{session.coach_name}</span>
-                  </div>
-                )}
-
-                {/* ✅ Coach feedback section */}
-                {session.club_event_id ? (
-                  <>
-                    <div className="hr-soft" style={{ margin: "2px 0" }} />
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950, color: "rgba(0,0,0,0.75)", fontSize: 12 }}>
-                        <Award size={16} />
-                        {t("trainingDetail.coachEvaluation")}
-                      </div>
-
-                      {coachFeedback.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          {t("trainingDetail.noCoachEvaluation")}
+          {loading ? (
+            <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+          ) : !session ? (
+            <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {(() => {
+                const durationFromItems = items.reduce((sum, it) => sum + Math.max(0, Number(it.minutes ?? 0)), 0);
+                const sessionDuration = Math.max(1, Number(session.total_minutes ?? 0) || durationFromItems || 0);
+                const sessionEnd = new Date(new Date(session.start_at).getTime() + sessionDuration * 60_000).toISOString();
+                const isMultiDaySession = !sameDay(session.start_at, sessionEnd);
+                const displayLocation = (session.location_text ?? "").trim();
+                const trainingGroupLabel = groupName || clubName || (locale === "fr" ? "Groupe" : "Group");
+                const sessionTitle =
+                  session.session_type === "club"
+                    ? `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`
+                    : `${typeLabel(session.session_type, t)}`;
+                return (
+                  <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 2,
+                        fontSize: 12,
+                        fontWeight: 950,
+                        color: "rgba(0,0,0,0.82)",
+                      }}
+                    >
+                      {isMultiDaySession ? (
+                        <div>
+                          {fmtDateLabelNoTime(session.start_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"}{" "}
+                          {fmtDateLabelNoTime(sessionEnd, locale === "fr" ? "fr" : "en")}
                         </div>
                       ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {coachFeedback.map((fb, idx) => {
-                            const cp = coachProfilesById[fb.coach_id];
-                            const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
-
-                            return (
-                              <div
-                                key={`${fb.coach_id}-${idx}`}
-                                style={{
-                                  border: "1px solid rgba(0,0,0,0.10)",
-                                  borderRadius: 14,
-                                  background: "rgba(255,255,255,0.65)",
-                                  padding: 12,
-                                  display: "grid",
-                                  gap: 10,
-                                }}
-                              >
-                                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                                  <div style={{ fontWeight: 950 }}>{coachName}</div>
-                                  <span className="pill-soft">{t("trainingDetail.scoreOver6")}</span>
-                                </div>
-
-                                <div className="grid-2">
-                                  <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                    {t("trainingDetail.engagement")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.engagement ?? "—"}</span>
-                                  </div>
-                                  <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                    {t("trainingDetail.attitude")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.attitude ?? "—"}</span>
-                                  </div>
-                                </div>
-
-                                <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                                  {t("trainingDetail.performance")} : <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{fb.performance ?? "—"}</span>
-                                </div>
-
-                                {String(fb.player_note ?? "").trim() ? (
-                                  <>
-                                    <div className="hr-soft" style={{ margin: "2px 0" }} />
-                                    <div style={{ display: "grid", gap: 8 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.coachNote")}</div>
-                                      <div
-                                        style={{
-                                          border: "1px solid rgba(0,0,0,0.10)",
-                                          borderRadius: 14,
-                                          background: "rgba(255,255,255,0.70)",
-                                          padding: 12,
-                                          fontSize: 13,
-                                          fontWeight: 800,
-                                          color: "rgba(0,0,0,0.72)",
-                                          lineHeight: 1.4,
-                                          whiteSpace: "pre-wrap",
-                                        }}
-                                      >
-                                        {fb.player_note}
-                                      </div>
-                                    </div>
-                                  </>
-                                ) : null}
-                              </div>
-                            );
-                          })}
+                        <div>
+                          {fmtDateLabelNoTime(session.start_at, locale === "fr" ? "fr" : "en")}{" "}
+                          <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                            {locale === "fr"
+                              ? `• de ${fmtHourLabel(session.start_at, "fr")} à ${fmtHourLabel(sessionEnd, "fr")}`
+                              : `• from ${fmtHourLabel(session.start_at, "en")} to ${fmtHourLabel(sessionEnd, "en")}`}
+                          </span>
                         </div>
                       )}
                     </div>
-                  </>
-                ) : null}
 
-                {/* Postes */}
-                {items.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
+                    <div className="hr-soft" style={{ margin: "1px 0" }} />
 
-                {items.length > 0 ? (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.sections")}</div>
+                    <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                      <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                        {sessionTitle}
+                      </div>
+                      {session.session_type === "club" && clubName ? (
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
+                          {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                        </div>
+                      ) : null}
+                    </div>
 
-                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                      {items.map((it, i) => {
-                        const extra = String(it.note ?? it.other_detail ?? "").trim();
+                    {displayLocation ? (
+                      <div className="truncate" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
+                        📍 {displayLocation}
+                      </div>
+                    ) : null}
+
+                  </div>
+                );
+              })()}
+
+              {session.club_event_id ? (
+                <div style={{ borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    {t("trainingDetail.coachEvaluation")}
+                  </div>
+
+                  {coachFeedback.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {t("trainingDetail.noCoachEvaluation")}
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {coachFeedback.map((fb, idx) => {
+                        const cp = coachProfilesById[fb.coach_id];
+                        const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
+                        const initials = (cp ? `${cp.first_name?.[0] ?? ""}${cp.last_name?.[0] ?? ""}` : "C").toUpperCase();
+
                         return (
-                          <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
-                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                          </li>
+                          <div
+                            key={`${fb.coach_id}-${idx}`}
+                            style={{
+                              display: "grid",
+                              gap: 10,
+                            }}
+                          >
+                            <div
+                              style={{
+                                border: "1px solid rgba(0,0,0,0.10)",
+                                borderRadius: 12,
+                                background: "#fff",
+                                padding: "8px 10px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                              }}
+                            >
+                              <div
+                                aria-hidden
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: "50%",
+                                  overflow: "hidden",
+                                  border: "1px solid rgba(32,99,62,0.28)",
+                                  background: "rgba(53,72,59,0.14)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flex: "0 0 auto",
+                                  color: "rgba(16,56,34,0.95)",
+                                  fontWeight: 950,
+                                  fontSize: 11,
+                                }}
+                              >
+                                {cp?.avatar_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={cp.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  initials
+                                )}
+                              </div>
+                              <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.84)" }}>{coachName}</div>
+                            </div>
+
+                            <RatingBar icon={<Flame size={16} />} label={t("trainingDetail.engagement")} value={fb.engagement} />
+                            <RatingBar icon={<Mountain size={16} />} label={t("trainingDetail.attitude")} value={fb.attitude} />
+                            <RatingBar icon={<Smile size={16} />} label={t("trainingDetail.performance")} value={fb.performance} />
+
+                            {String(fb.player_note ?? "").trim() ? (
+                              <div style={{ display: "grid", gap: 8 }}>
+                                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.coachNote")}</div>
+                                <div
+                                  style={{
+                                    border: "1px solid rgba(0,0,0,0.10)",
+                                    borderRadius: 14,
+                                    background: "#fff",
+                                    padding: 12,
+                                    fontSize: 13,
+                                    fontWeight: 800,
+                                    color: "rgba(0,0,0,0.72)",
+                                    lineHeight: 1.4,
+                                    whiteSpace: "pre-wrap",
+                                  }}
+                                >
+                                  {fb.player_note}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
                         );
                       })}
-                    </ul>
-                  </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 8 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.sections")}</div>
+                {items.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                    {items.map((it, i) => {
+                      const extra = String(it.note ?? it.other_detail ?? "").trim();
+                      return (
+                        <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                          {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
+                          {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 ) : (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("trainingDetail.noSection")}</div>
                 )}
+              </div>
 
-                {items.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
-
-                {/* Sensations */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.feelings")}</div>
-
-                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />
-                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={session.difficulty} />
-                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={session.satisfaction} />
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  {locale === "fr" ? "Mes sensations et remarques" : "My feelings and notes"}
                 </div>
 
-                {/* Notes */}
-                {session.notes && (
-                  <>
-                    <div className="hr-soft" style={{ margin: "2px 0" }} />
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 14,
-                          background: "rgba(255,255,255,0.65)",
-                          padding: 12,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          color: "rgba(0,0,0,0.72)",
-                          lineHeight: 1.4,
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {session.notes}
-                      </div>
-                    </div>
-                  </>
-                )}
+                <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />
+                <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={session.difficulty} />
+                <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={session.satisfaction} />
 
-                {/* Actions bottom */}
+                {session.notes ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 14,
+                        background: "#fff",
+                        padding: 12,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "rgba(0,0,0,0.72)",
+                        lineHeight: 1.4,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {session.notes}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
                     {t("trainingDetail.backToList")}
@@ -466,8 +553,8 @@ export default function PlayerTrainingDetailPage() {
                   </Link>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

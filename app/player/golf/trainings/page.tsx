@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
-import { Flame, Mountain, Smile, ListChecks, Pencil, ChevronDown, Filter } from "lucide-react";
+import { Flame, Mountain, Smile, ListChecks, Pencil, ChevronDown, Filter, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionRow = {
@@ -262,6 +262,7 @@ export default function TrainingsListPage() {
   const [compStartDate, setCompStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [compEndDate, setCompEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [creatingCompetition, setCreatingCompetition] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string>("");
 
   const categoryLabel = (cat: string) => {
     const map: Record<string, string> = {
@@ -788,6 +789,63 @@ export default function TrainingsListPage() {
     setAttendanceBusyEventId("");
   }
 
+  async function deleteCompetitionEvent(ev: PlayerActivityEventRow) {
+    if (!effectiveUserId) return;
+    const ok = window.confirm(
+      locale === "fr"
+        ? "Supprimer cet événement ?"
+        : "Delete this event?"
+    );
+    if (!ok) return;
+
+    setDeletingKey(`competition-${ev.id}`);
+    setError(null);
+    const del = await supabase
+      .from("player_activity_events")
+      .delete()
+      .eq("id", ev.id)
+      .eq("user_id", effectiveUserId);
+    if (del.error) {
+      setError(del.error.message);
+      setDeletingKey("");
+      return;
+    }
+    setDeletingKey("");
+    await load();
+  }
+
+  async function deletePlayerSession(s: SessionRow) {
+    if (!effectiveUserId) return;
+    if (s.club_event_id) return;
+    const ok = window.confirm(
+      locale === "fr"
+        ? "Supprimer cet entraînement ?"
+        : "Delete this training?"
+    );
+    if (!ok) return;
+
+    setDeletingKey(`session-${s.id}`);
+    setError(null);
+    const delItems = await supabase.from("training_session_items").delete().eq("session_id", s.id);
+    if (delItems.error) {
+      setError(delItems.error.message);
+      setDeletingKey("");
+      return;
+    }
+    const delSession = await supabase
+      .from("training_sessions")
+      .delete()
+      .eq("id", s.id)
+      .eq("user_id", effectiveUserId);
+    if (delSession.error) {
+      setError(delSession.error.message);
+      setDeletingKey("");
+      return;
+    }
+    setDeletingKey("");
+    await load();
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -1250,6 +1308,17 @@ export default function TrainingsListPage() {
                               </span>
                             ) : null}
                           </div>
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => deleteCompetitionEvent(c)}
+                              disabled={deletingKey === `competition-${c.id}`}
+                            >
+                              <Trash2 size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {locale === "fr" ? "Supprimer" : "Delete"}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1268,6 +1337,7 @@ export default function TrainingsListPage() {
                   const sessionEnd = new Date(new Date(s.start_at).getTime() + sessionDuration * 60_000).toISOString();
                   const isMultiDaySession = !sameDay(s.start_at, sessionEnd);
                   const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
+                  const canDeleteSession = !s.club_event_id;
                   const sessionTitle =
                     s.session_type === "club"
                       ? `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`
@@ -1355,6 +1425,22 @@ export default function TrainingsListPage() {
                               <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                               {locale === "fr" ? "Éditer" : "Edit"}
                             </Link>
+
+                            {canDeleteSession ? (
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void deletePlayerSession(s);
+                                }}
+                                disabled={deletingKey === `session-${s.id}`}
+                              >
+                                <Trash2 size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {locale === "fr" ? "Supprimer" : "Delete"}
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </div>
