@@ -780,6 +780,22 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
+      const attendeeStatusRes = await supabase
+        .from("club_event_attendees")
+        .select("player_id,status")
+        .eq("event_id", eventId);
+      if (attendeeStatusRes.error) throw new Error(attendeeStatusRes.error.message);
+      const statusRows = (attendeeStatusRes.data ?? []) as Array<{
+        player_id: string | null;
+        status: string | null;
+      }>;
+      const absentBeforeSave = new Set(
+        statusRows
+          .filter((r) => String(r.status ?? "expected") === "absent")
+          .map((r) => String(r.player_id ?? "").trim())
+          .filter(Boolean)
+      );
+
       const startDt = new Date(startsAtLocal);
       if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
       let endDt = new Date(endsAtLocal);
@@ -840,6 +856,8 @@ export default function CoachEventEditPage() {
       await syncPlayerChangesOnFuturePlannedEvents();
 
       if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
+        const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
+        if (recipientIds.length > 0) {
         const oldStart = new Date(event.starts_at);
         const oldEnd = event.ends_at
           ? new Date(event.ends_at)
@@ -875,8 +893,9 @@ export default function CoachEventEditPage() {
             group_id: groupId,
             url: `/player/golf/trainings/new?club_event_id=${eventId}`,
           },
-          recipientUserIds: attendeeIdsSelected,
+          recipientUserIds: recipientIds,
         });
+        }
       }
 
       setBusy(false);
@@ -1036,7 +1055,7 @@ export default function CoachEventEditPage() {
 
     let recipients: string[] = [];
     try {
-      recipients = await getEventAttendeeUserIds(eventId);
+      recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
     } catch {
       recipients = [];
     }
@@ -1081,13 +1100,29 @@ export default function CoachEventEditPage() {
     try {
       const seriesEventsRes = await supabase.from("club_events").select("id").eq("series_id", event.series_id);
       if (seriesEventsRes.error) throw new Error(seriesEventsRes.error.message);
-      const seriesEventIds = (seriesEventsRes.data ?? []).map((r: any) => String(r.id ?? "").trim()).filter(Boolean);
+      const seriesEventIds = (seriesEventsRes.data ?? [])
+        .map((r) => String(r.id ?? "").trim())
+        .filter(Boolean);
 
       let recipients: string[] = [];
       if (seriesEventIds.length > 0) {
-        const attRes = await supabase.from("club_event_attendees").select("player_id,event_id").in("event_id", seriesEventIds);
+        const attRes = await supabase
+          .from("club_event_attendees")
+          .select("player_id,event_id,status")
+          .in("event_id", seriesEventIds);
         if (attRes.error) throw new Error(attRes.error.message);
-        recipients = Array.from(new Set((attRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean)));
+        const attendeeRows = (attRes.data ?? []) as Array<{
+          player_id: string | null;
+          status: string | null;
+        }>;
+        recipients = Array.from(
+          new Set(
+            attendeeRows
+              .filter((r) => String(r.status ?? "expected") !== "absent")
+              .map((r) => String(r.player_id ?? "").trim())
+              .filter(Boolean)
+          )
+        );
       }
 
       const delEvents = await supabase.from("club_events").delete().eq("series_id", event.series_id);

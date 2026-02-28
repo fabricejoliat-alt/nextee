@@ -988,7 +988,7 @@ export default function CoachGroupPlanningPage() {
 
     let recipients: string[] = [];
     try {
-      recipients = await getEventAttendeeUserIds(eventId);
+      recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
     } catch {
       recipients = [];
     }

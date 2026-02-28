@@ -232,17 +232,21 @@ export function applyPwaBadge(unreadCount: number) {
   }
 }
 
-export async function getEventAttendeeUserIds(eventId: string) {
+export async function getEventAttendeeUserIds(
+  eventId: string,
+  options?: { includeAbsent?: boolean }
+) {
   if (!eventId) return [] as string[];
 
   const res = await supabase
     .from("club_event_attendees")
-    .select("player_id")
+    .select("player_id,status")
     .eq("event_id", eventId);
 
   if (res.error) throw new Error(res.error.message);
-  const rows = (res.data ?? []) as Array<{ player_id: string | null }>;
-  return Array.from(new Set(rows.map((r) => String(r.player_id ?? "").trim()).filter(Boolean)));
+  const rows = (res.data ?? []) as Array<{ player_id: string | null; status: string | null }>;
+  const filtered = options?.includeAbsent === false ? rows.filter((r) => (r.status ?? "expected") !== "absent") : rows;
+  return Array.from(new Set(filtered.map((r) => String(r.player_id ?? "").trim()).filter(Boolean)));
 }
 
 export async function getEventCoachUserIds(eventId: string, groupId?: string | null) {

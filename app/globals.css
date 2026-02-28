@@ -1703,12 +1703,18 @@ input[type="radio"]{
   white-space: nowrap;
 }
 
-/* Empêche le bounce trop agressif + zoom texte iOS */
-@media (max-width: 768px){
+/* Mobile web browser (Safari/Chrome):
+   keep native page scrolling so browser bars can collapse on scroll. */
+@media (display-mode: browser) and (max-width: 899px){
+  html{
+    background-attachment: scroll;
+  }
+
   html, body{
     overflow-x: hidden;
-    overscroll-behavior: none;
+    overscroll-behavior-y: auto;
     -webkit-text-size-adjust: 100%;
+    touch-action: pan-y;
   }
 }
 /* =========================================================

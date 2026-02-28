@@ -87,6 +87,24 @@ const fieldLabelStyle: React.CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
+function feedbackFingerprint(input: {
+  engagement: number | null;
+  attitude: number | null;
+  performance: number | null;
+  visible_to_player: boolean;
+  private_note: string | null;
+  player_note: string | null;
+}) {
+  return JSON.stringify({
+    engagement: input.engagement ?? null,
+    attitude: input.attitude ?? null,
+    performance: input.performance ?? null,
+    visible_to_player: !!input.visible_to_player,
+    private_note: (input.private_note ?? "").trim() || null,
+    player_note: (input.player_note ?? "").trim() || null,
+  });
+}
+
 export default function CoachEventPlayerFeedbackEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
@@ -106,6 +124,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [orderedPlayerIds, setOrderedPlayerIds] = useState<string[]>([]);
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
+  const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
     event_id: eventId,
@@ -202,9 +221,20 @@ export default function CoachEventPlayerFeedbackEditPage() {
         .maybeSingle();
 
       if (!cfRes.error && cfRes.data) {
-        setDraft(cfRes.data as CoachFeedbackRow);
+        const row = cfRes.data as CoachFeedbackRow;
+        setDraft(row);
+        setInitialFeedbackFp(
+          feedbackFingerprint({
+            engagement: row.engagement,
+            attitude: row.attitude,
+            performance: row.performance,
+            visible_to_player: row.visible_to_player,
+            private_note: row.private_note,
+            player_note: row.player_note,
+          })
+        );
       } else {
-        setDraft({
+        const row = {
           event_id: eventId,
           player_id: playerId,
           coach_id: uRes.user.id,
@@ -214,7 +244,18 @@ export default function CoachEventPlayerFeedbackEditPage() {
           visible_to_player: false,
           private_note: null,
           player_note: null,
-        });
+        };
+        setDraft(row);
+        setInitialFeedbackFp(
+          feedbackFingerprint({
+            engagement: row.engagement,
+            attitude: row.attitude,
+            performance: row.performance,
+            visible_to_player: row.visible_to_player,
+            private_note: row.private_note,
+            player_note: row.player_note,
+          })
+        );
       }
 
       const atRes = await supabase
@@ -294,7 +335,16 @@ export default function CoachEventPlayerFeedbackEditPage() {
       return;
     }
 
-    if (attendanceStatus !== "absent" && meId && playerId) {
+    const nextFeedbackFp = feedbackFingerprint({
+      engagement: attendanceStatus === "absent" ? null : draft.engagement,
+      attitude: attendanceStatus === "absent" ? null : draft.attitude,
+      performance: attendanceStatus === "absent" ? null : draft.performance,
+      visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
+      private_note: draft.private_note,
+      player_note: attendanceStatus === "absent" ? null : draft.player_note,
+    });
+
+    if (attendanceStatus !== "absent" && meId && playerId && nextFeedbackFp !== initialFeedbackFp) {
       const eventTypeLabel =
         event?.event_type === "camp"
           ? locale === "fr" ? "Stage" : "Camp"
