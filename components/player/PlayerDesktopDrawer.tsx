@@ -26,6 +26,7 @@ const ROUTES = {
   golfDashboard: "/player/golf",
   
   trainingsList: "/player/golf/trainings",
+  trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
 
@@ -256,30 +257,35 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.home,
       },
       {
+        label: locale === "fr" ? "Mon activité" : "My activity",
+        icon: ClipboardList,
+        href: ROUTES.trainingsList,
+      },
+      {
         label: t("player.myGolf"),
         icon: Flag,
         children: [
           { label: "Dashboard", icon: Home, href: ROUTES.golfDashboard },
           {
+            label: locale === "fr" ? "Mes entrainements" : "My trainings",
+            icon: ClipboardList,
+            href: ROUTES.trainingsListTraining,
+          },
+          {
+            label: locale === "fr" ? "Ajouter un entrainement" : "Add training",
+            icon: PlusCircle,
+            href: ROUTES.trainingsNew,
+          },
+          {
             label:
               locale === "fr"
-                ? `${pendingEvalCount > 1 ? "Entraînements" : "Entraînement"} à évaluer (${pendingEvalCount})`
+                ? `Entrainement à évaluer (${pendingEvalCount})`
                 : `To complete (${pendingEvalCount})`,
             icon: ClipboardList,
             href: ROUTES.trainingsToComplete,
           },
-          {
-            label: locale === "fr" ? "Mon activité" : "My activity",
-            icon: ClipboardList,
-            href: ROUTES.trainingsList,
-          },
-          {
-            label: locale === "fr" ? "Ajouter une activité" : "Add activity",
-            icon: PlusCircle,
-            href: ROUTES.trainingsNew,
-          },
-          { label: t("player.rounds"), icon: Map, href: ROUTES.roundsList },
-          { label: t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
+          { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
+          { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
         ],
       },
       {

@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
-import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter } from "lucide-react";
+import { Flame, Mountain, Smile, ListChecks, Pencil, ChevronDown, Filter } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionRow = {
@@ -159,11 +160,6 @@ function fmtHourLabel(iso: string, locale: "fr" | "en") {
   return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
 }
 
-function hasDisplayableTime(iso: string) {
-  const d = new Date(iso);
-  return d.getHours() !== 0 || d.getMinutes() !== 0;
-}
-
 function sameDay(aIso: string, bIso: string) {
   const a = new Date(aIso);
   const b = new Date(bIso);
@@ -235,6 +231,7 @@ function RatingBar({
 
 export default function TrainingsListPage() {
   const { t, locale } = useI18n();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -253,7 +250,6 @@ export default function TrainingsListPage() {
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const [page, setPage] = useState(1);
-  const [deletingId, setDeletingId] = useState<string>("");
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
@@ -287,9 +283,29 @@ export default function TrainingsListPage() {
   const nowTs = Date.now();
 
   const pastSessions = useMemo(() => {
-    return sessions
+    const sorted = sessions
       .filter((s) => new Date(s.start_at).getTime() < nowTs)
-      .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
+      .sort((a, b) => {
+        const dt = new Date(b.start_at).getTime() - new Date(a.start_at).getTime();
+        if (dt !== 0) return dt;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+    const byLinkedEvent = new Map<string, SessionRow>();
+    const standalone: SessionRow[] = [];
+
+    for (const s of sorted) {
+      const linkedId = uuidOrNull(s.club_event_id);
+      if (!linkedId) {
+        standalone.push(s);
+        continue;
+      }
+      if (!byLinkedEvent.has(linkedId)) byLinkedEvent.set(linkedId, s);
+    }
+
+    return [...standalone, ...Array.from(byLinkedEvent.values())].sort(
+      (a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime()
+    );
   }, [sessions, nowTs]);
 
   const completeSessionIds = useMemo(() => {
@@ -388,7 +404,13 @@ export default function TrainingsListPage() {
       session,
     }));
 
-    const pastEventItems: DisplayItem[] = pastAttendeeEvents.map((event) => ({
+    const pastSessionLinkedEventIds = new Set(
+      pastSessions.map((s) => uuidOrNull(s.club_event_id)).filter((x): x is string => typeof x === "string" && x.length > 0)
+    );
+
+    const pastEventItems: DisplayItem[] = pastAttendeeEvents
+      .filter((event) => !pastSessionLinkedEventIds.has(event.id))
+      .map((event) => ({
       kind: "event",
       key: `event-${event.id}`,
       dateIso: event.starts_at,
@@ -408,7 +430,15 @@ export default function TrainingsListPage() {
   }, [filterMode, plannedEvents, futureSessions, pastSessions, plannedCompetitions, pastCompetitions, pastAttendeeEvents, plannedTypeFilter]);
 
   const plannedCount = plannedEvents.length + futureSessions.length + plannedCompetitions.length;
-  const pastCount = pastSessions.length + pastAttendeeEvents.length + pastCompetitions.length;
+  const pastVisibleEventCount = useMemo(() => {
+    const pastSessionLinkedEventIds = new Set(
+      pastSessions
+        .map((s) => uuidOrNull(s.club_event_id))
+        .filter((x): x is string => typeof x === "string" && x.length > 0)
+    );
+    return pastAttendeeEvents.filter((event) => !pastSessionLinkedEventIds.has(event.id)).length;
+  }, [pastSessions, pastAttendeeEvents]);
+  const pastCount = pastSessions.length + pastVisibleEventCount + pastCompetitions.length;
   const totalCount = displayItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -616,30 +646,28 @@ export default function TrainingsListPage() {
     setPage(1);
   }, [filterMode, plannedTypeFilter]);
 
-  async function handleDelete(sessionId: string) {
-    const ok = window.confirm(t("trainings.confirmDelete"));
-    if (!ok) return;
+  useEffect(() => {
+    const type = String(searchParams.get("type") ?? "").trim().toLowerCase();
+    if (!type) return;
 
-    setDeletingId(sessionId);
-    setError(null);
+    const allowed: PlannedTypeFilter[] = [
+      "all",
+      "training",
+      "interclub",
+      "camp",
+      "session",
+      "event",
+      "competition",
+      "club",
+      "private",
+      "individual",
+    ];
 
-    const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
-    if (delItems.error) {
-      setError(delItems.error.message);
-      setDeletingId("");
-      return;
+    if (allowed.includes(type as PlannedTypeFilter)) {
+      setPlannedTypeFilter(type as PlannedTypeFilter);
+      setFilterMode("planned");
     }
-
-    const delSession = await supabase.from("training_sessions").delete().eq("id", sessionId);
-    if (delSession.error) {
-      setError(delSession.error.message);
-      setDeletingId("");
-      return;
-    }
-
-    setDeletingId("");
-    await load();
-  }
+  }, [searchParams]);
 
   async function createActivityEvent() {
     if (creatingCompetition) return;
@@ -985,6 +1013,7 @@ export default function TrainingsListPage() {
                     const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                     const isTraining = e.event_type === "training";
                     const isCollapsedTraining = isTraining && attendanceStatus === "absent";
+                    const canShowStructureAction = isTraining && attendanceStatus !== "absent";
                     const eventStructure = eventStructureByEventId[e.id] ?? [];
                     const showEventStructure = isTraining && attendanceStatus === "present" && eventStructure.length > 0;
                     let eventTitle = eventType;
@@ -1031,43 +1060,6 @@ export default function TrainingsListPage() {
                                 </div>
                               )}
                             </div>
-                            {isTraining ? (
-                              <button
-                                type="button"
-                                aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
-                                role="switch"
-                                aria-checked={attendanceStatus === "present"}
-                                onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
-                                disabled={attendanceBusyEventId === e.id}
-                                style={{
-                                  width: 46,
-                                  height: 26,
-                                  borderRadius: 999,
-                                  border: "1px solid rgba(0,0,0,0.18)",
-                                  background:
-                                    attendanceStatus === "present"
-                                      ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
-                                      : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
-                                  padding: 2,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
-                                  transition: "all 180ms ease",
-                                  cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
-                                  flex: "0 0 auto",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    width: 20,
-                                    height: 20,
-                                    borderRadius: "50%",
-                                    background: "#fff",
-                                    boxShadow: "0 1px 3px rgba(0,0,0,0.24)",
-                                  }}
-                                />
-                              </button>
-                            ) : null}
                           </div>
 
                           <div className="hr-soft" style={{ margin: "1px 0" }} />
@@ -1109,21 +1101,101 @@ export default function TrainingsListPage() {
                                 </ul>
                               ) : null}
 
-                              <div
+                            </>
+                          ) : null}
+
+                          {isTraining ? (
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                              }}
+                            >
+                              {canShowStructureAction ? (
+                                <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                                  <ListChecks size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {locale === "fr" ? "Structurer" : "Structure"}
+                                </Link>
+                              ) : (
+                                <span />
+                              )}
+
+                              <button
+                                type="button"
+                                aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
+                                role="switch"
+                                aria-checked={attendanceStatus === "present"}
+                                onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                                disabled={attendanceBusyEventId === e.id}
                                 style={{
-                                  display: "flex",
-                                  justifyContent: "flex-start",
-                                  gap: 8,
-                                  flexWrap: "wrap",
+                                  width: 114,
+                                  height: 24,
+                                  borderRadius: 999,
+                                  border: "1px solid rgba(0,0,0,0.14)",
+                                  background: "rgba(0,0,0,0.16)",
+                                  padding: 0,
+                                  display: "inline-flex",
                                   alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "all 180ms ease",
+                                  cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
+                                  flex: "0 0 auto",
+                                  position: "relative",
+                                  overflow: "hidden",
                                 }}
                               >
-                                <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
-                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                  {locale === "fr" ? "Éditer" : "Edit"}
-                                </Link>
-                              </div>
-                            </>
+                                <span
+                                  aria-hidden
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    bottom: 0,
+                                    width: "50%",
+                                    left: attendanceStatus === "present" ? "50%" : 0,
+                                    background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
+                                    borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                                    borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                                    borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
+                                    borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
+                                  }}
+                                />
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    left: 8,
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    fontSize: 9,
+                                    fontWeight: 900,
+                                    color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
+                                    letterSpacing: 0.2,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  {locale === "fr" ? "Absent" : "Absent"}
+                                </span>
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    right: 6,
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    fontSize: 9,
+                                    fontWeight: 900,
+                                    color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
+                                    letterSpacing: 0.2,
+                                    textTransform: "uppercase",
+                                    minWidth: 44,
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  {locale === "fr" ? "Présent" : "Present"}
+                                </span>
+                              </button>
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -1185,16 +1257,25 @@ export default function TrainingsListPage() {
 
                   const s = item.session;
                   const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
-                  const deleting = deletingId === s.id;
                   const postes = itemsBySessionId[s.id] ?? [];
+                  const linkedEvent = s.club_event_id
+                    ? attendeeEvents.find((ev) => ev.id === s.club_event_id) ?? null
+                    : null;
+                  const groupName = linkedEvent?.group_id ? groupNameById[linkedEvent.group_id] ?? null : null;
+                  const trainingGroupLabel = groupName || clubName || (locale === "fr" ? "Groupe" : "Group");
+                  const durationFromPostes = postes.reduce((acc, p) => acc + Math.max(0, Number(p.minutes ?? 0)), 0);
+                  const sessionDuration = Math.max(1, Number(s.total_minutes ?? 0) || durationFromPostes || 0);
+                  const sessionEnd = new Date(new Date(s.start_at).getTime() + sessionDuration * 60_000).toISOString();
+                  const isMultiDaySession = !sameDay(s.start_at, sessionEnd);
+                  const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
                   const sessionTitle =
                     s.session_type === "club"
-                      ? `${locale === "fr" ? "Entraînement" : "Training"}${clubName ? ` • ${clubName}` : ""}`
+                      ? `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`
                       : `${typeLabel(s.session_type, locale === "fr" ? "fr" : "en")}`;
 
                   return (
                     <Link key={item.key} href={`/player/golf/trainings/${s.id}`} className="marketplace-link">
-                      <div className="marketplace-item">
+                      <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
                         <div style={{ display: "grid", gap: 10 }}>
                           <div
                             style={{
@@ -1205,29 +1286,41 @@ export default function TrainingsListPage() {
                               color: "rgba(0,0,0,0.82)",
                             }}
                           >
-                            <div>{fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")}</div>
-                            {hasDisplayableTime(s.start_at) ? (
-                              <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                {fmtHourLabel(s.start_at, locale === "fr" ? "fr" : "en")}
+                            {isMultiDaySession ? (
+                              <div>
+                                {fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(sessionEnd, locale === "fr" ? "fr" : "en")}
+                              </div>
+                            ) : null}
+                            {!isMultiDaySession ? (
+                              <div>
+                                {fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")}{" "}
+                                <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                  {locale === "fr"
+                                    ? `• de ${fmtHourLabel(s.start_at, "fr")} à ${fmtHourLabel(sessionEnd, "fr")}`
+                                    : `• from ${fmtHourLabel(s.start_at, "en")} to ${fmtHourLabel(sessionEnd, "en")}`}
+                                </span>
                               </div>
                             ) : null}
                           </div>
 
                           <div className="hr-soft" style={{ margin: "1px 0" }} />
 
-                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {sessionTitle}
+                          <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                              {sessionTitle}
+                            </div>
+                            {s.session_type === "club" && clubName ? (
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
+                                {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                              </div>
+                            ) : null}
                           </div>
 
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                            {s.club_event_id ? <span className="pill-soft">{t("common.coach")}</span> : null}
-
-                            {s.location_text && (
-                              <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
-                                📍 {s.location_text}
-                              </span>
-                            )}
-                          </div>
+                          {displayLocation ? (
+                            <div className="truncate" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
+                              📍 {displayLocation}
+                            </div>
+                          ) : null}
 
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
@@ -1259,22 +1352,9 @@ export default function TrainingsListPage() {
                             </Link>
 
                             <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
-                              {t("common.edit")}
+                              <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {locale === "fr" ? "Éditer" : "Edit"}
                             </Link>
-
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              disabled={loading || deleting}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleDelete(s.id);
-                              }}
-                              title={t("trainings.deleteThis")}
-                            >
-                              {deleting ? t("common.deleting") : t("common.delete")}
-                            </button>
                           </div>
                         </div>
                       </div>

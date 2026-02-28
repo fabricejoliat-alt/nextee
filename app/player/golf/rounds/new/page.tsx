@@ -28,6 +28,7 @@ type ProfileRow = {
   handicap: number | null;
 };
 type PlayHolesMode = "9" | "18";
+type ManualTeeColor = "white" | "yellow" | "blue" | "red";
 
 function safeStr(v: any) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -133,6 +134,13 @@ function teeLabel(t: ApiTee) {
   return parts.join(" • ");
 }
 
+function manualTeeLabel(color: ManualTeeColor) {
+  if (color === "white") return "Tee blanc";
+  if (color === "yellow") return "Tee jaune";
+  if (color === "blue") return "Tee bleu";
+  return "Tee rouge";
+}
+
 function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string, playMode: PlayHolesMode) {
   const t = tees.find((x) => x.id === selectedTeeId);
   const holes = t?.holes;
@@ -180,9 +188,7 @@ export default function NewRoundPage() {
   const [startAt, setStartAt] = useState<string>(() => {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-      d.getMinutes()
-    )}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   });
 
   const [roundType, setRoundType] = useState<"training" | "competition">("training");
@@ -194,6 +200,11 @@ export default function NewRoundPage() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<ApiCourseLite[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<ApiCourseLite | null>(null);
+  const [manualCourseOpen, setManualCourseOpen] = useState(false);
+  const [manualLocation, setManualLocation] = useState("");
+  const [manualTeeColor, setManualTeeColor] = useState<ManualTeeColor>("yellow");
+  const [manualSlope, setManualSlope] = useState<string>("");
+  const [manualCourseRating, setManualCourseRating] = useState<string>("");
 
   const [courseDetail, setCourseDetail] = useState<any | null>(null);
   const [tees, setTees] = useState<ApiTee[]>([]);
@@ -307,20 +318,32 @@ export default function NewRoundPage() {
     if (busy) return false;
     if (!startAt) return false;
 
-    const dt = new Date(startAt);
+    const dt = new Date(`${startAt}T00:00:00`);
     if (Number.isNaN(dt.getTime())) return false;
 
     if (roundType === "competition" && !competitionName.trim()) return false;
-    if (!selectedCourse) return false;
-    if (!selectedTeeId) return false;
+    if (!selectedCourse && !manualCourseOpen) return false;
+    if (selectedCourse && !selectedTeeId) return false;
+    if (manualCourseOpen && !manualLocation.trim()) return false;
 
     if (handicapStart.trim()) {
       const v = Number(handicapStart);
       if (!Number.isFinite(v)) return false;
     }
 
+    if (manualCourseOpen) {
+      if (manualSlope.trim()) {
+        const s = Number(manualSlope);
+        if (!Number.isFinite(s)) return false;
+      }
+      if (manualCourseRating.trim()) {
+        const cr = Number(manualCourseRating);
+        if (!Number.isFinite(cr)) return false;
+      }
+    }
+
     return true;
-  }, [busy, startAt, roundType, competitionName, selectedCourse, selectedTeeId, handicapStart]);
+  }, [busy, startAt, roundType, competitionName, selectedCourse, selectedTeeId, handicapStart, manualCourseOpen, manualLocation, manualSlope, manualCourseRating]);
 
   async function createRound(e: React.FormEvent) {
     e.preventDefault();
@@ -329,7 +352,7 @@ export default function NewRoundPage() {
     setBusy(true);
     setError(null);
 
-    const dt = new Date(startAt);
+    const dt = new Date(`${startAt}T00:00:00`);
     if (Number.isNaN(dt.getTime())) {
       setError(t("roundsNew.error.invalidDate"));
       setBusy(false);
@@ -338,14 +361,14 @@ export default function NewRoundPage() {
 
     const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
-    if (!selectedCourse) {
+    if (!selectedCourse && !manualCourseOpen) {
       setError(t("roundsNew.error.chooseCourse"));
       setBusy(false);
       return;
     }
 
-    const selectedTeeObj = tees.find((t) => t.id === selectedTeeId) ?? null;
-    if (!selectedTeeObj) {
+    const selectedTeeObj = selectedCourse ? tees.find((t) => t.id === selectedTeeId) ?? null : null;
+    if (selectedCourse && !selectedTeeObj) {
       setError(t("roundsNew.error.chooseTee"));
       setBusy(false);
       return;
@@ -358,19 +381,36 @@ export default function NewRoundPage() {
       return;
     }
 
+    const slopeManual = manualCourseOpen && manualSlope.trim() !== "" ? Number(manualSlope) : null;
+    const courseRatingManual = manualCourseOpen && manualCourseRating.trim() !== "" ? Number(manualCourseRating) : null;
+    if (manualCourseOpen && slopeManual !== null && Number.isNaN(slopeManual)) {
+      setError("Slope invalide");
+      setBusy(false);
+      return;
+    }
+    if (manualCourseOpen && courseRatingManual !== null && Number.isNaN(courseRatingManual)) {
+      setError("Course Rating invalide");
+      setBusy(false);
+      return;
+    }
+
     const payload: any = {
       user_id: uid,
       start_at: dt.toISOString(),
-      location: null,
+      location: manualCourseOpen ? manualLocation.trim() : null,
       round_type: roundType,
       competition_name: roundType === "competition" ? competitionName.trim() : null,
       handicap_start,
-      course_source: "golfcourseapi",
-      course_name: selectedCourse.course_name?.trim() || null,
-      external_course_id: safeStr(selectedCourse.id),
-      tee_name: selectedTeeObj.tee_name?.trim() || null,
-      slope_rating: typeof selectedTeeObj.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
-      course_rating: typeof selectedTeeObj.course_rating === "number" ? selectedTeeObj.course_rating : null,
+      course_source: manualCourseOpen ? "manual" : "golfcourseapi",
+      course_name: manualCourseOpen ? manualLocation.trim() : selectedCourse?.course_name?.trim() || null,
+      external_course_id: manualCourseOpen ? null : safeStr(selectedCourse?.id),
+      tee_name: manualCourseOpen ? manualTeeLabel(manualTeeColor) : selectedTeeObj?.tee_name?.trim() || null,
+      slope_rating: manualCourseOpen ? slopeManual : typeof selectedTeeObj?.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
+      course_rating: manualCourseOpen
+        ? courseRatingManual
+        : typeof selectedTeeObj?.course_rating === "number"
+        ? selectedTeeObj.course_rating
+        : null,
       notes: notes.trim() || null,
     };
 
@@ -388,7 +428,13 @@ export default function NewRoundPage() {
       return;
     }
 
-    const holes = teeHolesPrefill(tees, selectedTeeId, playHolesMode);
+    const holes = manualCourseOpen
+      ? Array.from({ length: 18 }, (_, i) => ({
+          hole_no: i + 1,
+          par: null,
+          stroke_index: null,
+        }))
+      : teeHolesPrefill(tees, selectedTeeId, playHolesMode);
     if (holes) {
       const rows = holes.map((h) => ({
         round_id: id,
@@ -412,6 +458,7 @@ export default function NewRoundPage() {
     setCourseDetail(null);
     setTees([]);
     setSelectedTeeId("");
+    setManualCourseOpen(false);
   }
 
   return (
@@ -447,7 +494,7 @@ export default function NewRoundPage() {
               <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
-                  <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={busy} />
+                  <input type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={busy} />
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
@@ -514,6 +561,75 @@ export default function NewRoundPage() {
                         {searching ? t("roundsNew.searching") : results.length > 0 ? `${results.length} ${t("roundsNew.results")}` : " "}
                       </div>
                     </label>
+
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                      Si tu ne trouves pas le parcours, clique sur le bouton Ajouter un parcours.
+                    </div>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setManualCourseOpen((v) => !v);
+                        setSelectedCourse(null);
+                        setCourseDetail(null);
+                        setTees([]);
+                        setSelectedTeeId("");
+                      }}
+                      disabled={busy}
+                    >
+                      Ajouter un parcours
+                    </button>
+
+                    {manualCourseOpen && (
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 16,
+                          background: "rgba(255,255,255,0.65)",
+                          padding: 12,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>Lieu</span>
+                          <input value={manualLocation} onChange={(e) => setManualLocation(e.target.value)} disabled={busy} />
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>Tee de départ</span>
+                          <select value={manualTeeColor} onChange={(e) => setManualTeeColor(e.target.value as ManualTeeColor)} disabled={busy}>
+                            <option value="white">Blanc</option>
+                            <option value="yellow">Jaune</option>
+                            <option value="blue">Bleu</option>
+                            <option value="red">Rouge</option>
+                          </select>
+                        </label>
+
+                        <div className="grid-2">
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Slope (optionnel)</span>
+                            <input
+                              inputMode="numeric"
+                              value={manualSlope}
+                              onChange={(e) => setManualSlope(e.target.value)}
+                              disabled={busy}
+                              placeholder="ex: 125"
+                            />
+                          </label>
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>Course Rating (optionnel)</span>
+                            <input
+                              inputMode="decimal"
+                              value={manualCourseRating}
+                              onChange={(e) => setManualCourseRating(e.target.value)}
+                              disabled={busy}
+                              placeholder="ex: 71.4"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
 
                     {results.length > 0 && (
                       <div style={{ display: "grid", gap: 10 }}>

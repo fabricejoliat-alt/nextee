@@ -106,12 +106,6 @@ function roundTitle(r: Round, t: (key: string) => string) {
   return t("rounds.training");
 }
 
-function diffLabelFromDiff(diff: number | null) {
-  if (typeof diff !== "number") return null;
-  if (diff === 0) return "E";
-  return diff > 0 ? `+${diff}` : String(diff);
-}
-
 export default function RoundsListPage() {
   const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -271,7 +265,7 @@ export default function RoundsListPage() {
   const computedByRoundId = useMemo(() => {
     const out: Record<
       string,
-      { parTotal: number | null; scoreTotal: number | null; diff: number | null; diffLabel: string | null }
+      { parTotal: number | null; scoreTotal: number | null; overParTotal: number | null }
     > = {};
 
     rounds.forEach((r) => {
@@ -282,16 +276,23 @@ export default function RoundsListPage() {
       const scoreTotalFromHoles = holes.reduce((acc, h) => acc + (typeof h.score === "number" ? h.score : 0), 0);
       const holesWithScore = holes.filter((h) => typeof h.score === "number").length;
 
+      const overParTotalFromHoles = holes.reduce(
+        (acc, h) =>
+          acc +
+          (typeof h.par === "number" && typeof h.score === "number"
+            ? Math.max(0, h.score - h.par)
+            : 0),
+        0
+      );
+      const holesWithParAndScore = holes.filter((h) => typeof h.par === "number" && typeof h.score === "number").length;
+
       const scoreTotal =
         typeof r.total_score === "number" ? r.total_score : holesWithScore > 0 ? scoreTotalFromHoles : null;
-
-      const diff = typeof scoreTotal === "number" && parTotal > 0 ? scoreTotal - parTotal : null;
 
       out[r.id] = {
         parTotal: parTotal > 0 ? parTotal : null,
         scoreTotal,
-        diff,
-        diffLabel: diffLabelFromDiff(diff),
+        overParTotal: holesWithParAndScore > 0 ? overParTotalFromHoles : null,
       };
     });
 
@@ -458,6 +459,7 @@ export default function RoundsListPage() {
               <div className="marketplace-list marketplace-list-top">
                 {rounds.map((r) => {
                   const c = computedByRoundId[r.id];
+                  const playedHoles = (holesByRoundId[r.id] ?? []).filter((h) => typeof h.score === "number").length;
                   const configParts: string[] = [];
                   if (r.course_name) configParts.push(r.course_name);
                   if (r.tee_name) configParts.push(r.tee_name);
@@ -506,7 +508,11 @@ export default function RoundsListPage() {
                                 {c?.scoreTotal ?? "—"}
                               </div>
                               <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
-                                {c?.diffLabel ? `(${c.diffLabel})` : " "}
+                                {c?.overParTotal != null
+                                  ? c.overParTotal > 0
+                                    ? `(+${c.overParTotal})`
+                                    : `(0)`
+                                  : " "}
                               </div>
                             </div>
                           </div>
@@ -515,6 +521,9 @@ export default function RoundsListPage() {
 
                           {/* Stats rapides (comme avant) */}
                           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {locale === "fr" ? "Trous joués" : "Holes played"}:{" "}
+                            <span style={{ fontWeight: 900 }}>{playedHoles || "—"}</span>
+                            {" • "}
                             {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
                             {" • "}
                             GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>

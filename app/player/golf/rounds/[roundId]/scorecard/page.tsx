@@ -220,11 +220,18 @@ export default function ScorecardPage() {
 
     const scoreTotalFromHoles = holes.reduce((acc, h) => acc + (typeof h.score === "number" ? h.score : 0), 0);
     const holesWithScore = holes.filter((h) => typeof h.score === "number").length;
+    const overParTotalFromHoles = holes.reduce(
+      (acc, h) =>
+        acc +
+        (typeof h.par === "number" && typeof h.score === "number"
+          ? Math.max(0, h.score - h.par)
+          : 0),
+      0
+    );
+    const holesWithParAndScore = holes.filter((h) => typeof h.par === "number" && typeof h.score === "number").length;
 
     const scoreTotal =
       typeof round?.total_score === "number" ? round.total_score : holesWithScore > 0 ? scoreTotalFromHoles : null;
-
-    const diff = typeof scoreTotal === "number" && parTotal > 0 ? scoreTotal - parTotal : null;
 
     const filled = holes.filter((h) => typeof h.par === "number" && typeof h.score === "number");
 
@@ -258,7 +265,7 @@ export default function ScorecardPage() {
     return {
       parTotal: parTotal || null,
       scoreTotal,
-      diff,
+      overParTotal: holesWithParAndScore > 0 ? overParTotalFromHoles : null,
       eagles: typeof round?.eagles === "number" ? round.eagles : eagles,
       birdies: typeof round?.birdies === "number" ? round.birdies : birdies,
       pars: typeof round?.pars === "number" ? round.pars : pars,
@@ -267,6 +274,7 @@ export default function ScorecardPage() {
       doublesPlus: typeof round?.doubles_plus === "number" ? round.doubles_plus : doublesPlus,
       gir,
       putts,
+      holesPlayed: holesWithScore,
     };
   }, [holes, round]);
 
@@ -296,15 +304,6 @@ export default function ScorecardPage() {
       </div>
     );
   }
-
-  const diffLabel =
-    typeof computed.diff === "number"
-      ? computed.diff === 0
-        ? "E"
-        : computed.diff > 0
-        ? `+${computed.diff}`
-        : String(computed.diff)
-      : null;
 
   return (
     <div className="player-dashboard-bg">
@@ -361,7 +360,11 @@ export default function ScorecardPage() {
                 <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
                 <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>{computed.scoreTotal ?? "—"}</div>
                 <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
-                  {diffLabel ? `(${diffLabel})` : " "}
+                  {computed.overParTotal != null
+                    ? computed.overParTotal > 0
+                      ? `(+${computed.overParTotal})`
+                      : `(0)`
+                    : " "}
                 </div>
               </div>
             </div>
@@ -504,6 +507,11 @@ export default function ScorecardPage() {
                 <div style={statValue}>{computed.scoreTotal}</div>
               </div>
             )}
+
+            <div style={statBox}>
+              <div style={statLabel}>{locale === "fr" ? "Trous joués" : "Holes played"}</div>
+              <div style={statValue}>{computed.holesPlayed ?? 0}</div>
+            </div>
           </div>
         </div>
       </div>

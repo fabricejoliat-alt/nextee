@@ -309,6 +309,11 @@ function scoreBucketFromHole(par: number | null, score: number | null) {
   return "doubleplus";
 }
 
+function isGirOnHole(par: number | null, score: number | null, putts: number | null) {
+  if (typeof par !== "number" || typeof score !== "number" || typeof putts !== "number") return false;
+  return score - putts <= par - 2;
+}
+
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
@@ -431,12 +436,22 @@ export default function GolfDashboardPage() {
     return null;
   }, [preset, fromDate, toDate]);
 
+  const compareMonths = useMemo(() => {
+    if (preset === "last3") return 3;
+    if (preset === "month") return 1;
+    if (preset === "custom" && fromDate && toDate) {
+      const d = diffDaysInclusive(fromDate, toDate);
+      if (!d) return 1;
+      return Math.max(1, Math.round(d / 30));
+    }
+    return 1;
+  }, [preset, fromDate, toDate]);
+
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
-    if (preset === "month") return t("golfDashboard.vsPrevMonth");
-    if (preset === "last3") return t("golfDashboard.vsPrev3Months");
-    return t("golfDashboard.vsPrevPeriod");
-  }, [prevRange, preset, t]);
+    if (locale === "fr") return `vs ${compareMonths} mois précédent${compareMonths > 1 ? "s" : ""}`;
+    return `vs previous ${compareMonths} month${compareMonths > 1 ? "s" : ""}`;
+  }, [prevRange, locale, compareMonths]);
 
   // ===== LOAD TRAININGS (current) =====
   useEffect(() => {
@@ -820,22 +835,23 @@ function presetToSelectValue(p: Preset): Preset {
     const byRound: Record<string, GolfHoleRow[]> = {};
     for (const h of holes) (byRound[h.round_id] ??= []).push(h);
 
-    const roundsWithCount: Record<string, number> = {};
-    for (const rid of Object.keys(byRound)) roundsWithCount[rid] = byRound[rid].length;
+    const roundsWithPlayedCount: Record<string, number> = {};
+    for (const rid of Object.keys(byRound)) {
+      roundsWithPlayedCount[rid] = byRound[rid].filter((h) => typeof h.score === "number").length;
+    }
 
-    const holesPlayed = holes.length;
+    const holesPlayed = holes.filter((h) => typeof h.score === "number").length;
 
-    // completed rounds: only if 18 holes exist in golf_round_holes
-    const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
+    // completed rounds: only if 18 holes have a played score
+    const completedRoundIds = new Set(Object.entries(roundsWithPlayedCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = rounds.filter((r) => completedRoundIds.has(r.id));
-    const completedHoles = holes.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
         // prefer computed from holes for reliability
-        const hs = byRound[r.id] ?? [];
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
         if (hs.length !== 18) return null;
-        const sum = hs.reduce((s, x) => s + (x.score ?? 0), 0);
+        const sum = hs.reduce((s, x) => s + (x.score as number), 0);
         return Number.isFinite(sum) && sum > 0 ? sum : r.total_score ?? null;
       })
     );
@@ -850,9 +866,16 @@ function presetToSelectValue(p: Preset): Preset {
       distDen += 1;
     }
 
-    // putts avg (per hole)
-    const puttVals = completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null));
-    const avgPuttsPerHole = avg(puttVals);
+    // putts avg (total putts per completed 18-hole round)
+    const avgPutts18 = avg(
+      completedRounds.map((r) => {
+        if (typeof r.total_putts === "number") return r.total_putts;
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
+        if (hs.length !== 18) return null;
+        const sumPutts = hs.reduce((sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0), 0);
+        return Number.isFinite(sumPutts) && sumPutts > 0 ? sumPutts : null;
+      })
+    );
 
     // fairways (par 4/5 only; count only where fairway_hit not null)
     let fwTot = 0;
@@ -866,10 +889,12 @@ function presetToSelectValue(p: Preset): Preset {
     }
     const fwPct = fwTot ? round1((fwHit / fwTot) * 100) : null;
 
-    // GIR avg: use golf_rounds.gir (assumed out of 18). Only for completed 18-hole rounds.
-    const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
-    const girAvg = avg(girVals);
-    const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
+    // GIR on played holes (including partial rounds)
+    const girKnownHoles = holes.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+    );
+    const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
+    const girPct = girKnownHoles.length ? round1((girHits / girKnownHoles.length) * 100) : null;
 
     // Par scores
     const parBuckets = {
@@ -920,13 +945,11 @@ function presetToSelectValue(p: Preset): Preset {
 
     return {
       holesPlayed,
-      completed18Count: completedRounds.length,
       avgScore18,
       dist,
       distDen,
-      avgPuttsPerHole,
+      avgPutts18,
       fwPct,
-      girAvg,
       girPct,
       avgPar3,
       avgPar4,
@@ -940,18 +963,20 @@ function presetToSelectValue(p: Preset): Preset {
     const byRound: Record<string, GolfHoleRow[]> = {};
     for (const h of prevHoles) (byRound[h.round_id] ??= []).push(h);
 
-    const roundsWithCount: Record<string, number> = {};
-    for (const rid of Object.keys(byRound)) roundsWithCount[rid] = byRound[rid].length;
+    const roundsWithPlayedCount: Record<string, number> = {};
+    for (const rid of Object.keys(byRound)) {
+      roundsWithPlayedCount[rid] = byRound[rid].filter((h) => typeof h.score === "number").length;
+    }
 
-    const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
+    const holesPlayed = prevHoles.filter((h) => typeof h.score === "number").length;
+    const completedRoundIds = new Set(Object.entries(roundsWithPlayedCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = prevRounds.filter((r) => completedRoundIds.has(r.id));
-    const completedHoles = prevHoles.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
-        const hs = byRound[r.id] ?? [];
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
         if (hs.length !== 18) return null;
-        const sum = hs.reduce((s, x) => s + (x.score ?? 0), 0);
+        const sum = hs.reduce((s, x) => s + (x.score as number), 0);
         return Number.isFinite(sum) && sum > 0 ? sum : r.total_score ?? null;
       })
     );
@@ -965,7 +990,15 @@ function presetToSelectValue(p: Preset): Preset {
       distDen += 1;
     }
 
-    const avgPuttsPerHole = avg(completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null)));
+    const avgPutts18 = avg(
+      completedRounds.map((r) => {
+        if (typeof r.total_putts === "number") return r.total_putts;
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
+        if (hs.length !== 18) return null;
+        const sumPutts = hs.reduce((sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0), 0);
+        return Number.isFinite(sumPutts) && sumPutts > 0 ? sumPutts : null;
+      })
+    );
 
     let fwTot = 0;
     let fwHit = 0;
@@ -978,9 +1011,11 @@ function presetToSelectValue(p: Preset): Preset {
     }
     const fwPct = fwTot ? round1((fwHit / fwTot) * 100) : null;
 
-    const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
-    const girAvg = avg(girVals);
-    const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
+    const girKnownHoles = prevHoles.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+    );
+    const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
+    const girPct = girKnownHoles.length ? round1((girHits / girKnownHoles.length) * 100) : null;
 
     const parBuckets = {
       par3: { sum: 0, n: 0 },
@@ -1026,33 +1061,8 @@ function presetToSelectValue(p: Preset): Preset {
     const avgFront = side.front.n ? round1(side.front.sum / side.front.n) : null;
     const avgBack = side.back.n ? round1(side.back.sum / side.back.n) : null;
 
-    return { avgScore18, dist, distDen, avgPuttsPerHole, fwPct, girAvg, girPct, avgPar3, avgPar4, avgPar5, avgFront, avgBack };
+    return { holesPlayed, avgScore18, dist, distDen, avgPutts18, fwPct, girPct, avgPar3, avgPar4, avgPar5, avgFront, avgBack };
   }, [prevHoles, prevRounds]);
-
-  // Volume / type split
-  const roundsSplit = useMemo(() => {
-    let training = 0;
-    let competition = 0;
-    let other = 0;
-    for (const r of rounds) {
-      if (r.round_type === "training") training += 1;
-      else if (r.round_type === "competition") competition += 1;
-      else other += 1;
-    }
-    return { training, competition, other };
-  }, [rounds]);
-
-  const prevRoundsSplit = useMemo(() => {
-    let training = 0;
-    let competition = 0;
-    let other = 0;
-    for (const r of prevRounds) {
-      if (r.round_type === "training") training += 1;
-      else if (r.round_type === "competition") competition += 1;
-      else other += 1;
-    }
-    return { training, competition, other };
-  }, [prevRounds]);
 
   // Score distribution current with % + trend arrows
   const scoreDistUI = useMemo(() => {
@@ -1108,8 +1118,8 @@ function presetToSelectValue(p: Preset): Preset {
       girPct: holeAgg.girPct,
       girArrow: delta(holeAgg.girPct, prevHoleAgg.girPct),
 
-      puttsPerHole: holeAgg.avgPuttsPerHole,
-      puttsArrow: delta(holeAgg.avgPuttsPerHole, prevHoleAgg.avgPuttsPerHole),
+      putts18: holeAgg.avgPutts18,
+      putts18Arrow: delta(holeAgg.avgPutts18, prevHoleAgg.avgPutts18),
 
       fwPct: holeAgg.fwPct,
       fwArrow: delta(holeAgg.fwPct, prevHoleAgg.fwPct),
@@ -1526,9 +1536,6 @@ function presetToSelectValue(p: Preset): Preset {
                       )}
                     </div>
 
-                    {compareLabel && (
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
-                    )}
                   </div>
 
                   <div className="hr-soft" style={{ margin: "2px 0" }} />
@@ -1551,6 +1558,8 @@ function presetToSelectValue(p: Preset): Preset {
                       </div>
                     </div>
                   </div>
+
+                  {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
                 </div>
               )}
             </div>
@@ -1566,9 +1575,7 @@ function presetToSelectValue(p: Preset): Preset {
                   <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
                   <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
-                  {compareLabel && (
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
-                  )}
+                  {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
                 </div>
               )}
             </div>
@@ -1662,73 +1669,21 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== MES PARCOURS — Cards ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
-            {/* Card 1: Volume + trous + split training/competition */}
+            {/* Card 1: Volume de jeu */}
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.playVolume")}</div>
 
               {loadingRounds || loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : rounds.length === 0 ? (
+              ) : holeAgg.holesPlayed === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={miniRow}>
-                      <div style={miniLeft}>{t("golfDashboard.roundsPlayed")}</div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <div style={miniRight}>{rounds.length}</div>
-                        {prevRange ? deltaArrow(rounds.length - prevRounds.length) : null}
-                      </div>
-                    </div>
-
-                    <div style={miniRow}>
-                      <div style={miniLeft}>{t("golfDashboard.holesPlayed")}</div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <div style={miniRight}>{holeAgg.holesPlayed}</div>
-                        {prevRange ? deltaArrow(holeAgg.holesPlayed - prevHoles.length) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="hr-soft" />
-
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={miniRow}>
-                      <div style={miniLeft}>{t("golfDashboard.trainingRounds")}</div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <div style={miniRight}>{roundsSplit.training}</div>
-                        {prevRange ? deltaArrow(roundsSplit.training - prevRoundsSplit.training) : null}
-                      </div>
-                    </div>
-
-                    <div style={miniRow}>
-                      <div style={miniLeft}>{t("golfDashboard.competitionRounds")}</div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <div style={miniRight}>{roundsSplit.competition}</div>
-                        {prevRange ? deltaArrow(roundsSplit.competition - prevRoundsSplit.competition) : null}
-                      </div>
-                    </div>
-
-                    {roundsSplit.other > 0 && (
-                      <div style={miniRow}>
-                        <div style={miniLeft}>{t("golfDashboard.other")}</div>
-                        <div style={miniRight}>{roundsSplit.other}</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="hr-soft" />
-
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={miniRow}>
-                      <div style={miniLeft}>{t("golfDashboard.avgScore18")}</div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <div style={miniRight}>{holeAgg.avgScore18 ?? "—"}</div>
-                        {prevRange ? deltaArrow((holeAgg.avgScore18 ?? 0) - (prevHoleAgg.avgScore18 ?? 0)) : null}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                      {t("golfDashboard.avgScore18Hint").replace("{count}", String(holeAgg.completed18Count))}
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{t("golfDashboard.holesPlayed")}</div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <div style={miniRight}>{holeAgg.holesPlayed}</div>
+                      {prevRange ? deltaArrow(holeAgg.holesPlayed - prevHoleAgg.holesPlayed) : null}
                     </div>
                   </div>
 
@@ -1789,10 +1744,18 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>{t("golfDashboard.avgPutts")}</div>
+                    <div style={miniLeft}>{locale === "fr" ? "Score moyen" : "Average score"}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <div style={miniRight}>{keyKpisUI.puttsPerHole == null ? "—" : `${keyKpisUI.puttsPerHole}`}</div>
-                      {prevRange ? deltaArrow(keyKpisUI.puttsArrow ?? null) : null}
+                      <div style={miniRight}>{holeAgg.avgScore18 == null ? "—" : `${holeAgg.avgScore18}`}</div>
+                      {prevRange ? deltaArrow((holeAgg.avgScore18 ?? 0) - (prevHoleAgg.avgScore18 ?? 0)) : null}
+                    </div>
+                  </div>
+
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{locale === "fr" ? "Nombre de putts (sur 18 trous)" : "Putts (18 holes)"}</div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <div style={miniRight}>{keyKpisUI.putts18 == null ? "—" : `${keyKpisUI.putts18}`}</div>
+                      {prevRange ? deltaArrow(keyKpisUI.putts18Arrow ?? null) : null}
                     </div>
                   </div>
 
@@ -1802,12 +1765,6 @@ function presetToSelectValue(p: Preset): Preset {
                       <div style={miniRight}>{keyKpisUI.fwPct == null ? "—" : `${keyKpisUI.fwPct}%`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.fwArrow ?? null) : null}
                     </div>
-                  </div>
-
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    {t("golfDashboard.girHint1")}
-                    <br />
-                    {t("golfDashboard.girHint2")}
                   </div>
 
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
@@ -1849,10 +1806,6 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    {t("golfDashboard.scoreByParHint")}
-                  </div>
-
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
                 </div>
               )}
@@ -1882,10 +1835,6 @@ function presetToSelectValue(p: Preset): Preset {
                       <div style={miniRight}>{sideAvgUI.back ?? "—"}</div>
                       {prevRange ? deltaArrow(sideAvgUI.backArrow ?? null) : null}
                     </div>
-                  </div>
-
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
-                    {t("golfDashboard.frontBackHint")}
                   </div>
 
                   {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
@@ -1970,9 +1919,6 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
                   )}
 
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.4 }}>
-                    {t("golfDashboard.correlationNote")}
-                  </div>
                 </div>
               </div>
             )}

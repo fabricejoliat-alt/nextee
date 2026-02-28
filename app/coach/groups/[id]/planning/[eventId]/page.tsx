@@ -487,7 +487,7 @@ export default function CoachEventDetailPage() {
                             gap: 10,
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                               <div style={avatarBoxStyle} aria-hidden="true">
                                 {avatarNode(p)}
@@ -500,53 +500,76 @@ export default function CoachEventDetailPage() {
                             </div>
 
                             <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
-                              <div
+                              <button
+                                type="button"
+                                onClick={() => setAttendanceStatus(a.player_id, a.status === "present" ? "absent" : "present")}
+                                disabled={Boolean(attendanceBusyIds[a.player_id])}
+                                role="switch"
+                                aria-checked={a.status === "present"}
+                                aria-label={tr("Basculer présence", "Toggle attendance")}
                                 style={{
-                                  display: "inline-flex",
-                                  border: "1px solid rgba(0,0,0,0.12)",
-                                  borderRadius: 10,
+                                  width: 114,
+                                  height: 24,
+                                  borderRadius: 999,
+                                  border: "1px solid rgba(0,0,0,0.14)",
                                   overflow: "hidden",
-                                  background: "rgba(255,255,255,0.78)",
+                                  background: "rgba(0,0,0,0.16)",
+                                  position: "relative",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
+                                  padding: 0,
                                 }}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceStatus(a.player_id, "present")}
-                                  disabled={Boolean(attendanceBusyIds[a.player_id])}
+                                <span
+                                  aria-hidden
                                   style={{
-                                    borderRadius: 0,
-                                    border: "none",
-                                    borderRight: "1px solid rgba(0,0,0,0.10)",
-                                    background: a.status === "present" ? "#22c55e" : "transparent",
-                                    color: a.status === "present" ? "#ffffff" : "rgba(0,0,0,0.82)",
-                                    fontWeight: 900,
-                                    fontSize: 11,
-                                    lineHeight: 1.1,
-                                    padding: "5px 8px",
-                                    cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
+                                    position: "absolute",
+                                    top: 0,
+                                    bottom: 0,
+                                    width: "50%",
+                                    left: a.status === "present" ? "50%" : 0,
+                                    background: a.status === "present" ? "#52b47f" : "#ea7f77",
+                                    borderTopLeftRadius: a.status === "present" ? 0 : 999,
+                                    borderBottomLeftRadius: a.status === "present" ? 0 : 999,
+                                    borderTopRightRadius: a.status === "present" ? 999 : 0,
+                                    borderBottomRightRadius: a.status === "present" ? 999 : 0,
                                   }}
-                                >
-                                  {tr("Présent", "Present")}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceStatus(a.player_id, "absent")}
-                                  disabled={Boolean(attendanceBusyIds[a.player_id])}
+                                />
+                                <span
                                   style={{
-                                    borderRadius: 0,
-                                    border: "none",
-                                    background: a.status === "absent" ? "#ef4444" : "transparent",
-                                    color: a.status === "absent" ? "#ffffff" : "rgba(0,0,0,0.82)",
+                                    position: "absolute",
+                                    left: 8,
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    fontSize: 9,
                                     fontWeight: 900,
-                                    fontSize: 11,
-                                    lineHeight: 1.1,
-                                    padding: "5px 8px",
-                                    cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
+                                    color: a.status === "present" ? "rgba(255,255,255,0.72)" : "#fff",
+                                    letterSpacing: 0.2,
+                                    textTransform: "uppercase",
                                   }}
                                 >
                                   {tr("Absent", "Absent")}
-                                </button>
-                              </div>
+                                </span>
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    right: 6,
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    fontSize: 9,
+                                    fontWeight: 900,
+                                    color: a.status === "present" ? "#fff" : "rgba(255,255,255,0.72)",
+                                    letterSpacing: 0.2,
+                                    textTransform: "uppercase",
+                                    minWidth: 44,
+                                    textAlign: "right",
+                                  }}
+                                >
+                                  {tr("Présent", "Present")}
+                                </span>
+                              </button>
                             </div>
                           </div>
 

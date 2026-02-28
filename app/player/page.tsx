@@ -328,6 +328,9 @@ export default function PlayerHomePage() {
   // ✅ Rounds month + previous month (pour tendances focus)
   const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
   const [roundsPrevMonth, setRoundsPrevMonth] = useState<GolfRoundRow[]>([]);
+  const [playedHolesMonthByRoundId, setPlayedHolesMonthByRoundId] = useState<Record<string, number>>({});
+  const [playedHolesPrevMonthByRoundId, setPlayedHolesPrevMonthByRoundId] = useState<Record<string, number>>({});
+  const [holesPlayedMonth, setHolesPlayedMonth] = useState<number>(0);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
@@ -410,38 +413,64 @@ export default function PlayerHomePage() {
 
   // ===== Focus calculé depuis golf_rounds (comme dashboard) =====
   const focusFromRounds = useMemo(() => {
-    const girVals = roundsMonth.map((r) => (typeof r.gir === "number" ? r.gir : null)).filter((x): x is number => typeof x === "number");
+    const girPctVals = roundsMonth
+      .map((r) => {
+        if (typeof r.gir !== "number") return null;
+        const played = playedHolesMonthByRoundId[r.id] ?? 0;
+        if (played <= 0) return null;
+        return (r.gir / played) * 100;
+      })
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
     const fwPctVals = roundsMonth
       .map((r) => {
         if (typeof r.fairways_hit !== "number" || typeof r.fairways_total !== "number" || r.fairways_total <= 0) return null;
         return (r.fairways_hit / r.fairways_total) * 100;
       })
       .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-    const puttVals = roundsMonth.map((r) => (typeof r.total_putts === "number" ? r.total_putts : null)).filter((x): x is number => typeof x === "number");
+    const puttVals = roundsMonth
+      .map((r) => {
+        const played = playedHolesMonthByRoundId[r.id] ?? 0;
+        if (played !== 18) return null;
+        return typeof r.total_putts === "number" ? r.total_putts : null;
+      })
+      .filter((x): x is number => typeof x === "number");
 
-    const girAvg = girVals.length ? Math.round((girVals.reduce((a, b) => a + b, 0) / girVals.length) * 10) / 10 : null;
+    const girPctAvg = girPctVals.length ? Math.round((girPctVals.reduce((a, b) => a + b, 0) / girPctVals.length) * 10) / 10 : null;
     const fwPctAvg = fwPctVals.length ? Math.round((fwPctVals.reduce((a, b) => a + b, 0) / fwPctVals.length) * 10) / 10 : null;
     const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
 
-    return { girAvg, fwPctAvg, puttAvg };
-  }, [roundsMonth]);
+    return { girPctAvg, fwPctAvg, puttAvg };
+  }, [roundsMonth, playedHolesMonthByRoundId]);
 
   const prevFocusFromRounds = useMemo(() => {
-    const girVals = roundsPrevMonth.map((r) => (typeof r.gir === "number" ? r.gir : null)).filter((x): x is number => typeof x === "number");
+    const girPctVals = roundsPrevMonth
+      .map((r) => {
+        if (typeof r.gir !== "number") return null;
+        const played = playedHolesPrevMonthByRoundId[r.id] ?? 0;
+        if (played <= 0) return null;
+        return (r.gir / played) * 100;
+      })
+      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
     const fwPctVals = roundsPrevMonth
       .map((r) => {
         if (typeof r.fairways_hit !== "number" || typeof r.fairways_total !== "number" || r.fairways_total <= 0) return null;
         return (r.fairways_hit / r.fairways_total) * 100;
       })
       .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-    const puttVals = roundsPrevMonth.map((r) => (typeof r.total_putts === "number" ? r.total_putts : null)).filter((x): x is number => typeof x === "number");
+    const puttVals = roundsPrevMonth
+      .map((r) => {
+        const played = playedHolesPrevMonthByRoundId[r.id] ?? 0;
+        if (played !== 18) return null;
+        return typeof r.total_putts === "number" ? r.total_putts : null;
+      })
+      .filter((x): x is number => typeof x === "number");
 
-    const girAvg = girVals.length ? Math.round((girVals.reduce((a, b) => a + b, 0) / girVals.length) * 10) / 10 : null;
+    const girPctAvg = girPctVals.length ? Math.round((girPctVals.reduce((a, b) => a + b, 0) / girPctVals.length) * 10) / 10 : null;
     const fwPctAvg = fwPctVals.length ? Math.round((fwPctVals.reduce((a, b) => a + b, 0) / fwPctVals.length) * 10) / 10 : null;
     const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
 
-    return { girAvg, fwPctAvg, puttAvg };
-  }, [roundsPrevMonth]);
+    return { girPctAvg, fwPctAvg, puttAvg };
+  }, [roundsPrevMonth, playedHolesPrevMonthByRoundId]);
 
   const focusDelta = useMemo(() => {
     const d = (cur: number | null, prev: number | null) => {
@@ -450,7 +479,7 @@ export default function PlayerHomePage() {
       return v === 0 ? 0 : v;
     };
     return {
-      gir: d(focusFromRounds.girAvg, prevFocusFromRounds.girAvg),
+      gir: d(focusFromRounds.girPctAvg, prevFocusFromRounds.girPctAvg),
       fw: d(focusFromRounds.fwPctAvg, prevFocusFromRounds.fwPctAvg),
       putt: d(focusFromRounds.puttAvg, prevFocusFromRounds.puttAvg),
     };
@@ -711,6 +740,24 @@ export default function PlayerHomePage() {
         .order("start_at", { ascending: false });
 
       setRoundsMonth((curR.data ?? []) as GolfRoundRow[]);
+      const monthRoundIds = ((curR.data ?? []) as GolfRoundRow[]).map((r) => r.id).filter(Boolean);
+      if (monthRoundIds.length > 0) {
+        const holesRes = await supabase
+          .from("golf_round_holes")
+          .select("round_id,score")
+          .in("round_id", monthRoundIds);
+        const byRound: Record<string, number> = {};
+        ((holesRes.data ?? []) as Array<{ round_id: string | null; score: number | null }>).forEach((h) => {
+          if (!h?.round_id) return;
+          if (typeof h.score !== "number") return;
+          byRound[h.round_id] = (byRound[h.round_id] ?? 0) + 1;
+        });
+        setPlayedHolesMonthByRoundId(byRound);
+        setHolesPlayedMonth(Object.values(byRound).reduce((sum, n) => sum + n, 0));
+      } else {
+        setPlayedHolesMonthByRoundId({});
+        setHolesPlayedMonth(0);
+      }
 
       const prevStart = new Date(curStart.getFullYear(), curStart.getMonth() - 1, 1, 0, 0, 0, 0);
       const prevEnd = new Date(curStart.getFullYear(), curStart.getMonth(), 1, 0, 0, 0, 0);
@@ -724,9 +771,28 @@ export default function PlayerHomePage() {
         .order("start_at", { ascending: false });
 
       setRoundsPrevMonth((prevR.data ?? []) as GolfRoundRow[]);
+      const prevRoundIds = ((prevR.data ?? []) as GolfRoundRow[]).map((r) => r.id).filter(Boolean);
+      if (prevRoundIds.length > 0) {
+        const prevHolesRes = await supabase
+          .from("golf_round_holes")
+          .select("round_id,score")
+          .in("round_id", prevRoundIds);
+        const byRoundPrev: Record<string, number> = {};
+        ((prevHolesRes.data ?? []) as Array<{ round_id: string | null; score: number | null }>).forEach((h) => {
+          if (!h?.round_id) return;
+          if (typeof h.score !== "number") return;
+          byRoundPrev[h.round_id] = (byRoundPrev[h.round_id] ?? 0) + 1;
+        });
+        setPlayedHolesPrevMonthByRoundId(byRoundPrev);
+      } else {
+        setPlayedHolesPrevMonthByRoundId({});
+      }
     } catch {
       setRoundsMonth([]);
       setRoundsPrevMonth([]);
+      setPlayedHolesMonthByRoundId({});
+      setPlayedHolesPrevMonthByRoundId({});
+      setHolesPlayedMonth(0);
     }
 
     setLoading(false);
@@ -824,7 +890,6 @@ export default function PlayerHomePage() {
   };
 
   const roundsMonthCount = roundsMonth.length;
-  const holesMonthCountApprox = roundsMonthCount * 18;
   const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
   const activityCategoryLabel = (cat: string) => {
     const map: Record<string, string> = {
@@ -940,21 +1005,68 @@ export default function PlayerHomePage() {
                             onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
                             disabled={attendanceBusyEventId === e.id}
                             style={{
-                              width: 46,
-                              height: 26,
+                              width: 114,
+                              height: 24,
                               borderRadius: 999,
-                              border: "1px solid rgba(0,0,0,0.18)",
-                              background:
-                                attendanceStatus === "present"
-                                  ? "linear-gradient(180deg, #7bc898 0%, #55b77d 100%)"
-                                  : "linear-gradient(180deg, #d1d5db 0%, #c4c9d1 100%)",
-                              padding: 2,
+                              border: "1px solid rgba(0,0,0,0.14)",
+                              background: "rgba(0,0,0,0.16)",
+                              padding: 0,
                               display: "inline-flex",
                               alignItems: "center",
-                              justifyContent: attendanceStatus === "present" ? "flex-end" : "flex-start",
+                              justifyContent: "center",
+                              transition: "all 180ms ease",
+                              cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
+                              position: "relative",
+                              overflow: "hidden",
                             }}
                           >
-                            <span style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.24)" }} />
+                            <span
+                              aria-hidden
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                width: "50%",
+                                left: attendanceStatus === "present" ? "50%" : 0,
+                                background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
+                                borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                                borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                                borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
+                                borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                position: "absolute",
+                                left: 8,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                fontSize: 9,
+                                fontWeight: 900,
+                                color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
+                                letterSpacing: 0.2,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {locale === "fr" ? "Absent" : "Absent"}
+                            </span>
+                            <span
+                              style={{
+                                position: "absolute",
+                                right: 6,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                fontSize: 9,
+                                fontWeight: 900,
+                                color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
+                                letterSpacing: 0.2,
+                                textTransform: "uppercase",
+                                minWidth: 44,
+                                textAlign: "right",
+                              }}
+                            >
+                              {locale === "fr" ? "Présent" : "Present"}
+                            </span>
                           </button>
                         ) : null}
                       </div>
@@ -1266,7 +1378,7 @@ export default function PlayerHomePage() {
                     color: "var(--green-dark)",
                   }}
                 >
-                  {holesMonthCountApprox}
+                  {holesPlayedMonth}
                 </div>
                 <div
                   style={{
@@ -1289,13 +1401,13 @@ export default function PlayerHomePage() {
               <div className="sense-row">
                 <div>{t("golfDashboard.gir")}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focusFromRounds.girAvg == null ? "—" : `${focusFromRounds.girAvg}`}</div>
+                  <div className="sense-val">{focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`}</div>
                   <ArrowOnly delta={focusDelta.gir} />
                 </div>
               </div>
 
               <div className="sense-row">
-                <div>{t("golfDashboard.avgPutts")}</div>
+                <div>{locale === "fr" ? "Nombre de putts (sur 18 trous)" : "Putts (18-hole rounds)"}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                   <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
                   {/* ✅ inverse couleurs (baisse = bon = vert) */}

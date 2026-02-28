@@ -6,8 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
-import { getNotificationMessage } from "@/lib/notificationMessages";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -35,6 +33,22 @@ type ClubEventRow = {
   duration_minutes: number;
   location_text: string | null;
   status: "scheduled" | "cancelled";
+};
+
+type ExistingSessionRow = {
+  id: string;
+  start_at: string;
+  location_text: string | null;
+  motivation: number | null;
+  difficulty: number | null;
+  satisfaction: number | null;
+  notes: string | null;
+};
+
+type ExistingSessionItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
 };
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
@@ -151,11 +165,8 @@ export default function PlayerTrainingNewPage() {
   });
 
   const [place, setPlace] = useState<string>("");
-  const [sessionType, setSessionType] = useState<SessionType>("club");
-
+  const [sessionType, setSessionType] = useState<SessionType>("individual");
   const [notes, setNotes] = useState<string>("");
-
-  // sensations
   const [motivation, setMotivation] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("");
   const [satisfaction, setSatisfaction] = useState<string>("");
@@ -165,9 +176,8 @@ export default function PlayerTrainingNewPage() {
 
   // planned event (optional)
   const [linkedEvent, setLinkedEvent] = useState<ClubEventRow | null>(null);
-
-  // ✅ absent toggle (only for planned events)
-  const [isAbsent, setIsAbsent] = useState<boolean>(false);
+  const [linkedGroupName, setLinkedGroupName] = useState<string>("");
+  const [existingSessionId, setExistingSessionId] = useState<string>("");
 
   // ✅ coaches (planned: display only / non-planned club: checkbox list)
   const [coachOptions, setCoachOptions] = useState<CoachOption[]>([]);
@@ -180,24 +190,12 @@ export default function PlayerTrainingNewPage() {
     }, 0);
   }, [items]);
 
-  const plannedMinutes = linkedEvent?.duration_minutes ?? 0;
-  const inputsDisabled = busy || isAbsent;
+  const inputsDisabled = busy;
   const isCoachPlannedTraining = Boolean(linkedEvent);
-
-  const plannedCoachSummary = useMemo(() => {
-    if (!linkedEvent) return "";
-    if (coachOptions.length === 0) return "";
-    const heads = coachOptions.filter((c) => c.isHead);
-    const assists = coachOptions.filter((c) => !c.isHead);
-
-    const headNames = heads.map((c) => c.label).filter(Boolean);
-    const assistNames = assists.map((c) => c.label).filter(Boolean);
-
-    const lines: string[] = [];
-    if (headNames.length > 0) lines.push(`${t("common.coach")} : ${headNames.join(", ")}`);
-    if (assistNames.length > 0) lines.push(`${t("trainingNew.extraCoaches")} : ${assistNames.join(", ")}`);
-    return lines.join(" • ");
-  }, [linkedEvent, coachOptions, t]);
+  const showSensationsCard = useMemo(() => {
+    const ts = new Date(startAt).getTime();
+    return Number.isFinite(ts) && ts < Date.now();
+  }, [startAt]);
 
   const nonPlannedCoachSummary = useMemo(() => {
     if (linkedEvent) return "";
@@ -236,8 +234,6 @@ export default function PlayerTrainingNewPage() {
     if (busy) return false;
     if (!userId) return false;
     if (!startAt) return false;
-    if (isAbsent) return false;
-
     if (sessionType === "club" && !clubIdForTraining) return false;
 
     const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
@@ -252,14 +248,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, userId, startAt, isAbsent, sessionType, clubIdForTraining, items]);
-
-  const canSaveAbsence = useMemo(() => {
-    if (!linkedEvent) return false;
-    if (!userId) return false;
-    if (busy) return false;
-    return true;
-  }, [linkedEvent, userId, busy]);
+  }, [busy, userId, startAt, sessionType, clubIdForTraining, items]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -483,6 +472,8 @@ export default function PlayerTrainingNewPage() {
         } else if (eRes.data) {
           const ev = eRes.data as ClubEventRow;
           setLinkedEvent(ev);
+          setLinkedGroupName("");
+          setExistingSessionId("");
 
           // ✅ force club session
           setSessionType("club");
@@ -505,43 +496,96 @@ export default function PlayerTrainingNewPage() {
             }
           }
 
+          if (ev.group_id) {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token ?? "";
+            if (token) {
+              const query = new URLSearchParams({
+                ids: ev.group_id,
+                child_id: uid,
+              });
+              const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              });
+              const gJson = await gRes.json().catch(() => ({}));
+              const groupName = String((gJson?.groups?.[0]?.name ?? "")).trim();
+              if (gRes.ok && groupName) {
+                setLinkedGroupName(groupName);
+              }
+            }
+          }
+
           // ✅ planned coaches: read-only display (head + assistants)
           const opts: CoachOption[] = await loadCoachOptionsForPlannedEvent(ev);
           setCoachOptions(opts);
           setSelectedCoachIds([]); // pas utilisé en planned
 
-          // ✅ prefill structure ("postes") configured by coach on planned event
-          const structureRes = await supabase
-            .from("club_event_structure_items")
-            .select("category,minutes,note,position")
-            .eq("event_id", ev.id)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true });
+          let prefilledFromExistingSession = false;
+          const existingSessionRes = await supabase
+            .from("training_sessions")
+            .select("id,start_at,location_text,motivation,difficulty,satisfaction,notes")
+            .eq("user_id", uid)
+            .eq("club_event_id", ev.id)
+            .order("created_at", { ascending: false })
+            .limit(1);
 
-          if (!structureRes.error) {
-            const rows = (structureRes.data ?? []) as EventStructureItemRow[];
-            if (rows.length > 0) {
-              setItems(
-                rows.map((r) => ({
-                  category: r.category ?? "",
-                  minutes: String(r.minutes ?? ""),
-                  note: r.note ?? "",
-                }))
-              );
+          if (!existingSessionRes.error) {
+            const existing = ((existingSessionRes.data ?? [])[0] ?? null) as ExistingSessionRow | null;
+            if (existing?.id) {
+              setExistingSessionId(existing.id);
+              setStartAt(normalizeToQuarterHour(toLocalDateTimeInputValue(existing.start_at)));
+              setPlace((existing.location_text ?? ev.location_text ?? "").trim());
+              setMotivation(existing.motivation != null ? String(existing.motivation) : "");
+              setDifficulty(existing.difficulty != null ? String(existing.difficulty) : "");
+              setSatisfaction(existing.satisfaction != null ? String(existing.satisfaction) : "");
+              setNotes(existing.notes ?? "");
+
+              const existingItemsRes = await supabase
+                .from("training_session_items")
+                .select("category,minutes,note")
+                .eq("session_id", existing.id)
+                .order("created_at", { ascending: true });
+              if (!existingItemsRes.error) {
+                const existingRows = (existingItemsRes.data ?? []) as ExistingSessionItemRow[];
+                if (existingRows.length > 0) {
+                  setItems(
+                    existingRows.map((r) => ({
+                      category: r.category ?? "",
+                      minutes: String(r.minutes ?? ""),
+                      note: r.note ?? "",
+                    }))
+                  );
+                  prefilledFromExistingSession = true;
+                }
+              }
             }
           }
 
-          // ✅ load my current attendee status to pre-toggle "absent" if already set
-          const aRes = await supabase
-            .from("club_event_attendees")
-            .select("status")
-            .eq("event_id", ev.id)
-            .eq("player_id", uid)
-            .maybeSingle();
+          // ✅ prefill structure ("postes") configured by coach on planned event
+          if (!prefilledFromExistingSession) {
+            const structureRes = await supabase
+              .from("club_event_structure_items")
+              .select("category,minutes,note,position")
+              .eq("event_id", ev.id)
+              .order("position", { ascending: true })
+              .order("created_at", { ascending: true });
 
-          if (!aRes.error && aRes.data?.status) {
-            setIsAbsent(aRes.data.status === "absent");
+            if (!structureRes.error) {
+              const rows = (structureRes.data ?? []) as EventStructureItemRow[];
+              if (rows.length > 0) {
+                setItems(
+                  rows.map((r) => ({
+                    category: r.category ?? "",
+                    minutes: String(r.minutes ?? ""),
+                    note: r.note ?? "",
+                  }))
+                );
+              }
+            }
           }
+
         }
       }
 
@@ -604,78 +648,6 @@ export default function PlayerTrainingNewPage() {
     }
   }
 
-  async function saveAbsence() {
-    if (!linkedEvent) return;
-    if (!canSaveAbsence) return;
-
-    setBusy(true);
-    setError(null);
-
-    // ✅ Option A: update only (no insert) => avoids RLS INSERT issues
-    const up = await supabase
-      .from("club_event_attendees")
-      .update({ status: "absent" })
-      .eq("event_id", linkedEvent.id)
-      .eq("player_id", userId);
-
-    if (up.error) {
-      setError(up.error.message);
-      setBusy(false);
-      return;
-    }
-
-    try {
-      const coachIds = await getEventCoachUserIds(linkedEvent.id, linkedEvent.group_id);
-      if (coachIds.length > 0) {
-        const profileRes = await supabase
-          .from("profiles")
-          .select("first_name,last_name")
-          .eq("id", userId)
-          .maybeSingle();
-        const playerName = `${String(profileRes.data?.first_name ?? "").trim()} ${String(profileRes.data?.last_name ?? "").trim()}`.trim() || (locale === "fr" ? "Un joueur" : "A player");
-        const eventTypeLabel =
-          linkedEvent.event_type === "camp"
-            ? locale === "fr" ? "Stage" : "Camp"
-            : linkedEvent.event_type === "interclub"
-            ? locale === "fr" ? "Interclubs" : "Interclub"
-            : linkedEvent.event_type === "session"
-            ? locale === "fr" ? "Séance" : "Session"
-            : linkedEvent.event_type === "event"
-            ? locale === "fr" ? "Événement" : "Event"
-            : locale === "fr" ? "Entraînement" : "Training";
-        const dateTime = new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(new Date(linkedEvent.starts_at));
-        const msg = await getNotificationMessage("notif.playerMarkedAbsent", locale, {
-          playerName,
-          eventType: eventTypeLabel,
-          dateTime,
-        });
-        await createAppNotification({
-          actorUserId: userId,
-          kind: "player_marked_absent",
-          title: msg.title,
-          body: msg.body,
-          data: {
-            event_id: linkedEvent.id,
-            group_id: linkedEvent.group_id,
-            url: `/coach/groups/${linkedEvent.group_id}/planning/${linkedEvent.id}`,
-          },
-          recipientUserIds: coachIds,
-        });
-      }
-    } catch {
-      // Keep absence flow resilient even if notification fails.
-    }
-
-    setBusy(false);
-    router.push("/player/golf/trainings");
-  }
-
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!canSave) return;
@@ -690,11 +662,10 @@ export default function PlayerTrainingNewPage() {
       return;
     }
 
-    const mot = isCoachPlannedTraining ? null : motivation ? Number(motivation) : null;
-    const dif = isCoachPlannedTraining ? null : difficulty ? Number(difficulty) : null;
-    const sat = isCoachPlannedTraining ? null : satisfaction ? Number(satisfaction) : null;
-
     const club_id = sessionType === "club" ? clubIdForTraining : null;
+    const mot = showSensationsCard && motivation ? Number(motivation) : null;
+    const dif = showSensationsCard && difficulty ? Number(difficulty) : null;
+    const sat = showSensationsCard && satisfaction ? Number(satisfaction) : null;
 
     // ✅ if linkedEvent, mark attendee present (UPDATE only)
     if (linkedEvent) {
@@ -711,41 +682,59 @@ export default function PlayerTrainingNewPage() {
       }
     }
 
-    const insertSession = await supabase
-      .from("training_sessions")
-      .insert({
-        user_id: userId,
-        start_at: dt.toISOString(),
+    const sessionPayload = {
+      start_at: dt.toISOString(),
+      location_text: (linkedEvent ? (linkedEvent.location_text ?? place) : place).trim() || null,
+      session_type: sessionType,
+      club_id: linkedEvent ? linkedEvent.club_id : club_id,
+      coach_name: coachNameForSave,
+      motivation: mot,
+      difficulty: dif,
+      satisfaction: sat,
+      notes: showSensationsCard ? notes.trim() || null : null,
+      total_minutes: totalMinutes,
+      club_event_id: linkedEvent?.id ?? null,
+    };
 
-        // ✅ planned: keep place/club consistent with event
-        location_text: (linkedEvent ? (linkedEvent.location_text ?? place) : place).trim() || null,
-        session_type: sessionType,
-        club_id: linkedEvent ? linkedEvent.club_id : club_id,
+    let sessionId = "";
+    if (linkedEvent && existingSessionId) {
+      const updSession = await supabase
+        .from("training_sessions")
+        .update(sessionPayload)
+        .eq("id", existingSessionId)
+        .eq("user_id", userId)
+        .select("id")
+        .single();
+      if (updSession.error) {
+        setError(updSession.error.message);
+        setBusy(false);
+        return;
+      }
+      sessionId = String(updSession.data.id);
 
-        // ✅ save coaches names (planned: summary; non-planned club: checked)
-        coach_name: coachNameForSave,
+      const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
+      if (delItems.error) {
+        setError(delItems.error.message);
+        setBusy(false);
+        return;
+      }
+    } else {
+      const insertSession = await supabase
+        .from("training_sessions")
+        .insert({
+          user_id: userId,
+          ...sessionPayload,
+        })
+        .select("id")
+        .single();
 
-        motivation: mot,
-        difficulty: dif,
-        satisfaction: sat,
-        notes: isCoachPlannedTraining ? null : notes.trim() || null,
-
-        // ✅ total minutes
-        total_minutes: totalMinutes,
-
-        // ✅ link to planned event if any
-        club_event_id: linkedEvent?.id ?? null,
-      })
-      .select("id")
-      .single();
-
-    if (insertSession.error) {
-      setError(insertSession.error.message);
-      setBusy(false);
-      return;
+      if (insertSession.error) {
+        setError(insertSession.error.message);
+        setBusy(false);
+        return;
+      }
+      sessionId = String(insertSession.data.id);
     }
-
-    const sessionId = insertSession.data.id as string;
 
     const payload = items.map((it) => ({
       session_id: sessionId,
@@ -766,6 +755,15 @@ export default function PlayerTrainingNewPage() {
 
   const showCoachSectionAsCheckboxes = !linkedEvent && sessionType === "club";
   const showCoachSectionPlannedReadOnly = Boolean(linkedEvent);
+  const plannedClubName =
+    (linkedEvent?.club_id ? clubsById[linkedEvent.club_id]?.name : null) ??
+    (clubIdForTraining ? clubsById[clubIdForTraining]?.name : null) ??
+    t("common.club");
+  const plannedTrainingTypeLabel =
+    locale === "fr" ? `Entraînement ${plannedClubName}` : `Training ${plannedClubName}`;
+  const infoCardTitle = linkedEvent
+    ? `${locale === "fr" ? "Entraînement" : "Training"} • ${linkedGroupName || (locale === "fr" ? "Groupe" : "Group")}`
+    : `${t("common.date")} · ${t("common.time")} · ${t("common.place")}`;
 
   return (
     <div className="player-dashboard-bg">
@@ -774,17 +772,17 @@ export default function PlayerTrainingNewPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {t("trainingNew.title")}
+                {locale === "fr" ? "Éditer un entraînement" : "Edit a training"}
               </div>
 
               
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
+              <Link className="cta-green cta-green-inline" href="/player/golf/trainings?type=training">
                 {t("common.back")}
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
+              <Link className="cta-green cta-green-inline" href="/player/golf/trainings?type=training">
                 {t("trainings.title")}
               </Link>
             </div>
@@ -800,295 +798,300 @@ export default function PlayerTrainingNewPage() {
         </div>
 
         <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div>{t("common.loading")}</div>
-            ) : (
-              <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
-                {/* ✅ planned info + absence toggle */}
-                {linkedEvent ? (
-                  <div
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.10)",
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.65)",
-                      padding: 12,
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                      <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.80)" }}>{t("trainingNew.plannedSession")}</div>
-                      <div className="pill-soft">{plannedMinutes} {t("trainingNew.plannedMin")}</div>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      
-
-                      <label
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 10,
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          borderRadius: 999,
-                          padding: "8px 12px",
-                          background: isAbsent ? "rgba(180,0,0,0.08)" : "rgba(255,255,255,0.70)",
-                          fontWeight: 950,
-                          fontSize: 12,
-                          color: "rgba(0,0,0,0.78)",
-                          cursor: busy ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        <input type="checkbox" checked={isAbsent} onChange={(e) => setIsAbsent(e.target.checked)} disabled={busy} />
-                        {t("trainingNew.iWillBeAbsent")}
-                      </label>
-                    </div>
-
-                    {isAbsent ? (
-                      <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(160,0,0,0.80)" }}>
-                        {t("trainingNew.absenceDisabledHint")}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>
-                      {t("common.date")} {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.real")})</span> : null}
-                    </span>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => updateStartDate(e.target.value)}
-                      disabled={inputsDisabled || isCoachPlannedTraining}
-                    />
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.time")}</span>
-                    <select
-                      value={startTime}
-                      onChange={(e) => updateStartTime(e.target.value)}
-                      disabled={inputsDisabled || isCoachPlannedTraining}
-                    >
-                      {QUARTER_HOUR_OPTIONS.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>
-                    {t("common.place")}{" "}
-                    {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.planned")})</span> : <span style={{ opacity: 0.7 }}>({t("common.optional")})</span>}
-                  </span>
-                  <input
-                    value={place}
-                    onChange={(e) => setPlace(e.target.value)}
-                    disabled={inputsDisabled || Boolean(linkedEvent)}
-                    placeholder={t("trainingNew.placePlaceholder")}
-                  />
-                </label>
-
-                <div className="hr-soft" />
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
-                  <select
-                    value={sessionType}
-                    onChange={(e) => setType(e.target.value as SessionType)}
-                    disabled={inputsDisabled || Boolean(linkedEvent)}
-                  >
-                    <option value="club">{t("trainingDetail.typeClub")}</option>
-                    <option value="private">{t("trainingDetail.typePrivate")}</option>
-                    <option value="individual">{t("trainingDetail.typeIndividual")}</option>
-                  </select>
-
-                  {sessionType === "club" && (
+          {loading ? (
+            <div>{t("common.loading")}</div>
+          ) : (
+            <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{infoCardTitle}</div>
+                  <div className="grid-2">
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>
-                        {t("common.club")} {linkedEvent ? <span style={{ opacity: 0.7 }}>({t("trainingNew.planned")})</span> : null}
-                      </span>
+                      <span style={fieldLabelStyle}>{t("common.date")}</span>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => updateStartDate(e.target.value)}
+                        disabled={inputsDisabled || isCoachPlannedTraining}
+                      />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{t("common.time")}</span>
                       <select
-                        value={clubIdForTraining}
-                        onChange={(e) => setClubIdForTraining(e.target.value)}
-                        disabled={inputsDisabled || clubIds.length === 0 || Boolean(linkedEvent)}
+                        value={startTime}
+                        onChange={(e) => updateStartTime(e.target.value)}
+                        disabled={inputsDisabled || isCoachPlannedTraining}
                       >
-                        <option value="">-</option>
-                        {clubIds.map((id) => (
-                          <option key={id} value={id}>
-                            {clubsById[id]?.name ?? id}
+                        {QUARTER_HOUR_OPTIONS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
                           </option>
                         ))}
                       </select>
                     </label>
-                  )}
+                  </div>
 
-                  {/* ✅ Coach section:
-                      - Planned: read-only display head coach + coachs supplémentaires
-                      - Non-planned club: checkbox list
-                      - Private/Individual: nothing
-                  */}
-                  {showCoachSectionPlannedReadOnly ? (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{t("trainingNew.coachPlanned")}</span>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>
+                      {t("common.place")} {!linkedEvent ? <span style={{ opacity: 0.7 }}>({t("common.optional")})</span> : null}
+                    </span>
+                    <input
+                      value={place}
+                      onChange={(e) => setPlace(e.target.value)}
+                      disabled={inputsDisabled || Boolean(linkedEvent)}
+                      placeholder={t("trainingNew.placePlaceholder")}
+                    />
+                  </label>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
+                    {linkedEvent ? (
                       <div
                         style={{
-                          borderRadius: 12,
+                          borderRadius: 10,
                           border: "1px solid rgba(0,0,0,0.10)",
-                          background: "rgba(255,255,255,0.75)",
+                          background: "rgba(255,255,255,0.70)",
                           padding: "10px 12px",
+                          fontSize: 13,
                           fontWeight: 900,
                           color: "rgba(0,0,0,0.80)",
-                          display: "grid",
-                          gap: 8,
                         }}
                       >
-                        {coachOptions.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, opacity: 0.65 }}>{t("trainingNew.noCoachOnSession")}</div>
-                        ) : (
-                          <>
-                            <div style={{ display: "grid", gap: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("trainingNew.headCoach")}</div>
-                              <div style={{ fontSize: 13 }}>
-                                {coachOptions.filter((c) => c.isHead).map((c) => c.label).filter(Boolean).join(", ") || "—"}
-                              </div>
-                            </div>
-
-                            <div className="hr-soft" style={{ margin: "2px 0" }} />
-
-                            <div style={{ display: "grid", gap: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("trainingNew.extraCoaches")}</div>
-                              <div style={{ fontSize: 13 }}>
-                                {coachOptions.filter((c) => !c.isHead).map((c) => c.label).filter(Boolean).join(", ") || "—"}
-                              </div>
-                            </div>
-
-                            {plannedCoachSummary ? (
-                              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{plannedCoachSummary}</div>
-                            ) : null}
-                          </>
-                        )}
+                        {plannedTrainingTypeLabel}
                       </div>
-                    </div>
-                  ) : null}
-
-                  {showCoachSectionAsCheckboxes ? (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
-
-                      <div
-                        style={{
-                          borderRadius: 12,
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          background: "rgba(255,255,255,0.75)",
-                          padding: "10px 12px",
-                          display: "grid",
-                          gap: 10,
-                          opacity: inputsDisabled ? 0.65 : 1,
-                        }}
+                    ) : (
+                      <select
+                        value={sessionType}
+                        onChange={(e) => setType(e.target.value as SessionType)}
+                        disabled={inputsDisabled}
                       >
-                        {coachOptions.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
-                            {t("trainingNew.noCoachInClub")}
-                          </div>
-                        ) : (
-                          <>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                className="btn"
-                                disabled={inputsDisabled}
-                                onClick={() => setSelectedCoachIds(coachOptions.map((c) => c.id))}
-                              >
-                                {t("trainingNew.selectAll")}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn"
-                                disabled={inputsDisabled}
-                                onClick={() => setSelectedCoachIds([])}
-                              >
-                                {t("trainingNew.none")}
-                              </button>
-                            </div>
+                        <option value="individual">{t("trainingDetail.typeIndividual")}</option>
+                        <option value="private">{t("trainingDetail.typePrivate")}</option>
+                      </select>
+                    )}
 
-                            <div style={{ display: "grid", gap: 8 }}>
-                              {coachOptions.map((c) => {
-                                const checked = selectedCoachIds.includes(c.id);
-                                return (
-                                  <label
-                                    key={c.id}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "space-between",
-                                      gap: 10,
-                                      padding: "10px 10px",
-                                      borderRadius: 12,
-                                      border: "1px solid rgba(0,0,0,0.10)",
-                                      background: checked ? "rgba(53,72,59,0.10)" : "rgba(255,255,255,0.60)",
-                                      cursor: inputsDisabled ? "not-allowed" : "pointer",
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        disabled={inputsDisabled}
-                                        onChange={(e) => {
-                                          const next = e.target.checked;
-                                          setSelectedCoachIds((prev) => {
-                                            if (next) return uniq([...prev, c.id]);
-                                            return prev.filter((id) => id !== c.id);
-                                          });
-                                        }}
-                                      />
-                                      <div style={{ display: "grid" }}>
-                                        <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
-                                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
-                                          {c.roleLabel}
-                                        </div>
-                                      </div>
-                                    </div>
+                    {sessionType === "club" && (
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("common.club")}</span>
+                        <select
+                          value={clubIdForTraining}
+                          onChange={(e) => setClubIdForTraining(e.target.value)}
+                          disabled={inputsDisabled || clubIds.length === 0 || Boolean(linkedEvent)}
+                        >
+                          <option value="">-</option>
+                          {clubIds.map((id) => (
+                            <option key={id} value={id}>
+                              {clubsById[id]?.name ?? id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
 
+                    {/* ✅ Coach section:
+                        - Planned: read-only display head coach + coachs supplémentaires
+                        - Non-planned club: checkbox list
+                        - Private/Individual: nothing
+                    */}
+                    {showCoachSectionPlannedReadOnly ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("common.coach")}</span>
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            background: "rgba(255,255,255,0.75)",
+                            padding: "10px 12px",
+                            display: "grid",
+                            gap: 8,
+                          }}
+                        >
+                          {coachOptions.length === 0 ? (
+                            <div style={{ fontSize: 12, fontWeight: 850, opacity: 0.65 }}>{t("trainingNew.noCoachOnSession")}</div>
+                          ) : (
+                            <>
+                              <div style={{ display: "grid", gap: 8 }}>
+                                {coachOptions.map((c) => {
+                                  const initials = c.label
+                                    .split(" ")
+                                    .map((p) => p.trim())
+                                    .filter(Boolean)
+                                    .slice(0, 2)
+                                    .map((p) => p[0]?.toUpperCase() ?? "")
+                                    .join("") || "—";
+
+                                  return (
                                     <div
-                                      className="pill-soft"
+                                      key={`planned-coach-${c.id}`}
                                       style={{
-                                        background: "rgba(53,72,59,0.14)",
-                                        fontWeight: 950,
+                                        borderRadius: 12,
+                                        border: "1px solid rgba(0,0,0,0.10)",
+                                        background: "rgba(255,255,255,0.88)",
+                                        padding: "8px 10px",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        gap: 10,
                                       }}
                                     >
-                                      {c.roleLabel}
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                            </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                        <div
+                                          aria-hidden
+                                          style={{
+                                            width: 28,
+                                            height: 28,
+                                            borderRadius: "50%",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            fontSize: 11,
+                                            fontWeight: 950,
+                                            color: "rgba(16,56,34,0.95)",
+                                            border: "1px solid rgba(32,99,62,0.28)",
+                                            background: "rgba(53,72,59,0.14)",
+                                            flex: "0 0 auto",
+                                          }}
+                                        >
+                                          {initials}
+                                        </div>
+                                        <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }} className="truncate">
+                                          {c.label}
+                                        </div>
+                                      </div>
 
-                            {nonPlannedCoachSummary ? (
-                              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{nonPlannedCoachSummary}</div>
-                            ) : (
-                              <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
-                                {t("trainingNew.tipNoCoach")}
+                                      <div
+                                        className="pill-soft"
+                                        style={{
+                                          background: c.isHead ? "rgba(53,72,59,0.18)" : "rgba(0,0,0,0.08)",
+                                          color: c.isHead ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.72)",
+                                          fontWeight: 900,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {c.isHead ? "Head coach" : t("trainingNew.extraCoach")}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            )}
-                          </>
-                        )}
+
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
+                    ) : null}
+
+                    {showCoachSectionAsCheckboxes ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
+
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            background: "rgba(255,255,255,0.75)",
+                            padding: "10px 12px",
+                            display: "grid",
+                            gap: 10,
+                            opacity: inputsDisabled ? 0.65 : 1,
+                          }}
+                        >
+                          {coachOptions.length === 0 ? (
+                            <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
+                              {t("trainingNew.noCoachInClub")}
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  disabled={inputsDisabled}
+                                  onClick={() => setSelectedCoachIds(coachOptions.map((c) => c.id))}
+                                >
+                                  {t("trainingNew.selectAll")}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  disabled={inputsDisabled}
+                                  onClick={() => setSelectedCoachIds([])}
+                                >
+                                  {t("trainingNew.none")}
+                                </button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 8 }}>
+                                {coachOptions.map((c) => {
+                                  const checked = selectedCoachIds.includes(c.id);
+                                  return (
+                                    <label
+                                      key={c.id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        gap: 10,
+                                        padding: "10px 10px",
+                                        borderRadius: 12,
+                                        border: "1px solid rgba(0,0,0,0.10)",
+                                        background: checked ? "rgba(53,72,59,0.10)" : "rgba(255,255,255,0.60)",
+                                        cursor: inputsDisabled ? "not-allowed" : "pointer",
+                                      }}
+                                    >
+                                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          disabled={inputsDisabled}
+                                          onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setSelectedCoachIds((prev) => {
+                                              if (next) return uniq([...prev, c.id]);
+                                              return prev.filter((id) => id !== c.id);
+                                            });
+                                          }}
+                                        />
+                                        <div style={{ display: "grid" }}>
+                                          <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
+                                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
+                                            {c.roleLabel}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        className="pill-soft"
+                                        style={{
+                                          background: "rgba(53,72,59,0.14)",
+                                          fontWeight: 950,
+                                        }}
+                                      >
+                                        {c.roleLabel}
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+
+                              {nonPlannedCoachSummary ? (
+                                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{nonPlannedCoachSummary}</div>
+                              ) : (
+                                <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>
+                                  {t("trainingNew.tipNoCoach")}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                  </div>
                 </div>
 
-                <div className="hr-soft" />
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>{t("trainingNew.trainingStructure")}</div>
+                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div
@@ -1184,54 +1187,122 @@ export default function PlayerTrainingNewPage() {
                       + {t("trainingNew.addSection")}
                     </button>
                   </div>
+
+                  {!showSensationsCard ? (
+                    <button
+                      className="cta-green"
+                      type="submit"
+                      disabled={!canSave || busy}
+                      style={{ width: "100%" }}
+                    >
+                      {busy ? t("trainingNew.saving") : t("common.save")}
+                    </button>
+                  ) : null}
                 </div>
 
-                {!isCoachPlannedTraining ? (
-                  <>
-                    <div className="hr-soft" />
+                {showSensationsCard ? (
+                  <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                      {locale === "fr" ? "Sensations et remarques" : "Feelings and notes"}
+                    </div>
 
                     <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
-                        <select value={motivation} onChange={(e) => setMotivation(e.target.value)} disabled={inputsDisabled}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                            const val = String(v);
+                            const active = motivation === val;
+                            return (
+                              <button
+                                key={`mot-${v}`}
+                                type="button"
+                                onClick={() => setMotivation((prev) => (prev === val ? "" : val))}
+                                disabled={inputsDisabled}
+                                aria-pressed={active}
+                                style={{
+                                  width: "100%",
+                                  height: 34,
+                                  borderRadius: 10,
+                                  border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                  background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                  color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                  fontWeight: 900,
+                                  cursor: inputsDisabled ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {v}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
-                        <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} disabled={inputsDisabled}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                            const val = String(v);
+                            const active = difficulty === val;
+                            return (
+                              <button
+                                key={`dif-${v}`}
+                                type="button"
+                                onClick={() => setDifficulty((prev) => (prev === val ? "" : val))}
+                                disabled={inputsDisabled}
+                                aria-pressed={active}
+                                style={{
+                                  width: "100%",
+                                  height: 34,
+                                  borderRadius: 10,
+                                  border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                  background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                  color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                  fontWeight: 900,
+                                  cursor: inputsDisabled ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {v}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
-                        <select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)} disabled={inputsDisabled}>
-                          <option value="">-</option>
-                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={String(v)}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                          {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
+                            const val = String(v);
+                            const active = satisfaction === val;
+                            return (
+                              <button
+                                key={`sat-${v}`}
+                                type="button"
+                                onClick={() => setSatisfaction((prev) => (prev === val ? "" : val))}
+                                disabled={inputsDisabled}
+                                aria-pressed={active}
+                                style={{
+                                  width: "100%",
+                                  height: 34,
+                                  borderRadius: 10,
+                                  border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                  background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                  color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                  fontWeight: 900,
+                                  cursor: inputsDisabled ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {v}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </label>
                     </div>
 
-                    <div className="hr-soft" />
-
                     <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
-                      <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
+                      <span style={fieldLabelStyle}>{locale === "fr" ? "Remarques" : "Notes"}</span>
                       <textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
@@ -1240,33 +1311,19 @@ export default function PlayerTrainingNewPage() {
                         style={{ minHeight: 110 }}
                       />
                     </label>
-                  </>
-                ) : null}
 
-                {/* ✅ action buttons */}
-                {isAbsent && linkedEvent ? (
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={saveAbsence}
-                    disabled={!canSaveAbsence || busy}
-                    style={{ width: "100%", background: "rgba(160,0,0,0.95)", borderColor: "rgba(160,0,0,0.95)", color: "#fff" }}
-                  >
-                    {busy ? t("trainingNew.saving") : t("trainingNew.saveAbsence")}
-                  </button>
-                ) : (
-                  <button
-                    className="btn"
-                    type="submit"
-                    disabled={!canSave || busy}
-                    style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
-                  >
-                    {busy ? t("trainingNew.saving") : t("common.save")}
-                  </button>
-                )}
+                    <button
+                      className="cta-green"
+                      type="submit"
+                      disabled={!canSave || busy}
+                      style={{ width: "100%" }}
+                    >
+                      {busy ? t("trainingNew.saving") : t("common.save")}
+                    </button>
+                  </div>
+                ) : null}
               </form>
             )}
-          </div>
         </div>
       </div>
     </div>

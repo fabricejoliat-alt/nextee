@@ -29,7 +29,7 @@ function scrollTop() {
 
 export default function MobileFooter() {
   const pathname = usePathname();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   // Après navigation (quand la nouvelle page est montée)
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function MobileFooter() {
 
   const items = [
     { href: "/player", label: t("nav.home"), Icon: Home },
-    { href: "/player/calendar", label: t("nav.calendar"), Icon: CalendarDays },
+    { href: "/player/golf/trainings", label: locale === "fr" ? "Mon activité" : "My activity", Icon: CalendarDays },
     { href: "/player/golf", label: t("player.myGolf"), Icon: Flag },
     { href: "/player/marketplace", label: t("nav.marketplace"), Icon: ShoppingBag },
     { href: "/player/profile", label: t("nav.profile"), Icon: User },

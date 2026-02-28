@@ -11,6 +11,7 @@ type Round = {
   id: string;
   start_at: string;
   round_type: "training" | "competition";
+  course_source: string | null;
   competition_name: string | null;
   course_name: string | null;
   tee_name: string | null;
@@ -223,9 +224,9 @@ export default function EditRoundWizardPage() {
     setLoading(true);
     setError(null);
 
-    const rRes = await supabase
+  const rRes = await supabase
       .from("golf_rounds")
-      .select("id,start_at,round_type,competition_name,course_name,tee_name,slope_rating,course_rating")
+      .select("id,start_at,round_type,course_source,competition_name,course_name,tee_name,slope_rating,course_rating")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -269,11 +270,11 @@ export default function EditRoundWizardPage() {
 
         const par = existing?.par ?? null;
 
-        // ✅ if score missing, default to par (or 0 if par unknown)
-        const score = existing?.score ?? (typeof par === "number" ? par : 0);
+        // ✅ if score missing, default to par (or null if par unknown)
+        const score = existing?.score ?? (typeof par === "number" ? par : null);
 
-        // ✅ if putts missing, default 2 but can't exceed score
-        const puttsRaw = existing?.putts ?? 2;
+        // ✅ if putts missing, default 2 only when score exists
+        const puttsRaw = existing?.putts ?? (typeof score === "number" ? 2 : null);
 
         const constrained = applyConstraints(
           {
@@ -322,6 +323,7 @@ export default function EditRoundWizardPage() {
   const hole = holes[holeIdx];
   const isLastHole = holeIdx === holes.length - 1;
   const fairwayChosen = hole?.fairway_hit !== null;
+  const isManualCourse = round?.course_source === "manual";
   const isPar3 = hole?.par === 3;
   const missLabel = isPar3 ? t("roundsEdit.missGreen") : t("roundsEdit.missFairway");
   const hitLabel = isPar3 ? t("roundsEdit.hitGreen") : t("roundsEdit.hitFairway");
@@ -338,6 +340,10 @@ export default function EditRoundWizardPage() {
   }
 
   async function goPrevHole() {
+    if (isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
+      setUxError("Le PAR du trou est obligatoire.");
+      return;
+    }
     if (!fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
@@ -347,6 +353,10 @@ export default function EditRoundWizardPage() {
   }
 
   async function goNextHole() {
+    if (isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
+      setUxError("Le PAR du trou est obligatoire.");
+      return;
+    }
     if (!fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
@@ -356,6 +366,10 @@ export default function EditRoundWizardPage() {
   }
 
   async function finishAndGoScorecard() {
+    if (isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
+      setUxError("Le PAR du trou est obligatoire.");
+      return;
+    }
     if (!fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
@@ -442,6 +456,67 @@ export default function EditRoundWizardPage() {
 
             {hole && (
               <div style={{ display: "grid", gap: 14 }}>
+                {/* PAR (manual courses) */}
+                {isManualCourse ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={fieldLabelStyle}>PAR *</div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "56px 1fr 56px",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const nextPar = Math.max(1, Math.min(7, (hole.par ?? 4) - 1));
+                          commitPatch({ par: nextPar, score: nextPar, putts: 2 });
+                        }}
+                        style={miniBtnStyle}
+                        disabled={saving}
+                      >
+                        –
+                      </button>
+
+                      <input
+                        className="input"
+                        inputMode="numeric"
+                        value={hole.par == null ? "" : String(hole.par)}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          if (raw === "") {
+                            commitPatch({ par: null });
+                            return;
+                          }
+                          const v = Number(raw);
+                          if (!Number.isFinite(v)) return;
+                          const nextPar = Math.max(1, Math.min(7, Math.trunc(v)));
+                          commitPatch({ par: nextPar, score: nextPar, putts: 2 });
+                        }}
+                        style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
+                        disabled={saving}
+                        required
+                      />
+
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const nextPar = Math.max(1, Math.min(7, (hole.par ?? 4) + 1));
+                          commitPatch({ par: nextPar, score: nextPar, putts: 2 });
+                        }}
+                        style={miniBtnStyle}
+                        disabled={saving}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {/* SCORE */}
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={fieldLabelStyle}>{t("rounds.score")}</div>

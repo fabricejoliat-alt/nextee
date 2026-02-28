@@ -411,43 +411,77 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <div style={{ fontSize: 20, fontWeight: 980 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
                   </div>
                 </div>
-                  <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.12)", borderRadius: 10, overflow: "hidden", flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => setPresence("present")}
-                      disabled={attendanceBusy || busy}
+                  <button
+                    type="button"
+                    onClick={() => setPresence(attendanceStatus === "present" ? "absent" : "present")}
+                    disabled={attendanceBusy || busy}
+                    role="switch"
+                    aria-checked={attendanceStatus === "present"}
+                    aria-label="Basculer présence"
+                    style={{
+                      width: 114,
+                      height: 24,
+                      borderRadius: 999,
+                      border: "1px solid rgba(0,0,0,0.14)",
+                      overflow: "hidden",
+                      background: "rgba(0,0,0,0.16)",
+                      position: "relative",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                      padding: 0,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      aria-hidden
                       style={{
-                        border: "none",
-                        borderRight: "1px solid rgba(0,0,0,0.10)",
-                        background: attendanceStatus === "present" ? "#22c55e" : "transparent",
-                        color: attendanceStatus === "present" ? "#fff" : "rgba(0,0,0,0.82)",
-                        fontWeight: 900,
-                        fontSize: 11,
-                        lineHeight: 1.1,
-                        padding: "6px 10px",
-                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        width: "50%",
+                        left: attendanceStatus === "present" ? "50%" : 0,
+                        background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
+                        borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                        borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
+                        borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
+                        borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
                       }}
-                    >
-                      Présent
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPresence("absent")}
-                      disabled={attendanceBusy || busy}
+                    />
+                    <span
                       style={{
-                        border: "none",
-                        background: attendanceStatus === "absent" ? "#ef4444" : "transparent",
-                        color: attendanceStatus === "absent" ? "#fff" : "rgba(0,0,0,0.82)",
+                        position: "absolute",
+                        left: 8,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        fontSize: 9,
                         fontWeight: 900,
-                        fontSize: 11,
-                        lineHeight: 1.1,
-                        padding: "6px 10px",
-                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                        color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
+                        letterSpacing: 0.2,
+                        textTransform: "uppercase",
                       }}
                     >
                       Absent
-                    </button>
-                  </div>
+                    </span>
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: 6,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        fontSize: 9,
+                        fontWeight: 900,
+                        color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
+                        letterSpacing: 0.2,
+                        textTransform: "uppercase",
+                        minWidth: 44,
+                        textAlign: "right",
+                      }}
+                    >
+                      Présent
+                    </span>
+                  </button>
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -467,54 +501,94 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid-2">
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Engagement</span>
-                        <select
-                          value={draft.engagement ?? ""}
-                          onChange={(e) => setDraft((p) => ({ ...p, engagement: e.target.value ? Number(e.target.value) : null }))}
-                          disabled={busy}
-                        >
-                          <option value="">-</option>
-                          {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={v}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Engagement:</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
+                          const active = draft.engagement === v;
+                          return (
+                            <button
+                              key={`eng-${v}`}
+                              type="button"
+                              onClick={() => setDraft((p) => ({ ...p, engagement: p.engagement === v ? null : v }))}
+                              disabled={busy}
+                              aria-pressed={active}
+                              style={{
+                                width: "100%",
+                                height: 34,
+                                borderRadius: 10,
+                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                fontWeight: 900,
+                                cursor: busy ? "not-allowed" : "pointer",
+                              }}
+                            >
                               {v}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Attitude</span>
-                        <select
-                          value={draft.attitude ?? ""}
-                          onChange={(e) => setDraft((p) => ({ ...p, attitude: e.target.value ? Number(e.target.value) : null }))}
-                          disabled={busy}
-                        >
-                          <option value="">-</option>
-                          {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                            <option key={v} value={v}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Performance</span>
-                      <select
-                        value={draft.performance ?? ""}
-                        onChange={(e) => setDraft((p) => ({ ...p, performance: e.target.value ? Number(e.target.value) : null }))}
-                        disabled={busy}
-                      >
-                        <option value="">-</option>
-                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
+                      <span style={fieldLabelStyle}>Attitude:</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
+                          const active = draft.attitude === v;
+                          return (
+                            <button
+                              key={`att-${v}`}
+                              type="button"
+                              onClick={() => setDraft((p) => ({ ...p, attitude: p.attitude === v ? null : v }))}
+                              disabled={busy}
+                              aria-pressed={active}
+                              style={{
+                                width: "100%",
+                                height: 34,
+                                borderRadius: 10,
+                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                fontWeight: 900,
+                                cursor: busy ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Performance:</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
+                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
+                          const active = draft.performance === v;
+                          return (
+                            <button
+                              key={`perf-${v}`}
+                              type="button"
+                              onClick={() => setDraft((p) => ({ ...p, performance: p.performance === v ? null : v }))}
+                              disabled={busy}
+                              aria-pressed={active}
+                              style={{
+                                width: "100%",
+                                height: 34,
+                                borderRadius: 10,
+                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
+                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
+                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
+                                fontWeight: 900,
+                                cursor: busy ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </label>
                   </>
                 )}
