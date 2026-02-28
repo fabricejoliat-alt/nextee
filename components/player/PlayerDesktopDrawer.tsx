@@ -68,6 +68,17 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const [parentChildren, setParentChildren] = useState<ParentChildLite[]>([]);
   const [selectedChildId, setSelectedChildId] = useState("");
 
+  function switchParentChild(nextChildId: string) {
+    setSelectedChildId(nextChildId);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("parent:selected_child_id", nextChildId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("child_id", nextChildId);
+    // Hard reload required: several player pages load data on mount only.
+    window.location.assign(`${url.pathname}${url.search}${url.hash}`);
+  }
+
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
     return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
@@ -390,7 +401,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
               </div>
               <select
                 value={selectedChildId}
-                onChange={(e) => setSelectedChildId(e.target.value)}
+                onChange={(e) => switchParentChild(e.target.value)}
                 style={{
                   width: "100%",
                   borderRadius: 10,
