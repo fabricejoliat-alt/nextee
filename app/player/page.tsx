@@ -123,6 +123,46 @@ type HomeUpcomingItem =
   | { kind: "session"; key: string; dateIso: string; session: HomeSessionRow }
   | { kind: "competition"; key: string; dateIso: string; competition: HomePlayerActivityRow };
 
+type HeroCachePayload = {
+  profile: Profile | null;
+  clubs: Club[];
+  updatedAt: number;
+};
+
+const HERO_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function heroCacheKey(userId: string) {
+  return `player:home:hero:${userId}`;
+}
+
+function readHeroCache(userId: string) {
+  if (typeof window === "undefined" || !userId) return null as HeroCachePayload | null;
+  try {
+    const raw = window.localStorage.getItem(heroCacheKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as HeroCachePayload;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > HERO_CACHE_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeHeroCache(userId: string, payload: { profile: Profile | null; clubs: Club[] }) {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    const data: HeroCachePayload = {
+      profile: payload.profile,
+      clubs: payload.clubs,
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(heroCacheKey(userId), JSON.stringify(data));
+  } catch {
+    // ignore cache write issues
+  }
+}
+
 function displayHello(p: Profile | null | undefined, t: (key: string) => string) {
   const f = (p?.first_name ?? "").trim();
   if (!f) return t("playerHome.hello");
@@ -313,6 +353,7 @@ export default function PlayerHomePage() {
   const { t, locale } = useI18n();
   const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
   const [loading, setLoading] = useState(true);
+  const [heroLoading, setHeroLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -488,6 +529,7 @@ export default function PlayerHomePage() {
   async function load() {
     setLoading(true);
     setError(null);
+    setHeroLoading(true);
 
     let effectiveUid = "";
     let viewerUid = "";
@@ -497,21 +539,31 @@ export default function PlayerHomePage() {
       viewerUid = ctx.viewerUserId;
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
+      const heroCache = readHeroCache(effectiveUid);
+      if (heroCache) {
+        setProfile(heroCache.profile);
+        setClubs(heroCache.clubs);
+        setHeroLoading(false);
+      }
     } catch {
       setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
+      setHeroLoading(false);
       return;
     }
 
-    const profRes = await supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", effectiveUid).maybeSingle();
+    const [profRes, memRes] = await Promise.all([
+      supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", effectiveUid).maybeSingle(),
+      supabase.from("club_members").select("club_id").eq("user_id", effectiveUid).eq("is_active", true),
+    ]);
+
     if (profRes.error) {
       setError(profRes.error.message);
       setLoading(false);
+      setHeroLoading(false);
       return;
     }
     setProfile((profRes.data ?? null) as Profile | null);
-
-    const memRes = await supabase.from("club_members").select("club_id").eq("user_id", effectiveUid).eq("is_active", true);
     if (memRes.error) {
       setError(memRes.error.message);
       setClubs([]);
@@ -522,18 +574,29 @@ export default function PlayerHomePage() {
       setRoundsMonth([]);
       setRoundsPrevMonth([]);
       setLoading(false);
+      setHeroLoading(false);
+      writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: [] });
       return;
     }
 
     const cids = ((memRes.data ?? []) as ClubMember[]).map((m) => m.club_id).filter(Boolean);
 
+    let heroClubs: Club[] = [];
     if (cids.length > 0) {
       const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
-      if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
-      else setClubs(cids.map((id) => ({ id, name: null })));
+      if (!clubsRes.error) {
+        heroClubs = (clubsRes.data ?? []) as Club[];
+        setClubs(heroClubs);
+      } else {
+        heroClubs = cids.map((id) => ({ id, name: null }));
+        setClubs(heroClubs);
+      }
     } else {
+      heroClubs = [];
       setClubs([]);
     }
+    setHeroLoading(false);
+    writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: heroClubs });
 
     // Latest marketplace items
     if (cids.length > 0) {
@@ -937,7 +1000,7 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? `${t("playerHome.hello")}…` : `${displayHello(profile, t)} 👋`}</div>
+            <div className="hero-title">{heroLoading && !profile ? `${t("playerHome.hello")}…` : `${displayHello(profile, t)} 👋`}</div>
 
             <div className="hero-sub">
               <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
