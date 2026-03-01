@@ -567,6 +567,7 @@ export default function PlayerProfilePage() {
                           type="date"
                           value={birthDate}
                           onChange={(e) => setBirthDate(e.target.value)}
+                          style={{ width: "100%", maxWidth: "100%", minWidth: 0, display: "block" }}
                         />
                       </Field>
 
@@ -707,7 +708,7 @@ export default function PlayerProfilePage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "grid", gap: 6 }}>
+    <div style={{ display: "grid", gap: 6, minWidth: 0, width: "100%" }}>
       <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
         {label}
       </label>

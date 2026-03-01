@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
@@ -461,77 +462,14 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <div style={{ fontSize: 20, fontWeight: 980 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
                   </div>
                 </div>
-                  <button
-                    type="button"
-                    onClick={() => setPresence(attendanceStatus === "present" ? "absent" : "present")}
+                  <AttendanceToggle
+                    checked={attendanceStatus === "present"}
+                    onToggle={() => setPresence(attendanceStatus === "present" ? "absent" : "present")}
                     disabled={attendanceBusy || busy}
-                    role="switch"
-                    aria-checked={attendanceStatus === "present"}
-                    aria-label="Basculer présence"
-                    style={{
-                      width: 114,
-                      height: 24,
-                      borderRadius: 999,
-                      border: "1px solid rgba(0,0,0,0.14)",
-                      overflow: "hidden",
-                      background: "rgba(0,0,0,0.16)",
-                      position: "relative",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
-                      padding: 0,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <span
-                      aria-hidden
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        bottom: 0,
-                        width: "50%",
-                        left: attendanceStatus === "present" ? "50%" : 0,
-                        background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
-                        borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                        borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                        borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
-                        borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
-                      }}
-                    />
-                    <span
-                      style={{
-                        position: "absolute",
-                        left: 8,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        fontSize: 9,
-                        fontWeight: 900,
-                        color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
-                        letterSpacing: 0.2,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Absent
-                    </span>
-                    <span
-                      style={{
-                        position: "absolute",
-                        right: 6,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        fontSize: 9,
-                        fontWeight: 900,
-                        color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
-                        letterSpacing: 0.2,
-                        textTransform: "uppercase",
-                        minWidth: 44,
-                        textAlign: "right",
-                      }}
-                    >
-                      Présent
-                    </span>
-                  </button>
+                    ariaLabel="Basculer présence"
+                    leftLabel="Absent"
+                    rightLabel="Présent"
+                  />
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

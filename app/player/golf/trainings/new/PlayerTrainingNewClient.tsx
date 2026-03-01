@@ -804,23 +804,25 @@ export default function PlayerTrainingNewPage() {
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{infoCardTitle}</div>
-                  <div className="grid-2">
-                    <label style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+                    <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                       <span style={fieldLabelStyle}>{t("common.date")}</span>
                       <input
                         type="date"
                         value={startDate}
                         onChange={(e) => updateStartDate(e.target.value)}
                         disabled={inputsDisabled || isCoachPlannedTraining}
+                        style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
                       />
                     </label>
 
-                    <label style={{ display: "grid", gap: 6 }}>
+                    <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                       <span style={fieldLabelStyle}>{t("common.time")}</span>
                       <select
                         value={startTime}
                         onChange={(e) => updateStartTime(e.target.value)}
                         disabled={inputsDisabled || isCoachPlannedTraining}
+                        style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
                       >
                         {QUARTER_HOUR_OPTIONS.map((t) => (
                           <option key={t} value={t}>

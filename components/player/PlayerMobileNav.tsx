@@ -39,21 +39,22 @@ export default function MobileFooter() {
 
   const items = [
     { href: "/player", label: t("nav.home"), Icon: Home },
-    { href: "/player/golf/trainings", label: locale === "fr" ? "Mon activité" : "My activity", Icon: CalendarDays },
+    { href: "/player/golf/trainings?type=all", label: locale === "fr" ? "Mon activité" : "My activity", Icon: CalendarDays },
     { href: "/player/golf", label: t("player.myGolf"), Icon: Flag },
     { href: "/player/marketplace", label: t("nav.marketplace"), Icon: ShoppingBag },
     { href: "/player/profile", label: t("nav.profile"), Icon: User },
   ];
 
   function isActive(path: string, href: string) {
-    if (href === "/player") return path === "/player";
-    if (href === "/player/golf/trainings") return path === href || path.startsWith(href + "/");
-    if (href === "/player/golf") {
-      const inGolf = path === href || path.startsWith(href + "/");
+    const hrefPath = href.split("?")[0] || href;
+    if (hrefPath === "/player") return path === "/player";
+    if (hrefPath === "/player/golf/trainings") return path === hrefPath || path.startsWith(hrefPath + "/");
+    if (hrefPath === "/player/golf") {
+      const inGolf = path === hrefPath || path.startsWith(hrefPath + "/");
       const inTrainings = path === "/player/golf/trainings" || path.startsWith("/player/golf/trainings/");
       return inGolf && !inTrainings;
     }
-    return path === href || path.startsWith(href + "/");
+    return path === hrefPath || path.startsWith(hrefPath + "/");
   }
 
   return (

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { Users, ArrowRight, Pencil, PlusCircle, Trash2 } from "lucide-react";
 
 type EventRow = {
@@ -500,76 +501,14 @@ export default function CoachEventDetailPage() {
                             </div>
 
                             <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
-                              <button
-                                type="button"
-                                onClick={() => setAttendanceStatus(a.player_id, a.status === "present" ? "absent" : "present")}
+                              <AttendanceToggle
+                                checked={a.status === "present"}
+                                onToggle={() => setAttendanceStatus(a.player_id, a.status === "present" ? "absent" : "present")}
                                 disabled={Boolean(attendanceBusyIds[a.player_id])}
-                                role="switch"
-                                aria-checked={a.status === "present"}
-                                aria-label={tr("Basculer présence", "Toggle attendance")}
-                                style={{
-                                  width: 114,
-                                  height: 24,
-                                  borderRadius: 999,
-                                  border: "1px solid rgba(0,0,0,0.14)",
-                                  overflow: "hidden",
-                                  background: "rgba(0,0,0,0.16)",
-                                  position: "relative",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <span
-                                  aria-hidden
-                                  style={{
-                                    position: "absolute",
-                                    top: 0,
-                                    bottom: 0,
-                                    width: "50%",
-                                    left: a.status === "present" ? "50%" : 0,
-                                    background: a.status === "present" ? "#52b47f" : "#ea7f77",
-                                    borderTopLeftRadius: a.status === "present" ? 0 : 999,
-                                    borderBottomLeftRadius: a.status === "present" ? 0 : 999,
-                                    borderTopRightRadius: a.status === "present" ? 999 : 0,
-                                    borderBottomRightRadius: a.status === "present" ? 999 : 0,
-                                  }}
-                                />
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    left: 8,
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    fontSize: 9,
-                                    fontWeight: 900,
-                                    color: a.status === "present" ? "rgba(255,255,255,0.72)" : "#fff",
-                                    letterSpacing: 0.2,
-                                    textTransform: "uppercase",
-                                  }}
-                                >
-                                  {tr("Absent", "Absent")}
-                                </span>
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    right: 6,
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    fontSize: 9,
-                                    fontWeight: 900,
-                                    color: a.status === "present" ? "#fff" : "rgba(255,255,255,0.72)",
-                                    letterSpacing: 0.2,
-                                    textTransform: "uppercase",
-                                    minWidth: 44,
-                                    textAlign: "right",
-                                  }}
-                                >
-                                  {tr("Présent", "Present")}
-                                </span>
-                              </button>
+                                ariaLabel={tr("Basculer présence", "Toggle attendance")}
+                                leftLabel={tr("Absent", "Absent")}
+                                rightLabel={tr("Présent", "Present")}
+                              />
                             </div>
                           </div>
 

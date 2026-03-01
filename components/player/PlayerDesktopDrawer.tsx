@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
@@ -25,7 +25,7 @@ const ROUTES = {
   home: "/player",
   golfDashboard: "/player/golf",
   
-  trainingsList: "/player/golf/trainings",
+  trainingsList: "/player/golf/trainings?type=all",
   trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
@@ -52,14 +52,51 @@ type ParentChildLite = {
   is_primary: boolean;
 };
 
+type DrawerFooterCache = {
+  fullName: string;
+  viewerRole: "player" | "parent";
+  parentChildren: ParentChildLite[];
+  selectedChildId: string;
+  savedAt: number;
+};
+
+const DRAWER_FOOTER_CACHE_KEY = "player:drawer:footer:v1";
+const DRAWER_FOOTER_CACHE_TTL_MS = 10 * 60_000;
+
 function isActive(pathname: string, href: string) {
+  const hrefPath = href.split("?")[0] || href;
+  const hrefQuery = href.includes("?") ? new URLSearchParams(href.split("?")[1] ?? "") : null;
   // Active exact match or prefix match (useful for nested pages)
-  if (href === "/player") return pathname === "/player";
-  return pathname === href || pathname.startsWith(href + "/");
+  if (hrefPath === "/player") return pathname === "/player";
+  if (hrefPath === "/player/golf") {
+    const inGolf = pathname === hrefPath || pathname.startsWith(hrefPath + "/");
+    const inTrainings = pathname === "/player/golf/trainings" || pathname.startsWith("/player/golf/trainings/");
+    return inGolf && !inTrainings;
+  }
+  if (hrefPath === "/player/golf/trainings" && hrefQuery?.get("type") === "training") {
+    return false; // handled by isTrainingChildActive()
+  }
+  return pathname === hrefPath || pathname.startsWith(hrefPath + "/");
+}
+
+function isTrainingChildActive(pathname: string, searchParams: URLSearchParams, href: string) {
+  const hrefPath = href.split("?")[0] || href;
+  if (hrefPath !== "/player/golf/trainings") return isActive(pathname, href);
+  const hrefQuery = href.includes("?") ? new URLSearchParams(href.split("?")[1] ?? "") : null;
+  const requestedType = hrefQuery?.get("type");
+  if (requestedType === "training") {
+    return pathname === hrefPath && searchParams.get("type") === "training";
+  }
+  if (requestedType === "all") {
+    const t = searchParams.get("type");
+    return pathname === hrefPath && (t === null || t === "" || t === "all");
+  }
+  return pathname === hrefPath || pathname.startsWith(hrefPath + "/");
 }
 
 export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { t, locale } = useI18n();
 
@@ -68,6 +105,41 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
   const [parentChildren, setParentChildren] = useState<ParentChildLite[]>([]);
   const [selectedChildId, setSelectedChildId] = useState("");
+
+  function readDrawerFooterCache(): DrawerFooterCache | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(DRAWER_FOOTER_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<DrawerFooterCache>;
+      if (!parsed || typeof parsed !== "object") return null;
+      if (typeof parsed.savedAt !== "number") return null;
+      if (Date.now() - parsed.savedAt > DRAWER_FOOTER_CACHE_TTL_MS) return null;
+      if (typeof parsed.fullName !== "string") return null;
+      const role = parsed.viewerRole === "parent" ? "parent" : "player";
+      const children = Array.isArray(parsed.parentChildren) ? parsed.parentChildren : [];
+      const selected = typeof parsed.selectedChildId === "string" ? parsed.selectedChildId : "";
+      return {
+        fullName: parsed.fullName,
+        viewerRole: role,
+        parentChildren: children as ParentChildLite[],
+        selectedChildId: selected,
+        savedAt: parsed.savedAt,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function writeDrawerFooterCache(next: Omit<DrawerFooterCache, "savedAt">) {
+    if (typeof window === "undefined") return;
+    try {
+      const payload: DrawerFooterCache = { ...next, savedAt: Date.now() };
+      window.localStorage.setItem(DRAWER_FOOTER_CACHE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore storage errors
+    }
+  }
 
   function switchParentChild(nextChildId: string) {
     setSelectedChildId(nextChildId);
@@ -100,49 +172,68 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
     if (!open) return;
 
     (async () => {
+      // Instant render from local cache (then refresh in background).
+      const cached = readDrawerFooterCache();
+      if (cached) {
+        setFullName(cached.fullName || t("common.defaultName"));
+        setViewerRole(cached.viewerRole);
+        setParentChildren(cached.parentChildren);
+        setSelectedChildId(cached.selectedChildId);
+      }
+
       const { data: auth } = await supabase.auth.getUser();
-      let displayUserId = auth.user?.id ?? "";
+      const displayUserId = auth.user?.id ?? "";
       const headers = await authHeader();
-      const meRes = await fetch("/api/auth/me", { method: "GET", headers, cache: "no-store" });
+      const [meRes, profileRes] = await Promise.all([
+        fetch("/api/auth/me", { method: "GET", headers, cache: "no-store" }),
+        displayUserId
+          ? supabase
+              .from("profiles")
+              .select("first_name,last_name")
+              .eq("id", displayUserId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as { data: null; error: null }),
+      ]);
+
       const meJson = await meRes.json().catch(() => ({}));
       const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
+
+      let resolvedViewerRole: "player" | "parent" = "player";
+      let resolvedChildren: ParentChildLite[] = [];
+      let resolvedSelectedChildId = "";
       if (role === "parent") {
-        setViewerRole("parent");
+        resolvedViewerRole = "parent";
         const childrenRes = await fetch("/api/parent/children", { method: "GET", headers, cache: "no-store" });
         const childrenJson = await childrenRes.json().catch(() => ({}));
         const list = (childrenRes.ok ? (childrenJson?.children ?? []) : []) as ParentChildLite[];
-        setParentChildren(list);
+        resolvedChildren = list;
         const stored = window.localStorage.getItem("parent:selected_child_id");
-        const selected =
+        resolvedSelectedChildId =
           (stored && list.some((c) => c.id === stored) && stored) ||
           list.find((c) => c.is_primary)?.id ||
           list[0]?.id ||
           "";
-        setSelectedChildId(selected);
-        if (selected) window.localStorage.setItem("parent:selected_child_id", selected);
-      } else {
-        setViewerRole("player");
-        setParentChildren([]);
-        setSelectedChildId("");
+        if (resolvedSelectedChildId) {
+          window.localStorage.setItem("parent:selected_child_id", resolvedSelectedChildId);
+        }
       }
+      setViewerRole(resolvedViewerRole);
+      setParentChildren(resolvedChildren);
+      setSelectedChildId(resolvedSelectedChildId);
 
-      if (!displayUserId) {
-        setFullName(t("common.defaultName"));
-        return;
-      }
-
-      // Assumption: table "profiles" has first_name/last_name
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("first_name,last_name")
-        .eq("id", displayUserId)
-        .maybeSingle();
-
+      const profile = profileRes.data;
       const fn = (profile?.first_name ?? "").trim();
       const ln = (profile?.last_name ?? "").trim();
       const name = `${fn} ${ln}`.trim();
 
-      setFullName(name || t("common.defaultName"));
+      const resolvedFullName = name || t("common.defaultName");
+      setFullName(resolvedFullName);
+      writeDrawerFooterCache({
+        fullName: resolvedFullName,
+        viewerRole: resolvedViewerRole,
+        parentChildren: resolvedChildren,
+        selectedChildId: resolvedSelectedChildId,
+      });
     })();
   }, [open, t]);
 
@@ -336,7 +427,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         <nav className="drawer-nav">
           {nav.map((item) => {
             const Icon = item.icon;
-            const activeTop = item.href ? isActive(pathname, item.href) : item.children?.some((c) => isActive(pathname, c.href));
+            const activeTop = item.href
+              ? isTrainingChildActive(pathname, searchParams, item.href)
+              : item.children?.some((c) => isTrainingChildActive(pathname, searchParams, c.href));
 
             if (item.href) {
               return (
@@ -367,7 +460,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                 <div className="drawer-sub">
                   {item.children?.map((c) => {
                     const CIcon = c.icon;
-                    const active = isActive(pathname, c.href);
+                    const active = isTrainingChildActive(pathname, searchParams, c.href);
                     return (
                       <Link
                         key={c.label}

@@ -475,6 +475,14 @@ a.btn{ padding: 8px 12px !important; }
 }
 .btn-active-red:hover{ background: #b91c1c !important; }
 
+/* Player trainings page: active filter buttons */
+.trainings-filter-btn-active{
+  background: var(--green-light) !important;
+  border-color: var(--green-light) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35) !important;
+}
+
 /* =========================================================
    6) COMPONENTS — FIELDS
    ========================================================= */

@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
+import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { Flame, Mountain, Smile, ListChecks, Pencil, ChevronDown, Filter, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -66,6 +68,7 @@ type PlayerActivityEventRow = {
   starts_at: string;
   ends_at: string;
   location_text: string | null;
+  notes: string | null;
   status: "scheduled" | "cancelled";
   created_at: string;
 };
@@ -87,6 +90,23 @@ type DisplayItem =
   | { kind: "session"; key: string; dateIso: string; session: SessionRow }
   | { kind: "event"; key: string; dateIso: string; event: PlannedEventRow }
   | { kind: "competition"; key: string; dateIso: string; competition: PlayerActivityEventRow };
+
+type TrainingsPageCache = {
+  sessions: SessionRow[];
+  attendeeEvents: PlannedEventRow[];
+  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
+  competitionEvents: PlayerActivityEventRow[];
+  clubNameById: Record<string, string>;
+  groupNameById: Record<string, string>;
+  itemsBySessionId: Record<string, SessionItemRow[]>;
+  eventStructureByEventId: Record<string, EventStructureItemRow[]>;
+  viewerUserId: string;
+  effectiveUserId: string;
+  effectivePlayerName: string;
+};
+
+const TRAININGS_CACHE_TTL_MS = 45_000;
+const trainingsPageCacheKey = (userId: string) => `page-cache:player-trainings:${userId}`;
 
 const PAGE_SIZE = 10;
 
@@ -231,6 +251,7 @@ function RatingBar({
 
 export default function TrainingsListPage() {
   const { t, locale } = useI18n();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -259,9 +280,11 @@ export default function TrainingsListPage() {
   const [activityCreateType, setActivityCreateType] = useState<"competition" | "camp">("competition");
   const [compTitle, setCompTitle] = useState("");
   const [compPlace, setCompPlace] = useState("");
+  const [compNotes, setCompNotes] = useState("");
   const [compStartDate, setCompStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [compEndDate, setCompEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [creatingCompetition, setCreatingCompetition] = useState(false);
+  const [editingCompetitionId, setEditingCompetitionId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string>("");
 
   const categoryLabel = (cat: string) => {
@@ -457,6 +480,24 @@ export default function TrainingsListPage() {
       const { effectiveUserId: uid, viewerUserId: actorId } = await resolveEffectivePlayerContext();
       setViewerUserId(actorId);
       setEffectiveUserId(uid);
+      const pageCache = readClientPageCache<TrainingsPageCache>(
+        trainingsPageCacheKey(uid),
+        TRAININGS_CACHE_TTL_MS
+      );
+      if (pageCache) {
+        setSessions(pageCache.sessions);
+        setAttendeeEvents(pageCache.attendeeEvents);
+        setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
+        setCompetitionEvents(pageCache.competitionEvents);
+        setClubNameById(pageCache.clubNameById);
+        setGroupNameById(pageCache.groupNameById);
+        setItemsBySessionId(pageCache.itemsBySessionId);
+        setEventStructureByEventId(pageCache.eventStructureByEventId);
+        setViewerUserId(pageCache.viewerUserId || actorId);
+        setEffectiveUserId(pageCache.effectiveUserId || uid);
+        setEffectivePlayerName(pageCache.effectivePlayerName || "Joueur");
+        setLoading(false);
+      }
       const profRes = await supabase.from("profiles").select("first_name,last_name").eq("id", uid).maybeSingle();
       if (!profRes.error && profRes.data) {
         const full = `${String(profRes.data.first_name ?? "").trim()} ${String(profRes.data.last_name ?? "").trim()}`.trim();
@@ -530,7 +571,7 @@ export default function TrainingsListPage() {
 
       const compRes = await supabase
         .from("player_activity_events")
-        .select("id,user_id,event_type,title,starts_at,ends_at,location_text,status,created_at")
+        .select("id,user_id,event_type,title,starts_at,ends_at,location_text,notes,status,created_at")
         .eq("user_id", uid)
         .order("starts_at", { ascending: false });
       if (compRes.error) throw new Error(compRes.error.message);
@@ -640,6 +681,36 @@ export default function TrainingsListPage() {
   }, []);
 
   useEffect(() => {
+    if (loading || !effectiveUserId) return;
+    writeClientPageCache(trainingsPageCacheKey(effectiveUserId), {
+      sessions,
+      attendeeEvents,
+      attendeeStatusByEventId,
+      competitionEvents,
+      clubNameById,
+      groupNameById,
+      itemsBySessionId,
+      eventStructureByEventId,
+      viewerUserId,
+      effectiveUserId,
+      effectivePlayerName,
+    });
+  }, [
+    loading,
+    effectiveUserId,
+    sessions,
+    attendeeEvents,
+    attendeeStatusByEventId,
+    competitionEvents,
+    clubNameById,
+    groupNameById,
+    itemsBySessionId,
+    eventStructureByEventId,
+    viewerUserId,
+    effectivePlayerName,
+  ]);
+
+  useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
@@ -670,7 +741,30 @@ export default function TrainingsListPage() {
     }
   }, [searchParams]);
 
-  async function createActivityEvent() {
+  function resetCompetitionForm() {
+    setCompTitle("");
+    setCompPlace("");
+    setCompNotes("");
+    setCompStartDate(new Date().toISOString().slice(0, 10));
+    setCompEndDate(new Date().toISOString().slice(0, 10));
+    setActivityCreateType("competition");
+    setEditingCompetitionId(null);
+  }
+
+  function startEditCompetitionEvent(ev: PlayerActivityEventRow) {
+    setEditingCompetitionId(ev.id);
+    setActivityCreateType(ev.event_type);
+    setCompTitle(ev.title ?? "");
+    setCompPlace(ev.location_text ?? "");
+    setCompNotes(ev.notes ?? "");
+    setCompStartDate(new Date(ev.starts_at).toISOString().slice(0, 10));
+    setCompEndDate(new Date(ev.ends_at).toISOString().slice(0, 10));
+    setShowCompetitionForm(true);
+    setShowAddMenu(false);
+    setError(null);
+  }
+
+  async function saveActivityEvent() {
     if (creatingCompetition) return;
     const title = compTitle.trim();
     if (!title) {
@@ -704,28 +798,47 @@ export default function TrainingsListPage() {
 
     setCreatingCompetition(true);
     setError(null);
-    const ins = await supabase.from("player_activity_events").insert({
-      user_id: uid,
-      event_type: activityCreateType,
-      title,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      location_text: compPlace.trim() || null,
-      status: "scheduled",
-    });
-    if (ins.error) {
-      setError(ins.error.message);
-      setCreatingCompetition(false);
-      return;
+    if (editingCompetitionId) {
+      const upd = await supabase
+        .from("player_activity_events")
+        .update({
+          event_type: activityCreateType,
+          title,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+          location_text: compPlace.trim() || null,
+          notes: compNotes.trim() || null,
+        })
+        .eq("id", editingCompetitionId)
+        .eq("user_id", uid);
+      if (upd.error) {
+        setError(upd.error.message);
+        setCreatingCompetition(false);
+        return;
+      }
+    } else {
+      const ins = await supabase.from("player_activity_events").insert({
+        user_id: uid,
+        event_type: activityCreateType,
+        title,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        location_text: compPlace.trim() || null,
+        notes: compNotes.trim() || null,
+        status: "scheduled",
+      });
+      if (ins.error) {
+        setError(ins.error.message);
+        setCreatingCompetition(false);
+        return;
+      }
     }
 
-    setCompTitle("");
-    setCompPlace("");
-    setCompStartDate(new Date().toISOString().slice(0, 10));
-    setCompEndDate(new Date().toISOString().slice(0, 10));
+    resetCompetitionForm();
     setShowCompetitionForm(false);
-    setActivityCreateType("competition");
     setCreatingCompetition(false);
+    invalidateClientPageCacheByPrefix("page-cache:player-home:");
+    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
     await load();
   }
 
@@ -747,6 +860,8 @@ export default function TrainingsListPage() {
     }
 
     setAttendeeStatusByEventId((prev) => ({ ...prev, [event.id]: nextStatus }));
+    invalidateClientPageCacheByPrefix("page-cache:player-home:");
+    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
 
     try {
       const coachRecipientIds = await getEventCoachUserIds(event.id, event.group_id);
@@ -789,6 +904,27 @@ export default function TrainingsListPage() {
     setAttendanceBusyEventId("");
   }
 
+  function handleTrainingAttendanceToggle(
+    event: PlannedEventRow,
+    attendanceStatus: "expected" | "present" | "absent" | "excused" | null
+  ) {
+    const current: "present" | "absent" = attendanceStatus === "absent" ? "absent" : "present";
+    const next: "present" | "absent" = current === "present" ? "absent" : "present";
+
+    if (next === "absent") {
+      const ok = window.confirm(
+        locale === "fr"
+          ? "Confirmer l'absence pour cet entraînement ?"
+          : "Confirm absence for this training?"
+      );
+      if (!ok) {
+        return;
+      }
+    }
+
+    void updateTrainingAttendance(event, next);
+  }
+
   async function deleteCompetitionEvent(ev: PlayerActivityEventRow) {
     if (!effectiveUserId) return;
     const ok = window.confirm(
@@ -811,7 +947,9 @@ export default function TrainingsListPage() {
       return;
     }
     setDeletingKey("");
-    await load();
+    setCompetitionEvents((prev) => prev.filter((row) => row.id !== ev.id));
+    invalidateClientPageCacheByPrefix("page-cache:player-home:");
+    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
   }
 
   async function deletePlayerSession(s: SessionRow) {
@@ -843,7 +981,15 @@ export default function TrainingsListPage() {
       return;
     }
     setDeletingKey("");
-    await load();
+    setSessions((prev) => prev.filter((row) => row.id !== s.id));
+    setItemsBySessionId((prev) => {
+      if (!(s.id in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[s.id];
+      return copy;
+    });
+    invalidateClientPageCacheByPrefix("page-cache:player-home:");
+    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
   }
 
   return (
@@ -893,6 +1039,12 @@ export default function TrainingsListPage() {
                   className="btn"
                   onClick={() => {
                     setActivityCreateType("competition");
+                    setEditingCompetitionId(null);
+                    setCompTitle("");
+                    setCompPlace("");
+                    setCompNotes("");
+                    setCompStartDate(new Date().toISOString().slice(0, 10));
+                    setCompEndDate(new Date().toISOString().slice(0, 10));
                     setShowCompetitionForm(true);
                     setShowAddMenu(false);
                   }}
@@ -905,6 +1057,12 @@ export default function TrainingsListPage() {
                   className="btn"
                   onClick={() => {
                     setActivityCreateType("camp");
+                    setEditingCompetitionId(null);
+                    setCompTitle("");
+                    setCompPlace("");
+                    setCompNotes("");
+                    setCompStartDate(new Date().toISOString().slice(0, 10));
+                    setCompEndDate(new Date().toISOString().slice(0, 10));
                     setShowCompetitionForm(true);
                     setShowAddMenu(false);
                   }}
@@ -920,7 +1078,15 @@ export default function TrainingsListPage() {
             <div className="glass-card" style={{ marginTop: 12, padding: 14 }}>
               <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
                 <div style={{ fontSize: 13, fontWeight: 950 }}>
-                  {activityCreateType === "camp"
+                  {editingCompetitionId
+                    ? locale === "fr"
+                      ? activityCreateType === "camp"
+                        ? "Éditer le stage"
+                        : "Éditer la compétition"
+                      : activityCreateType === "camp"
+                      ? "Edit camp"
+                      : "Edit competition"
+                    : activityCreateType === "camp"
                     ? locale === "fr"
                       ? "Nouveau stage"
                       : "New camp"
@@ -954,8 +1120,15 @@ export default function TrainingsListPage() {
                   value={compPlace}
                   onChange={(e) => setCompPlace(e.target.value)}
                 />
-                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                  <label style={{ display: "grid", gap: 6 }}>
+                <textarea
+                  placeholder={locale === "fr" ? "Notes" : "Notes"}
+                  value={compNotes}
+                  onChange={(e) => setCompNotes(e.target.value)}
+                  rows={3}
+                  style={{ resize: "vertical" }}
+                />
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr)" }}>
+                  <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                     <span style={{ fontSize: 12, fontWeight: 850 }}>{locale === "fr" ? "Date début" : "Start date"}</span>
                     <input
                       type="date"
@@ -965,22 +1138,54 @@ export default function TrainingsListPage() {
                         setCompStartDate(next);
                         setCompEndDate(next);
                       }}
+                      style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
                     />
                   </label>
-                  <label style={{ display: "grid", gap: 6 }}>
+                  <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
                     <span style={{ fontSize: 12, fontWeight: 850 }}>{locale === "fr" ? "Date fin" : "End date"}</span>
-                    <input type="date" value={compEndDate} onChange={(e) => setCompEndDate(e.target.value)} />
+                    <input
+                      type="date"
+                      value={compEndDate}
+                      onChange={(e) => setCompEndDate(e.target.value)}
+                      style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+                    />
                   </label>
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                  <button className="btn" type="button" onClick={() => setShowCompetitionForm(false)} disabled={creatingCompetition}>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => {
+                      setShowCompetitionForm(false);
+                      resetCompetitionForm();
+                    }}
+                    disabled={creatingCompetition}
+                  >
                     {t("common.cancel")}
                   </button>
-                  <button className="btn" type="button" onClick={createActivityEvent} disabled={creatingCompetition}>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={saveActivityEvent}
+                    disabled={creatingCompetition}
+                    style={
+                      !editingCompetitionId
+                        ? {
+                            background: "var(--green-dark)",
+                            borderColor: "var(--green-dark)",
+                            color: "#fff",
+                          }
+                        : undefined
+                    }
+                  >
                     {creatingCompetition
                       ? locale === "fr"
-                        ? "Création…"
-                        : "Creating…"
+                        ? "Enregistrement…"
+                        : "Saving…"
+                      : editingCompetitionId
+                      ? locale === "fr"
+                        ? "Enregistrer"
+                        : "Save"
                       : locale === "fr"
                       ? "Ajouter à l'agenda"
                       : "Add to calendar"}
@@ -1014,7 +1219,7 @@ export default function TrainingsListPage() {
               onChange={(e) => setPlannedTypeFilter(e.target.value as PlannedTypeFilter)}
               disabled={loading}
             >
-              <option value="all">{locale === "fr" ? "Tous" : "All"}</option>
+              <option value="all">{locale === "fr" ? "Toute l'activité" : "All activity"}</option>
               <option value="training">{locale === "fr" ? "Entraînement" : "Training"}</option>
               <option value="interclub">{locale === "fr" ? "Interclubs" : "Interclub"}</option>
               <option value="camp">{locale === "fr" ? "Stage" : "Camp"}</option>
@@ -1029,7 +1234,7 @@ export default function TrainingsListPage() {
             <div style={{ display: "inline-flex", width: "100%", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
               <button
                 type="button"
-                className={`btn ${filterMode === "past" ? "btn-active-dark" : ""}`}
+                className={`btn trainings-filter-btn ${filterMode === "past" ? "trainings-filter-btn-active" : ""}`}
                 onClick={() => setFilterMode("past")}
                 disabled={loading}
                 style={{ borderRadius: 0, border: "none", fontWeight: 900, width: "50%" }}
@@ -1038,7 +1243,7 @@ export default function TrainingsListPage() {
               </button>
               <button
                 type="button"
-                className={`btn ${filterMode === "planned" ? "btn-active-dark" : ""}`}
+                className={`btn trainings-filter-btn ${filterMode === "planned" ? "trainings-filter-btn-active" : ""}`}
                 onClick={() => setFilterMode("planned")}
                 disabled={loading}
                 style={{ borderRadius: 0, border: "none", fontWeight: 900, width: "50%" }}
@@ -1048,6 +1253,24 @@ export default function TrainingsListPage() {
             </div>
           </div>
         </div>
+
+        {totalCount > 0 && (
+          <div className="glass-section">
+            <div className="marketplace-pagination">
+              <button className="btn" type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || page <= 1}>
+                {t("common.prev")}
+              </button>
+
+              <div className="marketplace-page-indicator">
+                {t("common.page")} {page} / {totalPages}
+              </div>
+
+              <button className="btn" type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={loading || page >= totalPages}>
+                {t("common.next")}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* List */}
         <div className="glass-section">
@@ -1181,78 +1404,15 @@ export default function TrainingsListPage() {
                                 <span />
                               )}
 
-                              <button
-                                type="button"
-                                aria-label={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
-                                role="switch"
-                                aria-checked={attendanceStatus === "present"}
-                                onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                              <AttendanceToggle
+                                checked={attendanceStatus === "present"}
+                                onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
                                 disabled={attendanceBusyEventId === e.id}
-                                style={{
-                                  width: 114,
-                                  height: 24,
-                                  borderRadius: 999,
-                                  border: "1px solid rgba(0,0,0,0.14)",
-                                  background: "rgba(0,0,0,0.16)",
-                                  padding: 0,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  transition: "all 180ms ease",
-                                  cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
-                                  flex: "0 0 auto",
-                                  position: "relative",
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <span
-                                  aria-hidden
-                                  style={{
-                                    position: "absolute",
-                                    top: 0,
-                                    bottom: 0,
-                                    width: "50%",
-                                    left: attendanceStatus === "present" ? "50%" : 0,
-                                    background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
-                                    borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                                    borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                                    borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
-                                    borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
-                                  }}
-                                />
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    left: 8,
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    fontSize: 9,
-                                    fontWeight: 900,
-                                    color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
-                                    letterSpacing: 0.2,
-                                    textTransform: "uppercase",
-                                  }}
-                                >
-                                  {locale === "fr" ? "Absent" : "Absent"}
-                                </span>
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    right: 6,
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    fontSize: 9,
-                                    fontWeight: 900,
-                                    color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
-                                    letterSpacing: 0.2,
-                                    textTransform: "uppercase",
-                                    minWidth: 44,
-                                    textAlign: "right",
-                                  }}
-                                >
-                                  {locale === "fr" ? "Présent" : "Present"}
-                                </span>
-                              </button>
+                                disabledCursor="wait"
+                                ariaLabel={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
+                                leftLabel={locale === "fr" ? "Absent" : "Absent"}
+                                rightLabel={locale === "fr" ? "Présent" : "Present"}
+                              />
                             </div>
                           ) : null}
                         </div>
@@ -1308,7 +1468,23 @@ export default function TrainingsListPage() {
                               </span>
                             ) : null}
                           </div>
+                          {c.notes?.trim() ? (
+                            <div
+                              style={{
+                                color: "rgba(0,0,0,0.72)",
+                                fontWeight: 700,
+                                fontSize: 12,
+                                whiteSpace: "pre-wrap",
+                              }}
+                            >
+                              {c.notes}
+                            </div>
+                          ) : null}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                            <button type="button" className="btn" onClick={() => startEditCompetitionEvent(c)}>
+                              <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {locale === "fr" ? "Éditer" : "Edit"}
+                            </button>
                             <button
                               type="button"
                               className="btn"
@@ -1344,7 +1520,19 @@ export default function TrainingsListPage() {
                       : `${typeLabel(s.session_type, locale === "fr" ? "fr" : "en")}`;
 
                   return (
-                    <Link key={item.key} href={`/player/golf/trainings/${s.id}`} className="marketplace-link">
+                    <div
+                      key={item.key}
+                      className="marketplace-link"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push(`/player/golf/trainings/${s.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(`/player/golf/trainings/${s.id}`);
+                        }
+                      }}
+                    >
                       <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
                         <div style={{ display: "grid", gap: 10 }}>
                           <div
@@ -1444,7 +1632,7 @@ export default function TrainingsListPage() {
                           </div>
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

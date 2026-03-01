@@ -348,7 +348,7 @@ export default function PlayerTrainingDetailPage() {
                     ? `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`
                     : `${typeLabel(session.session_type, t)}`;
                 return (
-                  <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+                  <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                     <div
                       style={{
                         display: "grid",
@@ -399,7 +399,7 @@ export default function PlayerTrainingDetailPage() {
               })()}
 
               {session.club_event_id ? (
-                <div style={{ borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+                <div className="glass-card" style={{ borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
                     {t("trainingDetail.coachEvaluation")}
                   </div>
@@ -494,7 +494,7 @@ export default function PlayerTrainingDetailPage() {
                 </div>
               ) : null}
 
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 8 }}>
+              <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 8 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.sections")}</div>
                 {items.length > 0 ? (
                   <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
@@ -513,7 +513,7 @@ export default function PlayerTrainingDetailPage() {
                 )}
               </div>
 
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "#fff", padding: 12, display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {locale === "fr" ? "Mes sensations et remarques" : "My feelings and notes"}
                 </div>

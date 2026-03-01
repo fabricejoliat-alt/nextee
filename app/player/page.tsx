@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
+import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -122,6 +124,30 @@ type HomeUpcomingItem =
   | { kind: "event"; key: string; dateIso: string; event: HomePlannedEventRow }
   | { kind: "session"; key: string; dateIso: string; session: HomeSessionRow }
   | { kind: "competition"; key: string; dateIso: string; competition: HomePlayerActivityRow };
+
+type PlayerHomePageCache = {
+  profile: Profile | null;
+  clubs: Club[];
+  latestItems: Item[];
+  thumbByItemId: Record<string, string>;
+  monthSessions: TrainingSessionRow[];
+  monthItems: TrainingItemRow[];
+  roundsMonth: GolfRoundRow[];
+  roundsPrevMonth: GolfRoundRow[];
+  playedHolesMonthByRoundId: Record<string, number>;
+  playedHolesPrevMonthByRoundId: Record<string, number>;
+  holesPlayedMonth: number;
+  viewerUserId: string;
+  effectiveUserId: string;
+  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
+  clubNameById: Record<string, string>;
+  groupNameById: Record<string, string>;
+  eventStructureByEventId: Record<string, HomeEventStructureItem[]>;
+  upcomingActivities: HomeUpcomingItem[];
+};
+
+const PLAYER_HOME_CACHE_TTL_MS = 45_000;
+const playerHomeCacheKey = (userId: string) => `page-cache:player-home:${userId}`;
 
 type HeroCachePayload = {
   profile: Profile | null;
@@ -539,6 +565,31 @@ export default function PlayerHomePage() {
       viewerUid = ctx.viewerUserId;
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
+      const pageCache = readClientPageCache<PlayerHomePageCache>(
+        playerHomeCacheKey(effectiveUid),
+        PLAYER_HOME_CACHE_TTL_MS
+      );
+      if (pageCache) {
+        setProfile(pageCache.profile);
+        setClubs(pageCache.clubs);
+        setLatestItems(pageCache.latestItems);
+        setThumbByItemId(pageCache.thumbByItemId);
+        setMonthSessions(pageCache.monthSessions);
+        setMonthItems(pageCache.monthItems);
+        setRoundsMonth(pageCache.roundsMonth);
+        setRoundsPrevMonth(pageCache.roundsPrevMonth);
+        setPlayedHolesMonthByRoundId(pageCache.playedHolesMonthByRoundId);
+        setPlayedHolesPrevMonthByRoundId(pageCache.playedHolesPrevMonthByRoundId);
+        setHolesPlayedMonth(pageCache.holesPlayedMonth);
+        setViewerUserId(pageCache.viewerUserId || viewerUid);
+        setEffectiveUserId(pageCache.effectiveUserId || effectiveUid);
+        setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
+        setClubNameById(pageCache.clubNameById);
+        setGroupNameById(pageCache.groupNameById);
+        setEventStructureByEventId(pageCache.eventStructureByEventId);
+        setUpcomingActivities(pageCache.upcomingActivities);
+        setLoading(false);
+      }
       const heroCache = readHeroCache(effectiveUid);
       if (heroCache) {
         setProfile(heroCache.profile);
@@ -866,6 +917,50 @@ export default function PlayerHomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (loading || !effectiveUserId) return;
+    writeClientPageCache(playerHomeCacheKey(effectiveUserId), {
+      profile,
+      clubs,
+      latestItems,
+      thumbByItemId,
+      monthSessions,
+      monthItems,
+      roundsMonth,
+      roundsPrevMonth,
+      playedHolesMonthByRoundId,
+      playedHolesPrevMonthByRoundId,
+      holesPlayedMonth,
+      viewerUserId,
+      effectiveUserId,
+      attendeeStatusByEventId,
+      clubNameById,
+      groupNameById,
+      eventStructureByEventId,
+      upcomingActivities,
+    });
+  }, [
+    loading,
+    effectiveUserId,
+    profile,
+    clubs,
+    latestItems,
+    thumbByItemId,
+    monthSessions,
+    monthItems,
+    roundsMonth,
+    roundsPrevMonth,
+    playedHolesMonthByRoundId,
+    playedHolesPrevMonthByRoundId,
+    holesPlayedMonth,
+    viewerUserId,
+    attendeeStatusByEventId,
+    clubNameById,
+    groupNameById,
+    eventStructureByEventId,
+    upcomingActivities,
+  ]);
+
   async function updateTrainingAttendance(event: HomePlannedEventRow, nextStatus: "present" | "absent") {
     if (!effectiveUserId || attendanceBusyEventId) return;
     setAttendanceBusyEventId(event.id);
@@ -884,6 +979,8 @@ export default function PlayerHomePage() {
     }
 
     setAttendeeStatusByEventId((prev) => ({ ...prev, [event.id]: nextStatus }));
+    invalidateClientPageCacheByPrefix("page-cache:player-home:");
+    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
 
     try {
       const coachRecipientIds = await getEventCoachUserIds(event.id, event.group_id);
@@ -1061,76 +1158,15 @@ export default function PlayerHomePage() {
                           )}
                         </div>
                         {isTraining ? (
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={attendanceStatus === "present"}
-                            onClick={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                          <AttendanceToggle
+                            checked={attendanceStatus === "present"}
+                            onToggle={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
                             disabled={attendanceBusyEventId === e.id}
-                            style={{
-                              width: 114,
-                              height: 24,
-                              borderRadius: 999,
-                              border: "1px solid rgba(0,0,0,0.14)",
-                              background: "rgba(0,0,0,0.16)",
-                              padding: 0,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              transition: "all 180ms ease",
-                              cursor: attendanceBusyEventId === e.id ? "wait" : "pointer",
-                              position: "relative",
-                              overflow: "hidden",
-                            }}
-                          >
-                            <span
-                              aria-hidden
-                              style={{
-                                position: "absolute",
-                                top: 0,
-                                bottom: 0,
-                                width: "50%",
-                                left: attendanceStatus === "present" ? "50%" : 0,
-                                background: attendanceStatus === "present" ? "#52b47f" : "#ea7f77",
-                                borderTopLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                                borderBottomLeftRadius: attendanceStatus === "present" ? 0 : 999,
-                                borderTopRightRadius: attendanceStatus === "present" ? 999 : 0,
-                                borderBottomRightRadius: attendanceStatus === "present" ? 999 : 0,
-                              }}
-                            />
-                            <span
-                              style={{
-                                position: "absolute",
-                                left: 8,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                fontSize: 9,
-                                fontWeight: 900,
-                                color: attendanceStatus === "present" ? "rgba(255,255,255,0.72)" : "#fff",
-                                letterSpacing: 0.2,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              {locale === "fr" ? "Absent" : "Absent"}
-                            </span>
-                            <span
-                              style={{
-                                position: "absolute",
-                                right: 6,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                fontSize: 9,
-                                fontWeight: 900,
-                                color: attendanceStatus === "present" ? "#fff" : "rgba(255,255,255,0.72)",
-                                letterSpacing: 0.2,
-                                textTransform: "uppercase",
-                                minWidth: 44,
-                                textAlign: "right",
-                              }}
-                            >
-                              {locale === "fr" ? "Présent" : "Present"}
-                            </span>
-                          </button>
+                            disabledCursor="wait"
+                            ariaLabel={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
+                            leftLabel={locale === "fr" ? "Absent" : "Absent"}
+                            rightLabel={locale === "fr" ? "Présent" : "Present"}
+                          />
                         ) : null}
                       </div>
 
