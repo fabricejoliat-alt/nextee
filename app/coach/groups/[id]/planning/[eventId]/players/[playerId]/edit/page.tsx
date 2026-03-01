@@ -405,6 +405,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
     setAttendanceBusy(false);
   }
 
+  function handlePresenceToggle() {
+    const next: "present" | "absent" = attendanceStatus === "present" ? "absent" : "present";
+    const ok = window.confirm(
+      next === "absent" ? "Confirmer le passage à absent ?" : "Confirmer le passage à présent ?"
+    );
+    if (!ok) return;
+    void setPresence(next);
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -464,7 +473,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                 </div>
                   <AttendanceToggle
                     checked={attendanceStatus === "present"}
-                    onToggle={() => setPresence(attendanceStatus === "present" ? "absent" : "present")}
+                    onToggle={handlePresenceToggle}
                     disabled={attendanceBusy || busy}
                     ariaLabel="Basculer présence"
                     leftLabel="Absent"

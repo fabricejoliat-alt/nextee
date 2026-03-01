@@ -910,17 +910,16 @@ export default function TrainingsListPage() {
   ) {
     const current: "present" | "absent" = attendanceStatus === "absent" ? "absent" : "present";
     const next: "present" | "absent" = current === "present" ? "absent" : "present";
-
-    if (next === "absent") {
-      const ok = window.confirm(
-        locale === "fr"
-          ? "Confirmer l'absence pour cet entraînement ?"
-          : "Confirm absence for this training?"
-      );
-      if (!ok) {
-        return;
-      }
-    }
+    const ok = window.confirm(
+      locale === "fr"
+        ? next === "absent"
+          ? "Confirmer le passage à absent ?"
+          : "Confirmer le passage à présent ?"
+        : next === "absent"
+        ? "Confirm switch to absent?"
+        : "Confirm switch to present?"
+    );
+    if (!ok) return;
 
     void updateTrainingAttendance(event, next);
   }

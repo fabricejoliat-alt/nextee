@@ -328,6 +328,19 @@ export default function CoachEventDetailPage() {
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: false }));
   }
 
+  function handleAttendanceToggle(playerId: string, status: "expected" | "present" | "absent" | "excused") {
+    const current: "present" | "absent" = status === "absent" ? "absent" : "present";
+    const next: "present" | "absent" = current === "present" ? "absent" : "present";
+    const ok = window.confirm(
+      tr(
+        next === "absent" ? "Confirmer le passage à absent ?" : "Confirmer le passage à présent ?",
+        next === "absent" ? "Confirm switch to absent?" : "Confirm switch to present?"
+      )
+    );
+    if (!ok) return;
+    void setAttendanceStatus(playerId, next);
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -503,7 +516,7 @@ export default function CoachEventDetailPage() {
                             <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
                               <AttendanceToggle
                                 checked={a.status === "present"}
-                                onToggle={() => setAttendanceStatus(a.player_id, a.status === "present" ? "absent" : "present")}
+                                onToggle={() => handleAttendanceToggle(a.player_id, a.status)}
                                 disabled={Boolean(attendanceBusyIds[a.player_id])}
                                 ariaLabel={tr("Basculer présence", "Toggle attendance")}
                                 leftLabel={tr("Absent", "Absent")}

@@ -492,6 +492,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 select,
 textarea{
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 
   padding: 10px 12px;
@@ -506,6 +508,14 @@ textarea{
   font-weight: 600;
 
   outline: none;
+}
+
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"]{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 textarea{

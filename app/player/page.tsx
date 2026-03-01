@@ -1034,6 +1034,25 @@ export default function PlayerHomePage() {
     setAttendanceBusyEventId("");
   }
 
+  function handleTrainingAttendanceToggle(
+    event: HomePlannedEventRow,
+    attendanceStatus: "expected" | "present" | "absent" | "excused" | null
+  ) {
+    const current: "present" | "absent" = attendanceStatus === "absent" ? "absent" : "present";
+    const next: "present" | "absent" = current === "present" ? "absent" : "present";
+    const ok = window.confirm(
+      locale === "fr"
+        ? next === "absent"
+          ? "Confirmer le passage à absent ?"
+          : "Confirmer le passage à présent ?"
+        : next === "absent"
+        ? "Confirm switch to absent?"
+        : "Confirm switch to present?"
+    );
+    if (!ok) return;
+    void updateTrainingAttendance(event, next);
+  }
+
   const avatarUrl = useMemo(() => {
     const base = profile?.avatar_url?.trim() || "";
     if (!base) return null;
@@ -1160,7 +1179,7 @@ export default function PlayerHomePage() {
                         {isTraining ? (
                           <AttendanceToggle
                             checked={attendanceStatus === "present"}
-                            onToggle={() => updateTrainingAttendance(e, attendanceStatus === "present" ? "absent" : "present")}
+                            onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
                             disabled={attendanceBusyEventId === e.id}
                             disabledCursor="wait"
                             ariaLabel={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
