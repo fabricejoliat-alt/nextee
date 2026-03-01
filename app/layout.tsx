@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Inter, Inter_Tight } from "next/font/google";
 import RouteLoadingIndicator from "@/components/ui/RouteLoadingIndicator";
+import AuthSessionBoundary from "@/components/auth/AuthSessionBoundary";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body>
         <Suspense fallback={null}>
+          <AuthSessionBoundary />
           <RouteLoadingIndicator />
         </Suspense>
         {children}

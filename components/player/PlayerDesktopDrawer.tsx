@@ -207,8 +207,10 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         const childrenJson = await childrenRes.json().catch(() => ({}));
         const list = (childrenRes.ok ? (childrenJson?.children ?? []) : []) as ParentChildLite[];
         resolvedChildren = list;
+        const queryChildId = String(searchParams.get("child_id") ?? "").trim();
         const stored = window.localStorage.getItem("parent:selected_child_id");
         resolvedSelectedChildId =
+          (queryChildId && list.some((c) => c.id === queryChildId) && queryChildId) ||
           (stored && list.some((c) => c.id === stored) && stored) ||
           list.find((c) => c.is_primary)?.id ||
           list[0]?.id ||
@@ -235,7 +237,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         selectedChildId: resolvedSelectedChildId,
       });
     })();
-  }, [open, t]);
+  }, [open, t, searchParams]);
 
   useEffect(() => {
     if (viewerRole !== "parent" || !selectedChildId) return;
@@ -243,6 +245,12 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       window.localStorage.setItem("parent:selected_child_id", selectedChildId);
     }
   }, [viewerRole, selectedChildId]);
+
+  const selectedChildIdForView = useMemo(() => {
+    const queryChildId = String(searchParams.get("child_id") ?? "").trim();
+    if (queryChildId && parentChildren.some((c) => c.id === queryChildId)) return queryChildId;
+    return selectedChildId;
+  }, [searchParams, parentChildren, selectedChildId]);
 
   useEffect(() => {
     if (!open) return;
@@ -499,7 +507,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                 Enfant sélectionné
               </div>
               <select
-                value={selectedChildId}
+                value={selectedChildIdForView}
                 onChange={(e) => switchParentChild(e.target.value)}
                 style={{
                   width: "100%",

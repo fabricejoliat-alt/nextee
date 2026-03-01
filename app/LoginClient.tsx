@@ -14,43 +14,49 @@ export default function LoginPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError(null);
+    let redirected = false;
 
-    const resolveRes = await fetch("/api/auth/resolve-login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier }),
-    });
-    const resolveJson = await resolveRes.json().catch(() => ({}));
+    try {
+      const resolveRes = await fetch("/api/auth/resolve-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier }),
+      });
+      const resolveJson = await resolveRes.json().catch(() => ({}));
 
-    if (!resolveRes.ok || !resolveJson.email) {
-      setError("Identifiant ou mot de passe invalide.");
-      setLoading(false);
-      return;
+      if (!resolveRes.ok || !resolveJson.email) {
+        setError("Identifiant ou mot de passe invalide.");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: resolveJson.email,
+        password,
+      });
+
+      if (error || !data.session) {
+        setError("Identifiant ou mot de passe invalide.");
+        return;
+      }
+
+      const res = await fetch("/api/auth", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(json?.error ?? `Erreur serveur auth (${res.status})`);
+        return;
+      }
+
+      redirected = true;
+      router.push(json?.redirectTo || "/player");
+    } catch {
+      setError("Erreur de connexion.");
+    } finally {
+      if (!redirected) setLoading(false);
     }
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: resolveJson.email,
-      password,
-    });
-
-    if (error || !data.session) {
-      setError(error?.message ?? "Erreur de connexion.");
-      setLoading(false);
-      return;
-    }
-
-    const res = await fetch("/api/auth", { method: "POST" });
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      setError(json?.error ?? `Erreur serveur auth (${res.status})`);
-      setLoading(false);
-      return;
-    }
-
-    router.push(json?.redirectTo || "/player");
   }
 
   return (

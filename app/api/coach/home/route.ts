@@ -75,14 +75,31 @@ export async function GET(req: NextRequest) {
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
 
     const groupNameById: Record<string, string> = {};
+    const planningGroupIds: string[] = [];
+    let organizationNames: string[] = [];
     const clubIds = new Set<string>();
     (groupsRes.data ?? []).forEach((g: { id: string; name: string | null; club_id: string | null }) => {
-      groupNameById[g.id] = g.name ?? "Groupe";
+      const name = String(g.name ?? "").trim();
+      const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const isArchived = normalized.includes("archive") && normalized.includes("historique");
+      if (!isArchived) {
+        groupNameById[g.id] = g.name ?? "Groupe";
+        planningGroupIds.push(g.id);
+      }
       const cid = String(g.club_id ?? "").trim();
       if (cid) clubIds.add(cid);
     });
 
-    let organizationNames: string[] = [];
+    if (planningGroupIds.length === 0) {
+      return NextResponse.json({
+        me,
+        groupNameById: {},
+        organizationNames,
+        upcomingEvents: [],
+        pendingEvalEvents: [],
+      });
+    }
+
     if (clubIds.size > 0) {
       const clubsRes = await supabaseAdmin.from("clubs").select("id,name").in("id", Array.from(clubIds));
       if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
@@ -100,14 +117,14 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from("club_events")
         .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-        .in("group_id", groupIds)
+        .in("group_id", planningGroupIds)
         .gte("starts_at", nowIso)
         .order("starts_at", { ascending: true })
         .limit(5),
       supabaseAdmin
         .from("club_events")
         .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-        .in("group_id", groupIds)
+        .in("group_id", planningGroupIds)
         .in("event_type", ["training", "interclub", "camp"])
         .lt("starts_at", nowIso)
         .order("starts_at", { ascending: false })
@@ -171,4 +188,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

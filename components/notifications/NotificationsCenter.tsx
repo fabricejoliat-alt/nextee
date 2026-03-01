@@ -89,6 +89,10 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (typeof Notification === "undefined") {
+      setPushEnabled(false);
+      return;
+    }
     setPushEnabled(Notification.permission === "granted");
   }, []);
 

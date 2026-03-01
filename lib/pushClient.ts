@@ -18,11 +18,12 @@ async function authHeader() {
 
 export function supportsWebPush() {
   if (typeof window === "undefined") return false;
-  return "serviceWorker" in navigator && "PushManager" in window;
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
 export async function ensurePushSubscription(options?: { prompt?: boolean }) {
   if (!supportsWebPush()) return { ok: false as const, reason: "unsupported" as const };
+  if (typeof Notification === "undefined") return { ok: false as const, reason: "unsupported" as const };
 
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!vapidPublicKey) return { ok: false as const, reason: "missing_vapid" as const };
