@@ -513,9 +513,33 @@ textarea{
 input[type="date"],
 input[type="time"],
 input[type="datetime-local"]{
-  width: 100%;
-  max-width: 100%;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  display: block;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+label{
   min-width: 0;
+}
+
+label > input[type="date"],
+label > input[type="time"],
+label > input[type="datetime-local"]{
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Safety net: many pages use inline CSS grids (gridTemplateColumns in style prop).
+   Force children to shrink to available column width to avoid horizontal overflow. */
+.glass-card [style*="grid-template-columns"] > *,
+.glass-section [style*="grid-template-columns"] > *{
+  min-width: 0 !important;
 }
 
 textarea{
@@ -1050,8 +1074,12 @@ input[type="radio"]{
 
 .grid-2{
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.grid-2 > *{
+  min-width: 0;
 }
 
 @media (max-width: 380px){
