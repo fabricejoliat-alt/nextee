@@ -1735,11 +1735,24 @@ input[type="radio"]{
 
   /* Keep app behavior unchanged in installed mode */
   html{
+    background-image: none;
     background-attachment: fixed;
   }
 
   html, body{
     overscroll-behavior-y: none;
+  }
+
+  body::before{
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: url("/background.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
   }
 
   .app-header-inner{
