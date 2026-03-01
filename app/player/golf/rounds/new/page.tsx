@@ -491,13 +491,19 @@ export default function NewRoundPage() {
         <div className="glass-section">
           <div className="glass-card">
             <form onSubmit={createRound} style={{ display: "grid", gap: 12 }}>
-              <div className="grid-2">
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
-                  <input type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} disabled={busy} />
+              <div style={{ display: "grid", gap: 10 }}>
+                <label style={{ display: "grid", gap: 6, width: "100%", minWidth: 0 }}>
+                  <span style={fieldLabelStyle}>{t("common.date")}</span>
+                  <input
+                    type="date"
+                    value={startAt}
+                    onChange={(e) => setStartAt(e.target.value)}
+                    disabled={busy}
+                    style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+                  />
                 </label>
 
-                <label style={{ display: "grid", gap: 6 }}>
+                <label style={{ display: "grid", gap: 6, width: "100%", minWidth: 0 }}>
                   <span style={fieldLabelStyle}>{t("roundsNew.startHandicap")}</span>
                   <input
                     inputMode="decimal"
@@ -505,6 +511,7 @@ export default function NewRoundPage() {
                     onChange={(e) => setHandicapStart(e.target.value)}
                     disabled={busy}
                     placeholder="ex: 18.4"
+                    style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
                   />
                 </label>
               </div>
@@ -561,6 +568,71 @@ export default function NewRoundPage() {
                         {searching ? t("roundsNew.searching") : results.length > 0 ? `${results.length} ${t("roundsNew.results")}` : " "}
                       </div>
                     </label>
+
+                    {results.length > 0 && (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {results.slice(0, 10).map((c) => {
+                          const loc = [c.club_name, c.city, c.country].filter(Boolean).join(" • ");
+
+                          return (
+                            <button
+                              key={safeStr(c.id)}
+                              type="button"
+                              className="btn"
+                              onClick={() => selectCourse(c)}
+                              disabled={busy}
+                              style={{
+                                display: "grid",
+                                gridTemplateRows: "auto auto",
+                                justifyItems: "center",
+                                alignItems: "center",
+                                textAlign: "center",
+                                gap: 4,
+                                padding: "12px 12px",
+                                width: "100%",
+                                maxWidth: "100%",
+                                overflow: "hidden",
+                                borderRadius: 14,
+                                border: "1px solid rgba(0,0,0,0.10)",
+                                background: "rgba(255,255,255,0.65)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 950,
+                                  lineHeight: 1.15,
+                                  maxWidth: "100%",
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {c.course_name}
+                              </div>
+
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: "rgba(0,0,0,0.55)",
+                                  maxWidth: "100%",
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "anywhere",
+                                  display: "-webkit-box",
+                                  WebkitBoxOrient: "vertical",
+                                  WebkitLineClamp: 2,
+                                  overflow: "hidden",
+                                }}
+                                title={loc}
+                              >
+                                {loc || " "}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                       Si tu ne trouves pas le parcours, clique sur le bouton Ajouter un parcours.
@@ -631,70 +703,6 @@ export default function NewRoundPage() {
                       </div>
                     )}
 
-                    {results.length > 0 && (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {results.slice(0, 10).map((c) => {
-                          const loc = [c.club_name, c.city, c.country].filter(Boolean).join(" • ");
-
-                          return (
-                            <button
-                              key={safeStr(c.id)}
-                              type="button"
-                              className="btn"
-                              onClick={() => selectCourse(c)}
-                              disabled={busy}
-                              style={{
-                                display: "grid",
-                                gridTemplateRows: "auto auto",
-                                justifyItems: "center",
-                                alignItems: "center",
-                                textAlign: "center",
-                                gap: 4,
-                                padding: "12px 12px",
-                                width: "100%",
-                                maxWidth: "100%",
-                                overflow: "hidden",
-                                borderRadius: 14,
-                                border: "1px solid rgba(0,0,0,0.10)",
-                                background: "rgba(255,255,255,0.65)",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontWeight: 950,
-                                  lineHeight: 1.15,
-                                  maxWidth: "100%",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  overflowWrap: "anywhere",
-                                }}
-                              >
-                                {c.course_name}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                  color: "rgba(0,0,0,0.55)",
-                                  maxWidth: "100%",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  overflowWrap: "anywhere",
-                                  display: "-webkit-box",
-                                  WebkitBoxOrient: "vertical",
-                                  WebkitLineClamp: 2,
-                                  overflow: "hidden",
-                                }}
-                                title={loc}
-                              >
-                                {loc || " "}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div

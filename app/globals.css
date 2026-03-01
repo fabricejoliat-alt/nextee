@@ -1457,9 +1457,23 @@ input[type="radio"]{
 }
 
 @media (max-width: 420px){
-  .marketplace-pagination{ grid-template-columns: 1fr; }
-  .marketplace-page-indicator{ order: -1; }
-  .marketplace-pagination .btn{ width: 100%; }
+  .marketplace-pagination{
+    grid-template-columns: minmax(84px, auto) 1fr minmax(84px, auto);
+    gap: 8px;
+    align-items: center;
+  }
+  .marketplace-page-indicator{
+    order: 0;
+    text-align: center;
+    font-size: 11px;
+  }
+  .marketplace-pagination .btn{
+    width: auto;
+    min-width: 84px;
+    height: 34px;
+    padding: 6px 10px !important;
+    justify-self: stretch;
+  }
 }
 
 /* Scroll margin helper (si tu l'utilises) */

@@ -101,10 +101,45 @@ export default function RoleGuard({
 
   if (!ok) {
     return (
-      <main style={{ padding: 24 }}>
-        <div className="card" style={{ maxWidth: 520, margin: "40px auto" }}>
-          Vérification…
+      <main style={{ padding: 24 }} aria-busy="true" aria-live="polite">
+        <div className="card" style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 12 }}>
+          <div
+            style={{
+              height: 18,
+              width: "42%",
+              borderRadius: 8,
+              background: "linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%)",
+              backgroundSize: "200% 100%",
+              animation: "roleGuardShimmer 1.1s linear infinite",
+            }}
+          />
+          <div
+            style={{
+              height: 12,
+              width: "100%",
+              borderRadius: 8,
+              background: "linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%)",
+              backgroundSize: "200% 100%",
+              animation: "roleGuardShimmer 1.1s linear infinite",
+            }}
+          />
+          <div
+            style={{
+              height: 12,
+              width: "88%",
+              borderRadius: 8,
+              background: "linear-gradient(90deg, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 100%)",
+              backgroundSize: "200% 100%",
+              animation: "roleGuardShimmer 1.1s linear infinite",
+            }}
+          />
         </div>
+        <style>{`
+          @keyframes roleGuardShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+        `}</style>
       </main>
     );
   }
