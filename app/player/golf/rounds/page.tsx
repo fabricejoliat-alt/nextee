@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { SlidersHorizontal } from "lucide-react";
@@ -89,14 +90,27 @@ function fmtDateOnly(iso: string, locale: string) {
 }
 
 function startOfDayISO(dateStr: string) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return d.toISOString();
+  return `${dateStr}T00:00:00`;
 }
 
 function nextDayStartISO(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setDate(d.getDate() + 1);
-  return d.toISOString();
+  return `${isoToYMD(d)}T00:00:00`;
+}
+
+function localYmdFromIso(iso: string) {
+  return isoToYMD(new Date(iso));
+}
+
+function getCurrentMonthYmdRange(now = new Date()) {
+  const { start, end } = monthRangeLocal(now);
+  const endInclusive = new Date(end);
+  endInclusive.setDate(endInclusive.getDate() - 1);
+  return {
+    from: isoToYMD(start),
+    to: isoToYMD(endInclusive),
+  };
 }
 
 function roundTitle(r: Round, t: (key: string) => string) {
@@ -108,14 +122,15 @@ function roundTitle(r: Round, t: (key: string) => string) {
 
 export default function RoundsListPage() {
   const { t, locale } = useI18n();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [rounds, setRounds] = useState<Round[]>([]);
   const [holesByRoundId, setHolesByRoundId] = useState<Record<string, HoleLite[]>>({});
 
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [fromDate, setFromDate] = useState<string>(() => getCurrentMonthYmdRange().from);
+  const [toDate, setToDate] = useState<string>(() => getCurrentMonthYmdRange().to);
 
   const [preset, setPreset] = useState<Preset>("month");
   const [customOpen, setCustomOpen] = useState(false);
@@ -133,10 +148,7 @@ export default function RoundsListPage() {
     try {
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
-      const from = (page - 1) * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-
-      let q = supabase
+      const q = supabase
         .from("golf_rounds")
         .select(
           "id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,gir",
@@ -145,17 +157,24 @@ export default function RoundsListPage() {
         .eq("user_id", uid)
         .order("start_at", { ascending: false });
 
-      if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
-      if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
-
-      q = q.range(from, to);
-
       const rRes = await q;
       if (rRes.error) throw new Error(rRes.error.message);
 
-      const list = (rRes.data ?? []) as Round[];
+      const all = (rRes.data ?? []) as Round[];
+      const filtered = all.filter((r) => {
+        const ymd = localYmdFromIso(r.start_at);
+        if (fromDate && ymd < fromDate) return false;
+        if (toDate && ymd > toDate) return false;
+        return true;
+      });
+
+      const total = filtered.length;
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE;
+      const list = filtered.slice(from, to);
+
       setRounds(list);
-      setTotalCount(rRes.count ?? 0);
+      setTotalCount(total);
 
       // 🔁 Comme sur la scorecard: on calcule parTotal et scoreTotal depuis les trous
       const roundIds = list.map((r) => r.id);
@@ -196,17 +215,6 @@ export default function RoundsListPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, fromDate, toDate]);
-
-  useEffect(() => {
-  const now = new Date();
-  const { start, end } = monthRangeLocal(now);
-
-  const endInclusive = new Date(end);
-  endInclusive.setDate(endInclusive.getDate() - 1);
-
-  setFromDate(isoToYMD(start));
-  setToDate(isoToYMD(endInclusive));
-}, []);
 
   useEffect(() => {
   const now = new Date();
@@ -536,13 +544,17 @@ export default function RoundsListPage() {
 
                           {/* action unique */}
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                            <Link
+                            <button
+                              type="button"
                               className="btn"
-                              href={`/player/golf/rounds/${r.id}/scorecard`}
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                router.push(`/player/golf/rounds/${r.id}/scorecard`);
+                              }}
                             >
                               {t("rounds.scorecard")}
-                            </Link>
+                            </button>
                           </div>
                         </div>
                       </div>

@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
-type CalendarView = "month" | "week" | "day";
+type DisplayMode = "list" | "calendar";
+type CalendarView = "week" | "day";
 
 type EventRow = {
   id: string;
@@ -22,9 +23,6 @@ type EventRow = {
   series_id: string | null;
   status: "scheduled" | "cancelled";
 };
-
-type GroupRow = { id: string; name: string | null };
-type ClubRow = { id: string; name: string | null };
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
@@ -45,18 +43,6 @@ function startOfWeek(d: Date) {
   const day = x.getDay();
   const diff = (day + 6) % 7; // Monday start
   return addDays(x, -diff);
-}
-
-function endOfWeek(d: Date) {
-  return endOfDay(addDays(startOfWeek(d), 6));
-}
-
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-}
-
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 }
 
 function ymd(d: Date) {
@@ -81,8 +67,20 @@ function dateTimeLabel(iso: string, locale: string) {
   }).format(new Date(iso));
 }
 
-function monthLabel(d: Date, locale: string) {
-  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(d);
+function dateLabelNoTime(iso: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
+function sameDay(aIso: string, bIso: string | null) {
+  if (!bIso) return true;
+  const a = new Date(aIso);
+  const b = new Date(bIso);
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function dayHeaderLabel(d: Date, locale: string) {
@@ -132,9 +130,12 @@ export default function CoachCalendarPage() {
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
 
-  const [view, setView] = useState<CalendarView>("month");
+  const [mode, setMode] = useState<DisplayMode>("list");
+  const [view, setView] = useState<CalendarView>("week");
   const [anchorDate, setAnchorDate] = useState<Date>(new Date());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [listPage, setListPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     (async () => {
@@ -142,101 +143,30 @@ export default function CoachCalendarPage() {
       setError(null);
 
       try {
-        const { data: auth, error: authErr } = await supabase.auth.getUser();
-        if (authErr || !auth.user) throw new Error("Session invalide.");
-        const uid = auth.user.id;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) throw new Error("Session invalide.");
 
-        const [headRes, asstRes, eventCoachRes] = await Promise.all([
-          supabase.from("coach_groups").select("id").eq("head_coach_user_id", uid),
-          supabase.from("coach_group_coaches").select("group_id").eq("coach_user_id", uid),
-          supabase.from("club_event_coaches").select("event_id").eq("coach_id", uid),
-        ]);
+        const res = await fetch("/api/coach/events/calendar", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Erreur chargement"));
 
-        if (headRes.error) throw new Error(headRes.error.message);
-        if (asstRes.error) throw new Error(asstRes.error.message);
-        if (eventCoachRes.error) throw new Error(eventCoachRes.error.message);
-
-        const groupIds = Array.from(
-          new Set([
-            ...(headRes.data ?? []).map((r: any) => String(r.id)),
-            ...(asstRes.data ?? []).map((r: any) => String(r.group_id)),
-          ])
-        ).filter(Boolean);
-
-        const eventIdsFromAssign = Array.from(new Set((eventCoachRes.data ?? []).map((r: any) => String(r.event_id)))).filter(Boolean);
-
-        const rowsById: Record<string, EventRow> = {};
-
-        if (groupIds.length > 0) {
-          const r = await supabase
-            .from("club_events")
-            .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
-            .in("group_id", groupIds)
-            .order("starts_at", { ascending: true });
-          if (r.error) throw new Error(r.error.message);
-          (r.data ?? []).forEach((e: any) => {
-            rowsById[e.id] = e as EventRow;
-          });
-        }
-
-        if (eventIdsFromAssign.length > 0) {
-          const r = await supabase
-            .from("club_events")
-            .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
-            .in("id", eventIdsFromAssign)
-            .order("starts_at", { ascending: true });
-          if (r.error) throw new Error(r.error.message);
-          (r.data ?? []).forEach((e: any) => {
-            rowsById[e.id] = e as EventRow;
-          });
-        }
-
-        const merged = Object.values(rowsById).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-        setEvents(merged);
-
-        const gIds = Array.from(new Set(merged.map((e) => e.group_id).filter(Boolean)));
-        const cIds = Array.from(new Set(merged.map((e) => e.club_id).filter(Boolean)));
-
-        if (gIds.length > 0) {
-          const gr = await supabase.from("coach_groups").select("id,name").in("id", gIds);
-          if (!gr.error) {
-            const m: Record<string, string> = {};
-            (gr.data ?? []).forEach((g: any) => {
-              m[g.id] = (g as GroupRow).name ?? "Groupe";
-            });
-            setGroupNames(m);
-          }
-        }
-
-        if (cIds.length > 0) {
-          const cr = await supabase.from("clubs").select("id,name").in("id", cIds);
-          if (!cr.error) {
-            const m: Record<string, string> = {};
-            (cr.data ?? []).forEach((c: any) => {
-              m[c.id] = (c as ClubRow).name ?? "Club";
-            });
-            setClubNames(m);
-          }
-        }
+        setEvents((json?.events ?? []) as EventRow[]);
+        setGroupNames((json?.groupNameById ?? {}) as Record<string, string>);
+        setClubNames((json?.clubNameById ?? {}) as Record<string, string>);
 
         setLoading(false);
-      } catch (e: any) {
-        setError(e?.message ?? (locale === "en" ? "Loading error" : "Erreur chargement"));
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : locale === "en" ? "Loading error" : "Erreur chargement");
         setEvents([]);
         setLoading(false);
       }
     })();
   }, [locale]);
-
-  const daysInMonthGrid = useMemo(() => {
-    const first = startOfMonth(anchorDate);
-    const last = endOfMonth(anchorDate);
-    const from = startOfWeek(first);
-    const to = endOfWeek(last);
-    const out: Date[] = [];
-    for (let d = new Date(from); d.getTime() <= to.getTime(); d = addDays(d, 1)) out.push(new Date(d));
-    return out;
-  }, [anchorDate]);
 
   const weekDays = useMemo(() => {
     const from = startOfWeek(anchorDate);
@@ -266,15 +196,28 @@ export default function CoachCalendarPage() {
     return map;
   }, [events]);
 
+  const listEvents = useMemo(() => {
+    return [...events].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }, [events]);
+
+  const listTotalPages = Math.max(1, Math.ceil(listEvents.length / PAGE_SIZE));
+  const pagedListEvents = useMemo(() => {
+    const from = (listPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE;
+    return listEvents.slice(from, to);
+  }, [listEvents, listPage]);
+
+  useEffect(() => {
+    if (listPage > listTotalPages) setListPage(listTotalPages);
+  }, [listPage, listTotalPages]);
+
   function goPrev() {
-    if (view === "month") setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-    else if (view === "week") setAnchorDate((d) => addDays(d, -7));
+    if (view === "week") setAnchorDate((d) => addDays(d, -7));
     else setAnchorDate((d) => addDays(d, -1));
   }
 
   function goNext() {
-    if (view === "month") setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-    else if (view === "week") setAnchorDate((d) => addDays(d, 7));
+    if (view === "week") setAnchorDate((d) => addDays(d, 7));
     else setAnchorDate((d) => addDays(d, 1));
   }
 
@@ -288,11 +231,12 @@ export default function CoachCalendarPage() {
     return `${dayHeaderLabel(from, dateLocale)} - ${dayHeaderLabel(to, dateLocale)}`;
   }, [anchorDate, dateLocale]);
 
-  const headerLabel =
-    view === "month" ? monthLabel(anchorDate, dateLocale) : view === "week" ? weekRangeLabel : dayHeaderLabel(anchorDate, dateLocale);
+  const headerLabel = view === "week" ? weekRangeLabel : dayHeaderLabel(anchorDate, dateLocale);
   const todayKey = ymd(new Date());
   const segmentWrapStyle: React.CSSProperties = {
-    display: "inline-flex",
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    width: "100%",
     border: "1px solid rgba(0,0,0,0.14)",
     borderRadius: 10,
     overflow: "hidden",
@@ -309,7 +253,15 @@ export default function CoachCalendarPage() {
     lineHeight: 1.1,
     padding: "7px 10px",
     cursor: "pointer",
+    width: "100%",
   });
+  const subSegmentWrapStyle: React.CSSProperties = {
+    display: "inline-flex",
+    border: "1px solid rgba(0,0,0,0.14)",
+    borderRadius: 10,
+    overflow: "hidden",
+    background: "rgba(255,255,255,0.78)",
+  };
   const detailCardStyle: React.CSSProperties = {
     border: "1px solid rgba(0,0,0,0.10)",
     borderRadius: 10,
@@ -337,116 +289,115 @@ export default function CoachCalendarPage() {
           <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={segmentWrapStyle}>
-                <button onClick={() => setView("month")} style={segmentBtnStyle(view === "month", true)}>{tr("Mois", "Month")}</button>
-                <button onClick={() => setView("week")} style={segmentBtnStyle(view === "week", true)}>{tr("Semaine", "Week")}</button>
-                <button onClick={() => setView("day")} style={segmentBtnStyle(view === "day")}>{tr("Jour", "Day")}</button>
+                <button
+                  onClick={() => {
+                    setMode("list");
+                    setSelectedEventId(null);
+                  }}
+                  style={segmentBtnStyle(mode === "list", true)}
+                >
+                  {tr("Vue liste", "List view")}
+                </button>
+                <button
+                  onClick={() => {
+                    setMode("calendar");
+                    setSelectedEventId(null);
+                  }}
+                  style={segmentBtnStyle(mode === "calendar")}
+                >
+                  {tr("Vue calendrier", "Calendar view")}
+                </button>
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <button className="btn" onClick={goPrev} aria-label={tr("Précédent", "Previous")}>
-                  <ChevronLeft size={16} />
-                </button>
-                <button className="btn" onClick={goToday}>{tr("Aujourd’hui", "Today")}</button>
-                <button className="btn" onClick={goNext} aria-label={tr("Suivant", "Next")}>
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-              <div style={{ fontSize: 16, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{headerLabel}</div>
-            </div>
+            {mode === "calendar" ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <button className="btn" onClick={goPrev} aria-label={tr("Précédent", "Previous")}>
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button className="btn" onClick={goToday}>{tr("Aujourd’hui", "Today")}</button>
+                    <button className="btn" onClick={goNext} aria-label={tr("Suivant", "Next")}>
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{headerLabel}</div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <div style={subSegmentWrapStyle}>
+                    <button onClick={() => setView("day")} style={segmentBtnStyle(view === "day", true)}>
+                      {tr("Jour", "Day")}
+                    </button>
+                    <button onClick={() => setView("week")} style={segmentBtnStyle(view === "week")}>
+                      {tr("Semaine", "Week")}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </div>
 
           {loading ? (
             <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{tr("Chargement...", "Loading...")}</div>
           ) : (
             <>
-              {view === "month" ? (
+              {mode === "list" ? (
                 <div className="glass-card" style={{ padding: 10 }}>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {daysInMonthGrid
-                      .filter((d) => d.getMonth() === anchorDate.getMonth())
-                      .map((d) => {
-                        const k = ymd(d);
-                        const isToday = k === todayKey;
-                        const list = eventsByYmd[k] ?? [];
+                  {pagedListEvents.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {tr("Aucun événement pour cette période.", "No event for this period.")}
+                    </div>
+                  ) : (
+                    <div className="marketplace-list marketplace-list-top">
+                      {pagedListEvents.map((e) => {
+                        const groupLabel = groupNames[e.group_id] ?? tr("Groupe", "Group");
+                        const titleLabel = `${eventTypeLabel(e.event_type, locale)} • ${groupLabel}`;
+                        const endIso = e.ends_at ?? e.starts_at;
+                        const oneDay = sameDay(e.starts_at, endIso);
                         return (
-                          <div
-                            key={k}
-                            style={{
-                              border: isToday ? "2px solid rgba(34,197,94,0.75)" : "1px solid rgba(0,0,0,0.10)",
-                              borderRadius: 12,
-                              background: "rgba(255,255,255,0.76)",
-                              padding: 10,
-                              display: "grid",
-                              gap: 6,
-                              boxShadow: isToday ? "0 0 0 2px rgba(34,197,94,0.16) inset" : undefined,
-                            }}
-                          >
-                            <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{dayHeaderLabel(d, dateLocale)}</div>
-                            {list.length > 0
-                              ? list.map((e) => {
-                                  const tone = eventTypeColor(e.event_type);
-                                  const isSelected = selectedEventId === e.id;
-                                  return (
-                                    <div key={e.id} style={{ display: "grid", gap: 6 }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
-                                        style={{
-                                          textAlign: "left",
-                                          border: `1px solid ${tone.border}`,
-                                          borderRadius: 8,
-                                          background: tone.bg,
-                                          color: tone.text,
-                                          fontSize: 11,
-                                          fontWeight: 900,
-                                          padding: "5px 7px",
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)}
-                                      </button>
-                                      {isSelected ? (
-                                        <div style={detailCardStyle}>
-                                          {e.title?.trim() ? (
-                                            <div style={{ fontSize: 14, fontWeight: 980, color: "rgba(0,0,0,0.88)" }}>{e.title}</div>
-                                          ) : null}
-                                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                            <span className="pill-soft">{eventTypeLabel(e.event_type, locale)}</span>
-                                            <span className="pill-soft">{groupNames[e.group_id] ?? tr("Groupe", "Group")}</span>
-                                            <span className="pill-soft">{clubNames[e.club_id] ?? tr("Club", "Club")}</span>
-                                          </div>
-                                          <div style={{ fontSize: 13, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{dateTimeLabel(e.starts_at, dateLocale)}</div>
-                                          {e.ends_at ? (
-                                            <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                              {tr("Fin", "End")}: {dateTimeLabel(e.ends_at, dateLocale)}
-                                            </div>
-                                          ) : null}
-                                          {e.location_text ? <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>📍 {e.location_text}</div> : null}
-                                          {e.coach_note ? (
-                                            <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, background: "rgba(255,255,255,0.72)", padding: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>
-                                              {e.coach_note}
-                                            </div>
-                                          ) : null}
-                                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                            <Link className="cta-green cta-green-inline" href={`/coach/groups/${e.group_id}/planning/${e.id}`}>
-                                              {tr("Accéder à l’événement", "Open event")}
-                                            </Link>
-                                          </div>
-                                        </div>
-                                      ) : null}
+                          <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
+                            <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                              <div style={{ display: "grid", gap: 10 }}>
+                                <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                                  {oneDay ? (
+                                    <div>
+                                      {dateLabelNoTime(e.starts_at, dateLocale)}{" "}
+                                      <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                        {locale === "fr"
+                                          ? `• de ${timeLabel(e.starts_at, dateLocale)} à ${timeLabel(endIso, dateLocale)}`
+                                          : `• from ${timeLabel(e.starts_at, dateLocale)} to ${timeLabel(endIso, dateLocale)}`}
+                                      </span>
                                     </div>
-                                  );
-                                })
-                              : null}
-                          </div>
+                                  ) : (
+                                    <div>
+                                      {dateTimeLabel(e.starts_at, dateLocale)} {locale === "fr" ? "au" : "to"} {dateTimeLabel(endIso, dateLocale)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="hr-soft" style={{ margin: "1px 0" }} />
+                                <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                                  {titleLabel}
+                                </div>
+                                {e.location_text ? (
+                                  <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                    📍 {e.location_text}
+                                  </div>
+                                ) : null}
+                                {e.coach_note?.trim() ? (
+                                  <div style={{ color: "rgba(0,0,0,0.72)", fontWeight: 700, fontSize: 12, whiteSpace: "pre-wrap" }}>
+                                    {e.coach_note}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </Link>
                         );
                       })}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : null}
-
-              {view === "week" ? (
+              {mode === "calendar" && view === "week" ? (
                 <div className="glass-card" style={{ padding: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                     {weekDays.map((d) => {
@@ -488,7 +439,7 @@ export default function CoachCalendarPage() {
                                     cursor: "pointer",
                                   }}
                                 >
-                                  {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)}
+                                  {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)} • {groupNames[e.group_id] ?? tr("Groupe", "Group")}
                                 </button>
                                 {isSelected ? (
                                   <div style={detailCardStyle}>
@@ -529,7 +480,7 @@ export default function CoachCalendarPage() {
                 </div>
               ) : null}
 
-              {view === "day" ? (
+              {mode === "calendar" && view === "day" ? (
                 <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
                   {dayEvents.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun événement ce jour.", "No event this day.")}</div>
@@ -554,7 +505,9 @@ export default function CoachCalendarPage() {
                               cursor: "pointer",
                             }}
                           >
-                            <div style={{ fontSize: 12, fontWeight: 950 }}>{timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)}</div>
+                            <div style={{ fontSize: 12, fontWeight: 950 }}>
+                              {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)} • {groupNames[e.group_id] ?? tr("Groupe", "Group")}
+                            </div>
                             <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.85 }}>{groupNames[e.group_id] ?? tr("Groupe", "Group")}</div>
                           </button>
                           {isSelected ? (
@@ -590,6 +543,32 @@ export default function CoachCalendarPage() {
                       );
                     })
                   )}
+                </div>
+              ) : null}
+
+              {mode === "list" && listEvents.length > 0 ? (
+                <div className="glass-section">
+                  <div className="marketplace-pagination">
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                      disabled={loading || listPage <= 1}
+                    >
+                      {tr("Précédent", "Previous")}
+                    </button>
+                    <div className="marketplace-page-indicator">
+                      {tr("Page", "Page")} {listPage} / {listTotalPages}
+                    </div>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => setListPage((p) => Math.min(listTotalPages, p + 1))}
+                      disabled={loading || listPage >= listTotalPages}
+                    >
+                      {tr("Suivant", "Next")}
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </>

@@ -67,6 +67,11 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
     })();
   }, [open, t]);
 
+  useEffect(() => {
+    if (!open) return;
+    Object.values(ROUTES).forEach((href) => router.prefetch(href));
+  }, [open, router]);
+
   const nav = useMemo(
     () => [
       { label: t("nav.home"), icon: Home, href: ROUTES.home },

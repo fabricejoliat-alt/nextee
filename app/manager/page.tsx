@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Building2, CalendarDays, Layers3, Link2Off, UserCheck, UserCog, UserX, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 
 type GroupRow = { id: string; name: string | null; club_id: string; is_active: boolean | null };
 type EventLite = {
@@ -60,6 +61,16 @@ type DashboardStats = {
   juniorsWithoutParent: Array<{ id: string; first_name: string | null; last_name: string | null }>;
   topAttendance: Array<{ player_id: string; name: string; present: number; total: number; rate: number }>;
 };
+type ManagerHomeCache = {
+  groupNameById: Record<string, string>;
+  upcomingEvents: EventLite[];
+  me: ProfileLite | null;
+  stats: DashboardStats;
+};
+
+const managerHomeCacheKey = (userId: string, window: "30d" | "90d" | "6m" | "1y") =>
+  `page-cache:manager-home:${userId}:${window}`;
+const MANAGER_HOME_CACHE_TTL_MS = 60_000;
 
 function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
@@ -116,6 +127,16 @@ export default function ManagerHomePage() {
         setUpcomingEvents([]);
         setGroupNameById({});
         setMe(null);
+        setLoading(false);
+        return;
+      }
+
+      const cache = readClientPageCache<ManagerHomeCache>(managerHomeCacheKey(uid, assiduityWindow), MANAGER_HOME_CACHE_TTL_MS);
+      if (cache) {
+        setGroupNameById(cache.groupNameById);
+        setUpcomingEvents(cache.upcomingEvents);
+        setMe(cache.me);
+        setStats(cache.stats);
         setLoading(false);
         return;
       }
@@ -334,7 +355,9 @@ export default function ManagerHomePage() {
         if (!plannedCountRes.error) plannedEventsCount = plannedCountRes.count ?? 0;
         if (!pastCountRes.error) pastEventsCount = pastCountRes.count ?? 0;
 
-        const assiduityEventIds = (assiduityEventsRes.data ?? []).map((r: any) => String(r.id ?? "").trim()).filter(Boolean);
+        const assiduityEventIds = ((assiduityEventsRes.data ?? []) as Array<{ id: string | null }>)
+          .map((r) => String(r.id ?? "").trim())
+          .filter(Boolean);
         if (!assiduityEventsRes.error && assiduityEventIds.length > 0) {
           const attendanceRes = await supabase
             .from("club_event_attendees")
@@ -427,6 +450,34 @@ export default function ManagerHomePage() {
 
       const upList = (Array.isArray(upcomingJson?.events) ? upcomingJson.events : []) as EventLite[];
       setUpcomingEvents(upList);
+      writeClientPageCache<ManagerHomeCache>(managerHomeCacheKey(uid, assiduityWindow), {
+        groupNameById: groupMap,
+        upcomingEvents: upList,
+        me: !meRes.error && meRes.data ? (meRes.data as ProfileLite) : null,
+        stats: {
+          clubsCount: clubIds.length,
+          usersCount: uniqueUsers.size,
+          activeUsersCount: activeUserIds.size,
+          inactiveMemberships: allMembers.filter((m) => m.is_active === false).length,
+          groupsCount: groups.length,
+          activeGroupsCount: activeGroups.length,
+          archivedGroupsCount: archivedGroups.length,
+          playersCount: roleSetByUser.player.size,
+          parentsCount: roleSetByUser.parent.size,
+          juniorsWithoutParentCount: juniorsWithoutParent.length,
+          usersWithoutUsernameCount,
+          plannedEventsCount,
+          pastEventsCount,
+          roleCounts: {
+            manager: roleSetByUser.manager.size,
+            coach: roleSetByUser.coach.size,
+            player: roleSetByUser.player.size,
+            parent: roleSetByUser.parent.size,
+          },
+          juniorsWithoutParent,
+          topAttendance,
+        },
+      });
       setLoading(false);
     })();
   }, [locale, assiduityWindow]);

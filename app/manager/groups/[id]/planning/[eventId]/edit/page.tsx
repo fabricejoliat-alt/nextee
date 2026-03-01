@@ -734,7 +734,7 @@ export default function CoachEventEditPage() {
 
     if (attendeesAddedOnSave.length > 0) {
       const addRows = futureEventIds.flatMap((eid) =>
-        attendeesAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
+        attendeesAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
       );
 
       const addRes = await supabase
@@ -847,7 +847,7 @@ export default function CoachEventEditPage() {
       if (attendeeIdsSelected.length > 0) {
         const insA = await supabase
           .from("club_event_attendees")
-          .insert(attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "expected" })));
+          .insert(attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })));
         if (insA.error) throw new Error(insA.error.message);
       }
 
@@ -1008,7 +1008,7 @@ export default function CoachEventEditPage() {
 
         if (attendeeIdsSelected.length > 0) {
           const attRows = createdEventIds.flatMap((eid) =>
-            attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "expected" }))
+            attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
           );
           const aIns = await supabase.from("club_event_attendees").insert(attRows);
           if (aIns.error) throw new Error(aIns.error.message);

@@ -230,8 +230,8 @@ export default function CoachEventPlayerDetailPage() {
         .select("player_id,status")
         .eq("event_id", eventId)
         .eq("player_id", playerId)
-        .maybeSingle();
-      setAttendance(!aRes.error && aRes.data ? (aRes.data as AttendeeRow) : null);
+        .limit(1);
+      setAttendance(!aRes.error && (aRes.data?.[0] ?? null) ? (aRes.data?.[0] as AttendeeRow) : null);
 
       // player feedback
       const pfRes = await supabase
@@ -239,8 +239,9 @@ export default function CoachEventPlayerDetailPage() {
         .select("event_id,player_id,motivation,difficulty,satisfaction,player_note,submitted_at")
         .eq("event_id", eventId)
         .eq("player_id", playerId)
-        .maybeSingle();
-      setPlayerFb(!pfRes.error && pfRes.data ? (pfRes.data as PlayerFeedbackRow) : null);
+        .order("submitted_at", { ascending: false, nullsFirst: false })
+        .limit(1);
+      setPlayerFb(!pfRes.error && (pfRes.data?.[0] ?? null) ? (pfRes.data?.[0] as PlayerFeedbackRow) : null);
 
       // coach feedback (this coach)
       const cfRes = await supabase
@@ -249,8 +250,8 @@ export default function CoachEventPlayerDetailPage() {
         .eq("event_id", eventId)
         .eq("player_id", playerId)
         .eq("coach_id", uRes.user.id)
-        .maybeSingle();
-      setCoachFb(!cfRes.error && cfRes.data ? (cfRes.data as CoachFeedbackRow) : null);
+        .limit(1);
+      setCoachFb(!cfRes.error && (cfRes.data?.[0] ?? null) ? (cfRes.data?.[0] as CoachFeedbackRow) : null);
 
       // ✅ STRUCTURE: training_sessions linked by club_event_id + user_id
       const sRes = await supabase
@@ -260,11 +261,12 @@ export default function CoachEventPlayerDetailPage() {
         )
         .eq("user_id", playerId)
         .eq("club_event_id", eventId)
-        .maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1);
 
       if (sRes.error) throw new Error(sRes.error.message);
 
-      const sess = (sRes.data ?? null) as TrainingSessionRow | null;
+      const sess = ((sRes.data?.[0] ?? null) as TrainingSessionRow | null);
       setSession(sess);
 
       if (sess?.id) {
@@ -320,6 +322,26 @@ export default function CoachEventPlayerDetailPage() {
     if (attendance.status === "excused") return { background: "rgba(245,158,11,0.16)", color: "rgba(120,53,15,1)" };
     return { background: "rgba(59,130,246,0.12)", color: "rgba(30,64,175,1)" };
   }, [attendance]);
+
+  const effectivePlayerFeedback = useMemo<PlayerFeedbackRow | null>(() => {
+    if (playerFb) return playerFb;
+    if (!session) return null;
+    const hasAnyValue =
+      typeof session.motivation === "number" ||
+      typeof session.difficulty === "number" ||
+      typeof session.satisfaction === "number" ||
+      Boolean((session.notes ?? "").trim());
+    if (!hasAnyValue) return null;
+    return {
+      event_id: eventId,
+      player_id: playerId,
+      motivation: session.motivation,
+      difficulty: session.difficulty,
+      satisfaction: session.satisfaction,
+      player_note: session.notes,
+      submitted_at: session.created_at ?? null,
+    };
+  }, [eventId, playerFb, playerId, session]);
 
   return (
     <div className="player-dashboard-bg">
@@ -404,11 +426,9 @@ export default function CoachEventPlayerDetailPage() {
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
                   {!session ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Le joueur n’a pas encore saisi son entraînement.
-                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : items.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Session trouvée, mais aucun poste enregistré.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                       {items.map((it) => {
@@ -426,14 +446,14 @@ export default function CoachEventPlayerDetailPage() {
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>
-                  {!playerFb ? (
+                  {!effectivePlayerFeedback ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <StatBar icon={<Flame size={16} />} label="Motivation" value={playerFb.motivation} />
-                      <StatBar icon={<Mountain size={16} />} label="Difficulté" value={playerFb.difficulty} />
-                      <StatBar icon={<Smile size={16} />} label="Satisfaction" value={playerFb.satisfaction} />
-                      {playerFb.player_note ? (
+                      <StatBar icon={<Flame size={16} />} label="Motivation" value={effectivePlayerFeedback.motivation} />
+                      <StatBar icon={<Mountain size={16} />} label="Difficulté" value={effectivePlayerFeedback.difficulty} />
+                      <StatBar icon={<Smile size={16} />} label="Satisfaction" value={effectivePlayerFeedback.satisfaction} />
+                      {effectivePlayerFeedback.player_note ? (
                         <div
                           style={{
                             border: "1px solid rgba(0,0,0,0.10)",
@@ -447,7 +467,7 @@ export default function CoachEventPlayerDetailPage() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          {playerFb.player_note}
+                          {effectivePlayerFeedback.player_note}
                         </div>
                       ) : (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucune note joueur.</div>
