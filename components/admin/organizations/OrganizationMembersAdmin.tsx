@@ -161,8 +161,8 @@ export default function OrganizationMembersAdmin() {
 
     setBusy(true);
     try {
-      const { error } = await runWithTimeout(() =>
-        supabase.from("club_members").insert({
+      const { error } = await runWithTimeout(async () =>
+        await supabase.from("club_members").insert({
           club_id: organizationId,
           user_id: selectedUserId,
           role: selectedRole,
@@ -202,8 +202,8 @@ export default function OrganizationMembersAdmin() {
     setError(null);
     setBusy(true);
     try {
-      const { error } = await runWithTimeout(() =>
-        supabase.from("club_members").update(patch).eq("id", memberId)
+      const { error } = await runWithTimeout(async () =>
+        await supabase.from("club_members").update(patch).eq("id", memberId)
       );
 
       if (error) {
@@ -227,8 +227,8 @@ export default function OrganizationMembersAdmin() {
     setError(null);
     setBusy(true);
     try {
-      const { error } = await runWithTimeout(() =>
-        supabase.from("club_members").delete().eq("id", memberId)
+      const { error } = await runWithTimeout(async () =>
+        await supabase.from("club_members").delete().eq("id", memberId)
       );
 
       if (error) {
