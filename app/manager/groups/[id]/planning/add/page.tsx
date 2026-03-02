@@ -803,13 +803,18 @@ export default function CoachGroupPlanningPage() {
         if (cIns.error) throw new Error(cIns.error.message);
       }
 
-      // attendees
-      const attendeeIds = Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)]));
-      if (attendeeIds.length > 0) {
-        const rows = attendeeIds.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" }));
+      // attendees: always seed all group players server-side, then add optional guests
+      const seeded = await supabase.rpc("staff_seed_group_players_attendees", { p_event_id: eventId });
+      if (seeded.error) throw new Error(seeded.error.message);
+      const seededPlayerIds = ((seeded.data ?? []) as Array<{ player_id: string }>).map((r) => r.player_id);
+
+      const guestIds = Object.keys(selectedGuests);
+      if (guestIds.length > 0) {
+        const rows = guestIds.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" }));
         const aIns = await supabase.from("club_event_attendees").insert(rows);
         if (aIns.error) throw new Error(aIns.error.message);
       }
+      const attendeeIds = Array.from(new Set([...seededPlayerIds, ...guestIds]));
 
       await saveStructureForEvents([eventId]);
 
@@ -937,13 +942,21 @@ export default function CoachGroupPlanningPage() {
         if (cIns.error) throw new Error(cIns.error.message);
       }
 
-      // attendees
-      const attendeeIds = Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)]));
-      if (attendeeIds.length > 0 && createdEventIds.length > 0) {
-        const attRows = createdEventIds.flatMap((eid) => attendeeIds.map((pid) => ({ event_id: eid, player_id: pid, status: "present" })));
+      // attendees: seed all group players on each created event, then add optional guests
+      const seededPlayerIdSet = new Set<string>();
+      for (const eid of createdEventIds) {
+        const seeded = await supabase.rpc("staff_seed_group_players_attendees", { p_event_id: eid });
+        if (seeded.error) throw new Error(seeded.error.message);
+        ((seeded.data ?? []) as Array<{ player_id: string }>).forEach((r) => seededPlayerIdSet.add(r.player_id));
+      }
+
+      const guestIds = Object.keys(selectedGuests);
+      if (guestIds.length > 0 && createdEventIds.length > 0) {
+        const attRows = createdEventIds.flatMap((eid) => guestIds.map((pid) => ({ event_id: eid, player_id: pid, status: "present" })));
         const aIns = await supabase.from("club_event_attendees").insert(attRows);
         if (aIns.error) throw new Error(aIns.error.message);
       }
+      const attendeeIds = Array.from(new Set([...Array.from(seededPlayerIdSet), ...guestIds]));
 
       await saveStructureForEvents(createdEventIds);
 

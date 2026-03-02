@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import {
   Calendar,
   PlusCircle,
@@ -539,6 +540,10 @@ export default function CoachGroupPlanningPage() {
 
   const playerIdSet = useMemo(() => new Set(players.map((p) => p.id)), [players]);
   const coachIdSet = useMemo(() => new Set(coaches.map((c) => c.id)), [coaches]);
+  const viewerIsManager = useMemo(
+    () => clubMembers.some((m) => m.id === meId && m.role === "manager"),
+    [clubMembers, meId]
+  );
   const personById = useMemo(() => {
     const map = new Map<string, ProfileLite | CoachLite | ClubMemberLite>();
     players.forEach((p) => map.set(p.id, p));
@@ -922,6 +927,12 @@ export default function CoachGroupPlanningPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, filterMode, eventTypeFilter, rangeFrom, rangeTo]);
 
+  useEffect(() => {
+    if (!viewerIsManager) return;
+    if (pendingEvaluationsOnly) setPendingEvaluationsOnly(false);
+    if (filterMode === "range") setFilterMode("upcoming");
+  }, [viewerIsManager, pendingEvaluationsOnly, filterMode]);
+
   async function createSingleEvent() {
     if (!group || busy) return;
     setBusy(true);
@@ -1229,41 +1240,45 @@ export default function CoachGroupPlanningPage() {
                 {tr("Passés", "Past")} ({filterCounts.past})
               </button>
 
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("range");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "range" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("Plage de dates", "Date range")} ({filterCounts.range})
-              </button>
+              {!viewerIsManager ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setPendingEvaluationsOnly(false);
+                    setFilterMode("range");
+                  }}
+                  style={{
+                    ...filterButtonBaseStyle,
+                    ...(filterMode === "range" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
+                    ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
+                  }}
+                >
+                  {tr("Plage de dates", "Date range")} ({filterCounts.range})
+                </button>
+              ) : null}
 
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setFilterMode("past");
-                  setEventTypeFilter("all");
-                  setPendingEvaluationsOnly((prev) => !prev);
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(pendingEvaluationsOnly ? pendingFilterActiveStyle : pendingFilterStyle),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("À évaluer", "To evaluate")} ({pendingEvaluationCount})
-              </button>
+              {!viewerIsManager ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setFilterMode("past");
+                    setEventTypeFilter("all");
+                    setPendingEvaluationsOnly((prev) => !prev);
+                  }}
+                  style={{
+                    ...filterButtonBaseStyle,
+                    ...(pendingEvaluationsOnly ? pendingFilterActiveStyle : pendingFilterStyle),
+                    ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
+                  }}
+                >
+                  {tr("À évaluer", "To evaluate")} ({pendingEvaluationCount})
+                </button>
+              ) : null}
             </div>
 
-            {filterMode === "range" ? (
+            {!viewerIsManager && filterMode === "range" ? (
               <>
                 <div className="hr-soft" />
                 <div className="grid-2">
@@ -1285,7 +1300,7 @@ export default function CoachGroupPlanningPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              <CompactLoadingBlock label={t("common.loading")} />
             ) : listedEvents.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
                 {pendingEvaluationsOnly

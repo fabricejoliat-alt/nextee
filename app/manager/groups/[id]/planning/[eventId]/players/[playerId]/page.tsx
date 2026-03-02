@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Flame, Mountain, Smile, Target } from "lucide-react";
 
 type EventRow = {
@@ -345,7 +346,7 @@ export default function CoachEventPlayerDetailPage() {
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            <div className="glass-card"><CompactLoadingBlock label="Chargement..." /></div>
           ) : !event || !player ? (
             <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
           ) : (

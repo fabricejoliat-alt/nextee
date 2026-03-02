@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { X } from "lucide-react";
+import { PlusCircle, X } from "lucide-react";
 
 type ProfileLite = {
   id: string;
@@ -327,6 +328,18 @@ export default function OrganizationGroupsBoard({
               ))}
           </div>
         )}
+      </div>
+
+      <div style={{ marginTop: 2, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>Groupes</h3>
+        <Link
+          className="cta-green cta-green-inline"
+          href={`/manager/organizations/${organizationId}/groups/new`}
+          style={{ padding: "7px 10px", fontSize: 13, fontWeight: 800, minHeight: 34 }}
+        >
+          <PlusCircle size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+          Nouveau groupe
+        </Link>
       </div>
 
       <div

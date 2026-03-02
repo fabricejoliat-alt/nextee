@@ -138,7 +138,7 @@ export default function CoachGroupsPage() {
       return;
     }
 
-    // 1) Groupes assignés au coach + join club name via coach_groups -> clubs
+    // 1) Groupes où l'utilisateur est explicitement coach du groupe
     const { data: coachGroups, error: cgErr } = await supabase
       .from("coach_group_coaches")
       .select(
@@ -170,8 +170,59 @@ export default function CoachGroupsPage() {
       return;
     }
 
-    // ✅ Fix typage TS (reconstruit proprement)
-    const safeRows: CoachGroupCoachRow[] = (coachGroups ?? [])
+    // 2) Clubs gérés par le manager + tous leurs groupes
+    const { data: managedClubs, error: managedErr } = await supabase
+      .from("club_members")
+      .select("club_id")
+      .eq("user_id", uid)
+      .eq("is_active", true)
+      .eq("role", "manager");
+
+    if (managedErr) {
+      console.error(managedErr);
+      setRows([]);
+      setCategories({});
+      setPlayerCounts({});
+      setPlayersByGroup({});
+      setCoachesByGroup({});
+      setLoading(false);
+      return;
+    }
+
+    const managedClubIds = Array.from(
+      new Set((managedClubs ?? []).map((r: any) => String(r?.club_id ?? "")).filter(Boolean))
+    );
+
+    let managedGroups: CoachGroup[] = [];
+    if (managedClubIds.length > 0) {
+      const { data: mg, error: mgErr } = await supabase
+        .from("coach_groups")
+        .select(
+          `
+          id,
+          created_at,
+          club_id,
+          name,
+          is_active,
+          head_coach_user_id,
+          clubs:clubs ( id, name )
+        `
+        )
+        .in("club_id", managedClubIds)
+        .order("created_at", { ascending: false });
+      if (mgErr) {
+        console.error(mgErr);
+      } else {
+        managedGroups = ((mg ?? []) as any[]).map((g) => ({
+          ...g,
+          clubs: g?.clubs ?? null,
+        }));
+      }
+    }
+
+    // ✅ Merge: groupes coach + groupes des clubs managés
+    const byGroupId = new Map<string, CoachGroupCoachRow>();
+    ((coachGroups ?? []) as any[])
       .filter((r: any) => r.coach_groups)
       .map((r: any) => ({
         group_id: r.group_id,
@@ -180,7 +231,29 @@ export default function CoachGroupsPage() {
           ...r.coach_groups,
           clubs: r.coach_groups?.clubs ?? null,
         },
-      }));
+      }))
+      .forEach((r) => byGroupId.set(r.group_id, r));
+
+    managedGroups.forEach((g) => {
+      const existing = byGroupId.get(g.id);
+      if (existing) {
+        if (!existing.coach_groups) {
+          byGroupId.set(g.id, { ...existing, coach_groups: g });
+        }
+      } else {
+        byGroupId.set(g.id, {
+          group_id: g.id,
+          is_head: g.head_coach_user_id === uid,
+          coach_groups: g,
+        });
+      }
+    });
+
+    const safeRows: CoachGroupCoachRow[] = Array.from(byGroupId.values()).sort((a, b) => {
+      const ad = a.coach_groups?.created_at ?? "";
+      const bd = b.coach_groups?.created_at ?? "";
+      return bd.localeCompare(ad);
+    });
 
     setRows(safeRows);
 

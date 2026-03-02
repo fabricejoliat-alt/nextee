@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type MemberRow = {
   id: string;
@@ -368,7 +369,7 @@ export default function ManagerUsersPage() {
         </div>
 
         {loading ? (
-          <div>Chargement…</div>
+          <ListLoadingBlock label="Chargement..." />
         ) : filtered.length === 0 ? (
           <div style={{ color: "var(--muted)" }}>Aucun utilisateur.</div>
         ) : (

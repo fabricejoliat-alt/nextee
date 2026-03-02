@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Pencil } from "lucide-react";
 
 type EventRow = {
@@ -329,7 +330,7 @@ export default function CoachEventPlayerDetailPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <CompactLoadingBlock label="Chargement..." />
             ) : !event || !player ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (

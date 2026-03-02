@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import {
   ResponsiveContainer,
   LineChart,
@@ -1479,7 +1480,7 @@ function presetToSelectValue(p: Preset): Preset {
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
         {!accessChecked ? (
-          <div className="glass-card" style={{ marginTop: 12, fontWeight: 800, opacity: 0.8 }}>{t("common.loading")}</div>
+          <div className="glass-card" style={{ marginTop: 12 }}><CompactLoadingBlock label={t("common.loading")} /></div>
         ) : null}
 
         {/* ===== Header ===== */}
@@ -1744,7 +1745,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.volume")}</div>
 
               {loading ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : filteredSessions.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
@@ -1932,7 +1933,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.playVolume")}</div>
 
               {loadingRounds || loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : rounds.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
               ) : (
@@ -2007,7 +2008,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.scoreDistribution")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : holeAgg.distDen === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.notEnoughHolesForAnalysis")}</div>
               ) : (
@@ -2040,7 +2041,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.consistency")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : rounds.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
@@ -2085,7 +2086,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.scoresByPar")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : holeAgg.holesPlayed === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
@@ -2128,7 +2129,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{t("golfDashboard.frontBackTitle")}</div>
 
               {loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <CompactLoadingBlock label={t("common.loading")} />
               ) : holeAgg.holesPlayed === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (

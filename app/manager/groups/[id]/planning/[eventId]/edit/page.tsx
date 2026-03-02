@@ -8,6 +8,7 @@ import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
 import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -1184,7 +1185,7 @@ export default function CoachEventEditPage() {
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 12 }}>
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <CompactLoadingBlock label="Chargement..." />
             ) : !event ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
             ) : (

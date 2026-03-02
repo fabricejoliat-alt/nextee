@@ -297,19 +297,16 @@ export default function CoachGroupEditPage() {
 
   // editable group info
   const [groupName, setGroupName] = useState("");
-  const [isActive, setIsActive] = useState(true);
 
   // categories
   const [newCat, setNewCat] = useState("");
   const [savingCat, setSavingCat] = useState(false);
 
   // club members (for adding)
-  const [clubMembersPlayers, setClubMembersPlayers] = useState<ProfileLite[]>([]);
   const [clubMembersCoaches, setClubMembersCoaches] = useState<ProfileLite[]>([]); // ✅ only role=coach
 
   async function loadClubMembers(cid: string, uid: string) {
     if (!cid) {
-      setClubMembersPlayers([]);
       setClubMembersCoaches([]);
       return;
     }
@@ -322,15 +319,12 @@ export default function CoachGroupEditPage() {
 
     if (memErr) {
       console.error(memErr);
-      setClubMembersPlayers([]);
       setClubMembersCoaches([]);
       return;
     }
 
     const members = (mem as ClubMemberRow[] | null) ?? [];
     const uniq = (arr: string[]) => Array.from(new Set(arr)).filter(Boolean);
-
-    const playerIds = uniq(members.filter((m) => m.role === "player").map((m) => m.user_id));
 
     // ✅ assistants = ONLY role "coach"
     const coachIds = uniq(members.filter((m) => m.role === "coach").map((m) => m.user_id));
@@ -349,15 +343,9 @@ export default function CoachGroupEditPage() {
       return (data ?? []) as ProfileLite[];
     }
 
-    const [playerProfiles, coachProfiles] = await Promise.all([
-      fetchProfiles(playerIds),
-      fetchProfiles(coachIds),
-    ]);
-
-    playerProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+    const coachProfiles = await fetchProfiles(coachIds);
     coachProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
 
-    setClubMembersPlayers(playerProfiles.filter((p) => p.id !== uid));
     setClubMembersCoaches(coachProfiles.filter((p) => p.id !== uid));
   }
 
@@ -423,7 +411,6 @@ export default function CoachGroupEditPage() {
 
     if (g) {
       setGroupName(g.name ?? "");
-      setIsActive(!!g.is_active);
     }
 
     const catRes = await supabase
@@ -474,7 +461,6 @@ export default function CoachGroupEditPage() {
     if (g?.club_id) {
       await loadClubMembers(g.club_id, uid);
     } else {
-      setClubMembersPlayers([]);
       setClubMembersCoaches([]);
     }
 
@@ -525,7 +511,6 @@ export default function CoachGroupEditPage() {
       .from("coach_groups")
       .update({
         name: groupName.trim(),
-        is_active: isActive,
       })
       .eq("id", group.id);
 
@@ -590,34 +575,6 @@ export default function CoachGroupEditPage() {
   }
 
   // --------- PLAYERS ----------
-  const playerIdsInGroup = useMemo(() => new Set(players.map((p) => p.player_user_id)), [players]);
-
-  const playerCandidates = useMemo(() => {
-    return clubMembersPlayers.filter((p) => !playerIdsInGroup.has(p.id));
-  }, [clubMembersPlayers, playerIdsInGroup]);
-
-  async function addPlayerToGroup(p: ProfileLite) {
-    if (!groupId || busy) return;
-    if (playerIdsInGroup.has(p.id)) return;
-
-    setBusy(true);
-    setErr(null);
-
-    const { error } = await supabase.from("coach_group_players").insert({
-      group_id: groupId,
-      player_user_id: p.id,
-    });
-
-    if (error) {
-      setErr(error.message);
-      setBusy(false);
-      return;
-    }
-
-    await load();
-    setBusy(false);
-  }
-
   // ✅ FIX RLS: delete player via RPC (security definer)
   async function removePlayerFromGroup(rowId: string) {
     if (!rowId || busy) return;
@@ -766,17 +723,6 @@ export default function CoachGroupEditPage() {
                         />
                       </label>
 
-                      <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <input
-                          type="checkbox"
-                          checked={isActive}
-                          onChange={(e) => setIsActive(e.target.checked)}
-                          disabled={busy}
-                          style={{ width: 18, height: 18 }}
-                        />
-                        <span style={fieldLabelStyle}>Groupe actif</span>
-                      </label>
-
                       <button
                         className="btn"
                         type="submit"
@@ -875,17 +821,6 @@ export default function CoachGroupEditPage() {
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <SearchSelect
-                      label="Ajouter un joueur"
-                      placeholder="Tape un nom ou handicap…"
-                      items={playerCandidates}
-                      disabled={busy || !canManagePlayers}
-                      itemSubtitle={(p) =>
-                        `Handicap ${typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}`
-                      }
-                      onSelect={addPlayerToGroup}
-                    />
-
                     <div style={{ display: "grid", gap: 10 }}>
                       <div className="pill-soft">Dans le groupe ({players.length})</div>
 
@@ -1069,33 +1004,6 @@ export default function CoachGroupEditPage() {
                   </div>
                 </div>
 
-                {/* DELETE GROUP */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">Danger</div>
-
-                  <div style={{ marginTop: 8, fontWeight: 900, color: "#b91c1c" }}>
-                    Attention, la suppression du groupe est irréversible.
-                  </div>
-
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)", marginTop: 8 }}>
-                    {canDeleteGroup ? (
-                      <span>Tu es manager : tu peux supprimer ce groupe.</span>
-                    ) : (
-                      <span>Seul un manager peut supprimer ce groupe.</span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={deleteGroup}
-                    disabled={busy || !canDeleteGroup}
-                    style={{ width: "100%", marginTop: 12 }}
-                  >
-                    <Trash2 size={18} />
-                    Supprimer le groupe
-                  </button>
-                </div>
               </div>
             )}
           </div>

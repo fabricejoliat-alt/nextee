@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
@@ -430,7 +431,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            <div className="glass-card"><CompactLoadingBlock label="Chargement..." /></div>
           ) : !event || !player ? (
             <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
           ) : (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 export default function ManagerOrganizationsPage() {
   const { locale } = useI18n();
@@ -62,7 +63,7 @@ export default function ManagerOrganizationsPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>{locale === "fr" ? "Chargement…" : "Loading…"}</div>
+              <ListLoadingBlock label={locale === "fr" ? "Chargement..." : "Loading..."} />
             ) : rows.length === 0 ? (
               <div style={{ opacity: 0.7 }}>
                 {locale === "fr" ? "Aucun club manager trouvé." : "No managed club found."}

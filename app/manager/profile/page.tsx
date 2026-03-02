@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type ProfileRow = {
   id: string;
@@ -448,7 +449,7 @@ export default function PlayerProfilePage() {
 
           <div className="glass-card">
             {loading ? (
-              <div style={{ opacity: 0.85, fontWeight: 800 }}>Chargement…</div>
+              <CompactLoadingBlock label="Chargement..." />
             ) : (
               <div style={{ display: "grid", gap: 16 }}>
                 {/* Identité */}

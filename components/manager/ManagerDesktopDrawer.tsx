@@ -5,11 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays } from "lucide-react";
+import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays, List, PlusCircle } from "lucide-react";
 
 const ROUTES = {
   home: "/manager",
   users: "/manager/users",
+  groups: "/manager/groups",
+  groupsNew: "/manager/groups/new",
   events: "/manager/calendar",
   eventsCreate: "/manager/events/new",
   consents: "/manager/parents",
@@ -77,7 +79,15 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
   const nav = useMemo(
     () => [
       { label: locale === "fr" ? "Gestion des utilisateurs" : "User management", icon: ShieldCheck, href: ROUTES.users },
-      { label: locale === "fr" ? "Gestion des groupes" : "Group management", icon: Building2, href: ROUTES.organizations },
+      {
+        label: locale === "fr" ? "Gestion des groupes" : "Group management",
+        icon: Building2,
+        children: [
+          { label: locale === "fr" ? "Tous les groupes" : "All groups", icon: List, href: ROUTES.groups },
+          { label: locale === "fr" ? "Ajouter un groupe" : "Add group", icon: PlusCircle, href: ROUTES.groupsNew },
+          { label: locale === "fr" ? "Organiser les groupes" : "Organize groups", icon: Building2, href: ROUTES.organizations },
+        ],
+      },
       { label: locale === "fr" ? "Gestion des événements" : "Event management", icon: CalendarDays, href: ROUTES.events },
       { label: locale === "fr" ? "Ajouter un événement" : "Add event", icon: CalendarDays, href: ROUTES.eventsCreate },
       { label: locale === "fr" ? "Gestion des consentements" : "Consent management", icon: Link2, href: ROUTES.consents },
@@ -113,20 +123,55 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
         <nav className="drawer-nav">
           {nav.map((item) => {
             const Icon = item.icon;
-            const active = isActive(pathname, item.href);
+            const activeTop = item.href
+              ? isActive(pathname, item.href)
+              : item.children?.some((c) => isActive(pathname, c.href));
+
+            if (item.href) {
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`drawer-item ${activeTop ? "active" : ""}`}
+                  onClick={onClose}
+                >
+                  <span className="drawer-item-left">
+                    <Icon size={18} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </span>
+                </Link>
+              );
+            }
 
             return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={`drawer-item ${active ? "active" : ""}`}
-                onClick={onClose}
-              >
-                <span className="drawer-item-left">
-                  <Icon size={18} strokeWidth={2} />
-                  <span>{item.label}</span>
-                </span>
-              </Link>
+              <div key={item.label} className="drawer-group">
+                <div className={`drawer-item drawer-item--group ${activeTop ? "active" : ""}`}>
+                  <span className="drawer-item-left">
+                    <Icon size={18} strokeWidth={2} />
+                    <span>{item.label}</span>
+                  </span>
+                </div>
+
+                <div className="drawer-sub">
+                  {item.children?.map((c) => {
+                    const CIcon = c.icon;
+                    const active = isActive(pathname, c.href);
+                    return (
+                      <Link
+                        key={c.label}
+                        href={c.href}
+                        className={`drawer-subitem ${active ? "active" : ""}`}
+                        onClick={onClose}
+                      >
+                        <span className="drawer-item-left">
+                          <CIcon size={16} strokeWidth={2} />
+                          <span>{c.label}</span>
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>

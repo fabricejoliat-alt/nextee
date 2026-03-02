@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { PlusCircle, Search } from "lucide-react";
+import { PlusCircle, Search, Settings } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
@@ -112,7 +112,7 @@ function avatarNode(p?: ProfileMini | null) {
 }
 
 export default function CoachGroupsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<CoachGroupCoachRow[]>([]);
   const [categories, setCategories] = useState<Record<string, string[]>>({});
@@ -473,99 +473,110 @@ export default function CoachGroupsPage() {
                     const coachProfiles = x.coachProfiles ?? [];
 
                     return (
-                      <Link
+                      <div
                         key={x.group.id}
-                        href={`/coach/groups/${x.group.id}`}
                         className="glass-card"
                         style={{
                           padding: 14,
                           opacity: x.group.is_active ? 1 : 0.75,
                         }}
                       >
-                        <div style={{ fontWeight: 950 }}>{x.group.name}</div>
-                        <div
-                          style={{
-                            opacity: 0.62,
-                            fontWeight: 700,
-                            fontSize: 12,
-                            marginTop: 6,
-                            lineHeight: 1.25,
-                          }}
+                        <Link
+                          href={`/coach/groups/${x.group.id}`}
+                          style={{ display: "block", color: "inherit", textDecoration: "none" }}
                         >
-                          {clubName} • {players} {t(players > 1 ? "coachGroups.playersPlural" : "coachGroups.playersSingle")}
-                        </div>
-
-                        <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          <Badge
-                            label={x.group.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}
-                            tone={x.group.is_active ? "green" : "neutral"}
-                          />
-                          {x.is_head ? <Badge label={t("trainingNew.headCoach")} tone="blue" /> : null}
-
-                          {cats.length ? (
-                            cats.slice(0, 4).map((c) => (
-                              <Badge key={c} label={c} tone={toneForCategory(c) as any} />
-                            ))
-                          ) : (
-                            <Badge label={t("coachGroups.noCategory")} tone="neutral" />
-                          )}
-
-                          {cats.length > 4 ? (
-                            <Badge label={`+${cats.length - 4}`} tone="neutral" />
-                          ) : null}
-                        </div>
-
-                        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.playersTitle")}</div>
-                            <div style={{ display: "grid", gap: 6 }}>
-                              {playerProfiles.length === 0 ? (
-                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noPlayer")}</div>
-                              ) : (
-                                <>
-                                  {playerProfiles.map((p) => (
-                                    <div key={p.id} style={miniRowStyle}>
-                                      <div style={miniAvatarBoxStyle} aria-hidden="true">
-                                        {avatarNode(p)}
-                                      </div>
-                                      <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
-                                        {fullName(p)}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </>
-                              )}
-                            </div>
+                          <div style={{ fontWeight: 950 }}>{x.group.name}</div>
+                          <div
+                            style={{
+                              opacity: 0.62,
+                              fontWeight: 700,
+                              fontSize: 12,
+                              marginTop: 6,
+                              lineHeight: 1.25,
+                            }}
+                          >
+                            {clubName} • {players} {t(players > 1 ? "coachGroups.playersPlural" : "coachGroups.playersSingle")}
                           </div>
 
-                          <div style={{ display: "grid", gap: 6 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.coachesTitle")}</div>
+                          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            <Badge
+                              label={x.group.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}
+                              tone={x.group.is_active ? "green" : "neutral"}
+                            />
+                            {x.is_head ? <Badge label={t("trainingNew.headCoach")} tone="blue" /> : null}
+
+                            {cats.length ? (
+                              cats.slice(0, 4).map((c) => (
+                                <Badge key={c} label={c} tone={toneForCategory(c) as any} />
+                              ))
+                            ) : (
+                              <Badge label={t("coachGroups.noCategory")} tone="neutral" />
+                            )}
+
+                            {cats.length > 4 ? (
+                              <Badge label={`+${cats.length - 4}`} tone="neutral" />
+                            ) : null}
+                          </div>
+
+                          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                             <div style={{ display: "grid", gap: 6 }}>
-                              {coachProfiles.length === 0 ? (
-                                <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noCoach")}</div>
-                              ) : (
-                                <>
-                                  {coachProfiles.slice(0, 3).map((p) => (
-                                    <div key={p.id} style={miniRowStyle}>
-                                      <div style={miniAvatarBoxStyle} aria-hidden="true">
-                                        {avatarNode(p)}
+                              <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.playersTitle")}</div>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                {playerProfiles.length === 0 ? (
+                                  <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noPlayer")}</div>
+                                ) : (
+                                  <>
+                                    {playerProfiles.map((p) => (
+                                      <div key={p.id} style={miniRowStyle}>
+                                        <div style={miniAvatarBoxStyle} aria-hidden="true">
+                                          {avatarNode(p)}
+                                        </div>
+                                        <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
+                                          {fullName(p)}
+                                        </div>
                                       </div>
-                                      <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
-                                        {fullName(p)}
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "grid", gap: 6 }}>
+                              <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>{t("coachGroups.coachesTitle")}</div>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                {coachProfiles.length === 0 ? (
+                                  <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noCoach")}</div>
+                                ) : (
+                                  <>
+                                    {coachProfiles.slice(0, 3).map((p) => (
+                                      <div key={p.id} style={miniRowStyle}>
+                                        <div style={miniAvatarBoxStyle} aria-hidden="true">
+                                          {avatarNode(p)}
+                                        </div>
+                                        <div className="truncate" style={{ fontSize: 12, fontWeight: 900 }}>
+                                          {fullName(p)}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
-                                  {coachProfiles.length > 3 ? (
-                                    <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
-                                      +{coachProfiles.length - 3} {t(coachProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
-                                    </div>
-                                  ) : null}
-                                </>
-                              )}
+                                    ))}
+                                    {coachProfiles.length > 3 ? (
+                                      <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
+                                        +{coachProfiles.length - 3} {t(coachProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
+                                      </div>
+                                    ) : null}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
+                        </Link>
+
+                        <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                          <Link className="btn" href={`/coach/groups/${x.group.id}`}>
+                            <Settings size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                            {locale === "fr" ? "Paramétrer" : "Configure"}
+                          </Link>
                         </div>
-                      </Link>
+                      </div>
                     );
                   })}
                 </div>

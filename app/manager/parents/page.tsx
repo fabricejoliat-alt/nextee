@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
 type MembershipProfileRow = { user_id: string; profiles?: ProfileLite | null };
@@ -257,7 +258,7 @@ export default function ManagerParentsPage() {
               />
             </div>
             {loading ? (
-              <div>{locale === "fr" ? "Chargement…" : "Loading…"}</div>
+              <ListLoadingBlock label={locale === "fr" ? "Chargement..." : "Loading..."} />
             ) : filteredLinks.length === 0 ? (
               <div style={{ opacity: 0.7 }}>{locale === "fr" ? "Aucun rattachement." : "No links."}</div>
             ) : (

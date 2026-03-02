@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { PlusCircle, Search, Trash2, Users, Tag, User } from "lucide-react";
 
 
@@ -59,6 +60,8 @@ function avatarNode(p?: ProfileLite | null) {
 export default function CoachGroupNewPage() {
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organizationId = String(searchParams.get("organizationId") ?? "").trim();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -132,8 +135,17 @@ export default function CoachGroupNewPage() {
       return;
     }
 
-    setClubs(list);
-    setClubId((prev) => prev || list[0]?.id || "");
+    const filteredList = organizationId ? list.filter((c) => c.id === organizationId) : list;
+    if (organizationId && filteredList.length === 0) {
+      setError("Organisation introuvable ou non autorisée.");
+      setClubs([]);
+      setClubId("");
+      setLoading(false);
+      return;
+    }
+
+    setClubs(filteredList);
+    setClubId((prev) => prev || filteredList[0]?.id || "");
 
     setLoading(false);
   }
@@ -190,7 +202,7 @@ export default function CoachGroupNewPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     (async () => {
@@ -208,8 +220,9 @@ export default function CoachGroupNewPage() {
     if (!userId) return false;
     if (!clubId) return false;
     if (groupName.trim().length < 2) return false;
+    if (Object.keys(selectedCoaches).length < 1) return false;
     return true;
-  }, [busy, userId, clubId, groupName]);
+  }, [busy, userId, clubId, groupName, selectedPlayers, selectedCoaches]);
 
   function addCategory() {
     const v = catInput.trim();
@@ -286,7 +299,14 @@ async function handleCreate(e: React.FormEvent) {
   setBusy(true);
   setError(null);
 
- 
+  const selectedCoachIds = selectedCoachesList.map((p) => p.id);
+  const selectedPlayerIds = selectedPlayersList.map((p) => p.id);
+  const headCoachId = selectedCoachIds[0] ?? "";
+  if (!headCoachId) {
+    setError("Sélectionne au moins un coach.");
+    setBusy(false);
+    return;
+  }
 
   // ✅ Pré-check droits sur le club sélectionné
   const pre = await supabase
@@ -305,9 +325,6 @@ async function handleCreate(e: React.FormEvent) {
     return;
   }
 
-  const { data: u } = await supabase.auth.getUser();
-  console.log("getUser()", u.user?.id);
-
   // ✅ IMPORTANT: pas de .select().single() (RETURNING) car ta policy SELECT bloque avant l'ajout du head coach
   const groupIdNew = crypto.randomUUID();
 
@@ -316,10 +333,8 @@ async function handleCreate(e: React.FormEvent) {
     club_id: clubId,
     name: groupName.trim(),
     is_active: isActive,
-    head_coach_user_id: userId,
+    head_coach_user_id: headCoachId,
   });
-
-  const check = await supabase.from("coach_groups").select("id,club_id").eq("id", groupIdNew).maybeSingle();
 
 
   if (gRes.error) {
@@ -331,7 +346,7 @@ async function handleCreate(e: React.FormEvent) {
   // ✅ head coach (obligatoire)
   const headRes = await supabase.from("coach_group_coaches").insert({
     group_id: groupIdNew,
-    coach_user_id: userId,
+    coach_user_id: headCoachId,
     is_head: true,
   });
 
@@ -344,7 +359,7 @@ async function handleCreate(e: React.FormEvent) {
   }
 
   // ✅ assistants (optionnel)
-  const assistantIds = Object.keys(selectedCoaches);
+  const assistantIds = selectedCoachIds.filter((id) => id !== headCoachId);
   if (assistantIds.length > 0) {
     const rows = assistantIds.map((cid) => ({
       group_id: groupIdNew,
@@ -363,9 +378,8 @@ async function handleCreate(e: React.FormEvent) {
   }
 
   // ✅ players (optionnel)
-  const playerIds = Object.keys(selectedPlayers);
-  if (playerIds.length > 0) {
-    const rows = playerIds.map((pid) => ({ group_id: groupIdNew, player_user_id: pid }));
+  if (selectedPlayerIds.length > 0) {
+    const rows = selectedPlayerIds.map((pid) => ({ group_id: groupIdNew, player_user_id: pid }));
     const pRes = await supabase.from("coach_group_players").insert(rows);
     if (pRes.error) setError(`Groupe créé, mais erreur ajout joueurs: ${pRes.error.message}`);
   }
@@ -396,7 +410,10 @@ async function handleCreate(e: React.FormEvent) {
                 Retour
               </button>
 
-              <Link className="cta-green cta-green-inline" href="/manager/groups">
+              <Link
+                className="cta-green cta-green-inline"
+                href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
+              >
                 Mes groupes
               </Link>
             </div>
@@ -409,7 +426,7 @@ async function handleCreate(e: React.FormEvent) {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <CompactLoadingBlock label="Chargement..." />
             ) : clubs.length === 0 ? (
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
                 Aucun club trouvé pour ton compte.
@@ -423,7 +440,11 @@ async function handleCreate(e: React.FormEvent) {
                   <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>Club</span>
-                      <select value={clubId} onChange={(e) => setClubId(e.target.value)} disabled={busy}>
+                      <select
+                        value={clubId}
+                        onChange={(e) => setClubId(e.target.value)}
+                        disabled={busy || Boolean(organizationId)}
+                      >
                         {clubs.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name ?? "Club"}
@@ -533,6 +554,9 @@ async function handleCreate(e: React.FormEvent) {
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
+                      Optionnel à la création. Tu peux aussi ajouter les joueurs plus tard dans Gérer les groupes.
+                    </div>
                     <div style={{ position: "relative" }}>
                       <Search
                         size={18}
@@ -656,7 +680,7 @@ async function handleCreate(e: React.FormEvent) {
 
                   <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Tu es automatiquement <b>Head Coach</b>. Ajoute des coachs supplémentaires (coach/manager).
+                      Sélectionne au moins <b>1 coach</b>. Le premier coach sélectionné devient <b>Head Coach</b>.
                     </div>
 
                     <div style={{ position: "relative" }}>
@@ -680,7 +704,7 @@ async function handleCreate(e: React.FormEvent) {
                     </div>
 
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Coachs supplémentaires ({selectedCoachesList.length})</div>
+                      <div className="pill-soft">Coachs sélectionnés ({selectedCoachesList.length})</div>
 
                       {selectedCoachesList.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -697,7 +721,7 @@ async function handleCreate(e: React.FormEvent) {
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
                                   <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Coach supplémentaire
+                                    {selectedCoachesList[0]?.id === p.id ? "Head Coach" : "Coach du groupe"}
                                   </div>
                                 </div>
                               </div>
@@ -724,7 +748,7 @@ async function handleCreate(e: React.FormEvent) {
 
                       {clubId && clubMembersCoaches.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun coach/manager actif trouvé dans ce club.
+                          Aucun coach actif trouvé dans ce club.
                         </div>
                       ) : candidatesCoaches.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -783,7 +807,11 @@ async function handleCreate(e: React.FormEvent) {
                   {busy ? t("coachGroupNew.creating") : t("coachGroupNew.createGroup")}
                 </button>
 
-                <Link href="/manager/groups" className="btn" style={{ width: "100%", textAlign: "center" }}>
+                <Link
+                  href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
+                  className="btn"
+                  style={{ width: "100%", textAlign: "center" }}
+                >
                   Annuler
                 </Link>
               </form>
