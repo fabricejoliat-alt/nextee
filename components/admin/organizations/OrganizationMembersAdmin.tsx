@@ -31,10 +31,14 @@ function fullName(p?: Profile | null) {
   return `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
 }
 
-async function runWithTimeout<T>(fn: () => Promise<T>, ms = 10000): Promise<T> {
-  return await Promise.race<T>([
+type MutationResult = {
+  error: { message: string } | null;
+};
+
+async function runWithTimeout(fn: () => Promise<MutationResult>, ms = 10000): Promise<MutationResult> {
+  return await Promise.race<MutationResult>([
     fn(),
-    new Promise<T>((_, reject) =>
+    new Promise<MutationResult>((_, reject) =>
       setTimeout(() => reject(new Error("Délai dépassé. Réessaie.")), ms)
     ),
   ]);
