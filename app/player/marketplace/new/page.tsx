@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const CATEGORIES = [
@@ -380,7 +381,7 @@ export default function MarketplaceNew() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <CompactLoadingBlock label={t("common.loading")} />
             ) : (
               <form onSubmit={publish} style={{ display: "grid", gap: 12 }}>
                 <label style={{ display: "grid", gap: 6 }}>

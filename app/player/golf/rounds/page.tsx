@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { SlidersHorizontal } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -458,7 +459,7 @@ export default function RoundsListPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : totalCount === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("rounds.noneYet")}</div>
             ) : rounds.length === 0 ? (

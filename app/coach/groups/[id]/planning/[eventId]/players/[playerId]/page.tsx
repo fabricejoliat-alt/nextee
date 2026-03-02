@@ -75,7 +75,6 @@ type TrainingSessionRow = {
   club_event_id: string | null;
   created_at: string;
 };
-
 type TrainingItemRow = {
   id: string;
   session_id: string;
@@ -84,6 +83,19 @@ type TrainingItemRow = {
   note: string | null;
   other_detail: string | null;
   created_at: string;
+};
+
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
+type PlayerPlannedStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
 };
 
 function fmtDateTime(iso: string) {
@@ -184,6 +196,8 @@ export default function CoachEventPlayerDetailPage() {
 
   const [session, setSession] = useState<TrainingSessionRow | null>(null);
   const [items, setItems] = useState<TrainingItemRow[]>([]);
+  const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
+  const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
 
   async function load() {
     setLoading(true);
@@ -213,6 +227,25 @@ export default function CoachEventPlayerDetailPage() {
 
       const gRes = await supabase.from("coach_groups").select("id,name").eq("id", ev.group_id).maybeSingle();
       setGroupName(!gRes.error && gRes.data ? (gRes.data as GroupRow).name ?? "Groupe" : "Groupe");
+
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (structRes.error) throw new Error(structRes.error.message);
+      setEventStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
+
+      const playerStructRes = await supabase
+        .from("club_event_player_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .eq("player_id", playerId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (playerStructRes.error) throw new Error(playerStructRes.error.message);
+      setPlayerPlannedStructureItems((playerStructRes.data ?? []) as PlayerPlannedStructureItemRow[]);
 
       // player
       const pRes = await supabase
@@ -268,7 +301,6 @@ export default function CoachEventPlayerDetailPage() {
 
       const sess = ((sRes.data?.[0] ?? null) as TrainingSessionRow | null);
       setSession(sess);
-
       if (sess?.id) {
         const itRes = await supabase
           .from("training_session_items")
@@ -293,6 +325,8 @@ export default function CoachEventPlayerDetailPage() {
       setCoachFb(null);
       setSession(null);
       setItems([]);
+      setEventStructureItems([]);
+      setPlayerPlannedStructureItems([]);
       setLoading(false);
     }
   }
@@ -342,6 +376,7 @@ export default function CoachEventPlayerDetailPage() {
       submitted_at: session.created_at ?? null,
     };
   }, [eventId, playerFb, playerId, session]);
+  const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
 
   return (
     <div className="player-dashboard-bg">
@@ -424,23 +459,49 @@ export default function CoachEventPlayerDetailPage() {
                 }}
               >
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
-                  {!session ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
-                  ) : items.length === 0 ? (
+                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l'entrainement</div>
+                  {displayedPlannedItems.length === 0 && items.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
-                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                      {items.map((it) => {
-                        const extra = String(it.note ?? it.other_detail ?? "").trim();
-                        return (
-                          <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {categoryLabel(it.category)} — {it.minutes} min
-                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Planifiée par le coach</div>
+                        {displayedPlannedItems.length > 0 ? (
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {displayedPlannedItems.map((it, idx) => {
+                              const extra = String(it.note ?? "").trim();
+                              return (
+                                <li key={`event-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {categoryLabel(it.category)} — {it.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                        )}
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Réalisée par le joueur</div>
+                        {items.length > 0 ? (
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {items.map((it) => {
+                              const extra = String(it.note ?? it.other_detail ?? "").trim();
+                              return (
+                                <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {categoryLabel(it.category)} — {it.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
 

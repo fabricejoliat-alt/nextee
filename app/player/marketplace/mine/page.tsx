@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
@@ -202,7 +203,7 @@ export default function MarketplaceMine() {
         {/* List */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card">{t("common.loading")}</div>
+            <div className="glass-card"><ListLoadingBlock label={t("common.loading")} /></div>
           ) : items.length === 0 ? (
             <div className="glass-card marketplace-empty">
               {t("marketplace.mineEmpty")}

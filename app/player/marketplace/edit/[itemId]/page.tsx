@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const BUCKET = "marketplace";
@@ -548,7 +549,7 @@ export default function MarketplaceEditPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>Chargement…</div>
+              <CompactLoadingBlock label={t("common.loading")} />
             ) : !item ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ fontWeight: 900 }}>Impossible de charger l’annonce</div>

@@ -45,20 +45,24 @@ export default function OrganizationsAdmin() {
   async function loadOrganizations() {
     setLoading(true);
     setError(null);
+    try {
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id,name,slug,org_type,created_at")
+        .order("created_at", { ascending: false });
 
-    const { data, error } = await supabase
-      .from("organizations")
-      .select("id,name,slug,org_type,created_at")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setOrganizations([]);
+      } else {
+        setOrganizations((data ?? []) as Organization[]);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur chargement organisations");
       setOrganizations([]);
-    } else {
-      setOrganizations((data ?? []) as Organization[]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   useEffect(() => {

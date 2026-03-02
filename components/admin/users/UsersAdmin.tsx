@@ -31,6 +31,7 @@ export default function UsersAdmin() {
   const [cEmail, setCEmail] = useState("");
   const [cRole, setCRole] = useState<AppRole>("player");
   const [createdCreds, setCreatedCreds] = useState<{ username: string; tempPassword: string } | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const canCreate = useMemo(() => cFirst.trim() && cLast.trim(), [cFirst, cLast]);
 
@@ -44,32 +45,46 @@ export default function UsersAdmin() {
     return data.session?.access_token ?? null;
   }
 
+  async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
   async function loadUsers() {
     setLoading(true);
     setError(null);
+    try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session. Reconnecte-toi.");
+        setUsers([]);
+        return;
+      }
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session. Reconnecte-toi.");
-      setLoading(false);
-      return;
-    }
+      const res = await fetchWithTimeout("/api/admin/users/list", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-    const res = await fetch("/api/admin/users/list", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || "Erreur chargement users");
+        setUsers([]);
+        return;
+      }
 
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Erreur chargement users");
+      setUsers((json.users ?? []) as UserRow[]);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur chargement users");
       setUsers([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setUsers((json.users ?? []) as UserRow[]);
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -78,45 +93,57 @@ export default function UsersAdmin() {
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
+    if (creating) return;
     setError(null);
     setCreatedCreds(null);
+    setCreating(true);
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session. Reconnecte-toi.");
-      return;
+    try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session. Reconnecte-toi.");
+        return;
+      }
+
+      const res = await fetchWithTimeout("/api/admin/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          first_name: cFirst.trim(),
+          last_name: cLast.trim(),
+          email: cEmail.trim().toLowerCase(),
+          role: cRole,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || "Erreur création utilisateur");
+        return;
+      }
+
+      setCreatedCreds({
+        username: json.username ?? "",
+        tempPassword: json.tempPassword ?? "",
+      });
+      setCFirst("");
+      setCLast("");
+      setCEmail("");
+      setCRole("player");
+      // Refresh list in background; do not block button spinner on slow network.
+      void loadUsers();
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") {
+        setError("Délai dépassé. Vérifie ta connexion puis réessaie.");
+      } else {
+        setError(e instanceof Error ? e.message : "Erreur création utilisateur");
+      }
+    } finally {
+      setCreating(false);
     }
-
-    const res = await fetch("/api/admin/create-user", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        first_name: cFirst.trim(),
-        last_name: cLast.trim(),
-        email: cEmail.trim().toLowerCase(),
-        role: cRole,
-      }),
-    });
-
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Erreur création utilisateur");
-      return;
-    }
-
-    setCreatedCreds({
-      username: json.username ?? "",
-      tempPassword: json.tempPassword ?? "",
-    });
-    setCFirst("");
-    setCLast("");
-    setCEmail("");
-    setCRole("player");
-
-    await loadUsers();
   }
 
   function startEdit(u: UserRow) {
@@ -143,42 +170,49 @@ export default function UsersAdmin() {
 
     setSavingId(editingId);
     setError(null);
+    try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session. Reconnecte-toi.");
+        return;
+      }
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session. Reconnecte-toi.");
+      const payload = {
+        userId: editingId,
+        first_name: (form.first_name ?? "").toString().trim() || null,
+        last_name: (form.last_name ?? "").toString().trim() || null,
+        username: (form.username ?? "").toString().trim().toLowerCase() || null,
+        role: (form.role ?? "player").toString().trim().toLowerCase(),
+        auth_password: authPassword || null,
+      };
+
+      const res = await fetchWithTimeout("/api/admin/users/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || "Erreur sauvegarde");
+        return;
+      }
+
+      cancelEdit();
+      // Refresh list in background; keep edit spinner deterministic.
+      void loadUsers();
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") {
+        setError("Délai dépassé. Vérifie ta connexion puis réessaie.");
+      } else {
+        setError(e instanceof Error ? e.message : "Erreur sauvegarde");
+      }
+    } finally {
       setSavingId(null);
-      return;
     }
-
-    const payload = {
-      userId: editingId,
-      first_name: (form.first_name ?? "").toString().trim() || null,
-      last_name: (form.last_name ?? "").toString().trim() || null,
-      username: (form.username ?? "").toString().trim().toLowerCase() || null,
-      role: (form.role ?? "player").toString().trim().toLowerCase(),
-      auth_password: authPassword || null,
-    };
-
-    const res = await fetch("/api/admin/users/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Erreur sauvegarde");
-      setSavingId(null);
-      return;
-    }
-
-    setSavingId(null);
-    cancelEdit();
-    await loadUsers();
   }
 
   return (
@@ -217,8 +251,8 @@ export default function UsersAdmin() {
             <option value="staff">Staff</option>
           </select>
 
-          <button className="btn" disabled={!canCreate} type="submit">
-            Créer
+          <button className="btn" disabled={!canCreate || creating} type="submit">
+            {creating ? "Création…" : "Créer"}
           </button>
         </form>
 

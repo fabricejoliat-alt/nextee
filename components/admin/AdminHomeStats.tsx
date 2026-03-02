@@ -12,36 +12,29 @@ export default function AdminHomeStats() {
   async function loadStats() {
     setLoading(true);
     setError(null);
+    try {
+      // organizations count (legacy source: clubs table for now)
+      const clubsRes = await supabase.from("clubs").select("id", { count: "exact", head: true });
+      if (clubsRes.error) throw new Error(clubsRes.error.message);
+      setClubCount(clubsRes.count ?? 0);
 
-    // organizations count (legacy source: clubs table for now)
-    const clubsRes = await supabase.from("clubs").select("id", { count: "exact", head: true });
-    if (clubsRes.error) {
-      setError(clubsRes.error.message);
+      // users count = profiles - superadmins
+      const adminsRes = await supabase.from("app_admins").select("user_id");
+      if (adminsRes.error) throw new Error(adminsRes.error.message);
+      const adminIds = new Set(
+        ((adminsRes.data ?? []) as Array<{ user_id: string | null }>).map((a) => a.user_id).filter(Boolean) as string[]
+      );
+
+      const profRes = await supabase.from("profiles").select("id");
+      if (profRes.error) throw new Error(profRes.error.message);
+      const allProfiles = profRes.data ?? [];
+      const nonAdminUsers = ((allProfiles ?? []) as Array<{ id: string }>).filter((p) => !adminIds.has(p.id));
+      setUserCount(nonAdminUsers.length);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur chargement");
+    } finally {
       setLoading(false);
-      return;
     }
-    setClubCount(clubsRes.count ?? 0);
-
-    // users count = profiles - superadmins
-    const adminsRes = await supabase.from("app_admins").select("user_id");
-    if (adminsRes.error) {
-      setError(adminsRes.error.message);
-      setLoading(false);
-      return;
-    }
-    const adminIds = new Set((adminsRes.data ?? []).map((a: any) => a.user_id));
-
-    const profRes = await supabase.from("profiles").select("id");
-    if (profRes.error) {
-      setError(profRes.error.message);
-      setLoading(false);
-      return;
-    }
-    const allProfiles = profRes.data ?? [];
-    const nonAdminUsers = allProfiles.filter((p: any) => !adminIds.has(p.id));
-    setUserCount(nonAdminUsers.length);
-
-    setLoading(false);
   }
 
   useEffect(() => {

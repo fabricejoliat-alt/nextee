@@ -63,6 +63,12 @@ type ProfileLite = {
 type AttendeeUiRow = AttendeeDbRow & {
   profile?: ProfileLite | null;
 };
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -96,6 +102,23 @@ function fmtDateTimeRange(startIso: string, endIso: string | null) {
 
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
+}
+
+function categoryLabel(cat: string) {
+  const map: Record<string, string> = {
+    warmup_mobility: "Échauffement / mobilité",
+    long_game: "Long jeu",
+    putting: "Putting",
+    wedging: "Wedging",
+    pitching: "Pitching",
+    chipping: "Chipping",
+    bunker: "Bunker",
+    course: "Parcours",
+    mental: "Mental",
+    fitness: "Fitness",
+    other: "Autre",
+  };
+  return map[cat] ?? cat;
 }
 
 function initials(p?: { first_name: string | null; last_name: string | null } | null) {
@@ -151,6 +174,7 @@ export default function CoachEventDetailPage() {
   const [attendees, setAttendees] = useState<AttendeeUiRow[]>([]);
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
+  const [structureItems, setStructureItems] = useState<EventStructureItemRow[]>([]);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
 
@@ -247,6 +271,15 @@ export default function CoachEventDetailPage() {
       if (ecRes.error) throw new Error(ecRes.error.message);
       setSelectedCoachIds((ecRes.data ?? []).map((r: any) => String(r.coach_id ?? "")).filter(Boolean));
 
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", ev.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (structRes.error) throw new Error(structRes.error.message);
+      setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
@@ -256,6 +289,7 @@ export default function CoachEventDetailPage() {
       setAttendees([]);
       setCoaches([]);
       setSelectedCoachIds([]);
+      setStructureItems([]);
       setLoading(false);
     }
   }
@@ -474,6 +508,30 @@ export default function CoachEventDetailPage() {
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
+                  </div>
+
+                  {structureItems.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {tr("Non saisi.", "Not entered.")}
+                    </div>
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                      {structureItems.map((it, idx) => {
+                        const extra = String(it.note ?? "").trim();
+                        return (
+                          <li key={`proposed-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {categoryLabel(it.category)} — {it.minutes} min
+                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <Users size={16} />
                   {tr("Participants", "Participants")}
@@ -484,10 +542,11 @@ export default function CoachEventDetailPage() {
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
                     {attendees.map((a) => {
+                      const isEventPast = new Date(event.starts_at).getTime() < Date.now();
                       const p = a.profile ?? null;
                       const playerName = nameOf(p?.first_name ?? null, p?.last_name ?? null);
                       const canOpenPlayerDetail = event.event_type === "training";
-                      const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent";
+                      const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent" && isEventPast;
 
                       return (
                         <div
@@ -531,16 +590,24 @@ export default function CoachEventDetailPage() {
                                 <ArrowRight size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {tr("Voir", "View")}
                               </Link>
-                              {canEvaluatePlayer ? (
-                                <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/edit`}>
-                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                  {tr("Évaluer", "Evaluate")}
-                                </Link>
+
+                              {isEventPast ? (
+                                canEvaluatePlayer ? (
+                                  <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/edit`}>
+                                    <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                    {tr("Évaluer", "Evaluate")}
+                                  </Link>
+                                ) : (
+                                  <button type="button" className="btn" disabled title={tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")}>
+                                    <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                    {tr("Évaluer", "Evaluate")}
+                                  </button>
+                                )
                               ) : (
-                                <button type="button" className="btn" disabled title={tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")}>
+                                <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/structure`}>
                                   <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                  {tr("Évaluer", "Evaluate")}
-                                </button>
+                                  {tr("Structurer", "Structure")}
+                                </Link>
                               )}
                             </div>
                           ) : null}

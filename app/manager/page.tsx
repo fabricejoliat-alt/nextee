@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Building2, CalendarDays, Layers3, Link2Off, UserCheck, UserCog, UserX, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type GroupRow = { id: string; name: string | null; club_id: string; is_active: boolean | null };
 type EventLite = {
@@ -120,64 +121,60 @@ export default function ManagerHomePage() {
     (async () => {
       setLoading(true);
       setStatsError(null);
+      try {
+        const { data: authRes, error: authErr } = await supabase.auth.getUser();
+        const uid = authRes.user?.id;
+        if (authErr || !uid) {
+          setUpcomingEvents([]);
+          setGroupNameById({});
+          setMe(null);
+          return;
+        }
 
-      const { data: authRes, error: authErr } = await supabase.auth.getUser();
-      const uid = authRes.user?.id;
-      if (authErr || !uid) {
-        setUpcomingEvents([]);
-        setGroupNameById({});
-        setMe(null);
-        setLoading(false);
-        return;
-      }
+        const cache = readClientPageCache<ManagerHomeCache>(managerHomeCacheKey(uid, assiduityWindow), MANAGER_HOME_CACHE_TTL_MS);
+        if (cache) {
+          setGroupNameById(cache.groupNameById);
+          setUpcomingEvents(cache.upcomingEvents);
+          setMe(cache.me);
+          setStats(cache.stats);
+          return;
+        }
 
-      const cache = readClientPageCache<ManagerHomeCache>(managerHomeCacheKey(uid, assiduityWindow), MANAGER_HOME_CACHE_TTL_MS);
-      if (cache) {
-        setGroupNameById(cache.groupNameById);
-        setUpcomingEvents(cache.upcomingEvents);
-        setMe(cache.me);
-        setStats(cache.stats);
-        setLoading(false);
-        return;
-      }
+        const meRes = await supabase
+          .from("profiles")
+          .select("first_name,last_name,avatar_url")
+          .eq("id", uid)
+          .maybeSingle();
+        if (!meRes.error && meRes.data) {
+          setMe(meRes.data as ProfileLite);
+        }
 
-      const meRes = await supabase
-        .from("profiles")
-        .select("first_name,last_name,avatar_url")
-        .eq("id", uid)
-        .maybeSingle();
-      if (!meRes.error && meRes.data) {
-        setMe(meRes.data as ProfileLite);
-      }
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) {
+          setUpcomingEvents([]);
+          setGroupNameById({});
+          setStatsError(tr("Session invalide.", "Invalid session."));
+          return;
+        }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (!token) {
-        setUpcomingEvents([]);
-        setGroupNameById({});
-        setStatsError(tr("Session invalide.", "Invalid session."));
-        setLoading(false);
-        return;
-      }
-
-      const clubsRes = await fetch("/api/manager/my-clubs", {
+        const clubsRes = await fetch("/api/manager/my-clubs", {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
-      });
-      const clubsJson = await clubsRes.json().catch(() => ({}));
-      if (!clubsRes.ok) {
-        setStatsError(String(clubsJson?.error ?? tr("Impossible de charger les clubs.", "Could not load clubs.")));
-        setUpcomingEvents([]);
-        setGroupNameById({});
-        setLoading(false);
-        return;
-      }
+        });
+        const clubsJson = await clubsRes.json().catch(() => ({}));
+        if (!clubsRes.ok) {
+          setStatsError(String(clubsJson?.error ?? tr("Impossible de charger les clubs.", "Could not load clubs.")));
+          setUpcomingEvents([]);
+          setGroupNameById({});
+          return;
+        }
 
       const managedClubs = (Array.isArray(clubsJson?.clubs) ? clubsJson.clubs : []) as ManagedClub[];
       const clubIds = Array.from(new Set(managedClubs.map((c) => String(c?.id ?? "").trim()).filter(Boolean)));
 
-      if (clubIds.length === 0) {
+        if (clubIds.length === 0) {
         setUpcomingEvents([]);
         setGroupNameById({});
         setStats({
@@ -198,9 +195,8 @@ export default function ManagerHomePage() {
           juniorsWithoutParent: [],
           topAttendance: [],
         });
-        setLoading(false);
         return;
-      }
+        }
 
       const membersByClubRes = await Promise.all(
         clubIds.map(async (clubId) => {
@@ -430,11 +426,10 @@ export default function ManagerHomePage() {
         topAttendance,
       });
 
-      if (planningGroupIds.length === 0) {
-        setUpcomingEvents([]);
-        setLoading(false);
-        return;
-      }
+        if (planningGroupIds.length === 0) {
+          setUpcomingEvents([]);
+          return;
+        }
 
       const upcomingRes = await fetch("/api/manager/events/upcoming?limit=10", {
         method: "GET",
@@ -442,11 +437,10 @@ export default function ManagerHomePage() {
         cache: "no-store",
       });
       const upcomingJson = await upcomingRes.json().catch(() => ({}));
-      if (!upcomingRes.ok) {
-        setStatsError(String(upcomingJson?.error ?? tr("Impossible de charger les événements.", "Could not load events.")));
-        setLoading(false);
-        return;
-      }
+        if (!upcomingRes.ok) {
+          setStatsError(String(upcomingJson?.error ?? tr("Impossible de charger les événements.", "Could not load events.")));
+          return;
+        }
 
       const upList = (Array.isArray(upcomingJson?.events) ? upcomingJson.events : []) as EventLite[];
       setUpcomingEvents(upList);
@@ -478,7 +472,13 @@ export default function ManagerHomePage() {
           topAttendance,
         },
       });
-      setLoading(false);
+      } catch (e: unknown) {
+        setStatsError(e instanceof Error ? e.message : tr("Impossible de charger les statistiques.", "Could not load dashboard statistics."));
+        setUpcomingEvents([]);
+        setGroupNameById({});
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [locale, assiduityWindow]);
 
@@ -755,7 +755,7 @@ export default function ManagerHomePage() {
             </div>
 
             {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : upcomingEvents.length === 0 ? (
               <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucun événement à venir.", "No upcoming event.")}</div>
             ) : (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
 type CalendarView = "month" | "week" | "day";
@@ -196,7 +197,6 @@ export default function CoachCalendarPage() {
           setClubNames({});
           setAttendeeByEvent({});
           setPlayerNameById({});
-          setLoading(false);
           return;
         }
 
@@ -277,7 +277,6 @@ export default function CoachCalendarPage() {
             });
         });
         setPlayerNameById(playerNames);
-        setLoading(false);
       } catch (e: any) {
         setError(e?.message ?? (locale === "en" ? "Loading error" : "Erreur chargement"));
         setEvents([]);
@@ -287,6 +286,7 @@ export default function CoachCalendarPage() {
         setClubNames({});
         setAttendeeByEvent({});
         setPlayerNameById({});
+      } finally {
         setLoading(false);
       }
     })();
@@ -471,7 +471,7 @@ export default function CoachCalendarPage() {
           </div>
 
           {loading ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{tr("Chargement...", "Loading...")}</div>
+            <div className="glass-card"><ListLoadingBlock label={tr("Chargement...", "Loading...")} /></div>
           ) : (
             <>
               {view === "month" ? (

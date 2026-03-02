@@ -29,31 +29,39 @@ export default function TranslationsAdmin() {
     setLoading(true);
     setError(null);
     setInfo(null);
+    try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session.");
+        setRows([]);
+        setDraft({});
+        return;
+      }
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session.");
+      const res = await fetch(`/api/admin/translations?locale=${locale}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error ?? "Erreur chargement traductions.");
+        setRows([]);
+        setDraft({});
+        return;
+      }
+
+      const list = (json.rows ?? []) as Row[];
+      const map: Record<string, string> = {};
+      for (const r of list) map[r.key] = r.value;
+      setRows(list);
+      setDraft(map);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur chargement traductions.");
+      setRows([]);
+      setDraft({});
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const res = await fetch(`/api/admin/translations?locale=${locale}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(json.error ?? "Erreur chargement traductions.");
-      setLoading(false);
-      return;
-    }
-
-    const list = (json.rows ?? []) as Row[];
-    const map: Record<string, string> = {};
-    for (const r of list) map[r.key] = r.value;
-    setRows(list);
-    setDraft(map);
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -79,33 +87,35 @@ export default function TranslationsAdmin() {
     setSavingKey(key);
     setError(null);
     setInfo(null);
+    try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session.");
+        return;
+      }
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session.");
+      const value = draft[key] ?? "";
+      const res = await fetch("/api/admin/translations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ locale, key, value }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error ?? "Erreur sauvegarde.");
+        return;
+      }
+
+      setInfo(`Clé enregistrée: ${key}`);
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur sauvegarde.");
+    } finally {
       setSavingKey(null);
-      return;
     }
-
-    const value = draft[key] ?? "";
-    const res = await fetch("/api/admin/translations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ locale, key, value }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(json.error ?? "Erreur sauvegarde.");
-      setSavingKey(null);
-      return;
-    }
-
-    setInfo(`Clé enregistrée: ${key}`);
-    setSavingKey(null);
-    await load();
   }
 
   return (
@@ -194,4 +204,3 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   background: "white",
 };
-

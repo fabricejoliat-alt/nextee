@@ -42,6 +42,30 @@ type CoachFeedbackRow = {
   player_note: string | null;
 };
 type AttendanceStatus = "expected" | "present" | "absent" | "excused";
+type TrainingSessionRow = {
+  id: string;
+};
+type TrainingItemRow = {
+  id: string;
+  session_id: string;
+  category: string;
+  minutes: number;
+  note: string | null;
+  other_detail: string | null;
+  created_at: string;
+};
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
+type PlayerPlannedStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -57,6 +81,23 @@ function fmtDateTime(iso: string) {
 
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
+}
+
+function categoryLabel(cat: string) {
+  const map: Record<string, string> = {
+    warmup_mobility: "Warmup / mobilité",
+    long_game: "Long jeu",
+    putting: "Putting",
+    wedging: "Wedging",
+    pitching: "Pitching",
+    chipping: "Chipping",
+    bunker: "Bunker",
+    course: "Parcours",
+    mental: "Mental",
+    fitness: "Fitness",
+    other: "Autre",
+  };
+  return map[cat] ?? cat;
 }
 
 function initials(p?: { first_name: string | null; last_name: string | null } | null) {
@@ -126,6 +167,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
+  const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
+  const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
+  const [sessionItems, setSessionItems] = useState<TrainingItemRow[]>([]);
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
     event_id: eventId,
@@ -169,6 +213,46 @@ export default function CoachEventPlayerFeedbackEditPage() {
       if (pRes.error) throw new Error(pRes.error.message);
       if (!pRes.data) throw new Error("Joueur introuvable.");
       setPlayer(pRes.data as ProfileRow);
+
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (structRes.error) throw new Error(structRes.error.message);
+      setEventStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
+
+      const playerStructRes = await supabase
+        .from("club_event_player_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .eq("player_id", playerId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (playerStructRes.error) throw new Error(playerStructRes.error.message);
+      setPlayerPlannedStructureItems((playerStructRes.data ?? []) as PlayerPlannedStructureItemRow[]);
+
+      const sRes = await supabase
+        .from("training_sessions")
+        .select("id")
+        .eq("user_id", playerId)
+        .eq("club_event_id", eventId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (sRes.error) throw new Error(sRes.error.message);
+      const sess = ((sRes.data?.[0] ?? null) as TrainingSessionRow | null);
+      if (sess?.id) {
+        const itRes = await supabase
+          .from("training_session_items")
+          .select("id,session_id,category,minutes,note,other_detail,created_at")
+          .eq("session_id", sess.id)
+          .order("created_at", { ascending: true });
+        if (itRes.error) throw new Error(itRes.error.message);
+        setSessionItems((itRes.data ?? []) as TrainingItemRow[]);
+      } else {
+        setSessionItems([]);
+      }
 
       const attendeeRes = await supabase
         .from("club_event_attendees")
@@ -277,6 +361,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setEvent(null);
       setPlayer(null);
       setOrderedPlayerIds([]);
+      setEventStructureItems([]);
+      setPlayerPlannedStructureItems([]);
+      setSessionItems([]);
       setLoading(false);
     }
   }
@@ -291,6 +378,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
     if (!event || !player) return false;
     return true;
   }, [busy, loading, event, player]);
+  const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
+  const plannedLabel = playerPlannedStructureItems.length > 0 ? "Planifiée pour ce joueur" : "Planifiée commune au groupe";
 
   const nextPlayerId = useMemo(() => {
     const idx = orderedPlayerIds.indexOf(playerId);
@@ -487,6 +576,50 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
                 </div>
 
+              </div>
+
+              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
+
+                {displayedPlannedItems.length === 0 && sessionItems.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {displayedPlannedItems.length > 0 ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{plannedLabel}</div>
+                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                          {displayedPlannedItems.map((it, idx) => {
+                            const extra = String(it.note ?? "").trim();
+                            return (
+                              <li key={`coach-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                {categoryLabel(it.category)} — {it.minutes} min
+                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {sessionItems.length > 0 ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Version joueur</div>
+                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                          {sessionItems.map((it) => {
+                            const extra = String(it.note ?? it.other_detail ?? "").trim();
+                            return (
+                              <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                {categoryLabel(it.category)} — {it.minutes} min
+                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>

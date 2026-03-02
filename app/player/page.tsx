@@ -8,6 +8,7 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -603,10 +604,11 @@ export default function PlayerHomePage() {
       return;
     }
 
-    const [profRes, memRes] = await Promise.all([
+    try {
+      const [profRes, memRes] = await Promise.all([
       supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", effectiveUid).maybeSingle(),
       supabase.from("club_members").select("club_id").eq("user_id", effectiveUid).eq("is_active", true),
-    ]);
+      ]);
 
     if (profRes.error) {
       setError(profRes.error.message);
@@ -909,7 +911,21 @@ export default function PlayerHomePage() {
       setHolesPlayedMonth(0);
     }
 
-    setLoading(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("common.errorLoading"));
+      setLatestItems([]);
+      setThumbByItemId({});
+      setMonthSessions([]);
+      setMonthItems([]);
+      setRoundsMonth([]);
+      setRoundsPrevMonth([]);
+      setPlayedHolesMonthByRoundId({});
+      setPlayedHolesPrevMonthByRoundId({});
+      setHolesPlayedMonth(0);
+      setUpcomingActivities([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -1132,7 +1148,14 @@ export default function PlayerHomePage() {
           <div className="section-title">{locale === "fr" ? "Prochaine activité" : "Upcoming activity"}</div>
 
           <div className="glass-card">
-            {currentUpcoming ? (
+            {loading ? (
+              <div aria-live="polite" aria-busy="true" style={{ display: "inline-flex", alignItems: "center", padding: "4px 0" }}>
+                <div
+                  className="route-loading-spinner"
+                  style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }}
+                />
+              </div>
+            ) : currentUpcoming ? (
               <>
                 {currentUpcoming.kind === "event" ? (() => {
                   const e = currentUpcoming.event;
@@ -1554,7 +1577,7 @@ export default function PlayerHomePage() {
           <div className="section-title">{t("nav.marketplace")}</div>
 
           {loading ? (
-            <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+            <ListLoadingBlock label={t("common.loading")} />
           ) : latestItems.length === 0 ? (
             <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("marketplace.none")}</div>
           ) : (

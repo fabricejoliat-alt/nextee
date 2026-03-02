@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { AlertTriangle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
@@ -76,67 +77,65 @@ export default function CoachHomePage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
+      try {
+        const { data: authRes, error: authErr } = await supabase.auth.getUser();
+        const uid = authRes.user?.id;
+        if (authErr || !uid) {
+          setPendingEvalEvents([]);
+          setUpcomingEvents([]);
+          setGroupNameById({});
+          setMe(null);
+          return;
+        }
 
-      const { data: authRes, error: authErr } = await supabase.auth.getUser();
-      const uid = authRes.user?.id;
-      if (authErr || !uid) {
+        const cache = readClientPageCache<CoachHomeCache>(coachHomeCacheKey(uid), COACH_HOME_CACHE_TTL_MS);
+        if (cache) {
+          setGroupNameById(cache.groupNameById);
+          setPendingEvalEvents(cache.pendingEvalEvents);
+          setUpcomingEvents(cache.upcomingEvents);
+          setMe(cache.me);
+          setOrganizationNames(cache.organizationNames);
+          return;
+        }
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) return;
+
+        const res = await fetch("/api/coach/home", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+
+        const groupMap = (json?.groupNameById ?? {}) as Record<string, string>;
+        const pending = (json?.pendingEvalEvents ?? []) as EventLite[];
+        const upList = (json?.upcomingEvents ?? []) as EventLite[];
+        const meData = (json?.me ?? null) as ProfileLite | null;
+        const organizations = (json?.organizationNames ?? []) as string[];
+
+        setGroupNameById(groupMap);
+        setPendingEvalEvents(pending);
+        setUpcomingEvents(upList);
+        setMe(meData);
+        setOrganizationNames(organizations);
+
+        writeClientPageCache<CoachHomeCache>(coachHomeCacheKey(uid), {
+          groupNameById: groupMap,
+          pendingEvalEvents: pending,
+          upcomingEvents: upList,
+          me: meData,
+          organizationNames: organizations,
+        });
+      } catch {
         setPendingEvalEvents([]);
         setUpcomingEvents([]);
         setGroupNameById({});
-        setMe(null);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const cache = readClientPageCache<CoachHomeCache>(coachHomeCacheKey(uid), COACH_HOME_CACHE_TTL_MS);
-      if (cache) {
-        setGroupNameById(cache.groupNameById);
-        setPendingEvalEvents(cache.pendingEvalEvents);
-        setUpcomingEvents(cache.upcomingEvents);
-        setMe(cache.me);
-        setOrganizationNames(cache.organizationNames);
-        setLoading(false);
-        return;
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
-      const res = await fetch("/api/coach/home", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setLoading(false);
-        return;
-      }
-
-      const groupMap = (json?.groupNameById ?? {}) as Record<string, string>;
-      const pending = (json?.pendingEvalEvents ?? []) as EventLite[];
-      const upList = (json?.upcomingEvents ?? []) as EventLite[];
-      const meData = (json?.me ?? null) as ProfileLite | null;
-      const organizations = (json?.organizationNames ?? []) as string[];
-
-      setGroupNameById(groupMap);
-      setPendingEvalEvents(pending);
-      setUpcomingEvents(upList);
-      setMe(meData);
-      setOrganizationNames(organizations);
-
-      writeClientPageCache<CoachHomeCache>(coachHomeCacheKey(uid), {
-        groupNameById: groupMap,
-        pendingEvalEvents: pending,
-        upcomingEvents: upList,
-        me: meData,
-        organizationNames: organizations,
-      });
-      setLoading(false);
     })();
   }, [locale]);
 
@@ -212,7 +211,7 @@ export default function CoachHomePage() {
             </div>
 
             {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : pendingEvalEvents.length === 0 ? (
               <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune évaluation en attente.", "No pending evaluation.")}</div>
             ) : (
@@ -272,7 +271,7 @@ export default function CoachHomePage() {
             </div>
 
             {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : upcomingEvents.length === 0 ? (
               <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucun événement à venir.", "No upcoming event.")}</div>
             ) : (

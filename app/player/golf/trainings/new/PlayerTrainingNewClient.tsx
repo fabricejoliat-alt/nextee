@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
@@ -173,6 +174,7 @@ export default function PlayerTrainingNewPage() {
 
   // items
   const [items, setItems] = useState<TrainingItemDraft[]>([]);
+  const [plannedStructureItems, setPlannedStructureItems] = useState<EventStructureItemRow[]>([]);
 
   // planned event (optional)
   const [linkedEvent, setLinkedEvent] = useState<ClubEventRow | null>(null);
@@ -190,7 +192,12 @@ export default function PlayerTrainingNewPage() {
     }, 0);
   }, [items]);
 
-  const inputsDisabled = busy;
+  const isLinkedEventPast = useMemo(() => {
+    if (!linkedEvent?.starts_at) return true;
+    return new Date(linkedEvent.starts_at).getTime() < Date.now();
+  }, [linkedEvent?.starts_at]);
+  const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
+  const inputsDisabled = busy || plannedEventLocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
   const showSensationsCard = useMemo(() => {
     const ts = new Date(startAt).getTime();
@@ -232,6 +239,7 @@ export default function PlayerTrainingNewPage() {
 
   const canSave = useMemo(() => {
     if (busy) return false;
+    if (plannedEventLocked) return false;
     if (!userId) return false;
     if (!startAt) return false;
     if (sessionType === "club" && !clubIdForTraining) return false;
@@ -248,7 +256,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, userId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, plannedEventLocked, userId, startAt, sessionType, clubIdForTraining, items]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -563,30 +571,41 @@ export default function PlayerTrainingNewPage() {
             }
           }
 
-          // ✅ prefill structure ("postes") configured by coach on planned event
-          if (!prefilledFromExistingSession) {
-            const structureRes = await supabase
-              .from("club_event_structure_items")
-              .select("category,minutes,note,position")
-              .eq("event_id", ev.id)
-              .order("position", { ascending: true })
-              .order("created_at", { ascending: true });
-
-            if (!structureRes.error) {
-              const rows = (structureRes.data ?? []) as EventStructureItemRow[];
-              if (rows.length > 0) {
-                setItems(
-                  rows.map((r) => ({
-                    category: r.category ?? "",
-                    minutes: String(r.minutes ?? ""),
-                    note: r.note ?? "",
-                  }))
-                );
+          const individualStructureRes = await supabase
+            .from("club_event_player_structure_items")
+            .select("category,minutes,note,position")
+            .eq("event_id", ev.id)
+            .eq("player_id", uid)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true });
+          if (!individualStructureRes.error) {
+            const individualRows = (individualStructureRes.data ?? []) as EventStructureItemRow[];
+            if (individualRows.length > 0) {
+              setPlannedStructureItems(individualRows);
+            } else {
+              const structureRes = await supabase
+                .from("club_event_structure_items")
+                .select("category,minutes,note,position")
+                .eq("event_id", ev.id)
+                .order("position", { ascending: true })
+                .order("created_at", { ascending: true });
+              if (!structureRes.error) {
+                setPlannedStructureItems((structureRes.data ?? []) as EventStructureItemRow[]);
+              } else {
+                setPlannedStructureItems([]);
               }
             }
+          } else {
+            setPlannedStructureItems([]);
+          }
+
+          if (!prefilledFromExistingSession) {
+            setItems([]);
           }
 
         }
+      } else {
+        setPlannedStructureItems([]);
       }
 
       setLoading(false);
@@ -654,6 +673,16 @@ export default function PlayerTrainingNewPage() {
 
     setBusy(true);
     setError(null);
+
+    if (plannedEventLocked) {
+      setError(
+        locale === "fr"
+          ? "Tu peux saisir la structure et les sensations uniquement une fois l'entraînement passé."
+          : "You can enter structure and feelings only once the training is past."
+      );
+      setBusy(false);
+      return;
+    }
 
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
@@ -799,7 +828,7 @@ export default function PlayerTrainingNewPage() {
 
         <div className="glass-section">
           {loading ? (
-            <div>{t("common.loading")}</div>
+            <CompactLoadingBlock label={t("common.loading")} />
           ) : (
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
                 <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
@@ -871,6 +900,24 @@ export default function PlayerTrainingNewPage() {
                         <option value="private">{t("trainingDetail.typePrivate")}</option>
                       </select>
                     )}
+
+                    {plannedEventLocked ? (
+                      <div
+                        style={{
+                          borderRadius: 10,
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          background: "rgba(255,255,255,0.70)",
+                          padding: "8px 10px",
+                          fontSize: 12,
+                          fontWeight: 850,
+                          color: "rgba(0,0,0,0.65)",
+                        }}
+                      >
+                        {locale === "fr"
+                          ? "La structure et les sensations seront saisissables après la date de l'entraînement."
+                          : "Structure and feelings will be editable after the training date."}
+                      </div>
+                    ) : null}
 
                     {sessionType === "club" && (
                       <label style={{ display: "grid", gap: 6 }}>
@@ -1094,6 +1141,43 @@ export default function PlayerTrainingNewPage() {
 
                 <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
+
+                  {linkedEvent && plannedStructureItems.length > 0 ? (
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.78)",
+                        padding: 10,
+                        display: "grid",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.66)" }}>
+                        {locale === "fr" ? "Structure planifiée (coach)" : "Planned structure (coach)"}
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                        {plannedStructureItems.map((it, idx) => {
+                          const label = TRAINING_CATEGORIES.find((c) => c.value === it.category)?.label ?? it.category;
+                          const extra = String(it.note ?? "").trim();
+                          return (
+                            <li key={`planned-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              {label} — {it.minutes} min
+                              {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {linkedEvent ? (
+                    <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.58)" }}>
+                      {locale === "fr"
+                        ? "Renseigne ci-dessous la structure réellement réalisée."
+                        : "Enter below the structure actually completed."}
+                    </div>
+                  ) : null}
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div

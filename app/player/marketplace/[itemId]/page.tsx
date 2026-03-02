@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
@@ -184,7 +185,7 @@ export default function MarketplaceDetailPage() {
       <div className="player-dashboard-bg">
         <div className="app-shell marketplace-page">
           <div className="glass-section">
-            <div className="glass-card">{t("common.loading")}</div>
+            <div className="glass-card"><CompactLoadingBlock label={t("common.loading")} /></div>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type ClubLite = { id: string; name: string | null };
 
@@ -457,7 +458,7 @@ export default function CoachGroupsPage() {
               <div className="card-title">{t("coach.myGroups")}</div>
 
               {loading ? (
-                <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+                <ListLoadingBlock label={t("common.loading")} />
               ) : filtered.length === 0 ? (
                 <div style={{ opacity: 0.8, fontWeight: 800 }}>
                   {t("coachGroups.noneFound")}
@@ -522,7 +523,7 @@ export default function CoachGroupsPage() {
                                 <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noPlayer")}</div>
                               ) : (
                                 <>
-                                  {playerProfiles.slice(0, 3).map((p) => (
+                                  {playerProfiles.map((p) => (
                                     <div key={p.id} style={miniRowStyle}>
                                       <div style={miniAvatarBoxStyle} aria-hidden="true">
                                         {avatarNode(p)}
@@ -532,11 +533,6 @@ export default function CoachGroupsPage() {
                                       </div>
                                     </div>
                                   ))}
-                                  {playerProfiles.length > 3 ? (
-                                    <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
-                                      +{playerProfiles.length - 3} {t(playerProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
-                                    </div>
-                                  ) : null}
                                 </>
                               )}
                             </div>

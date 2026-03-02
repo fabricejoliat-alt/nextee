@@ -13,6 +13,7 @@ import {
   type NotificationRow,
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Bell, CheckCheck, Trash2 } from "lucide-react";
 import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
 
@@ -43,28 +44,26 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
   async function load() {
     setLoading(true);
     setError(null);
-
-    const uRes = await supabase.auth.getUser();
-    if (uRes.error || !uRes.data.user) {
-      setError(tr("Session invalide.", "Invalid session."));
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-
-    const uid = uRes.data.user.id;
-    setUserId(uid);
-
     try {
+      const uRes = await supabase.auth.getUser();
+      if (uRes.error || !uRes.data.user) {
+        setError(tr("Session invalide.", "Invalid session."));
+        setRows([]);
+        return;
+      }
+
+      const uid = uRes.data.user.id;
+      setUserId(uid);
+
       const data = await loadMyNotifications(uid);
       setRows(data);
       applyPwaBadge(data.filter((r) => !r.recipient.is_read).length);
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.")));
       setRows([]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -235,7 +234,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
             </div>
 
             {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : rows.length === 0 ? (
               <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune notification.", "No notification.")}</div>
             ) : (

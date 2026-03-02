@@ -103,8 +103,10 @@ export default function RouteLoadingIndicator() {
     const onSubmit = (event: SubmitEvent) => {
       const form = event.target as HTMLFormElement | null;
       if (!form) return;
-      const method = (form.method || "get").toLowerCase();
-      if (method !== "get" && method !== "post") return;
+      // Opt-in only: avoid stuck global loader on client-side form handlers
+      // that do not trigger a route change (most React forms).
+      const shouldTrack = form.getAttribute("data-route-loading") === "true";
+      if (!shouldTrack) return;
       startLoading();
     };
 

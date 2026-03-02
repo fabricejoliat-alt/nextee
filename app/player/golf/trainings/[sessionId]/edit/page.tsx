@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type SessionType = "club" | "private" | "individual";
@@ -398,7 +399,7 @@ export default function PlayerTrainingEditPage() {
         {/* Form */}
         <div className="glass-section">
           {loading ? (
-            <div>{t("common.loading")}</div>
+            <CompactLoadingBlock label={t("common.loading")} />
           ) : (
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>

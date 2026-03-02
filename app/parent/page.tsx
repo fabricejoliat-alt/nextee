@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type Child = {
   id: string;
@@ -99,7 +100,7 @@ export default function ParentHomePage() {
           <div style={{ fontWeight: 800 }}>Enfant</div>
 
           {loading ? (
-            <div>Chargement…</div>
+            <CompactLoadingBlock label="Chargement…" />
           ) : children.length === 0 ? (
             <div style={{ color: "var(--muted)" }}>
               Aucun enfant rattaché. Demande au manager de créer le lien parent/enfant.
@@ -157,4 +158,3 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   background: "white",
 };
-

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { Search } from "lucide-react";
 
@@ -251,7 +252,7 @@ export default function CoachPlayersPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              <ListLoadingBlock label={t("common.loading")} />
             ) : filteredPlayers.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
                 {tr("Aucun joueur trouvé.", "No player found.")}

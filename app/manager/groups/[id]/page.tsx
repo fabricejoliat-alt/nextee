@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search, Trash2, Users, Tag, User, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type Role = "coach" | "manager" | "player";
 
@@ -734,7 +735,7 @@ export default function CoachGroupEditPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <div>{t("common.loading")}</div>
+              <CompactLoadingBlock label={t("common.loading")} />
             ) : !group ? (
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
                 {t("coachGroupEdit.accessDeniedOrNotFound")}

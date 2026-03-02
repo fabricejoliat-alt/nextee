@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Flame, Mountain, Smile } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -34,6 +35,12 @@ type ItemDbRow = {
   note: string | null;
   other_detail?: string | null;
   created_at?: string;
+};
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
 };
 
 type ClubRow = { id: string; name: string | null };
@@ -158,6 +165,7 @@ export default function PlayerTrainingDetailPage() {
 
   const [session, setSession] = useState<SessionDbRow | null>(null);
   const [items, setItems] = useState<ItemDbRow[]>([]);
+  const [plannedItems, setPlannedItems] = useState<EventStructureItemRow[]>([]);
   const [clubName, setClubName] = useState<string>("");
   const [groupName, setGroupName] = useState<string>("");
 
@@ -210,6 +218,32 @@ export default function PlayerTrainingDetailPage() {
         }
 
         if (s.club_event_id) {
+          const individualPlannedRes = await supabase
+            .from("club_event_player_structure_items")
+            .select("category,minutes,note,position")
+            .eq("event_id", s.club_event_id)
+            .eq("player_id", uid)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true });
+          if (individualPlannedRes.error) throw new Error(individualPlannedRes.error.message);
+
+          const individualRows = (individualPlannedRes.data ?? []) as EventStructureItemRow[];
+          if (individualRows.length > 0) {
+            setPlannedItems(individualRows);
+          } else {
+            const plannedRes = await supabase
+              .from("club_event_structure_items")
+              .select("category,minutes,note,position")
+              .eq("event_id", s.club_event_id)
+              .order("position", { ascending: true })
+              .order("created_at", { ascending: true });
+            if (!plannedRes.error) {
+              setPlannedItems((plannedRes.data ?? []) as EventStructureItemRow[]);
+            } else {
+              setPlannedItems([]);
+            }
+          }
+
           const evRes = await supabase
             .from("club_events")
             .select("group_id")
@@ -242,6 +276,7 @@ export default function PlayerTrainingDetailPage() {
           }
         } else {
           setGroupName("");
+          setPlannedItems([]);
         }
 
         // ✅ coach feedback (only visible_to_player)
@@ -290,6 +325,7 @@ export default function PlayerTrainingDetailPage() {
         setError(message);
         setSession(null);
         setItems([]);
+        setPlannedItems([]);
         setClubName("");
         setGroupName("");
         setCoachFeedback([]);
@@ -331,7 +367,7 @@ export default function PlayerTrainingDetailPage() {
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            <CompactLoadingBlock label={t("common.loading")} />
           ) : !session ? (
             <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
           ) : (
@@ -494,56 +530,101 @@ export default function PlayerTrainingDetailPage() {
                 </div>
               ) : null}
 
-              <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 8 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.sections")}</div>
-                {items.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                    {items.map((it, i) => {
-                      const extra = String(it.note ?? it.other_detail ?? "").trim();
-                      return (
-                        <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                          {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
-                          {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("trainingDetail.noSection")}</div>
-                )}
-              </div>
-
-              <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {locale === "fr" ? "Mes sensations et remarques" : "My feelings and notes"}
+                  {locale === "fr" ? "Structure de l'entraînement" : "Training structure"}
                 </div>
 
-                <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />
-                <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={session.difficulty} />
-                <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={session.satisfaction} />
-
-                {session.notes ? (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
-                    <div
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 14,
-                        background: "#fff",
-                        padding: 12,
-                        fontSize: 13,
-                        fontWeight: 800,
-                        color: "rgba(0,0,0,0.72)",
-                        lineHeight: 1.4,
-                        whiteSpace: "pre-wrap",
-                      }}
-                    >
-                      {session.notes}
-                    </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                    {locale === "fr" ? "Planifié par le coach" : "Planned by coach"}
                   </div>
-                ) : null}
+                  {plannedItems.length > 0 ? (
+                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                      {plannedItems.map((it, i) => {
+                        const extra = String(it.note ?? "").trim();
+                        return (
+                          <li key={`planned-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
+                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {locale === "fr" ? "Non saisi." : "Not entered."}
+                    </div>
+                  )}
+                </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                    {locale === "fr" ? "Réalisé par le joueur" : "Completed by player"}
+                  </div>
+                  {items.length > 0 ? (
+                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                      {items.map((it, i) => {
+                        const extra = String(it.note ?? it.other_detail ?? "").trim();
+                        return (
+                          <li key={`${it.session_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {categoryLabel(it.category, t)} — {it.minutes} {t("common.min")}
+                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {locale === "fr" ? "Non saisi." : "Not entered."}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {new Date(session.start_at).getTime() < Date.now() ? (
+                <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    {locale === "fr" ? "Mes sensations et remarques" : "My feelings and notes"}
+                  </div>
+
+                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />
+                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={session.difficulty} />
+                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={session.satisfaction} />
+
+                  {session.notes ? (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 14,
+                          background: "#fff",
+                          padding: 12,
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: "rgba(0,0,0,0.72)",
+                          lineHeight: 1.4,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {session.notes}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                    <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
+                      {t("trainingDetail.backToList")}
+                    </button>
+
+                    <Link className="btn" href={`/player/golf/trainings/${sessionId}/edit`}>
+                      {t("common.edit")}
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
                     {t("trainingDetail.backToList")}
                   </button>
@@ -552,7 +633,7 @@ export default function PlayerTrainingDetailPage() {
                     {t("common.edit")}
                   </Link>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type Round = {
   id: string;
@@ -287,7 +288,7 @@ export default function ScorecardPage() {
     return parts.filter(Boolean).join(" • ");
   }, [round, t]);
 
-  if (loading) return <div style={{ color: "var(--muted)" }}>{t("common.loading")}</div>;
+  if (loading) return <CompactLoadingBlock label={t("common.loading")} />;
 
   if (!round) {
     return (

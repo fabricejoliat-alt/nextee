@@ -64,22 +64,20 @@ export default function NotificationTemplatesAdmin() {
     setLoading(true);
     setError(null);
     setInfo(null);
-
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session.");
-      setLoading(false);
-      return;
-    }
-
     try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session.");
+        return;
+      }
+
       const [fr, en] = await Promise.all([loadLocale("fr", token), loadLocale("en", token)]);
       setRowsFr(fr);
       setRowsEn(en);
       setDraft(buildDraft(fr, en));
-      setLoading(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur chargement.");
+    } finally {
       setLoading(false);
     }
   }
@@ -107,14 +105,12 @@ export default function NotificationTemplatesAdmin() {
     setError(null);
     setInfo(null);
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session.");
-      setSavingKey(null);
-      return;
-    }
-
     try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session.");
+        return;
+      }
       await Promise.all([
         saveOne("fr", `${baseKey}.title`, draft[`fr:${baseKey}.title`] ?? "", token),
         saveOne("fr", `${baseKey}.body`, draft[`fr:${baseKey}.body`] ?? "", token),
@@ -125,9 +121,9 @@ export default function NotificationTemplatesAdmin() {
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur sauvegarde.");
+    } finally {
+      setSavingKey(null);
     }
-
-    setSavingKey(null);
   }
 
   async function resetTemplate(baseKey: string) {
@@ -135,14 +131,12 @@ export default function NotificationTemplatesAdmin() {
     setError(null);
     setInfo(null);
 
-    const token = await getToken();
-    if (!token) {
-      setError("Pas de session.");
-      setSavingKey(null);
-      return;
-    }
-
     try {
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session.");
+        return;
+      }
       await Promise.all([
         saveOne("fr", `${baseKey}.title`, "", token),
         saveOne("fr", `${baseKey}.body`, "", token),
@@ -153,9 +147,9 @@ export default function NotificationTemplatesAdmin() {
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur réinitialisation.");
+    } finally {
+      setSavingKey(null);
     }
-
-    setSavingKey(null);
   }
 
   const rowsFrMap = useMemo(() => {

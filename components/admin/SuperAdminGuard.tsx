@@ -16,27 +16,26 @@ export default function SuperAdminGuard({
 
     async function run() {
       setLoading(true);
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData.user;
 
-      const { data: authData } = await supabase.auth.getUser();
-      const user = authData.user;
-
-      if (!user) {
-        if (mounted) {
-          setAllowed(false);
-          setLoading(false);
+        if (!user) {
+          if (mounted) setAllowed(false);
+          return;
         }
-        return;
-      }
 
-      const { data, error } = await supabase
-        .from("app_admins")
-        .select("user_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
+        const { data, error } = await supabase
+          .from("app_admins")
+          .select("user_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-      if (mounted) {
-        setAllowed(!error && !!data);
-        setLoading(false);
+        if (mounted) setAllowed(!error && !!data);
+      } catch {
+        if (mounted) setAllowed(false);
+      } finally {
+        if (mounted) setLoading(false);
       }
     }
 
@@ -46,7 +45,7 @@ export default function SuperAdminGuard({
     };
   }, []);
 
-  if (loading) return <div style={{ padding: 16 }}>Chargement…</div>;
+  if (loading) return null;
 
   if (!allowed) {
     return (

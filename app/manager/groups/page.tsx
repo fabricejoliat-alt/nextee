@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type ClubLite = { id: string; name: string | null };
 
@@ -457,7 +458,7 @@ export default function CoachGroupsPage() {
               <div className="card-title">{t("coach.myGroups")}</div>
 
               {loading ? (
-                <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+                <ListLoadingBlock label={t("common.loading")} />
               ) : filtered.length === 0 ? (
                 <div style={{ opacity: 0.8, fontWeight: 800 }}>
                   {t("coachGroups.noneFound")}
