@@ -120,7 +120,7 @@ function SearchablePicker({
 
 export default function ManagerEventCreatePage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);

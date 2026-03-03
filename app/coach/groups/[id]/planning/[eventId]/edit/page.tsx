@@ -222,7 +222,7 @@ function memberRoleLabel(role: string | null | undefined) {
   }
 }
 
-function fmtDateTime(iso: string, locale: "fr" | "en") {
+function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
     weekday: "short",
@@ -234,7 +234,7 @@ function fmtDateTime(iso: string, locale: "fr" | "en") {
   }).format(d);
 }
 
-function fmtDateTimeRange(startIso: string, endIso: string | null, locale: "fr" | "en") {
+function fmtDateTimeRange(startIso: string, endIso: string | null, locale: string) {
   if (!endIso) return fmtDateTime(startIso, locale);
   const start = new Date(startIso);
   const end = new Date(endIso);
@@ -254,7 +254,7 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: "fr" 
   return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
 }
 
-function eventTypeLabelLocalized(v: string | null | undefined, locale: "fr" | "en") {
+function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
   if (v === "training") return locale === "fr" ? "Entraînement" : "Training";
   if (v === "interclub") return "Interclub";
   if (v === "camp") return locale === "fr" ? "Stage" : "Camp";

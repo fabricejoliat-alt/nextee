@@ -14,26 +14,31 @@ import {
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Bell, CheckCheck, Trash2 } from "lucide-react";
-import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
+import { Bell, CheckCheck, Settings, Trash2 } from "lucide-react";
 
 type Props = {
   homeHref: string;
+  settingsHref: string;
   titleFr: string;
   titleEn: string;
+  titleDe: string;
+  titleIt: string;
 };
 
-export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Props) {
+export default function NotificationsCenter({ homeHref, settingsHref, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string, de?: string, it?: string) => {
+    if (locale === "fr") return fr;
+    if (locale === "de") return de ?? en;
+    if (locale === "it") return it ?? en;
+    return en;
+  };
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState("");
   const [rows, setRows] = useState<Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>>([]);
-  const [pushBusy, setPushBusy] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(false);
   const [viewerRole, setViewerRole] = useState<string>("player");
 
   function toErrorMessage(e: unknown, fallback: string) {
@@ -47,7 +52,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
     try {
       const uRes = await supabase.auth.getUser();
       if (uRes.error || !uRes.data.user) {
-        setError(tr("Session invalide.", "Invalid session."));
+        setError(tr("Session invalide.", "Invalid session.", "Ungültige Sitzung.", "Sessione non valida."));
         setRows([]);
         return;
       }
@@ -59,7 +64,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       setRows(data);
       applyPwaBadge(data.filter((r) => !r.recipient.is_read).length);
     } catch (e: unknown) {
-      setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.")));
+      setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.", "Ladefehler.", "Errore di caricamento.")));
       setRows([]);
     } finally {
       setLoading(false);
@@ -86,15 +91,6 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
     })();
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (typeof Notification === "undefined") {
-      setPushEnabled(false);
-      return;
-    }
-    setPushEnabled(Notification.permission === "granted");
-  }, []);
-
   const unreadCount = useMemo(() => rows.filter((r) => !r.recipient.is_read).length, [rows]);
 
   function fmtDate(iso?: string | null) {
@@ -119,7 +115,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       applyPwaBadge(nextUnread);
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: nextUnread } }));
     } catch (e: unknown) {
-      setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+      setError(toErrorMessage(e, tr("Erreur.", "Error.", "Fehler.", "Errore.")));
     } finally {
       setBusy(false);
     }
@@ -137,7 +133,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       applyPwaBadge(normalized);
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: normalized } }));
     } catch (e: unknown) {
-      setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+      setError(toErrorMessage(e, tr("Erreur.", "Error.", "Fehler.", "Errore.")));
     } finally {
       setBusy(false);
     }
@@ -152,23 +148,9 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
       applyPwaBadge(0);
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: 0 } }));
     } catch (e: unknown) {
-      setError(toErrorMessage(e, tr("Erreur.", "Error.")));
+      setError(toErrorMessage(e, tr("Erreur.", "Error.", "Fehler.", "Errore.")));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function onEnablePush() {
-    if (pushBusy) return;
-    setPushBusy(true);
-    const res = await ensurePushSubscription({ prompt: true });
-    setPushBusy(false);
-    if (res.ok) {
-      setPushEnabled(true);
-      return;
-    }
-    if (res.reason === "denied") {
-      setError(tr("Permission notification refusée dans le navigateur.", "Notification permission denied in browser."));
     }
   }
 
@@ -197,9 +179,11 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 4 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>{locale === "fr" ? titleFr : titleEn}</div>
+              <div className="section-title" style={{ marginBottom: 0 }}>
+                {locale === "fr" ? titleFr : locale === "de" ? titleDe : locale === "it" ? titleIt : titleEn}
+              </div>
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                {tr("Non lues", "Unread")}: {unreadCount}
+                {tr("Non lues", "Unread", "Ungelesen", "Non lette")}: {unreadCount}
               </div>
             </div>
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -217,18 +201,13 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                 {tr("Centre de notifications", "Notification center")}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                {supportsWebPush() ? (
-                  pushEnabled ? (
-                    <span className="pill-soft">{tr("Push activé", "Push enabled")}</span>
-                  ) : (
-                    <button className="btn" type="button" disabled={pushBusy} onClick={onEnablePush}>
-                      {pushBusy ? tr("Activation…", "Enabling…") : tr("Activer push PWA", "Enable PWA push")}
-                    </button>
-                  )
-                ) : null}
+                <Link className="btn" href={settingsHref}>
+                  <Settings size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  {tr("Paramètres", "Settings", "Einstellungen", "Impostazioni")}
+                </Link>
                 <button className="btn" type="button" disabled={busy || unreadCount === 0} onClick={onReadAll}>
                   <CheckCheck size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  {tr("Tout marquer lu", "Mark all read")}
+                  {tr("Tout marquer lu", "Mark all read", "Alle als gelesen markieren", "Segna tutto come letto")}
                 </button>
               </div>
             </div>
@@ -236,7 +215,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
             {loading ? (
               <ListLoadingBlock label={t("common.loading")} />
             ) : rows.length === 0 ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune notification.", "No notification.")}</div>
+              <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {rows.map((r) => {
@@ -250,7 +229,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                       <div style={{ display: "grid", gap: 6 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                           <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">{n?.title ?? tr("Notification", "Notification")}</div>
-                          {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New")}</span> : null}
+                          {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
                         {n?.body ? <div style={{ fontSize: 12, fontWeight: 750, color: "rgba(0,0,0,0.75)" }}>{n.body}</div> : null}
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
@@ -266,7 +245,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                                 void onRead(r.recipient.id);
                               }}
                             >
-                              {tr("Marquer lu", "Mark read")}
+                              {tr("Marquer lu", "Mark read", "Als gelesen markieren", "Segna come letto")}
                             </button>
                           ) : null}
                           <button
@@ -280,7 +259,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                             }}
                           >
                             <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                            {tr("Effacer", "Delete")}
+                            {tr("Effacer", "Delete", "Löschen", "Elimina")}
                           </button>
                         </div>
                       </div>
@@ -300,7 +279,7 @@ export default function NotificationsCenter({ homeHref, titleFr, titleEn }: Prop
                               if (!r.recipient.is_read) void onRead(r.recipient.id);
                             }}
                           >
-                            {tr("Ouvrir", "Open")}
+                            {tr("Ouvrir", "Open", "Öffnen", "Apri")}
                           </Link>
                         </div>
                       ) : null}

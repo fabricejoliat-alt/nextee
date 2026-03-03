@@ -56,7 +56,7 @@ function sexLabel(v: string | null | undefined, fr = true) {
 
 export default function CoachPlayersPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -64,7 +64,7 @@ type CoachProfileLite = {
   avatar_url: string | null;
 };
 
-function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+function fmtDateLabelNoTime(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -78,7 +78,7 @@ function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   return `${weekday} ${dayMonth}`;
 }
 
-function fmtHourLabel(iso: string, locale: "fr" | "en") {
+function fmtHourLabel(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
   const h = d.getHours();

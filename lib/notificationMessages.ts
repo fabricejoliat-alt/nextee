@@ -1,4 +1,4 @@
-export type NotificationLocale = "fr" | "en";
+export type NotificationLocale = "fr" | "en" | "de" | "it";
 
 type TemplatePair = {
   title: string;
@@ -93,7 +93,7 @@ export async function getNotificationMessage(
   params: Params = {}
 ) {
   const def = notificationTemplateDefaults[key];
-  const base = locale === "en" ? def.en : def.fr;
+  const base = locale === "fr" ? def.fr : def.en;
 
   const overrides = await loadOverrides(locale);
   const titleOverride = overrides[`${key}.title`];

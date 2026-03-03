@@ -19,7 +19,7 @@ export default function AppI18nProvider({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === "fr" || raw === "en") setLocaleState(raw);
+    if (raw === "fr" || raw === "en" || raw === "de" || raw === "it") setLocaleState(raw);
   }, []);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export default function AppI18nProvider({ children }: { children: React.ReactNod
     () => ({
       locale,
       setLocale: (next) => setLocaleState(next),
-      t: (key) => overrides[key] ?? messages[locale][key] ?? messages.fr[key] ?? key,
+      t: (key) => overrides[key] ?? messages[locale]?.[key] ?? messages.en[key] ?? messages.fr[key] ?? key,
     }),
     [locale, overrides]
   );

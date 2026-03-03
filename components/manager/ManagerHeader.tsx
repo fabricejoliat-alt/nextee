@@ -8,7 +8,6 @@ import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
-import { ensurePushSubscription } from "@/lib/pushClient";
 
 function BurgerIcon() {
   return (
@@ -44,7 +43,6 @@ export default function ManagerHeader() {
         setUnreadCount(0);
       }
 
-      ensurePushSubscription({ prompt: false }).catch(() => {});
     }
 
     loadUnread();
@@ -99,4 +97,3 @@ export default function ManagerHeader() {
     </>
   );
 }
-

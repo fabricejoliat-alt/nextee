@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { notificationTemplateDefaults } from "@/lib/notificationMessages";
 
-type Locale = "fr" | "en";
+type Locale = "fr" | "en" | "de" | "it";
 
 type Row = {
   locale: Locale;
@@ -15,6 +15,8 @@ type Row = {
 export default function NotificationTemplatesAdmin() {
   const [rowsFr, setRowsFr] = useState<Row[]>([]);
   const [rowsEn, setRowsEn] = useState<Row[]>([]);
+  const [rowsDe, setRowsDe] = useState<Row[]>([]);
+  const [rowsIt, setRowsIt] = useState<Row[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -44,18 +46,26 @@ export default function NotificationTemplatesAdmin() {
     return (json.rows ?? []) as Row[];
   }
 
-  function buildDraft(frRows: Row[], enRows: Row[]) {
+  function buildDraft(frRows: Row[], enRows: Row[], deRows: Row[], itRows: Row[]) {
     const next: Record<string, string> = {};
     const mapFr: Record<string, string> = {};
     const mapEn: Record<string, string> = {};
+    const mapDe: Record<string, string> = {};
+    const mapIt: Record<string, string> = {};
     for (const r of frRows) mapFr[r.key] = r.value;
     for (const r of enRows) mapEn[r.key] = r.value;
+    for (const r of deRows) mapDe[r.key] = r.value;
+    for (const r of itRows) mapIt[r.key] = r.value;
 
     for (const tpl of templates) {
       next[`fr:${tpl.key}.title`] = mapFr[`${tpl.key}.title`] ?? tpl.fr.title;
       next[`fr:${tpl.key}.body`] = mapFr[`${tpl.key}.body`] ?? tpl.fr.body;
       next[`en:${tpl.key}.title`] = mapEn[`${tpl.key}.title`] ?? tpl.en.title;
       next[`en:${tpl.key}.body`] = mapEn[`${tpl.key}.body`] ?? tpl.en.body;
+      next[`de:${tpl.key}.title`] = mapDe[`${tpl.key}.title`] ?? tpl.en.title;
+      next[`de:${tpl.key}.body`] = mapDe[`${tpl.key}.body`] ?? tpl.en.body;
+      next[`it:${tpl.key}.title`] = mapIt[`${tpl.key}.title`] ?? tpl.en.title;
+      next[`it:${tpl.key}.body`] = mapIt[`${tpl.key}.body`] ?? tpl.en.body;
     }
     return next;
   }
@@ -71,10 +81,17 @@ export default function NotificationTemplatesAdmin() {
         return;
       }
 
-      const [fr, en] = await Promise.all([loadLocale("fr", token), loadLocale("en", token)]);
+      const [fr, en, de, it] = await Promise.all([
+        loadLocale("fr", token),
+        loadLocale("en", token),
+        loadLocale("de", token),
+        loadLocale("it", token),
+      ]);
       setRowsFr(fr);
       setRowsEn(en);
-      setDraft(buildDraft(fr, en));
+      setRowsDe(de);
+      setRowsIt(it);
+      setDraft(buildDraft(fr, en, de, it));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur chargement.");
     } finally {
@@ -116,6 +133,10 @@ export default function NotificationTemplatesAdmin() {
         saveOne("fr", `${baseKey}.body`, draft[`fr:${baseKey}.body`] ?? "", token),
         saveOne("en", `${baseKey}.title`, draft[`en:${baseKey}.title`] ?? "", token),
         saveOne("en", `${baseKey}.body`, draft[`en:${baseKey}.body`] ?? "", token),
+        saveOne("de", `${baseKey}.title`, draft[`de:${baseKey}.title`] ?? "", token),
+        saveOne("de", `${baseKey}.body`, draft[`de:${baseKey}.body`] ?? "", token),
+        saveOne("it", `${baseKey}.title`, draft[`it:${baseKey}.title`] ?? "", token),
+        saveOne("it", `${baseKey}.body`, draft[`it:${baseKey}.body`] ?? "", token),
       ]);
       setInfo(`Template enregistré: ${baseKey}`);
       await load();
@@ -142,6 +163,10 @@ export default function NotificationTemplatesAdmin() {
         saveOne("fr", `${baseKey}.body`, "", token),
         saveOne("en", `${baseKey}.title`, "", token),
         saveOne("en", `${baseKey}.body`, "", token),
+        saveOne("de", `${baseKey}.title`, "", token),
+        saveOne("de", `${baseKey}.body`, "", token),
+        saveOne("it", `${baseKey}.title`, "", token),
+        saveOne("it", `${baseKey}.body`, "", token),
       ]);
       setInfo(`Template réinitialisé: ${baseKey}`);
       await load();
@@ -164,12 +189,24 @@ export default function NotificationTemplatesAdmin() {
     return map;
   }, [rowsEn]);
 
+  const rowsDeMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const r of rowsDe) map[r.key] = r.value;
+    return map;
+  }, [rowsDe]);
+
+  const rowsItMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const r of rowsIt) map[r.key] = r.value;
+    return map;
+  }, [rowsIt]);
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Notifications</h1>
         <p style={{ margin: "8px 0 0", color: "rgba(0,0,0,0.65)", fontWeight: 700 }}>
-          Modèles de messages (FR/EN) utilisés pour le centre de notifications et le push PWA.
+          Modèles de messages (FR/EN/DE/IT) utilisés pour le centre de notifications et le push PWA.
         </p>
       </div>
 
@@ -190,7 +227,11 @@ export default function NotificationTemplatesAdmin() {
               rowsFrMap[frTitleKey] !== undefined ||
               rowsFrMap[frBodyKey] !== undefined ||
               rowsEnMap[enTitleKey] !== undefined ||
-              rowsEnMap[enBodyKey] !== undefined;
+              rowsEnMap[enBodyKey] !== undefined ||
+              rowsDeMap[enTitleKey] !== undefined ||
+              rowsDeMap[enBodyKey] !== undefined ||
+              rowsItMap[enTitleKey] !== undefined ||
+              rowsItMap[enBodyKey] !== undefined;
 
             return (
               <div key={tpl.key} className="card" style={{ display: "grid", gap: 10 }}>
@@ -227,6 +268,34 @@ export default function NotificationTemplatesAdmin() {
                     style={{ ...inputStyle, minHeight: 62, resize: "vertical" }}
                     value={draft[`en:${tpl.key}.body`] ?? tpl.en.body}
                     onChange={(e) => setDraft((d) => ({ ...d, [`en:${tpl.key}.body`]: e.target.value }))}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>Deutsch</div>
+                  <input
+                    style={inputStyle}
+                    value={draft[`de:${tpl.key}.title`] ?? tpl.en.title}
+                    onChange={(e) => setDraft((d) => ({ ...d, [`de:${tpl.key}.title`]: e.target.value }))}
+                  />
+                  <textarea
+                    style={{ ...inputStyle, minHeight: 62, resize: "vertical" }}
+                    value={draft[`de:${tpl.key}.body`] ?? tpl.en.body}
+                    onChange={(e) => setDraft((d) => ({ ...d, [`de:${tpl.key}.body`]: e.target.value }))}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>Italiano</div>
+                  <input
+                    style={inputStyle}
+                    value={draft[`it:${tpl.key}.title`] ?? tpl.en.title}
+                    onChange={(e) => setDraft((d) => ({ ...d, [`it:${tpl.key}.title`]: e.target.value }))}
+                  />
+                  <textarea
+                    style={{ ...inputStyle, minHeight: 62, resize: "vertical" }}
+                    value={draft[`it:${tpl.key}.body`] ?? tpl.en.body}
+                    onChange={(e) => setDraft((d) => ({ ...d, [`it:${tpl.key}.body`]: e.target.value }))}
                   />
                 </div>
 

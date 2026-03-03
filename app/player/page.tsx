@@ -232,7 +232,7 @@ function monthTitle(now = new Date(), locale = "fr-CH") {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now).toUpperCase();
 }
 
-function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+function fmtDateLabelNoTime(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -246,7 +246,7 @@ function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
 }
 
-function fmtHourLabel(iso: string, locale: "fr" | "en") {
+function fmtHourLabel(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
@@ -267,7 +267,7 @@ function sameDay(aIso: string, bIso: string) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: "fr" | "en") {
+function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: string) {
   if (locale === "en") {
     if (v === "training") return "Training";
     if (v === "interclub") return "Interclub";
@@ -406,6 +406,7 @@ export default function PlayerHomePage() {
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, HomeEventStructureItem[]>>({});
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [upcomingIndex, setUpcomingIndex] = useState(0);
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
 
@@ -555,6 +556,7 @@ export default function PlayerHomePage() {
 
   async function load() {
     setLoading(true);
+    setUpcomingLoading(true);
     setError(null);
     setHeroLoading(true);
 
@@ -589,6 +591,7 @@ export default function PlayerHomePage() {
         setGroupNameById(pageCache.groupNameById);
         setEventStructureByEventId(pageCache.eventStructureByEventId);
         setUpcomingActivities(pageCache.upcomingActivities);
+        setUpcomingLoading(false);
         setLoading(false);
       }
       const heroCache = readHeroCache(effectiveUid);
@@ -600,6 +603,7 @@ export default function PlayerHomePage() {
     } catch {
       setError(t("roundsNew.error.invalidSession"));
       setLoading(false);
+      setUpcomingLoading(false);
       setHeroLoading(false);
       return;
     }
@@ -613,6 +617,7 @@ export default function PlayerHomePage() {
     if (profRes.error) {
       setError(profRes.error.message);
       setLoading(false);
+      setUpcomingLoading(false);
       setHeroLoading(false);
       return;
     }
@@ -627,6 +632,7 @@ export default function PlayerHomePage() {
       setRoundsMonth([]);
       setRoundsPrevMonth([]);
       setLoading(false);
+      setUpcomingLoading(false);
       setHeroLoading(false);
       writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: [] });
       return;
@@ -842,6 +848,7 @@ export default function PlayerHomePage() {
     ].sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
     setUpcomingActivities(upcoming);
     setUpcomingIndex(0);
+    setUpcomingLoading(false);
 
     // Rounds month + prev month (GIR/fairways/putts)
     try {
@@ -923,6 +930,7 @@ export default function PlayerHomePage() {
       setPlayedHolesPrevMonthByRoundId({});
       setHolesPlayedMonth(0);
       setUpcomingActivities([]);
+      setUpcomingLoading(false);
     } finally {
       setLoading(false);
     }
@@ -1148,7 +1156,7 @@ export default function PlayerHomePage() {
           <div className="section-title">{locale === "fr" ? "Prochaine activité" : "Upcoming activity"}</div>
 
           <div className="glass-card">
-            {loading ? (
+            {upcomingLoading ? (
               <div aria-live="polite" aria-busy="true" style={{ display: "inline-flex", alignItems: "center", padding: "4px 0" }}>
                 <div
                   className="route-loading-spinner"

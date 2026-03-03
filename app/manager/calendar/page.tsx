@@ -104,7 +104,7 @@ function dayHeaderLabel(d: Date, locale: string) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
-function eventTypeLabel(v: EventRow["event_type"], locale: "fr" | "en") {
+function eventTypeLabel(v: EventRow["event_type"], locale: string) {
   if (locale === "en") {
     if (v === "training") return "Training";
     if (v === "interclub") return "Interclub";
@@ -137,7 +137,7 @@ function overlapsDay(e: EventRow, d: Date) {
 
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
   const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
 
   const [loading, setLoading] = useState(true);

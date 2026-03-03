@@ -123,7 +123,7 @@ function fmtDateTime(iso: string) {
   }).format(d);
 }
 
-function fmtDateAtLabel(iso: string, locale: "fr" | "en") {
+function fmtDateAtLabel(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -143,7 +143,7 @@ function fmtDateAtLabel(iso: string, locale: "fr" | "en") {
   return `${weekCap} ${dayMonth} à ${hh}`;
 }
 
-function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+function fmtDateLabelNoTime(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -157,7 +157,7 @@ function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
 }
 
-function fmtDateLabelNoTimeShort(iso: string, locale: "fr" | "en") {
+function fmtDateLabelNoTimeShort(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -171,7 +171,7 @@ function fmtDateLabelNoTimeShort(iso: string, locale: "fr" | "en") {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
 }
 
-function fmtHourLabel(iso: string, locale: "fr" | "en") {
+function fmtHourLabel(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
@@ -187,7 +187,7 @@ function sameDay(aIso: string, bIso: string) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function eventTypeLabel(v: PlannedEventRow["event_type"], locale: "fr" | "en") {
+function eventTypeLabel(v: PlannedEventRow["event_type"], locale: string) {
   if (locale === "en") {
     if (v === "training") return "Training";
     if (v === "interclub") return "Interclub";
@@ -202,7 +202,7 @@ function eventTypeLabel(v: PlannedEventRow["event_type"], locale: "fr" | "en") {
   return "Événement";
 }
 
-function typeLabel(t: SessionRow["session_type"], locale: "fr" | "en") {
+function typeLabel(t: SessionRow["session_type"], locale: string) {
   if (t === "club") return locale === "fr" ? "Entraînement club" : "Club training";
   if (t === "private") return locale === "fr" ? "Cours privé" : "Private lesson";
   return locale === "fr" ? "Entraînement individuel" : "Individual training";

@@ -28,7 +28,7 @@ function eventTypeLabel(v: string | null | undefined) {
   if (v === "session") return "Séance";
   return "Événement";
 }
-function eventTypeLabelLocalized(v: string | null | undefined, locale: "fr" | "en") {
+function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
   if (locale === "en") {
     if (v === "training") return "Training";
     if (v === "interclub") return "Interclub";
@@ -136,7 +136,7 @@ const avatarBoxStyle: React.CSSProperties = {
 
 export default function CoachEventDetailPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
   const params = useParams<{ id: string; eventId: string }>();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();

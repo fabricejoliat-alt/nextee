@@ -65,7 +65,7 @@ type IncompleteSession = {
 
 type Row = IncompleteEvent | IncompleteSession;
 
-function fmtDateTime(iso: string, locale: "fr" | "en") {
+function fmtDateTime(iso: string, locale: string) {
   return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
     weekday: "short",
     day: "2-digit",
@@ -76,7 +76,7 @@ function fmtDateTime(iso: string, locale: "fr" | "en") {
   }).format(new Date(iso));
 }
 
-function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
+function fmtDateLabelNoTime(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", {
@@ -90,7 +90,7 @@ function fmtDateLabelNoTime(iso: string, locale: "fr" | "en") {
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
 }
 
-function fmtHourLabel(iso: string, locale: "fr" | "en") {
+function fmtHourLabel(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
     return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);

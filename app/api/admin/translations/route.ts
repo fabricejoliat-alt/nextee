@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const key = String(body.key ?? "").trim();
     const value = String(body.value ?? "");
 
-    if (!locale || !["fr", "en"].includes(locale)) {
+    if (!locale || !["fr", "en", "de", "it"].includes(locale)) {
       return NextResponse.json({ error: "Invalid locale" }, { status: 400 });
     }
     if (!key) return NextResponse.json({ error: "Missing key" }, { status: 400 });

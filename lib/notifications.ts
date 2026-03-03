@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabaseClient";
 import { dispatchPush } from "@/lib/pushClient";
+import {
+  isKindEnabled,
+  loadMyNotificationPreferences,
+  type NotificationPreferences,
+} from "@/lib/notificationPreferences";
 
 export type AppNotificationInput = {
   actorUserId: string;
@@ -137,15 +142,34 @@ export async function createAppNotification(input: AppNotificationInput) {
 }
 
 export async function getUnreadNotificationsCount(userId: string) {
+  const prefs = await loadMyNotificationPreferences(userId);
+  if (!prefs.receiveInApp) return 0;
+
   const res = await supabase
     .from("notification_recipients")
-    .select("id", { count: "exact", head: true })
+    .select("id,notification_id")
     .eq("user_id", userId)
     .eq("is_deleted", false)
     .eq("is_read", false);
 
   if (res.error) throw new Error(res.error.message);
-  return res.count ?? 0;
+  const recipients = (res.data ?? []) as Array<{ id: number; notification_id: string }>;
+  if (recipients.length === 0) return 0;
+
+  if (prefs.enabledKinds.length === 0) return recipients.length;
+
+  const ids = recipients.map((r) => r.notification_id);
+  const nRes = await supabase.from("notifications").select("id,kind").in("id", ids);
+  if (nRes.error) throw new Error(nRes.error.message);
+  const kindById = new Map(
+    ((nRes.data ?? []) as Array<{ id: string; kind: string }>).map((n) => [n.id, n.kind])
+  );
+
+  return recipients.reduce((count, r) => {
+    const kind = kindById.get(r.notification_id);
+    if (!kind) return count;
+    return isKindEnabled(kind, prefs) ? count + 1 : count;
+  }, 0);
 }
 
 export type NotificationRecipientRow = {
@@ -170,6 +194,9 @@ export type NotificationRow = {
 };
 
 export async function loadMyNotifications(userId: string) {
+  const prefs: NotificationPreferences = await loadMyNotificationPreferences(userId);
+  if (!prefs.receiveInApp) return [] as Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>;
+
   const recRes = await supabase
     .from("notification_recipients")
     .select("id,notification_id,user_id,is_read,read_at,is_deleted,deleted_at,created_at")
@@ -191,7 +218,12 @@ export async function loadMyNotifications(userId: string) {
   if (nRes.error) throw new Error(nRes.error.message);
   const byId = new Map((nRes.data ?? ([] as NotificationRow[])).map((n) => [n.id, n]));
 
-  return recipients.map((recipient) => ({ recipient, notification: byId.get(recipient.notification_id) ?? null }));
+  return recipients
+    .map((recipient) => ({ recipient, notification: byId.get(recipient.notification_id) ?? null }))
+    .filter((row) => {
+      if (!row.notification) return true;
+      return isKindEnabled(row.notification.kind, prefs);
+    });
 }
 
 export async function markNotificationRead(recipientId: number) {

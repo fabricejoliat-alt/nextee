@@ -335,7 +335,7 @@ type FilterCounts = { upcoming: number; past: number; range: number };
 
 export default function CoachGroupPlanningPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
   const params = useParams<{ id: string }>();
   const groupId = String(params?.id ?? "").trim();
 

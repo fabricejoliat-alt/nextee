@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const locale = (searchParams.get("locale") || "fr").trim().toLowerCase();
-    if (!["fr", "en"].includes(locale)) {
+    if (!["fr", "en", "de", "it"].includes(locale)) {
       return NextResponse.json({ error: "Invalid locale" }, { status: 400 });
     }
 
@@ -31,4 +31,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
-

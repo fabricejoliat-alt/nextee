@@ -48,22 +48,52 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
+    let notificationKind = "";
     if (body.notificationId) {
       const check = await supabaseAdmin
         .from("notifications")
-        .select("id,actor_user_id")
+        .select("id,actor_user_id,kind")
         .eq("id", body.notificationId)
         .maybeSingle();
       if (check.error) return NextResponse.json({ error: check.error.message }, { status: 400 });
       if (!check.data || check.data.actor_user_id !== caller.userId) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+      notificationKind = String(check.data.kind ?? "").trim();
+    }
+
+    // Apply user push preferences (if table exists). If kind filters are configured,
+    // only dispatch matching kinds.
+    let filteredRecipientUserIds = recipientUserIds;
+    const prefRes = await supabaseAdmin
+      .from("user_notification_preferences")
+      .select("user_id,receive_push,enabled_kinds")
+      .in("user_id", recipientUserIds);
+    if (!prefRes.error) {
+      const prefByUser = new Map(
+        (prefRes.data ?? []).map((r: { user_id: string; receive_push: boolean | null; enabled_kinds: string[] | null }) => [
+          r.user_id,
+          { receivePush: r.receive_push === true, enabledKinds: Array.isArray(r.enabled_kinds) ? r.enabled_kinds : [] as string[] },
+        ])
+      );
+      filteredRecipientUserIds = recipientUserIds.filter((uid) => {
+        const pref = prefByUser.get(uid);
+        // default behavior when no row exists: allow push
+        if (!pref) return true;
+        if (!pref.receivePush) return false;
+        if (!notificationKind || pref.enabledKinds.length === 0) return true;
+        return pref.enabledKinds.includes(notificationKind);
+      });
+    }
+
+    if (filteredRecipientUserIds.length === 0) {
+      return NextResponse.json({ ok: true, sent: 0, cleaned: 0 });
     }
 
     const subsRes = await supabaseAdmin
       .from("push_subscriptions")
       .select("id,user_id,endpoint,p256dh,auth")
-      .in("user_id", recipientUserIds);
+      .in("user_id", filteredRecipientUserIds);
 
     if (subsRes.error) return NextResponse.json({ error: subsRes.error.message }, { status: 400 });
 

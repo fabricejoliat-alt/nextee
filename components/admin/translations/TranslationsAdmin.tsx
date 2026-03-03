@@ -143,6 +143,8 @@ export default function TranslationsAdmin() {
           <select value={locale} onChange={(e) => setLocale(e.target.value as AppLocale)} style={inputStyle}>
             <option value="fr">fr</option>
             <option value="en">en</option>
+            <option value="de">de</option>
+            <option value="it">it</option>
           </select>
 
           <input

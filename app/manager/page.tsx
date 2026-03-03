@@ -90,7 +90,7 @@ function fullName(first: string | null | undefined, last: string | null | undefi
 
 export default function ManagerHomePage() {
   const { t, locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "en" ? en : fr);
+  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
   const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
   const [loading, setLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
