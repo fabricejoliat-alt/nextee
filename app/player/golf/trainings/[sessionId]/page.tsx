@@ -8,6 +8,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Flame, Mountain, Smile } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -378,10 +379,10 @@ export default function PlayerTrainingDetailPage() {
                 const sessionEnd = new Date(new Date(session.start_at).getTime() + sessionDuration * 60_000).toISOString();
                 const isMultiDaySession = !sameDay(session.start_at, sessionEnd);
                 const displayLocation = (session.location_text ?? "").trim();
-                const trainingGroupLabel = groupName || clubName || (locale === "fr" ? "Groupe" : "Group");
+                const trainingGroupLabel = groupName || clubName || (pickLocaleText(locale, "Groupe", "Group"));
                 const sessionTitle =
                   session.session_type === "club"
-                    ? `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`
+                    ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`
                     : `${typeLabel(session.session_type, t)}`;
                 return (
                   <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
@@ -396,12 +397,12 @@ export default function PlayerTrainingDetailPage() {
                     >
                       {isMultiDaySession ? (
                         <div>
-                          {fmtDateLabelNoTime(session.start_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"}{" "}
-                          {fmtDateLabelNoTime(sessionEnd, locale === "fr" ? "fr" : "en")}
+                          {fmtDateLabelNoTime(session.start_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")}{" "}
+                          {fmtDateLabelNoTime(sessionEnd, pickLocaleText(locale, "fr", "en"))}
                         </div>
                       ) : (
                         <div>
-                          {fmtDateLabelNoTime(session.start_at, locale === "fr" ? "fr" : "en")}{" "}
+                          {fmtDateLabelNoTime(session.start_at, pickLocaleText(locale, "fr", "en"))}{" "}
                           <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                             {locale === "fr"
                               ? `• de ${fmtHourLabel(session.start_at, "fr")} à ${fmtHourLabel(sessionEnd, "fr")}`
@@ -419,7 +420,7 @@ export default function PlayerTrainingDetailPage() {
                       </div>
                       {session.session_type === "club" && clubName ? (
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                          {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                          {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                         </div>
                       ) : null}
                     </div>
@@ -532,12 +533,12 @@ export default function PlayerTrainingDetailPage() {
 
               <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {locale === "fr" ? "Structure de l'entraînement" : "Training structure"}
+                  {pickLocaleText(locale, "Structure de l'entraînement", "Training structure")}
                 </div>
 
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                    {locale === "fr" ? "Planifié par le coach" : "Planned by coach"}
+                    {pickLocaleText(locale, "Planifié par le coach", "Planned by coach")}
                   </div>
                   {plannedItems.length > 0 ? (
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
@@ -553,14 +554,14 @@ export default function PlayerTrainingDetailPage() {
                     </ul>
                   ) : (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {locale === "fr" ? "Non saisi." : "Not entered."}
+                      {pickLocaleText(locale, "Non saisi.", "Not entered.")}
                     </div>
                   )}
                 </div>
 
                 <div style={{ display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                    {locale === "fr" ? "Réalisé par le joueur" : "Completed by player"}
+                    {pickLocaleText(locale, "Réalisé par le joueur", "Completed by player")}
                   </div>
                   {items.length > 0 ? (
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
@@ -576,7 +577,7 @@ export default function PlayerTrainingDetailPage() {
                     </ul>
                   ) : (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {locale === "fr" ? "Non saisi." : "Not entered."}
+                      {pickLocaleText(locale, "Non saisi.", "Not entered.")}
                     </div>
                   )}
                 </div>
@@ -585,7 +586,7 @@ export default function PlayerTrainingDetailPage() {
               {new Date(session.start_at).getTime() < Date.now() ? (
                 <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    {locale === "fr" ? "Mes sensations et remarques" : "My feelings and notes"}
+                    {pickLocaleText(locale, "Mes sensations et remarques", "My feelings and notes")}
                   </div>
 
                   <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={session.motivation} />

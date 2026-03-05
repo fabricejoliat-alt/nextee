@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import {
   ResponsiveContainer,
   LineChart,
@@ -316,7 +317,7 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
 
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
   const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
@@ -1744,7 +1745,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>{locale === "fr" ? "Score moyen" : "Average score"}</div>
+                    <div style={miniLeft}>{pickLocaleText(locale, "Score moyen", "Average score")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{holeAgg.avgScore18 == null ? "—" : `${holeAgg.avgScore18}`}</div>
                       {prevRange ? deltaArrow((holeAgg.avgScore18 ?? 0) - (prevHoleAgg.avgScore18 ?? 0)) : null}
@@ -1752,7 +1753,7 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>{locale === "fr" ? "Nombre de putts (sur 18 trous)" : "Putts (18 holes)"}</div>
+                    <div style={miniLeft}>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18 holes)")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{keyKpisUI.putts18 == null ? "—" : `${keyKpisUI.putts18}`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.putts18Arrow ?? null) : null}

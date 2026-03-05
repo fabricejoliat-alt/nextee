@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type Item = {
   id: string;
@@ -61,7 +62,7 @@ function compactMeta(it: Item) {
 
 export default function MarketplaceDetailPage() {
   const { t, locale } = useI18n();
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const params = useParams();
   const pathname = usePathname();
 

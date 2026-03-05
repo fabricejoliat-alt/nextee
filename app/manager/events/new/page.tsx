@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Repeat, CalendarPlus, Search } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { supabase } from "@/lib/supabaseClient";
 
 type EventType = "training" | "interclub" | "camp" | "session" | "event";
@@ -120,7 +121,7 @@ function SearchablePicker({
 
 export default function ManagerEventCreatePage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -341,7 +342,7 @@ export default function ManagerEventCreatePage() {
                 <select value={eventType} onChange={(e) => setEventType(e.target.value as EventType)} disabled={saving || loading}>
                   {EVENT_TYPES.map((t) => (
                     <option key={t.value} value={t.value}>
-                      {locale === "en" ? t.en : t.fr}
+                      {pickLocaleText(locale, t.fr, t.en)}
                     </option>
                   ))}
                 </select>

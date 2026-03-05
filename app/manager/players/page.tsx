@@ -5,6 +5,7 @@ import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { Search } from "lucide-react";
 
 type ClubRow = {
@@ -47,16 +48,16 @@ function initials(p?: { first_name: string | null; last_name: string | null } | 
   return fi + li || "👤";
 }
 
-function sexLabel(v: string | null | undefined, fr = true) {
-  if (v === "male") return fr ? "Homme" : "Male";
-  if (v === "female") return fr ? "Femme" : "Female";
-  if (v === "other") return fr ? "Autre" : "Other";
-  return fr ? "Non défini" : "Not set";
+function sexLabel(v: string | null | undefined, locale: "fr" | "en" | "de" | "it") {
+  if (v === "male") return pickLocaleText(locale, "Homme", "Male");
+  if (v === "female") return pickLocaleText(locale, "Femme", "Female");
+  if (v === "other") return pickLocaleText(locale, "Autre", "Other");
+  return pickLocaleText(locale, "Non défini", "Not set");
 }
 
 export default function CoachPlayersPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +279,7 @@ export default function CoachPlayersPage() {
                         <div className="marketplace-body">
                           <div className="marketplace-item-title">{fullName(p)}</div>
                           <div className="marketplace-meta">
-                            {tr("Sexe", "Sex")}: {sexLabel(p.sex, locale !== "en")} • Handicap{" "}
+                            {tr("Sexe", "Sex")}: {sexLabel(p.sex, locale as "fr" | "en" | "de" | "it")} • Handicap{" "}
                             {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
                           </div>
                           <div className="marketplace-meta">{p.club_names.join(" • ") || "Club"}</div>

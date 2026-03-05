@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 export default function ManagerOrganizationsPage() {
   const { locale } = useI18n();
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export default function ManagerOrganizationsPage() {
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(json?.error ?? (locale === "fr" ? "Erreur de chargement" : "Loading error"));
+        setError(json?.error ?? tr("Erreur de chargement", "Loading error"));
         setRows([]);
         setLoading(false);
         return;
@@ -54,7 +56,7 @@ export default function ManagerOrganizationsPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              {locale === "fr" ? "Gestion des groupes" : "Groups management"}
+              {tr("Gestion des groupes", "Groups management")}
             </div>
           </div>
           {error && <div className="marketplace-error">{error}</div>}
@@ -63,10 +65,10 @@ export default function ManagerOrganizationsPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <ListLoadingBlock label={locale === "fr" ? "Chargement..." : "Loading..."} />
+              <ListLoadingBlock label={tr("Chargement...", "Loading...")} />
             ) : rows.length === 0 ? (
               <div style={{ opacity: 0.7 }}>
-                {locale === "fr" ? "Aucun club manager trouvé." : "No managed club found."}
+                {tr("Aucun club manager trouvé.", "No managed club found.")}
               </div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
@@ -75,7 +77,7 @@ export default function ManagerOrganizationsPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                       <div style={{ fontWeight: 900 }}>{r.name}</div>
                       <Link className="btn" href={`/manager/organizations/${r.id}/groups`}>
-                        {locale === "fr" ? "Ouvrir" : "Open"}
+                        {tr("Ouvrir", "Open")}
                       </Link>
                     </div>
                   </div>

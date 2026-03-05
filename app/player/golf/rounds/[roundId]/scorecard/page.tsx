@@ -5,13 +5,19 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type Round = {
   id: string;
+  user_id: string;
   start_at: string;
   round_type: "training" | "competition";
   competition_name: string | null;
+  om_organization_id: string | null;
+  om_competition_level: string | null;
+  om_competition_format: string | null;
+  om_rounds_18_count: number | null;
   course_name: string | null;
   tee_name: string | null;
 
@@ -47,11 +53,14 @@ function getParamString(p: any): string | null {
 
 function fmtDate(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "en" ? "en-GB" : "fr-CH", {
+  return new Intl.DateTimeFormat(
+    locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-GB",
+    {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(d);
+    }
+  ).format(d);
 }
 
 // GIR rule used in your app
@@ -162,6 +171,9 @@ export default function ScorecardPage() {
   const [error, setError] = useState<string | null>(null);
   const [round, setRound] = useState<Round | null>(null);
   const [holes, setHoles] = useState<Hole[]>([]);
+  const [roundPositionLabel, setRoundPositionLabel] = useState<string | null>(null);
+  const [prevRoundId, setPrevRoundId] = useState<string | null>(null);
+  const [nextRoundId, setNextRoundId] = useState<string | null>(null);
 
   async function load() {
     if (!roundId) {
@@ -176,7 +188,7 @@ export default function ScorecardPage() {
     const rRes = await supabase
       .from("golf_rounds")
       .select(
-        "id,start_at,round_type,competition_name,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus"
+        "id,user_id,start_at,round_type,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus"
       )
       .eq("id", roundId)
       .maybeSingle();
@@ -193,7 +205,50 @@ export default function ScorecardPage() {
       setLoading(false);
       return;
     }
-    setRound(rRes.data as Round);
+    const loadedRound = rRes.data as Round;
+    setRound(loadedRound);
+
+    setRoundPositionLabel(null);
+    setPrevRoundId(null);
+    setNextRoundId(null);
+    if (
+      loadedRound.round_type === "competition" &&
+      (loadedRound.om_rounds_18_count ?? 1) > 1 &&
+      loadedRound.om_organization_id &&
+      loadedRound.om_competition_format
+    ) {
+      const year = new Date(loadedRound.start_at).getFullYear();
+      const yearStart = `${year}-01-01T00:00:00.000Z`;
+      const nextYearStart = `${year + 1}-01-01T00:00:00.000Z`;
+
+      const sameTournamentRes = await supabase
+        .from("golf_rounds")
+        .select("id,competition_name")
+        .eq("round_type", "competition")
+        .eq("user_id", loadedRound.user_id)
+        .eq("om_organization_id", loadedRound.om_organization_id)
+        .eq("om_competition_format", loadedRound.om_competition_format)
+        .eq("om_competition_level", loadedRound.om_competition_level)
+        .eq("om_rounds_18_count", loadedRound.om_rounds_18_count)
+        .gte("start_at", yearStart)
+        .lt("start_at", nextYearStart)
+        .order("start_at", { ascending: true })
+        .order("id", { ascending: true });
+
+      if (!sameTournamentRes.error) {
+        const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
+        const sameTournament = (sameTournamentRes.data ?? []).filter((r: any) => {
+          const normName = (r.competition_name ?? "").trim().toLowerCase();
+          return normName === normCurrentName;
+        });
+        const idx = sameTournament.findIndex((r: any) => r.id === loadedRound.id);
+        if (idx >= 0) {
+          setRoundPositionLabel(`Tour ${idx + 1}/${sameTournament.length}`);
+          if (idx > 0) setPrevRoundId(String(sameTournament[idx - 1].id));
+          if (idx < sameTournament.length - 1) setNextRoundId(String(sameTournament[idx + 1].id));
+        }
+      }
+    }
 
     const hRes = await supabase
       .from("golf_round_holes")
@@ -319,6 +374,16 @@ export default function ScorecardPage() {
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
+              {prevRoundId ? (
+                <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${prevRoundId}/scorecard`}>
+                  Tour precedent
+                </Link>
+              ) : null}
+              {nextRoundId ? (
+                <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${nextRoundId}/scorecard`}>
+                  Tour suivant
+                </Link>
+              ) : null}
               <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${round.id}/edit`}>
                 {t("common.edit")}
               </Link>
@@ -339,6 +404,12 @@ export default function ScorecardPage() {
                 <div style={{ fontWeight: 1100, fontSize: 16, lineHeight: 1.15 }} className="truncate">
                   {fmtDate(round.start_at, locale)}
                 </div>
+
+                {roundPositionLabel && (
+                  <div style={{ fontSize: 12, fontWeight: 1000, color: "rgba(0,0,0,0.70)" }}>
+                    {roundPositionLabel}
+                  </div>
+                )}
 
                 <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.65)", lineHeight: 1.35 }} className="truncate">
                   {configLine || " "}
@@ -510,7 +581,7 @@ export default function ScorecardPage() {
             )}
 
             <div style={statBox}>
-              <div style={statLabel}>{locale === "fr" ? "Trous joués" : "Holes played"}</div>
+              <div style={statLabel}>{pickLocaleText(locale, "Trous joués", "Holes played")}</div>
               <div style={statValue}>{computed.holesPlayed ?? 0}</div>
             </div>
           </div>

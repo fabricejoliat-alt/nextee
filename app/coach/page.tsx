@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { AlertTriangle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 
 type EventLite = {
@@ -65,8 +66,8 @@ function isSameDay(aIso: string, bIso: string | null) {
 
 export default function CoachHomePage() {
   const { t, locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const [loading, setLoading] = useState(true);
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [pendingEvalEvents, setPendingEvalEvents] = useState<EventLite[]>([]);
@@ -225,7 +226,7 @@ export default function CoachHomePage() {
                             <div>{fmtDateTime(e.starts_at, dateLocale)}</div>
                           ) : (
                             <div>
-                              {fmtDateTime(e.starts_at, dateLocale)} {locale === "fr" ? "au" : "to"}{" "}
+                              {fmtDateTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
                               {e.ends_at ? fmtDateTime(e.ends_at, dateLocale) : ""}
                             </div>
                           )}
@@ -302,7 +303,7 @@ export default function CoachHomePage() {
                             </div>
                           ) : (
                             <div>
-                              {fmtDateTime(e.starts_at, dateLocale)} {locale === "fr" ? "au" : "to"}{" "}
+                              {fmtDateTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
                               {e.ends_at ? fmtDateTime(e.ends_at, dateLocale) : ""}
                             </div>
                           )}

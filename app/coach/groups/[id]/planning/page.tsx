@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import {
   Calendar,
   PlusCircle,
@@ -335,7 +336,7 @@ type FilterCounts = { upcoming: number; past: number; range: number };
 
 export default function CoachGroupPlanningPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const params = useParams<{ id: string }>();
   const groupId = String(params?.id ?? "").trim();
 

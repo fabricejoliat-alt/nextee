@@ -8,14 +8,23 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { SlidersHorizontal } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type Round = {
   id: string;
+  user_id: string;
   start_at: string;
   round_type: "training" | "competition";
   competition_name: string | null;
   course_name: string | null;
   tee_name: string | null;
+  om_organization_id: string | null;
+  om_competition_level: string | null;
+  om_rounds_18_count: number | null;
+  om_competition_format: "stroke_play_individual" | "match_play_individual" | null;
+  om_match_result: "won" | "lost" | null;
+  match_score_text: string | null;
+  match_opponent_handicap: number | null;
 
   total_score: number | null;
   total_putts: number | null;
@@ -82,7 +91,7 @@ const selectStyle: React.CSSProperties = {
 
 function fmtDateOnly(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+  return new Intl.DateTimeFormat(pickLocaleText(locale, "fr-CH", "en-US"), {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -129,6 +138,7 @@ export default function RoundsListPage() {
 
   const [rounds, setRounds] = useState<Round[]>([]);
   const [holesByRoundId, setHolesByRoundId] = useState<Record<string, HoleLite[]>>({});
+  const [roundPositionByRoundId, setRoundPositionByRoundId] = useState<Record<string, string>>({});
 
   const [fromDate, setFromDate] = useState<string>(() => getCurrentMonthYmdRange().from);
   const [toDate, setToDate] = useState<string>(() => getCurrentMonthYmdRange().to);
@@ -152,7 +162,7 @@ export default function RoundsListPage() {
       const q = supabase
         .from("golf_rounds")
         .select(
-          "id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,gir",
+          "id,user_id,start_at,round_type,competition_name,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
           { count: "exact" }
         )
         .eq("user_id", uid)
@@ -174,8 +184,40 @@ export default function RoundsListPage() {
       const to = from + PAGE_SIZE;
       const list = filtered.slice(from, to);
 
+      const positionMap: Record<string, string> = {};
+      const grouped = new Map<string, Round[]>();
+      for (const r of all) {
+        if (r.round_type !== "competition") continue;
+        if (!r.om_rounds_18_count || r.om_rounds_18_count <= 1) continue;
+        const key = [
+          r.user_id,
+          r.om_organization_id ?? "",
+          r.om_competition_level ?? "",
+          r.om_competition_format ?? "",
+          r.om_rounds_18_count,
+          new Date(r.start_at).getFullYear(),
+          (r.competition_name ?? "").trim().toLowerCase(),
+        ].join("|");
+        const arr = grouped.get(key) ?? [];
+        arr.push(r);
+        grouped.set(key, arr);
+      }
+      grouped.forEach((arr) => {
+        arr.sort((a, b) => {
+          const ta = new Date(a.start_at).getTime();
+          const tb = new Date(b.start_at).getTime();
+          if (ta !== tb) return ta - tb;
+          return a.id.localeCompare(b.id);
+        });
+        const totalRounds = arr.length;
+        arr.forEach((r, idx) => {
+          positionMap[r.id] = `Tour ${idx + 1}/${totalRounds}`;
+        });
+      });
+
       setRounds(list);
       setTotalCount(total);
+      setRoundPositionByRoundId(positionMap);
 
       // 🔁 Comme sur la scorecard: on calcule parTotal et scoreTotal depuis les trous
       const roundIds = list.map((r) => r.id);
@@ -207,6 +249,7 @@ export default function RoundsListPage() {
       setError(e?.message ?? t("common.errorLoading"));
       setRounds([]);
       setHolesByRoundId({});
+      setRoundPositionByRoundId({});
       setTotalCount(0);
       setLoading(false);
     }
@@ -469,6 +512,7 @@ export default function RoundsListPage() {
                 {rounds.map((r) => {
                   const c = computedByRoundId[r.id];
                   const playedHoles = (holesByRoundId[r.id] ?? []).filter((h) => typeof h.score === "number").length;
+                  const isMatchPlay = r.round_type === "competition" && r.om_competition_format === "match_play_individual";
                   const configParts: string[] = [];
                   if (r.course_name) configParts.push(r.course_name);
                   if (r.tee_name) configParts.push(r.tee_name);
@@ -496,6 +540,11 @@ export default function RoundsListPage() {
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                                 {fmtDateOnly(r.start_at, locale)}
                               </div>
+                              {roundPositionByRoundId[r.id] ? (
+                                <div style={{ marginTop: 4, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
+                                  {roundPositionByRoundId[r.id]}
+                                </div>
+                              ) : null}
 
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
                                 <span className="pill-soft">{roundTitle(r, t)}</span>
@@ -512,34 +561,58 @@ export default function RoundsListPage() {
                             </div>
 
                             <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>
+                                {isMatchPlay ? pickLocaleText(locale, "Score match", "Match score") : t("rounds.score")}
+                              </div>
                               <div style={{ fontWeight: 1200, fontSize: 44, lineHeight: 0.95 }}>
-                                {c?.scoreTotal ?? "—"}
+                                {isMatchPlay ? r.match_score_text ?? "—" : c?.scoreTotal ?? "—"}
                               </div>
-                              <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
-                                {c?.overParTotal != null
-                                  ? c.overParTotal > 0
-                                    ? `(+${c.overParTotal})`
-                                    : `(0)`
-                                  : " "}
-                              </div>
+                              {!isMatchPlay ? (
+                                <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}>
+                                  {c?.overParTotal != null
+                                    ? c.overParTotal > 0
+                                      ? `(+${c.overParTotal})`
+                                      : `(0)`
+                                    : " "}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 14, fontWeight: 950, color: "rgba(0,0,0,0.62)", marginTop: 2 }}> </div>
+                              )}
                             </div>
                           </div>
 
                           <div className="hr-soft" style={{ margin: "2px 0" }} />
 
                           {/* Stats rapides (comme avant) */}
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {locale === "fr" ? "Trous joués" : "Holes played"}:{" "}
-                            <span style={{ fontWeight: 900 }}>{playedHoles || "—"}</span>
-                            {" • "}
-                            {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
-                            {" • "}
-                            GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
-                            {c?.parTotal ? (
-                              <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.55)" }}> • Par {c.parTotal}</span>
-                            ) : null}
-                          </div>
+                          {isMatchPlay ? (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              {pickLocaleText(locale, "Résultat", "Result")}:{" "}
+                              <span style={{ fontWeight: 900 }}>
+                                {r.om_match_result === "won"
+                                  ? pickLocaleText(locale, "Gagné", "Won")
+                                  : r.om_match_result === "lost"
+                                  ? pickLocaleText(locale, "Perdu", "Lost")
+                                  : "—"}
+                              </span>
+                              {" • "}
+                              {pickLocaleText(locale, "Handicap de l'adversaire", "Opponent handicap")}:{" "}
+                              <span style={{ fontWeight: 900 }}>
+                                {typeof r.match_opponent_handicap === "number" ? r.match_opponent_handicap : "—"}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              {pickLocaleText(locale, "Trous joués", "Holes played")}:{" "}
+                              <span style={{ fontWeight: 900 }}>{playedHoles || "—"}</span>
+                              {" • "}
+                              {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                              {" • "}
+                              GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                              {c?.parTotal ? (
+                                <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.55)" }}> • Par {c.parTotal}</span>
+                              ) : null}
+                            </div>
+                          )}
 
                           <div className="hr-soft" style={{ margin: "2px 0" }} />
 

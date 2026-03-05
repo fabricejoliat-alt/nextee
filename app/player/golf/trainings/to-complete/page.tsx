@@ -7,6 +7,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Pencil } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type SessionRow = {
   id: string;
@@ -66,7 +67,7 @@ type IncompleteSession = {
 type Row = IncompleteEvent | IncompleteSession;
 
 function fmtDateTime(iso: string, locale: string) {
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+  return new Intl.DateTimeFormat(pickLocaleText(locale, "fr-CH", "en-US"), {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -293,7 +294,7 @@ export default function PlayerTrainingsToCompletePage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              {locale === "fr" ? "Entraînements à évaluer" : "Trainings to complete"}
+              {pickLocaleText(locale, "Entraînements à évaluer", "Trainings to complete")}
             </div>
           </div>
 
@@ -306,19 +307,19 @@ export default function PlayerTrainingsToCompletePage() {
               <ListLoadingBlock label={t("common.loading")} />
             ) : rows.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {locale === "fr" ? "Aucun entraînement à évaluer." : "No training to complete."}
+                {pickLocaleText(locale, "Aucun entraînement à évaluer.", "No training to complete.")}
               </div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {rows.map((row) => {
                   if (row.kind === "event") {
                     const clubName = row.club_id ? (clubNameById[row.club_id] ?? t("common.club")) : t("common.club");
-                    const groupName = row.group_id ? (groupNameById[row.group_id] ?? (locale === "fr" ? "Groupe" : "Group")) : (locale === "fr" ? "Groupe" : "Group");
+                    const groupName = row.group_id ? (groupNameById[row.group_id] ?? (pickLocaleText(locale, "Groupe", "Group"))) : (pickLocaleText(locale, "Groupe", "Group"));
                     const eventEnd =
                       row.ends_at ??
                       new Date(new Date(row.starts_at).getTime() + Math.max(1, Number(row.duration_minutes ?? 0)) * 60_000).toISOString();
                     const isMultiDay = !sameDay(row.starts_at, eventEnd);
-                    const eventTitle = `${locale === "fr" ? "Entraînement" : "Training"} • ${groupName}`;
+                    const eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
                     return (
                       <div
                         key={`event-${row.id}`}
@@ -329,11 +330,11 @@ export default function PlayerTrainingsToCompletePage() {
                           <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
                             {isMultiDay ? (
                               <div>
-                                {fmtDateLabelNoTime(row.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(eventEnd, locale === "fr" ? "fr" : "en")}
+                                {fmtDateLabelNoTime(row.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
                               </div>
                             ) : (
                               <div>
-                                {fmtDateLabelNoTime(row.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                                {fmtDateLabelNoTime(row.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
                                 <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                                   {locale === "fr"
                                     ? `• de ${fmtHourLabel(row.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
@@ -350,7 +351,7 @@ export default function PlayerTrainingsToCompletePage() {
                               {eventTitle}
                             </div>
                             <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                              {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                              {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                             </div>
                           </div>
 
@@ -363,7 +364,7 @@ export default function PlayerTrainingsToCompletePage() {
                           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
                             <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${row.id}`}>
                               <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                              {locale === "fr" ? "Évaluer" : "Evaluate"}
+                              {pickLocaleText(locale, "Évaluer", "Evaluate")}
                             </Link>
                           </div>
                         </div>
@@ -380,24 +381,24 @@ export default function PlayerTrainingsToCompletePage() {
                             if (linkedEvent && linkedEvent.event_type === "training") {
                               const clubName = linkedEvent.club_id ? (clubNameById[linkedEvent.club_id] ?? t("common.club")) : t("common.club");
                               const groupName = linkedEvent.group_id
-                                ? (groupNameById[linkedEvent.group_id] ?? (locale === "fr" ? "Groupe" : "Group"))
-                                : (locale === "fr" ? "Groupe" : "Group");
+                                ? (groupNameById[linkedEvent.group_id] ?? (pickLocaleText(locale, "Groupe", "Group")))
+                                : (pickLocaleText(locale, "Groupe", "Group"));
                               const eventEnd =
                                 linkedEvent.ends_at ??
                                 new Date(new Date(linkedEvent.starts_at).getTime() + Math.max(1, Number(linkedEvent.duration_minutes ?? 0)) * 60_000).toISOString();
                               const isMultiDay = !sameDay(linkedEvent.starts_at, eventEnd);
-                              const title = `${locale === "fr" ? "Entraînement" : "Training"} • ${groupName}`;
+                              const title = `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
                               const place = (row.location_text ?? linkedEvent.location_text ?? "").trim();
                               return (
                                 <>
                                   <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
                                     {isMultiDay ? (
                                       <div>
-                                        {fmtDateLabelNoTime(linkedEvent.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(eventEnd, locale === "fr" ? "fr" : "en")}
+                                        {fmtDateLabelNoTime(linkedEvent.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
                                       </div>
                                     ) : (
                                       <div>
-                                        {fmtDateLabelNoTime(linkedEvent.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                                        {fmtDateLabelNoTime(linkedEvent.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
                                         <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                                           {locale === "fr"
                                             ? `• de ${fmtHourLabel(linkedEvent.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
@@ -412,7 +413,7 @@ export default function PlayerTrainingsToCompletePage() {
                                       {title}
                                     </div>
                                     <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                                      {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                                      {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                                     </div>
                                   </div>
                                   {place ? (
@@ -426,10 +427,10 @@ export default function PlayerTrainingsToCompletePage() {
                             return (
                               <>
                                 <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                  {locale === "fr" ? "Séance à compléter" : "Session to complete"}
+                                  {pickLocaleText(locale, "Séance à compléter", "Session to complete")}
                                 </div>
                                 <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
-                                  {fmtDateTime(row.starts_at, locale === "fr" ? "fr" : "en")}
+                                  {fmtDateTime(row.starts_at, pickLocaleText(locale, "fr", "en"))}
                                 </div>
                                 {row.location_text ? (
                                   <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">

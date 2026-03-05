@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type ApiCourseLite = {
   id: string | number;
@@ -29,6 +30,11 @@ type ProfileRow = {
 };
 type PlayHolesMode = "9" | "18";
 type ManualTeeColor = "white" | "yellow" | "blue" | "red";
+type OmCompetitionLevel = "club_internal" | "club_official" | "regional" | "national" | "international";
+type OmCompetitionLevelSelect = OmCompetitionLevel | "exceptional";
+type OmCompetitionFormat = "stroke_play_individual" | "match_play_individual";
+type ExceptionalTournamentRow = { id: string; name: string };
+type OmMatchResult = "won" | "lost";
 
 function safeStr(v: any) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -177,8 +183,16 @@ function localContainsFilter(list: ApiCourseLite[], query: string) {
   return filtered.length ? filtered : list;
 }
 
+function addDaysToYmd(ymd: string, days: number) {
+  const base = new Date(`${ymd}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return ymd;
+  base.setDate(base.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+}
+
 export default function NewRoundPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const debounceRef = useRef<any>(null);
 
@@ -190,11 +204,30 @@ export default function NewRoundPage() {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   });
+  const [multiRoundDates, setMultiRoundDates] = useState<string[]>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const base = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return [base, addDaysToYmd(base, 1), addDaysToYmd(base, 2), addDaysToYmd(base, 3)];
+  });
 
   const [roundType, setRoundType] = useState<"training" | "competition">("training");
   const [competitionName, setCompetitionName] = useState("");
   const [handicapStart, setHandicapStart] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [omOrganizationId, setOmOrganizationId] = useState<string>("");
+  const [omCompetitionLevel, setOmCompetitionLevel] = useState<OmCompetitionLevel>("club_official");
+  const [omCompetitionLevelSelect, setOmCompetitionLevelSelect] = useState<OmCompetitionLevelSelect>("club_official");
+  const [omCompetitionFormat, setOmCompetitionFormat] = useState<OmCompetitionFormat>("stroke_play_individual");
+  const [omRounds18Count, setOmRounds18Count] = useState<1 | 2 | 3 | 4>(1);
+  const [omMatchPlayWins, setOmMatchPlayWins] = useState<string>("0");
+  const [omMatchResult, setOmMatchResult] = useState<OmMatchResult>("won");
+  const [opponentHandicap, setOpponentHandicap] = useState<string>("");
+  const [matchScoreText, setMatchScoreText] = useState<string>("");
+  const [matchCourseName, setMatchCourseName] = useState<string>("");
+  const [omIsExceptional, setOmIsExceptional] = useState(false);
+  const [omExceptionalTournamentId, setOmExceptionalTournamentId] = useState<string>("");
+  const [exceptionalTournaments, setExceptionalTournaments] = useState<ExceptionalTournamentRow[]>([]);
 
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
@@ -238,8 +271,88 @@ export default function NewRoundPage() {
       if (typeof h === "number" && Number.isFinite(h)) {
         setHandicapStart((prev) => (prev.trim() ? prev : String(h)));
       }
+
+      const cmRes = await supabase
+        .from("club_members")
+        .select("club_id")
+        .eq("user_id", uid)
+        .eq("is_active", true)
+        .eq("role", "player")
+        .limit(1)
+        .maybeSingle();
+      if (!cmRes.error && cmRes.data?.club_id) {
+        setOmOrganizationId(String(cmRes.data.club_id));
+      }
     })();
   }, []);
+
+  const handicapValue = useMemo(() => {
+    if (!handicapStart.trim()) return null;
+    const v = Number(handicapStart);
+    return Number.isFinite(v) ? v : null;
+  }, [handicapStart]);
+
+  const canUseExceptional = (handicapValue ?? Infinity) < 10;
+  const isMatchPlayCompetition = roundType === "competition" && omCompetitionFormat === "match_play_individual";
+  const isMultiRoundStrokePlay = roundType === "competition" && !isMatchPlayCompetition && omRounds18Count > 1;
+
+  useEffect(() => {
+    setMultiRoundDates((prev) => {
+      const next = [...prev];
+      next[0] = startAt;
+      for (let i = 1; i < 4; i += 1) {
+        if (!next[i]) next[i] = addDaysToYmd(startAt, i);
+      }
+      return next;
+    });
+  }, [startAt]);
+
+  useEffect(() => {
+    if (!canUseExceptional && (omIsExceptional || omCompetitionLevelSelect === "exceptional")) {
+      setOmIsExceptional(false);
+      setOmExceptionalTournamentId("");
+      setOmCompetitionLevelSelect("club_official");
+    }
+  }, [canUseExceptional, omIsExceptional, omCompetitionLevelSelect]);
+
+  useEffect(() => {
+    if (omCompetitionLevelSelect === "exceptional") {
+      setOmIsExceptional(true);
+      return;
+    }
+    setOmIsExceptional(false);
+    setOmExceptionalTournamentId("");
+    setOmCompetitionLevel(omCompetitionLevelSelect);
+  }, [omCompetitionLevelSelect]);
+
+  useEffect(() => {
+    if (!isMatchPlayCompetition) return;
+    setOmIsExceptional(false);
+    setOmExceptionalTournamentId("");
+    setOmCompetitionLevelSelect("club_official");
+  }, [isMatchPlayCompetition]);
+
+  useEffect(() => {
+    if (roundType !== "competition" || !canUseExceptional || !omOrganizationId) {
+      setExceptionalTournaments([]);
+      setOmExceptionalTournamentId("");
+      return;
+    }
+
+    (async () => {
+      const res = await supabase
+        .from("om_exceptional_tournaments")
+        .select("id,name")
+        .eq("organization_id", omOrganizationId)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (res.error) {
+        console.warn("exceptional tournaments load failed:", res.error.message);
+        return;
+      }
+      setExceptionalTournaments((res.data ?? []) as ExceptionalTournamentRow[]);
+    })();
+  }, [roundType, canUseExceptional, omOrganizationId]);
 
   async function fetchSearch(query: string): Promise<ApiCourseLite[]> {
     const r = await fetch(`/api/golfcourse/search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
@@ -322,16 +435,45 @@ export default function NewRoundPage() {
     if (Number.isNaN(dt.getTime())) return false;
 
     if (roundType === "competition" && !competitionName.trim()) return false;
-    if (!selectedCourse && !manualCourseOpen) return false;
-    if (selectedCourse && !selectedTeeId) return false;
-    if (manualCourseOpen && !manualLocation.trim()) return false;
+    if (roundType === "competition" && !omOrganizationId) return false;
+    if (roundType === "competition" && !isMatchPlayCompetition && !omCompetitionLevel) return false;
+    if (roundType === "competition" && !omCompetitionFormat) return false;
+    if (roundType === "competition" && !(omRounds18Count >= 1 && omRounds18Count <= 4)) return false;
+    if (isMultiRoundStrokePlay) {
+      for (let i = 0; i < omRounds18Count; i += 1) {
+        const d = multiRoundDates[i] ?? "";
+        if (!d) return false;
+        const v = new Date(`${d}T00:00:00`);
+        if (Number.isNaN(v.getTime())) return false;
+      }
+    }
+    if (!isMatchPlayCompetition) {
+      if (!selectedCourse && !manualCourseOpen) return false;
+      if (selectedCourse && !selectedTeeId) return false;
+      if (manualCourseOpen && !manualLocation.trim()) return false;
+    } else {
+      if (!matchCourseName.trim()) return false;
+      if (!matchScoreText.trim()) return false;
+      if (!(omMatchResult === "won" || omMatchResult === "lost")) return false;
+      if (opponentHandicap.trim()) {
+        const oh = Number(opponentHandicap);
+        if (!Number.isFinite(oh)) return false;
+      }
+    }
 
     if (handicapStart.trim()) {
       const v = Number(handicapStart);
       if (!Number.isFinite(v)) return false;
     }
 
-    if (manualCourseOpen) {
+    if (roundType === "competition") {
+      const wins = Number(omMatchPlayWins);
+      if (!Number.isFinite(wins) || wins < 0 || Math.floor(wins) !== wins) return false;
+      if (omCompetitionFormat === "match_play_individual" && wins < 0) return false;
+      if (omIsExceptional && !omExceptionalTournamentId) return false;
+    }
+
+    if (!isMatchPlayCompetition && manualCourseOpen) {
       if (manualSlope.trim()) {
         const s = Number(manualSlope);
         if (!Number.isFinite(s)) return false;
@@ -342,8 +484,43 @@ export default function NewRoundPage() {
       }
     }
 
+    // Competition requires CR/SR to compute OM.
+    if (roundType === "competition" && !isMatchPlayCompetition) {
+      if (manualCourseOpen) {
+        if (manualSlope.trim() === "" || manualCourseRating.trim() === "") return false;
+      } else {
+        if (!selectedTeeId) return false;
+      }
+    }
+
     return true;
-  }, [busy, startAt, roundType, competitionName, selectedCourse, selectedTeeId, handicapStart, manualCourseOpen, manualLocation, manualSlope, manualCourseRating]);
+  }, [
+    busy,
+    startAt,
+    roundType,
+    competitionName,
+    omOrganizationId,
+    omCompetitionLevel,
+    omCompetitionFormat,
+    omRounds18Count,
+    omMatchPlayWins,
+    omIsExceptional,
+    omExceptionalTournamentId,
+    selectedCourse,
+    selectedTeeId,
+    handicapStart,
+    manualCourseOpen,
+    manualLocation,
+    manualSlope,
+    manualCourseRating,
+    isMatchPlayCompetition,
+    isMultiRoundStrokePlay,
+    multiRoundDates,
+    matchCourseName,
+    matchScoreText,
+    omMatchResult,
+    opponentHandicap,
+  ]);
 
   async function createRound(e: React.FormEvent) {
     e.preventDefault();
@@ -361,14 +538,14 @@ export default function NewRoundPage() {
 
     const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
-    if (!selectedCourse && !manualCourseOpen) {
+    if (!isMatchPlayCompetition && !selectedCourse && !manualCourseOpen) {
       setError(t("roundsNew.error.chooseCourse"));
       setBusy(false);
       return;
     }
 
-    const selectedTeeObj = selectedCourse ? tees.find((t) => t.id === selectedTeeId) ?? null : null;
-    if (selectedCourse && !selectedTeeObj) {
+    const selectedTeeObj = !isMatchPlayCompetition && selectedCourse ? tees.find((t) => t.id === selectedTeeId) ?? null : null;
+    if (!isMatchPlayCompetition && selectedCourse && !selectedTeeObj) {
       setError(t("roundsNew.error.chooseTee"));
       setBusy(false);
       return;
@@ -381,54 +558,147 @@ export default function NewRoundPage() {
       return;
     }
 
-    const slopeManual = manualCourseOpen && manualSlope.trim() !== "" ? Number(manualSlope) : null;
-    const courseRatingManual = manualCourseOpen && manualCourseRating.trim() !== "" ? Number(manualCourseRating) : null;
-    if (manualCourseOpen && slopeManual !== null && Number.isNaN(slopeManual)) {
+    const slopeManual = !isMatchPlayCompetition && manualCourseOpen && manualSlope.trim() !== "" ? Number(manualSlope) : null;
+    const courseRatingManual = !isMatchPlayCompetition && manualCourseOpen && manualCourseRating.trim() !== "" ? Number(manualCourseRating) : null;
+    if (!isMatchPlayCompetition && manualCourseOpen && slopeManual !== null && Number.isNaN(slopeManual)) {
       setError("Slope invalide");
       setBusy(false);
       return;
     }
-    if (manualCourseOpen && courseRatingManual !== null && Number.isNaN(courseRatingManual)) {
+    if (!isMatchPlayCompetition && manualCourseOpen && courseRatingManual !== null && Number.isNaN(courseRatingManual)) {
       setError("Course Rating invalide");
       setBusy(false);
       return;
     }
 
-    const payload: any = {
+    if (roundType === "competition") {
+      if (!omOrganizationId) {
+        setError(pickLocaleText(locale, "Organisation introuvable pour ce joueur.", "Organization not found for this player."));
+        setBusy(false);
+        return;
+      }
+      if (isMatchPlayCompetition && !matchCourseName.trim()) {
+        setError(pickLocaleText(locale, "Le champ Parcours est obligatoire.", "Course field is required."));
+        setBusy(false);
+        return;
+      }
+      if (isMatchPlayCompetition && !matchScoreText.trim()) {
+        setError(pickLocaleText(locale, "Le champ Score est obligatoire.", "Score field is required."));
+        setBusy(false);
+        return;
+      }
+      if (!isMatchPlayCompetition && manualCourseOpen && (slopeManual == null || courseRatingManual == null)) {
+        setError(
+          pickLocaleText(
+            locale,
+            "Course Rating et Slope Rating sont obligatoires pour une competition.",
+            "Course Rating and Slope Rating are required for a competition."
+          )
+        );
+        setBusy(false);
+        return;
+      }
+      if (!isMatchPlayCompetition && !manualCourseOpen && (!selectedTeeObj || selectedTeeObj.slope_rating == null || selectedTeeObj.course_rating == null)) {
+        setError(
+          pickLocaleText(
+            locale,
+            "Le tee selectionne doit fournir Course Rating et Slope Rating pour une competition.",
+            "Selected tee must provide Course Rating and Slope Rating for a competition."
+          )
+        );
+        setBusy(false);
+        return;
+      }
+      if (omIsExceptional && !omExceptionalTournamentId) {
+        setError(
+          pickLocaleText(
+            locale,
+            "Selectionne un tournoi exceptionnel.",
+            "Please select an exceptional tournament."
+          )
+        );
+        setBusy(false);
+        return;
+      }
+    }
+
+    const matchPlayWins = Number(omMatchPlayWins);
+    const parsedOpponentHandicap = opponentHandicap.trim() ? Number(opponentHandicap) : null;
+
+    const payloadBase: any = {
       user_id: uid,
-      start_at: dt.toISOString(),
-      location: manualCourseOpen ? manualLocation.trim() : null,
+      location: isMatchPlayCompetition ? matchCourseName.trim() : manualCourseOpen ? manualLocation.trim() : null,
       round_type: roundType,
       competition_name: roundType === "competition" ? competitionName.trim() : null,
       handicap_start,
-      course_source: manualCourseOpen ? "manual" : "golfcourseapi",
-      course_name: manualCourseOpen ? manualLocation.trim() : selectedCourse?.course_name?.trim() || null,
-      external_course_id: manualCourseOpen ? null : safeStr(selectedCourse?.id),
-      tee_name: manualCourseOpen ? manualTeeLabel(manualTeeColor) : selectedTeeObj?.tee_name?.trim() || null,
-      slope_rating: manualCourseOpen ? slopeManual : typeof selectedTeeObj?.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
-      course_rating: manualCourseOpen
+      course_source: isMatchPlayCompetition ? "manual" : manualCourseOpen ? "manual" : "golfcourseapi",
+      course_name: isMatchPlayCompetition ? matchCourseName.trim() : manualCourseOpen ? manualLocation.trim() : selectedCourse?.course_name?.trim() || null,
+      external_course_id: isMatchPlayCompetition || manualCourseOpen ? null : safeStr(selectedCourse?.id),
+      tee_name: isMatchPlayCompetition ? null : manualCourseOpen ? manualTeeLabel(manualTeeColor) : selectedTeeObj?.tee_name?.trim() || null,
+      slope_rating: isMatchPlayCompetition ? null : manualCourseOpen ? slopeManual : typeof selectedTeeObj?.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
+      course_rating: isMatchPlayCompetition
+        ? null
+        : manualCourseOpen
         ? courseRatingManual
         : typeof selectedTeeObj?.course_rating === "number"
         ? selectedTeeObj.course_rating
         : null,
+      match_opponent_handicap: roundType === "competition" && isMatchPlayCompetition ? parsedOpponentHandicap : null,
+      om_match_result: roundType === "competition" && isMatchPlayCompetition ? omMatchResult : null,
+      match_score_text: roundType === "competition" && isMatchPlayCompetition ? matchScoreText.trim() : null,
       notes: notes.trim() || null,
+      om_organization_id: roundType === "competition" ? omOrganizationId : null,
+      om_competition_level: roundType === "competition" ? (isMatchPlayCompetition ? null : omCompetitionLevel) : null,
+      om_competition_format: roundType === "competition" ? omCompetitionFormat : null,
+      om_rounds_18_count: roundType === "competition" ? (isMatchPlayCompetition ? null : omRounds18Count) : null,
+      om_match_play_wins:
+        roundType === "competition"
+          ? isMatchPlayCompetition
+            ? omMatchResult === "won"
+              ? 1
+              : 0
+            : Number.isFinite(matchPlayWins)
+            ? matchPlayWins
+            : 0
+          : 0,
+      om_is_exceptional: roundType === "competition" ? (isMatchPlayCompetition ? false : omIsExceptional) : false,
+      om_exceptional_tournament_id:
+        roundType === "competition" && !isMatchPlayCompetition && omIsExceptional ? omExceptionalTournamentId : null,
+      om_stats_submitted_at: roundType === "competition" ? new Date().toISOString() : null,
     };
 
-    const ins = await supabase.from("golf_rounds").insert(payload).select("id").maybeSingle();
-    if (ins.error) {
-      setError(ins.error.message);
-      setBusy(false);
-      return;
+    const roundDatesToCreate =
+      isMultiRoundStrokePlay ? multiRoundDates.slice(0, omRounds18Count) : [startAt];
+    const createdRoundIds: string[] = [];
+    for (const roundDate of roundDatesToCreate) {
+      const roundDt = new Date(`${roundDate}T00:00:00`);
+      if (Number.isNaN(roundDt.getTime())) {
+        setError(t("roundsNew.error.invalidDate"));
+        setBusy(false);
+        return;
+      }
+      const ins = await supabase
+        .from("golf_rounds")
+        .insert({ ...payloadBase, start_at: roundDt.toISOString() })
+        .select("id")
+        .maybeSingle();
+      if (ins.error) {
+        setError(ins.error.message);
+        setBusy(false);
+        return;
+      }
+      const id = String(ins.data?.id ?? "").trim();
+      if (!id) {
+        setError(t("roundsNew.error.createFailed"));
+        setBusy(false);
+        return;
+      }
+      createdRoundIds.push(id);
     }
 
-    const id = ins.data?.id;
-    if (!id) {
-      setError(t("roundsNew.error.createFailed"));
-      setBusy(false);
-      return;
-    }
-
-    const holes = manualCourseOpen
+    const holes = isMatchPlayCompetition
+      ? null
+      : manualCourseOpen
       ? Array.from({ length: 18 }, (_, i) => ({
           hole_no: i + 1,
           par: null,
@@ -436,21 +706,27 @@ export default function NewRoundPage() {
         }))
       : teeHolesPrefill(tees, selectedTeeId, playHolesMode);
     if (holes) {
-      const rows = holes.map((h) => ({
-        round_id: id,
-        hole_no: h.hole_no,
-        par: h.par,
-        stroke_index: h.stroke_index,
-        score: null,
-        putts: null,
-        fairway_hit: null,
-        note: null,
-      }));
-      const up = await supabase.from("golf_round_holes").upsert(rows, { onConflict: "round_id,hole_no" });
-      if (up.error) console.warn("holes prefill failed:", up.error.message);
+      for (const id of createdRoundIds) {
+        const rows = holes.map((h) => ({
+          round_id: id,
+          hole_no: h.hole_no,
+          par: h.par,
+          stroke_index: h.stroke_index,
+          score: null,
+          putts: null,
+          fairway_hit: null,
+          note: null,
+        }));
+        const up = await supabase.from("golf_round_holes").upsert(rows, { onConflict: "round_id,hole_no" });
+        if (up.error) console.warn("holes prefill failed:", up.error.message);
+      }
     }
 
-    router.push(`/player/golf/rounds/${id}/edit`);
+    if (isMatchPlayCompetition) {
+      router.push("/player/golf/rounds");
+    } else {
+      router.push(`/player/golf/rounds/${createdRoundIds[0]}/edit`);
+    }
   }
 
   function resetCourse() {
@@ -539,10 +815,139 @@ export default function NewRoundPage() {
                 </div>
 
                 {roundType === "competition" && (
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("roundsNew.competitionName")}</span>
-                    <input value={competitionName} onChange={(e) => setCompetitionName(e.target.value)} disabled={busy} />
-                  </label>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{t("roundsNew.competitionName")}</span>
+                      <input value={competitionName} onChange={(e) => setCompetitionName(e.target.value)} disabled={busy} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Format competition", "Competition format")}</span>
+                      <select value={omCompetitionFormat} onChange={(e) => setOmCompetitionFormat(e.target.value as OmCompetitionFormat)} disabled={busy}>
+                        <option value="stroke_play_individual">{pickLocaleText(locale, "Individuel", "Individual")}</option>
+                        <option value="match_play_individual">{pickLocaleText(locale, "Individuel match-play", "Individual match-play")}</option>
+                      </select>
+                    </label>
+
+                    {!isMatchPlayCompetition && (
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{pickLocaleText(locale, "Niveau du tournoi", "Tournament level")}</span>
+                        <select
+                          value={omCompetitionLevelSelect}
+                          onChange={(e) => setOmCompetitionLevelSelect(e.target.value as OmCompetitionLevelSelect)}
+                          disabled={busy}
+                        >
+                          <option value="club_internal">{pickLocaleText(locale, "Tournoi interne", "Internal tournament")}</option>
+                          <option value="club_official">{pickLocaleText(locale, "Tournoi club", "Club tournament")}</option>
+                          <option value="regional">{pickLocaleText(locale, "Tournoi régional", "Regional tournament")}</option>
+                          <option value="national">{pickLocaleText(locale, "Tournoi national", "National tournament")}</option>
+                          <option value="international">{pickLocaleText(locale, "Tournoi international", "International tournament")}</option>
+                          {canUseExceptional ? (
+                            <option value="exceptional">{pickLocaleText(locale, "Tournoi exceptionnel", "Exceptional tournament")}</option>
+                          ) : null}
+                        </select>
+                      </label>
+                    )}
+
+                    {!isMatchPlayCompetition && (
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de tours (x18)", "Number of rounds (x18)")}</span>
+                        <select value={String(omRounds18Count)} onChange={(e) => setOmRounds18Count(Number(e.target.value) as 1 | 2 | 3 | 4)} disabled={busy}>
+                          <option value="1">1 x 18</option>
+                          <option value="2">2 x 18</option>
+                          <option value="3">3 x 18</option>
+                          <option value="4">4 x 18</option>
+                        </select>
+                      </label>
+                    )}
+
+                    {isMultiRoundStrokePlay ? (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={fieldLabelStyle}>{pickLocaleText(locale, "Dates des parties", "Round dates")}</div>
+                        {Array.from({ length: omRounds18Count }).map((_, idx) => (
+                          <label key={`round-date-${idx}`} style={{ display: "grid", gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                              {pickLocaleText(locale, `Partie ${idx + 1}`, `Round ${idx + 1}`)}
+                            </span>
+                            <input
+                              type="date"
+                              value={multiRoundDates[idx] ?? ""}
+                              onChange={(e) =>
+                                setMultiRoundDates((prev) => {
+                                  const next = [...prev];
+                                  next[idx] = e.target.value;
+                                  return next;
+                                })
+                              }
+                              disabled={busy}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {omCompetitionFormat === "match_play_individual" && (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Parcours", "Course")}</span>
+                          <input value={matchCourseName} onChange={(e) => setMatchCourseName(e.target.value)} disabled={busy} />
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Hcp de l'adversaire", "Opponent handicap")}</span>
+                          <input
+                            inputMode="decimal"
+                            value={opponentHandicap}
+                            onChange={(e) => setOpponentHandicap(e.target.value)}
+                            disabled={busy}
+                            placeholder="ex: 8.4"
+                          />
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Resultat du match", "Match result")}</span>
+                          <select
+                            value={omMatchResult}
+                            onChange={(e) => setOmMatchResult(e.target.value as OmMatchResult)}
+                            disabled={busy}
+                          >
+                            <option value="won">{pickLocaleText(locale, "Match gagne", "Match won")}</option>
+                            <option value="lost">{pickLocaleText(locale, "Match perdu", "Match lost")}</option>
+                          </select>
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Score", "Score")}</span>
+                          <input
+                            value={matchScoreText}
+                            onChange={(e) => setMatchScoreText(e.target.value)}
+                            disabled={busy}
+                            placeholder={pickLocaleText(locale, "ex: 3&2", "e.g. 3&2")}
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    {!isMatchPlayCompetition && canUseExceptional && omCompetitionLevelSelect === "exceptional" && (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Selection du tournoi exceptionnel", "Exceptional tournament selection")}</span>
+                          <select
+                            value={omExceptionalTournamentId}
+                            onChange={(e) => setOmExceptionalTournamentId(e.target.value)}
+                            disabled={busy}
+                          >
+                            <option value="">{pickLocaleText(locale, "— Choisir —", "— Choose —")}</option>
+                            {exceptionalTournaments.map((x) => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -551,7 +956,25 @@ export default function NewRoundPage() {
               {/* ✅ section title removed here */}
 
               <div style={{ display: "grid", gap: 10 }}>
-                {!selectedCourse ? (
+                {isMatchPlayCompetition ? (
+                  <div
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      borderRadius: 16,
+                      background: "rgba(255,255,255,0.65)",
+                      padding: 12,
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: "rgba(0,0,0,0.72)",
+                    }}
+                  >
+                    {pickLocaleText(
+                      locale,
+                      "Mode match-play: pas de recherche de parcours ni de carte de score a remplir.",
+                      "Match-play mode: no course search and no scorecard to complete."
+                    )}
+                  </div>
+                ) : !selectedCourse ? (
                   <>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>{t("roundsNew.searchCourse")}</span>
@@ -671,10 +1094,10 @@ export default function NewRoundPage() {
                         <label style={{ display: "grid", gap: 6 }}>
                           <span style={fieldLabelStyle}>Tee de départ</span>
                           <select value={manualTeeColor} onChange={(e) => setManualTeeColor(e.target.value as ManualTeeColor)} disabled={busy}>
-                            <option value="white">Blanc</option>
-                            <option value="yellow">Jaune</option>
-                            <option value="blue">Bleu</option>
-                            <option value="red">Rouge</option>
+                            <option value="white">{pickLocaleText(locale, "Blanc", "White")}</option>
+                            <option value="yellow">{pickLocaleText(locale, "Jaune", "Yellow")}</option>
+                            <option value="blue">{pickLocaleText(locale, "Bleu", "Blue")}</option>
+                            <option value="red">{pickLocaleText(locale, "Rouge", "Red")}</option>
                           </select>
                         </label>
 
@@ -814,17 +1237,16 @@ export default function NewRoundPage() {
               </label>
 
               <button
-                className="btn"
+                className="cta-green cta-green-inline"
                 type="submit"
                 disabled={!canSave || busy}
-                style={{
-                  width: "100%",
-                  background: "var(--green-dark)",
-                  borderColor: "var(--green-dark)",
-                  color: "#fff",
-                }}
+                style={{ width: "100%", justifyContent: "center" }}
               >
-                {busy ? t("roundsNew.creating") : t("roundsNew.createAndEnter")}
+                {busy
+                  ? t("roundsNew.creating")
+                  : isMatchPlayCompetition
+                  ? pickLocaleText(locale, "Creer le match", "Create match")
+                  : t("roundsNew.createAndEnter")}
               </button>
 
               <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>

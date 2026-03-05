@@ -9,6 +9,7 @@ import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notificati
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -225,7 +226,7 @@ function memberRoleLabel(role: string | null | undefined) {
 
 function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US", {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -240,7 +241,7 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
   const start = new Date(startIso);
   const end = new Date(endIso);
   const sameDay = start.toDateString() === end.toDateString();
-  const localeTag = locale === "fr" ? "fr-CH" : "en-US";
+  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 
   if (sameDay) {
     const datePart = new Intl.DateTimeFormat(localeTag, {
@@ -256,11 +257,11 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
 }
 
 function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
-  if (v === "training") return locale === "fr" ? "Entraînement" : "Training";
-  if (v === "interclub") return "Interclub";
-  if (v === "camp") return locale === "fr" ? "Stage" : "Camp";
-  if (v === "session") return locale === "fr" ? "Séance" : "Session";
-  return locale === "fr" ? "Événement" : "Event";
+  if (v === "training") return pickLocaleText(locale, "Entraînement", "Training");
+  if (v === "interclub") return pickLocaleText(locale, "Interclub", "Interclub");
+  if (v === "camp") return pickLocaleText(locale, "Stage", "Camp");
+  if (v === "session") return pickLocaleText(locale, "Séance", "Session");
+  return pickLocaleText(locale, "Événement", "Event");
 }
 
 export default function CoachEventEditPage() {
@@ -1336,13 +1337,13 @@ export default function CoachEventEditPage() {
                             <label style={{ display: "grid", gap: 6 }}>
                               <span style={fieldLabelStyle}>Jour</span>
                               <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                                <option value={1}>Lundi</option>
-                                <option value={2}>Mardi</option>
-                                <option value={3}>Mercredi</option>
-                                <option value={4}>Jeudi</option>
-                                <option value={5}>Vendredi</option>
-                                <option value={6}>Samedi</option>
-                                <option value={0}>Dimanche</option>
+                                <option value={1}>{pickLocaleText(locale, "Lundi", "Monday")}</option>
+                                <option value={2}>{pickLocaleText(locale, "Mardi", "Tuesday")}</option>
+                                <option value={3}>{pickLocaleText(locale, "Mercredi", "Wednesday")}</option>
+                                <option value={4}>{pickLocaleText(locale, "Jeudi", "Thursday")}</option>
+                                <option value={5}>{pickLocaleText(locale, "Vendredi", "Friday")}</option>
+                                <option value={6}>{pickLocaleText(locale, "Samedi", "Saturday")}</option>
+                                <option value={0}>{pickLocaleText(locale, "Dimanche", "Sunday")}</option>
                               </select>
                             </label>
 

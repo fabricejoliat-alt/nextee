@@ -4,16 +4,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 
 type Round = {
   id: string;
+  user_id: string;
   start_at: string;
   round_type: "training" | "competition";
   course_source: string | null;
   competition_name: string | null;
+  om_organization_id: string | null;
+  om_competition_level: string | null;
+  om_competition_format: string | null;
+  om_rounds_18_count: number | null;
+  om_miss_cut: boolean | null;
   course_name: string | null;
   tee_name: string | null;
   slope_rating: number | null;
@@ -29,6 +35,11 @@ type Hole = {
   putts: number | null;
   fairway_hit: boolean | null;
   note: string | null;
+};
+
+type TournamentRoundMeta = {
+  id: string;
+  om_miss_cut: boolean;
 };
 
 function getParamString(p: any): string | null {
@@ -75,6 +86,9 @@ export default function EditRoundWizardPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [uxError, setUxError] = useState<string | null>(null);
+  const [nextRoundId, setNextRoundId] = useState<string | null>(null);
+  const [tournamentRounds, setTournamentRounds] = useState<TournamentRoundMeta[]>([]);
+  const [tournamentRoundIndex, setTournamentRoundIndex] = useState<number | null>(null);
 
   const [round, setRound] = useState<Round | null>(null);
   const [holes, setHoles] = useState<Hole[]>(
@@ -148,6 +162,13 @@ export default function EditRoundWizardPage() {
         setHoles((prev) => prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x)));
         latestHoleRef.current = { ...h, id: newId };
       }
+    }
+
+    // Keep OM points in sync with hole-by-hole editing.
+    const rec = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
+    if (rec.error) {
+      // Do not block hole save UX on OM side-effects.
+      console.warn("om_recompute_round failed:", rec.error.message);
     }
   }
 
@@ -225,9 +246,11 @@ export default function EditRoundWizardPage() {
     setLoading(true);
     setError(null);
 
-  const rRes = await supabase
+    const rRes = await supabase
       .from("golf_rounds")
-      .select("id,start_at,round_type,course_source,competition_name,course_name,tee_name,slope_rating,course_rating")
+      .select(
+        "id,user_id,start_at,round_type,course_source,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,om_miss_cut,course_name,tee_name,slope_rating,course_rating"
+      )
       .eq("id", roundId)
       .maybeSingle();
 
@@ -243,7 +266,58 @@ export default function EditRoundWizardPage() {
       setLoading(false);
       return;
     }
-    setRound(rRes.data as Round);
+    const loadedRound = rRes.data as Round;
+    setRound(loadedRound);
+
+    setNextRoundId(null);
+    setTournamentRounds([]);
+    setTournamentRoundIndex(null);
+    if (
+      loadedRound.round_type === "competition" &&
+      (loadedRound.om_rounds_18_count ?? 1) > 1 &&
+      loadedRound.om_organization_id &&
+      loadedRound.om_competition_format
+    ) {
+      const year = new Date(loadedRound.start_at).getFullYear();
+      const yearStart = `${year}-01-01T00:00:00.000Z`;
+      const nextYearStart = `${year + 1}-01-01T00:00:00.000Z`;
+
+      const sameTournamentRes = await supabase
+        .from("golf_rounds")
+        .select("id,start_at,competition_name,om_miss_cut")
+        .eq("round_type", "competition")
+        .eq("user_id", loadedRound.user_id)
+        .eq("om_organization_id", loadedRound.om_organization_id)
+        .eq("om_competition_format", loadedRound.om_competition_format)
+        .eq("om_competition_level", loadedRound.om_competition_level)
+        .eq("om_rounds_18_count", loadedRound.om_rounds_18_count)
+        .gte("start_at", yearStart)
+        .lt("start_at", nextYearStart)
+        .order("start_at", { ascending: true })
+        .order("id", { ascending: true });
+
+      if (!sameTournamentRes.error) {
+        const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
+        const sameTournament = (sameTournamentRes.data ?? []).filter((r: any) => {
+          const normName = (r.competition_name ?? "").trim().toLowerCase();
+          return normName === normCurrentName;
+        });
+        const idx = sameTournament.findIndex((r: any) => r.id === loadedRound.id);
+        if (idx >= 0) {
+          setTournamentRoundIndex(idx);
+          setTournamentRounds(
+            sameTournament.map((r: any) => ({
+              id: String(r.id),
+              om_miss_cut: Boolean(r.om_miss_cut),
+            }))
+          );
+        }
+        if (idx >= 0 && idx < sameTournament.length - 1) {
+          const nextPlayable = sameTournament.slice(idx + 1).find((r: any) => !r.om_miss_cut);
+          if (nextPlayable?.id) setNextRoundId(String(nextPlayable.id));
+        }
+      }
+    }
 
     const hRes = await supabase
       .from("golf_round_holes")
@@ -379,6 +453,66 @@ export default function EditRoundWizardPage() {
     router.push(scorecardHref);
   }
 
+  async function finishAndGoNextRound() {
+    if (!nextRoundId) {
+      await finishAndGoScorecard();
+      return;
+    }
+    if (isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
+      setUxError("Le PAR du trou est obligatoire.");
+      return;
+    }
+    if (!fairwayChosen) {
+      setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
+      return;
+    }
+    await flushSave();
+    router.push(`/player/golf/rounds/${nextRoundId}/edit`);
+  }
+
+  async function setMissCutOnRemainingRounds(checked: boolean) {
+    if (!round || tournamentRoundIndex == null || tournamentRounds.length === 0) return;
+
+    const remainingRoundIds = tournamentRounds.slice(tournamentRoundIndex + 1).map((r) => r.id);
+    if (remainingRoundIds.length === 0) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      if (checked) {
+        const upd = await supabase
+          .from("golf_rounds")
+          .update({
+            om_miss_cut: true,
+            om_points_net: null,
+            om_points_brut: null,
+          })
+          .in("id", remainingRoundIds);
+        if (upd.error) throw new Error(upd.error.message);
+
+        const del = await supabase.from("om_tournament_scores").delete().in("round_id", remainingRoundIds);
+        if (del.error) throw new Error(del.error.message);
+      } else {
+        const upd = await supabase
+          .from("golf_rounds")
+          .update({ om_miss_cut: false })
+          .in("id", remainingRoundIds);
+        if (upd.error) throw new Error(upd.error.message);
+
+        for (const id of remainingRoundIds) {
+          const rpc = await supabase.rpc("om_recompute_round", { p_round_id: id });
+          if (rpc.error) throw new Error(rpc.error.message);
+        }
+      }
+
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? "Erreur lors du Miss cut.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteRound() {
     if (!roundId) return;
     if (!confirm(t("roundsEdit.confirmDelete"))) return;
@@ -411,6 +545,15 @@ export default function EditRoundWizardPage() {
 
   const hitSelected = hole?.fairway_hit === true;
   const missSelected = hole?.fairway_hit === false;
+  const remainingRounds = tournamentRoundIndex == null ? [] : tournamentRounds.slice(tournamentRoundIndex + 1);
+  const isMissCutChecked = remainingRounds.length > 0 && remainingRounds.every((r) => r.om_miss_cut);
+  const canMarkMissCut =
+    round?.round_type === "competition" &&
+    typeof round?.om_rounds_18_count === "number" &&
+    tournamentRoundIndex != null &&
+    remainingRounds.length > 0 &&
+    ((round.om_rounds_18_count === 3 && tournamentRoundIndex === 0) ||
+      (round.om_rounds_18_count === 4 && tournamentRoundIndex === 1));
 
   const maxPuttsNow =
     typeof hole?.score === "number" && Number.isFinite(hole.score) ? clampInt(hole.score, 0, 10) : 10;
@@ -664,7 +807,14 @@ export default function EditRoundWizardPage() {
                 </div>
 
                 {/* NAV / FINISH */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isLastHole && canMarkMissCut ? "1fr 1fr 1fr" : "1fr 1fr",
+                    gap: 10,
+                    marginTop: 4,
+                  }}
+                >
                   <button
                     type="button"
                     className="btn"
@@ -678,6 +828,69 @@ export default function EditRoundWizardPage() {
                   {!isLastHole ? (
                     <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }} disabled={saving}>
                       {`${t("roundsEdit.hole")} ${holeIdx + 2}`}
+                    </button>
+                  ) : canMarkMissCut ? (
+                    <>
+                      <label
+                        style={{
+                          width: "100%",
+                          minHeight: 44,
+                          border: "1px solid rgba(185,28,28,0.45)",
+                          borderRadius: 12,
+                          background: "rgba(185,28,28,0.12)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 10,
+                          fontWeight: 1000,
+                          padding: "0 8px",
+                          cursor: saving ? "not-allowed" : "pointer",
+                          opacity: saving ? 0.7 : 1,
+                          color: "rgba(153,27,27,1)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isMissCutChecked}
+                          onChange={(e) => setMissCutOnRemainingRounds(e.target.checked)}
+                          disabled={saving}
+                        />
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <AlertTriangle size={16} />
+                          MISS CUT
+                        </span>
+                      </label>
+                      {nextRoundId ? (
+                        <button
+                          type="button"
+                          className="cta-green cta-green-inline"
+                          onClick={finishAndGoNextRound}
+                          style={{ width: "100%" }}
+                          disabled={saving}
+                        >
+                          Partie suivante
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cta-green cta-green-inline"
+                          onClick={finishAndGoScorecard}
+                          style={{ width: "100%" }}
+                          disabled={saving}
+                        >
+                          {t("roundsEdit.finish")}
+                        </button>
+                      )}
+                    </>
+                  ) : nextRoundId ? (
+                    <button
+                      type="button"
+                      className="cta-green cta-green-inline"
+                      onClick={finishAndGoNextRound}
+                      style={{ width: "100%" }}
+                      disabled={saving}
+                    >
+                      Partie suivante
                     </button>
                   ) : (
                     <button

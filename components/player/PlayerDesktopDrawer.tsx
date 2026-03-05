@@ -16,6 +16,7 @@ import {
   User,
   LogOut,
   X,
+  Trophy,
 } from "lucide-react";
 
 /**
@@ -32,6 +33,7 @@ const ROUTES = {
 
   roundsList: "/player/golf/rounds",
   roundsNew: "/player/golf/rounds/new",
+  om: "/player/om",
 
   marketplaceAll: "/player/marketplace",
   marketplaceMine: "/player/marketplace/mine",
@@ -385,6 +387,18 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           },
           { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
+          {
+            label:
+              locale === "fr"
+                ? "Ordre du mérite"
+                : locale === "de"
+                ? "Order of Merit"
+                : locale === "it"
+                ? "Ordine di merito"
+                : "Order of Merit",
+            icon: Trophy,
+            href: ROUTES.om,
+          },
         ],
       },
       {

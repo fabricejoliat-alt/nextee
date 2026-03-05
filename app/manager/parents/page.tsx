@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
 type MembershipProfileRow = { user_id: string; profiles?: ProfileLite | null };
@@ -18,6 +19,7 @@ function fullName(p?: ProfileLite | null) {
 
 export default function ManagerParentsPage() {
   const { locale } = useI18n();
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
   const [clubId, setClubId] = useState("");
   const [players, setPlayers] = useState<MembershipProfileRow[]>([]);
@@ -200,7 +202,7 @@ export default function ManagerParentsPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
-              {locale === "fr" ? "Parents / Enfants" : "Parents / Children"}
+              {tr("Parents / Enfants", "Parents / Children")}
             </div>
           </div>
           {error && <div className="marketplace-error">{error}</div>}
@@ -209,7 +211,7 @@ export default function ManagerParentsPage() {
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900 }}>{locale === "fr" ? "Club" : "Club"}</span>
+              <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Club", "Club")}</span>
               <select
                 value={clubId}
                 onChange={async (e) => {
@@ -231,18 +233,18 @@ export default function ManagerParentsPage() {
                 options={playerOptions}
                 value={playerId}
                 onChange={setPlayerId}
-                placeholder={locale === "fr" ? "Choisir un junior" : "Select junior"}
-                searchPlaceholder={locale === "fr" ? "Rechercher un junior" : "Search junior"}
+                placeholder={tr("Choisir un junior", "Select junior")}
+                searchPlaceholder={tr("Rechercher un junior", "Search junior")}
               />
               <SearchablePicker
                 options={parentOptions}
                 value={parentId}
                 onChange={setParentId}
-                placeholder={locale === "fr" ? "Choisir un parent" : "Select parent"}
-                searchPlaceholder={locale === "fr" ? "Rechercher un parent" : "Search parent"}
+                placeholder={tr("Choisir un parent", "Select parent")}
+                searchPlaceholder={tr("Rechercher un parent", "Search parent")}
               />
               <button className="btn" type="submit" disabled={busy || !playerId || !parentId}>
-                {locale === "fr" ? "Rattacher" : "Link"}
+                {tr("Rattacher", "Link")}
               </button>
             </form>
           </div>
@@ -254,13 +256,13 @@ export default function ManagerParentsPage() {
               <input
                 value={linksSearch}
                 onChange={(e) => setLinksSearch(e.target.value)}
-                placeholder={locale === "fr" ? "Rechercher un rattachement" : "Search link"}
+                placeholder={tr("Rechercher un rattachement", "Search link")}
               />
             </div>
             {loading ? (
-              <ListLoadingBlock label={locale === "fr" ? "Chargement..." : "Loading..."} />
+              <ListLoadingBlock label={tr("Chargement...", "Loading...")} />
             ) : filteredLinks.length === 0 ? (
-              <div style={{ opacity: 0.7 }}>{locale === "fr" ? "Aucun rattachement." : "No links."}</div>
+              <div style={{ opacity: 0.7 }}>{tr("Aucun rattachement.", "No links.")}</div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
                 {filteredLinks.map((l) => (
@@ -270,7 +272,7 @@ export default function ManagerParentsPage() {
                         {fullName(playerMap[l.player_id])} <span style={{ opacity: 0.6 }}>↔</span> {fullName(parentMap[l.guardian_user_id])}
                       </div>
                       <button className="btn btn-danger soft" type="button" disabled={busy} onClick={() => removeLink(l)}>
-                        {locale === "fr" ? "Retirer" : "Remove"}
+                        {tr("Retirer", "Remove")}
                       </button>
                     </div>
                   </div>

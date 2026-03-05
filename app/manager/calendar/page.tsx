@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -105,18 +106,12 @@ function dayHeaderLabel(d: Date, locale: string) {
 }
 
 function eventTypeLabel(v: EventRow["event_type"], locale: string) {
-  if (locale === "en") {
-    if (v === "training") return "Training";
-    if (v === "interclub") return "Interclub";
-    if (v === "camp") return "Camp";
-    if (v === "session") return "Session";
-    return "Event";
-  }
-  if (v === "training") return "Entraînement";
-  if (v === "interclub") return "Interclub";
-  if (v === "camp") return "Stage";
-  if (v === "session") return "Séance";
-  return "Événement";
+  const l = locale as "fr" | "en" | "de" | "it";
+  if (v === "training") return pickLocaleText(l, "Entraînement", "Training");
+  if (v === "interclub") return pickLocaleText(l, "Interclub", "Interclub");
+  if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
+  if (v === "session") return pickLocaleText(l, "Séance", "Session");
+  return pickLocaleText(l, "Événement", "Event");
 }
 
 function eventTypeColor(v: EventRow["event_type"]) {
@@ -137,8 +132,8 @@ function overlapsDay(e: EventRow, d: Date) {
 
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +172,7 @@ export default function CoachCalendarPage() {
         if (authErr || !auth.user) throw new Error("Session invalide.");
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token ?? "";
-        if (!token) throw new Error(locale === "en" ? "Invalid session" : "Session invalide.");
+        if (!token) throw new Error(tr("Session invalide.", "Invalid session"));
 
         const clubsRes = await fetch("/api/manager/my-clubs", {
           method: "GET",
@@ -216,7 +211,7 @@ export default function CoachCalendarPage() {
         const groupHeadCoachMap: Record<string, string> = {};
         const groups = (Array.isArray(calendarJson?.groups) ? calendarJson.groups : []) as CalendarGroupRow[];
         groups.forEach((g) => {
-          groupMap[g.id] = String(g?.name ?? (locale === "en" ? "Group" : "Groupe"));
+          groupMap[g.id] = String(g?.name ?? tr("Groupe", "Group"));
           const head = String(g.head_coach_name ?? "").trim();
           if (head) groupHeadCoachMap[g.id] = head;
         });
@@ -226,7 +221,7 @@ export default function CoachCalendarPage() {
           groups
             .filter((g) => !g.is_archived)
             .map((g) => {
-              const base = String(g.name ?? (locale === "en" ? "Group" : "Groupe"));
+              const base = String(g.name ?? tr("Groupe", "Group"));
               const head = String(g.head_coach_name ?? "").trim();
               return {
                 id: g.id,
@@ -278,7 +273,7 @@ export default function CoachCalendarPage() {
         });
         setPlayerNameById(playerNames);
       } catch (e: any) {
-        setError(e?.message ?? (locale === "en" ? "Loading error" : "Erreur chargement"));
+        setError(e?.message ?? tr("Erreur chargement", "Loading error"));
         setEvents([]);
         setGroupNames({});
         setGroupHeadCoachNames({});

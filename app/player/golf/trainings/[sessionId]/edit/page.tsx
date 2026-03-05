@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -404,7 +405,7 @@ export default function PlayerTrainingEditPage() {
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {locale === "fr" ? "Date, lieu et type d'entrainement" : "Date, place and training type"}
+                  {pickLocaleText(locale, "Date, lieu et type d'entrainement", "Date, place and training type")}
                 </div>
 
                 <div className="grid-2">
@@ -419,7 +420,7 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <div style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{locale === "fr" ? "Total (min)" : "Total (min)"}</span>
+                    <span style={fieldLabelStyle}>{pickLocaleText(locale, "Total (min)", "Total (min)")}</span>
                     <div
                       style={{
                         height: 42,
@@ -481,7 +482,7 @@ export default function PlayerTrainingEditPage() {
                   )}
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{locale === "fr" ? "Coach" : "Coach"}</span>
+                    <span style={fieldLabelStyle}>{pickLocaleText(locale, "Coach", "Coach")}</span>
                     <input
                       value={coachName}
                       onChange={(e) => setCoachName(e.target.value)}
@@ -583,7 +584,7 @@ export default function PlayerTrainingEditPage() {
 
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {locale === "fr" ? "Sensations et remarques" : "Feelings and notes"}
+                  {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
                 </div>
 
                 <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>

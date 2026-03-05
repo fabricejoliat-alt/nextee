@@ -9,6 +9,7 @@ import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type EventRow = {
   id: string;
@@ -348,14 +349,14 @@ export default function CoachEventPlayerFeedbackEditPage() {
     if (attendanceStatus !== "absent" && meId && playerId && nextFeedbackFp !== initialFeedbackFp) {
       const eventTypeLabel =
         event?.event_type === "camp"
-          ? locale === "fr" ? "Stage" : "Camp"
+          ? pickLocaleText(locale, "Stage", "Camp")
           : event?.event_type === "interclub"
-          ? locale === "fr" ? "Interclubs" : "Interclub"
+          ? pickLocaleText(locale, "Interclubs", "Interclub")
           : event?.event_type === "session"
-          ? locale === "fr" ? "Séance" : "Session"
+          ? pickLocaleText(locale, "Séance", "Session")
           : event?.event_type === "event"
-          ? locale === "fr" ? "Événement" : "Event"
-          : locale === "fr" ? "Entraînement" : "Training";
+          ? pickLocaleText(locale, "Événement", "Event")
+          : pickLocaleText(locale, "Entraînement", "Training");
       const msg = await getNotificationMessage("notif.coachPlayerEvaluated", locale, {
         playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
         eventType: eventTypeLabel,

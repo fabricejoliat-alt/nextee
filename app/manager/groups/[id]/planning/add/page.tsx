@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import {
@@ -293,7 +294,7 @@ type FilterMode = "upcoming" | "past" | "range";
 
 export default function CoachGroupPlanningPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const groupId = String(params?.id ?? "").trim();
@@ -1290,7 +1291,7 @@ export default function CoachGroupPlanningPage() {
                       <select value={intervalWeeks} onChange={(e) => setIntervalWeeks(Number(e.target.value))} disabled={busy}>
                         {[1, 2, 3, 4].map((w) => (
                           <option key={w} value={w}>
-                            {locale === "en" ? `Every ${w} week${w > 1 ? "s" : ""}` : `Toutes les ${w} semaine${w > 1 ? "s" : ""}`}
+                            {tr(`Toutes les ${w} semaine${w > 1 ? "s" : ""}`, `Every ${w} week${w > 1 ? "s" : ""}`)}
                           </option>
                         ))}
                       </select>

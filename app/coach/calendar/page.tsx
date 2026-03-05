@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { CalendarDays, Filter } from "lucide-react";
 
@@ -56,18 +57,12 @@ function sameDay(aIso: string, bIso: string | null) {
 }
 
 function eventTypeLabel(v: EventRow["event_type"], locale: string) {
-  if (locale === "en") {
-    if (v === "training") return "Training";
-    if (v === "interclub") return "Interclub";
-    if (v === "camp") return "Camp";
-    if (v === "session") return "Session";
-    return "Event";
-  }
-  if (v === "training") return "Entraînement";
-  if (v === "interclub") return "Interclub";
-  if (v === "camp") return "Stage";
-  if (v === "session") return "Séance";
-  return "Événement";
+  const l = locale as "fr" | "en" | "de" | "it";
+  if (v === "training") return pickLocaleText(l, "Entraînement", "Training");
+  if (v === "interclub") return pickLocaleText(l, "Interclub", "Interclub");
+  if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
+  if (v === "session") return pickLocaleText(l, "Séance", "Session");
+  return pickLocaleText(l, "Événement", "Event");
 }
 
 function isArchiveGroupLabel(label: string) {
@@ -77,8 +72,8 @@ function isArchiveGroupLabel(label: string) {
 
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +106,7 @@ export default function CoachCalendarPage() {
         setEvents((json?.events ?? []) as EventRow[]);
         setGroupNames((json?.groupNameById ?? {}) as Record<string, string>);
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : locale === "en" ? "Loading error" : "Erreur chargement");
+        setError(e instanceof Error ? e.message : tr("Erreur chargement", "Loading error"));
         setEvents([]);
       } finally {
         setLoading(false);
@@ -124,7 +119,7 @@ export default function CoachCalendarPage() {
   const baseFilteredEvents = useMemo(() => {
     return events.filter((e) => {
       if (e.status !== "scheduled") return false;
-      const groupLabel = groupNames[e.group_id] ?? (locale === "en" ? "Group" : "Groupe");
+      const groupLabel = groupNames[e.group_id] ?? tr("Groupe", "Group");
       if (isArchiveGroupLabel(groupLabel)) return false;
       if (groupFilter !== "all" && e.group_id !== groupFilter) return false;
       return true;
@@ -154,9 +149,9 @@ export default function CoachCalendarPage() {
   const groupOptions = useMemo(() => {
     const uniq = Array.from(new Set(events.map((e) => e.group_id).filter(Boolean)));
     return uniq
-      .map((id) => ({ id, label: groupNames[id] ?? (locale === "en" ? "Group" : "Groupe") }))
+      .map((id) => ({ id, label: groupNames[id] ?? tr("Groupe", "Group") }))
       .filter((g) => !isArchiveGroupLabel(g.label))
-      .sort((a, b) => a.label.localeCompare(b.label, locale === "fr" ? "fr-CH" : "en-US"));
+      .sort((a, b) => a.label.localeCompare(b.label, dateLocale));
   }, [events, groupNames, locale]);
 
   const listTotalPages = Math.max(1, Math.ceil(listEvents.length / PAGE_SIZE));
@@ -290,7 +285,7 @@ export default function CoachCalendarPage() {
                               </div>
                             ) : (
                               <div>
-                                {dateTimeLabel(e.starts_at, dateLocale)} {locale === "fr" ? "au" : "to"} {dateTimeLabel(endIso, dateLocale)}
+                                {dateTimeLabel(e.starts_at, dateLocale)} {tr("au", "to")} {dateTimeLabel(endIso, dateLocale)}
                               </div>
                             )}
                           </div>

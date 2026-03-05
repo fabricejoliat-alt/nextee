@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -789,9 +790,9 @@ export default function PlayerTrainingNewPage() {
     (clubIdForTraining ? clubsById[clubIdForTraining]?.name : null) ??
     t("common.club");
   const plannedTrainingTypeLabel =
-    locale === "fr" ? `Entraînement ${plannedClubName}` : `Training ${plannedClubName}`;
+    `${pickLocaleText(locale, "Entraînement", "Training")} ${plannedClubName}`;
   const infoCardTitle = linkedEvent
-    ? `${locale === "fr" ? "Entraînement" : "Training"} • ${linkedGroupName || (locale === "fr" ? "Groupe" : "Group")}`
+    ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${linkedGroupName || (pickLocaleText(locale, "Groupe", "Group"))}`
     : `${t("common.date")} · ${t("common.time")} · ${t("common.place")}`;
 
   return (
@@ -801,7 +802,7 @@ export default function PlayerTrainingNewPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {locale === "fr" ? "Éditer un entraînement" : "Edit a training"}
+                {pickLocaleText(locale, "Éditer un entraînement", "Edit a training")}
               </div>
 
               
@@ -1154,7 +1155,7 @@ export default function PlayerTrainingNewPage() {
                       }}
                     >
                       <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.66)" }}>
-                        {locale === "fr" ? "Structure planifiée (coach)" : "Planned structure (coach)"}
+                        {pickLocaleText(locale, "Structure planifiée (coach)", "Planned structure (coach)")}
                       </div>
                       <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                         {plannedStructureItems.map((it, idx) => {
@@ -1289,7 +1290,7 @@ export default function PlayerTrainingNewPage() {
                 {showSensationsCard ? (
                   <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>
-                      {locale === "fr" ? "Sensations et remarques" : "Feelings and notes"}
+                      {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
                     </div>
 
                     <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
@@ -1388,7 +1389,7 @@ export default function PlayerTrainingNewPage() {
                     </div>
 
                     <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
-                      <span style={fieldLabelStyle}>{locale === "fr" ? "Remarques" : "Notes"}</span>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Remarques", "Notes")}</span>
                       <textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}

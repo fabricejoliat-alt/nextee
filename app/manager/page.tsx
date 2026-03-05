@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Building2, CalendarDays, Layers3, Link2Off, UserCheck, UserCog, UserX, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
@@ -90,8 +91,8 @@ function fullName(first: string | null | undefined, last: string | null | undefi
 
 export default function ManagerHomePage() {
   const { t, locale } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const [loading, setLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [assiduityWindow, setAssiduityWindow] = useState<"30d" | "90d" | "6m" | "1y">("6m");
@@ -504,10 +505,11 @@ export default function ManagerHomePage() {
 
   const heroClubLine = useMemo(() => {
     if (stats.clubsCount <= 0) return "—";
-    if (locale === "en") {
-      return `${stats.clubsCount} managed club${stats.clubsCount > 1 ? "s" : ""} • ${stats.activeUsersCount} active users`;
-    }
-    return `${stats.clubsCount} club${stats.clubsCount > 1 ? "s" : ""} géré${stats.clubsCount > 1 ? "s" : ""} • ${stats.activeUsersCount} utilisateurs actifs`;
+    return pickLocaleText(
+      locale,
+      `${stats.clubsCount} club${stats.clubsCount > 1 ? "s" : ""} géré${stats.clubsCount > 1 ? "s" : ""} • ${stats.activeUsersCount} utilisateurs actifs`,
+      `${stats.clubsCount} managed club${stats.clubsCount > 1 ? "s" : ""} • ${stats.activeUsersCount} active users`
+    );
   }, [locale, stats.clubsCount, stats.activeUsersCount]);
 
   return (
@@ -705,7 +707,7 @@ export default function ManagerHomePage() {
                             color: active ? "rgba(20,83,45,1)" : "rgba(0,0,0,0.75)",
                           }}
                         >
-                          {locale === "fr" ? opt.labelFr : opt.labelEn}
+                          {pickLocaleText(locale, opt.labelFr, opt.labelEn)}
                         </button>
                       );
                     })}

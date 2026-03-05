@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { PlusCircle, Search, Settings } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type ClubLite = { id: string; name: string | null };
 
@@ -573,7 +574,7 @@ export default function CoachGroupsPage() {
                         <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
                           <Link className="btn" href={`/coach/groups/${x.group.id}`}>
                             <Settings size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                            {locale === "fr" ? "Paramétrer" : "Configure"}
+                            {pickLocaleText(locale, "Paramétrer", "Configure")}
                           </Link>
                         </div>
                       </div>

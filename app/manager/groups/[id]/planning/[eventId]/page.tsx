@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Users, ArrowRight, Pencil, PlusCircle, Trash2 } from "lucide-react";
 
@@ -29,14 +30,11 @@ function eventTypeLabel(v: string | null | undefined) {
   return "Événement";
 }
 function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
-  if (locale === "en") {
-    if (v === "training") return "Training";
-    if (v === "interclub") return "Interclub";
-    if (v === "camp") return "Camp";
-    if (v === "session") return "Session";
-    return "Event";
-  }
-  return eventTypeLabel(v);
+  if (v === "training") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Entraînement", "Training");
+  if (v === "interclub") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Interclub", "Interclub");
+  if (v === "camp") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Stage", "Camp");
+  if (v === "session") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Séance", "Session");
+  return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Événement", "Event");
 }
 
 type ClubRow = { id: string; name: string | null };
@@ -136,7 +134,7 @@ const avatarBoxStyle: React.CSSProperties = {
 
 export default function CoachEventDetailPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const params = useParams<{ id: string; eventId: string }>();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
@@ -473,7 +471,7 @@ export default function CoachEventDetailPage() {
                     {attendees.map((a) => {
                       const p = a.profile ?? null;
                       const playerName = nameOf(p?.first_name ?? null, p?.last_name ?? null);
-                      const canOpenPlayerDetail = event.event_type === "training";
+                      const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp";
                       const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent";
 
                       return (

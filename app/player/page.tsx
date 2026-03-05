@@ -11,6 +11,7 @@ import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type Profile = {
   id: string;
@@ -378,7 +379,7 @@ function deltaLastVsPrev(values: Array<number | null | undefined>) {
 
 export default function PlayerHomePage() {
   const { t, locale } = useI18n();
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
   const [heroLoading, setHeroLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1009,7 +1010,7 @@ export default function PlayerHomePage() {
     try {
       const coachRecipientIds = await getEventCoachUserIds(event.id, event.group_id);
       if (coachRecipientIds.length > 0 && viewerUserId) {
-        const localeKey = locale === "fr" ? "fr" : "en";
+        const localeKey: "fr" | "en" = locale === "fr" ? "fr" : "en";
         const type = eventTypeLabel(event.event_type, localeKey);
         const eventEnd =
           event.ends_at ??
@@ -1021,7 +1022,7 @@ export default function PlayerHomePage() {
           .maybeSingle();
         const playerName =
           `${String(profRes.data?.first_name ?? "").trim()} ${String(profRes.data?.last_name ?? "").trim()}`.trim() ||
-          (locale === "fr" ? "Joueur" : "Player");
+          (pickLocaleText(locale, "Joueur", "Player"));
 
         if (nextStatus === "absent") {
           const msg = await getNotificationMessage("notif.playerMarkedAbsent", localeKey, {
@@ -1041,7 +1042,7 @@ export default function PlayerHomePage() {
           await createAppNotification({
             actorUserId: viewerUserId,
             kind: "player_marked_present",
-            title: locale === "fr" ? "Présence confirmée" : "Attendance confirmed",
+            title: pickLocaleText(locale, "Présence confirmée", "Attendance confirmed"),
             body:
               locale === "fr"
                 ? `${playerName} présent · ${type} · ${fmtDateLabelNoTime(event.starts_at, "fr")} ${fmtHourLabel(event.starts_at, "fr")}`
@@ -1153,7 +1154,7 @@ export default function PlayerHomePage() {
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">{locale === "fr" ? "Prochaine activité" : "Upcoming activity"}</div>
+          <div className="section-title">{pickLocaleText(locale, "Prochaine activité", "Upcoming activity")}</div>
 
           <div className="glass-card">
             {upcomingLoading ? (
@@ -1173,17 +1174,18 @@ export default function PlayerHomePage() {
                     e.ends_at ??
                     new Date(new Date(e.starts_at).getTime() + Math.max(1, Number(e.duration_minutes ?? 0)) * 60_000).toISOString();
                   const isMultiDay = !sameDay(e.starts_at, eventEnd);
-                  const eventType = eventTypeLabel(e.event_type, locale === "fr" ? "fr" : "en");
+                  const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
                   const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
+                  const isAttendanceEvent = e.event_type === "training" || e.event_type === "camp";
                   const isTraining = e.event_type === "training";
-                  const isCollapsedTraining = isTraining && attendanceStatus === "absent";
+                  const isCollapsedTraining = isAttendanceEvent && attendanceStatus === "absent";
                   const eventStructure = eventStructureByEventId[e.id] ?? [];
-                  const showEventStructure = isTraining && attendanceStatus === "present" && eventStructure.length > 0;
+                  const showEventStructure = isAttendanceEvent && attendanceStatus === "present" && eventStructure.length > 0;
                   let eventTitle = eventType;
                   const customName = (e.title ?? "").trim();
                   if (e.event_type === "training") {
-                    const trainingGroupLabel = groupName || (locale === "fr" ? "Groupe" : "Group");
-                    eventTitle = `${locale === "fr" ? "Entraînement" : "Training"} • ${trainingGroupLabel}`;
+                    const trainingGroupLabel = groupName || (pickLocaleText(locale, "Groupe", "Group"));
+                    eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
                   }
                   if (e.event_type !== "training") {
                     eventTitle = customName ? `${eventType} • ${customName}` : eventType;
@@ -1194,11 +1196,11 @@ export default function PlayerHomePage() {
                         <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
                           {isMultiDay ? (
                             <div>
-                              {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(eventEnd, locale === "fr" ? "fr" : "en")}
+                              {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
                             </div>
                           ) : (
                             <div>
-                              {fmtDateLabelNoTime(e.starts_at, locale === "fr" ? "fr" : "en")}{" "}
+                              {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
                               <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                                 {locale === "fr"
                                   ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
@@ -1207,15 +1209,15 @@ export default function PlayerHomePage() {
                             </div>
                           )}
                         </div>
-                        {isTraining ? (
+                        {isAttendanceEvent ? (
                           <AttendanceToggle
                             checked={attendanceStatus === "present"}
                             onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
                             disabled={attendanceBusyEventId === e.id}
                             disabledCursor="wait"
-                            ariaLabel={locale === "fr" ? "Basculer présence" : "Toggle attendance"}
-                            leftLabel={locale === "fr" ? "Absent" : "Absent"}
-                            rightLabel={locale === "fr" ? "Présent" : "Present"}
+                            ariaLabel={pickLocaleText(locale, "Basculer présence", "Toggle attendance")}
+                            leftLabel={pickLocaleText(locale, "Absent", "Absent")}
+                            rightLabel={pickLocaleText(locale, "Présent", "Present")}
                           />
                         ) : null}
                       </div>
@@ -1226,9 +1228,9 @@ export default function PlayerHomePage() {
                         <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                           {eventTitle}
                         </div>
-                        {isTraining && !isCollapsedTraining ? (
+                        {isAttendanceEvent && !isCollapsedTraining ? (
                           <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                            {locale === "fr" ? "Organisé par" : "Organized by"} {clubName}
+                            {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                           </div>
                         ) : null}
                       </div>
@@ -1275,10 +1277,10 @@ export default function PlayerHomePage() {
                     <div style={{ display: "grid", gap: 10 }}>
                       <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
                         {sameDay(c.starts_at, c.ends_at) ? (
-                          <div>{fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")}</div>
+                          <div>{fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))}</div>
                         ) : (
                           <div>
-                            {fmtDateLabelNoTime(c.starts_at, locale === "fr" ? "fr" : "en")} {locale === "fr" ? "au" : "to"} {fmtDateLabelNoTime(c.ends_at, locale === "fr" ? "fr" : "en")}
+                            {fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(c.ends_at, pickLocaleText(locale, "fr", "en"))}
                           </div>
                         )}
                       </div>
@@ -1300,14 +1302,14 @@ export default function PlayerHomePage() {
                   const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
                   const sessionTitle =
                     s.session_type === "club"
-                      ? `${locale === "fr" ? "Entraînement" : "Training"}${clubName ? ` • ${clubName}` : ""}`
-                      : `${s.session_type === "private" ? (locale === "fr" ? "Cours privé" : "Private lesson") : (locale === "fr" ? "Entraînement individuel" : "Individual training")}`;
+                      ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
+                      : `${s.session_type === "private" ? (pickLocaleText(locale, "Cours privé", "Private lesson")) : (pickLocaleText(locale, "Entraînement individuel", "Individual training"))}`;
                   return (
                     <div style={{ display: "grid", gap: 10 }}>
                       <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                        <div>{fmtDateLabelNoTime(s.start_at, locale === "fr" ? "fr" : "en")}</div>
+                        <div>{fmtDateLabelNoTime(s.start_at, pickLocaleText(locale, "fr", "en"))}</div>
                         {hasDisplayableTime(s.start_at) ? (
-                          <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{fmtHourLabel(s.start_at, locale === "fr" ? "fr" : "en")}</div>
+                          <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{fmtHourLabel(s.start_at, pickLocaleText(locale, "fr", "en"))}</div>
                         ) : null}
                       </div>
                       <div className="hr-soft" style={{ margin: "1px 0" }} />
@@ -1325,7 +1327,7 @@ export default function PlayerHomePage() {
               </>
             ) : (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {locale === "fr" ? "Aucune activité planifiée." : "No upcoming activity."}
+                {pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}
               </div>
             )}
           </div>
@@ -1337,7 +1339,7 @@ export default function PlayerHomePage() {
               onClick={() => setUpcomingIndex((i) => Math.max(0, i - 1))}
               disabled={upcomingIndex <= 0 || upcomingActivities.length === 0}
             >
-              {locale === "fr" ? "Précédent" : "Previous"}
+              {pickLocaleText(locale, "Précédent", "Previous")}
             </button>
             <button
               className="btn"
@@ -1345,7 +1347,7 @@ export default function PlayerHomePage() {
               onClick={() => setUpcomingIndex((i) => Math.min(upcomingActivities.length - 1, i + 1))}
               disabled={upcomingIndex >= upcomingActivities.length - 1 || upcomingActivities.length === 0}
             >
-              {locale === "fr" ? "Suivant" : "Next"}
+              {pickLocaleText(locale, "Suivant", "Next")}
             </button>
           </div>
         </section>
@@ -1556,7 +1558,7 @@ export default function PlayerHomePage() {
               </div>
 
               <div className="sense-row">
-                <div>{locale === "fr" ? "Nombre de putts (sur 18 trous)" : "Putts (18-hole rounds)"}</div>
+                <div>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18-hole rounds)")}</div>
                 <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
                   <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
                   {/* ✅ inverse couleurs (baisse = bon = vert) */}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import {
   ResponsiveContainer,
@@ -339,7 +340,7 @@ function initials(p?: ProfileLite | null) {
 
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
-  const dateLocale = locale === "fr" ? "fr-CH" : "en-US";
+  const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const params = useParams<{ playerId: string }>();
   const searchParams = useSearchParams();
   const playerId = String(params?.playerId ?? "").trim();
