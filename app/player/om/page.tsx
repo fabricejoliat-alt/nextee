@@ -535,10 +535,10 @@ export default function PlayerOrderOfMeritPage() {
                     <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
                       <div
                         style={{
-                          border: "1px solid rgba(22,101,52,0.22)",
+                          border: "1px solid rgba(0,0,0,0.10)",
                           borderRadius: 10,
                           padding: "10px 12px",
-                          background: "linear-gradient(180deg, rgba(220,252,231,0.65), rgba(255,255,255,0.9))",
+                          background: "#fff",
                         }}
                       >
                         <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankNet}</div>
@@ -553,10 +553,10 @@ export default function PlayerOrderOfMeritPage() {
                       </div>
                       <div
                         style={{
-                          border: "1px solid rgba(30,64,175,0.2)",
+                          border: "1px solid rgba(0,0,0,0.10)",
                           borderRadius: 10,
                           padding: "10px 12px",
-                          background: "linear-gradient(180deg, rgba(219,234,254,0.65), rgba(255,255,255,0.9))",
+                          background: "#fff",
                         }}
                       >
                         <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankBrut}</div>
