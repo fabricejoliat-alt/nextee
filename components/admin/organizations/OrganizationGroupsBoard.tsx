@@ -361,15 +361,16 @@ export default function OrganizationGroupsBoard({
               className="card"
               key={g.id}
               style={{
-                borderColor: "rgba(15,23,42,0.14)",
+                border: "2px solid #86efac",
                 background: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98))",
                 padding: 10,
+                boxShadow: "0 1px 0 rgba(22,101,52,0.08)",
               }}
             >
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 900, fontSize: 14 }}>{g.name}</div>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#166534" }}>{g.name}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
                       Head coach: {headCoach ? fullName(headCoach) : "Non défini"}
                     </div>

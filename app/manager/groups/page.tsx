@@ -555,7 +555,7 @@ export default function CoachGroupsPage() {
                           opacity: x.group.is_active ? 1 : 0.75,
                         }}
                       >
-                        <div style={{ fontWeight: 950 }}>{x.group.name}</div>
+                        <div style={{ fontWeight: 950, color: "var(--green-dark)" }}>{x.group.name}</div>
                         <div
                           style={{
                             opacity: 0.62,
