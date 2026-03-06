@@ -63,6 +63,7 @@ function initialsFromName(name: string) {
 export default function ManagerOrderOfMeritPage() {
   const { locale } = useI18n();
   const todayInZurich = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date()), []);
+  const yearStartInZurich = useMemo(() => `${todayInZurich.slice(0, 4)}-01-01`, [todayInZurich]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,7 +77,8 @@ export default function ManagerOrderOfMeritPage() {
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
-  const [rankingAsOf, setRankingAsOf] = useState(todayInZurich);
+  const [rankingFrom, setRankingFrom] = useState(yearStartInZurich);
+  const [rankingTo, setRankingTo] = useState(todayInZurich);
   const [groups, setGroups] = useState<GroupLite[]>([]);
   const [contests, setContests] = useState<InternalContest[]>([]);
   const [contestTitle, setContestTitle] = useState("");
@@ -151,7 +153,8 @@ export default function ManagerOrderOfMeritPage() {
         "Il nome e obbligatorio."
       ),
       rankingTitle: labelByLocale(locale, "Classement OM", "OM ranking", "OM-Rangliste", "Classifica OM"),
-      rankingDate: labelByLocale(locale, "Date de référence", "Reference date", "Stichtag", "Data di riferimento"),
+      rankingDateFrom: labelByLocale(locale, "Du", "From", "Von", "Dal"),
+      rankingDateTo: labelByLocale(locale, "Au", "To", "Bis", "Al"),
       rankingNet: labelByLocale(locale, "Net", "Net", "Netto", "Netto"),
       rankingBrut: labelByLocale(locale, "Brut", "Gross", "Brutto", "Lordo"),
       rankingPos: labelByLocale(locale, "Rang", "Rank", "Rang", "Posizione"),
@@ -232,14 +235,16 @@ export default function ManagerOrderOfMeritPage() {
     setContests((cRes.data ?? []) as InternalContest[]);
   }
 
-  async function loadRanking(orgId: string, asOf: string) {
-    if (!orgId || !asOf) {
+  async function loadRanking(orgId: string, fromDate: string, toDate: string) {
+    if (!orgId || !fromDate || !toDate) {
       setRankingRows([]);
       setAvatarByPlayerId({});
       return;
     }
+    const rangeFrom = fromDate <= toDate ? fromDate : toDate;
+    const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setRankingLoading(true);
-    const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_as_of: asOf });
+    const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_from: rangeFrom, p_as_of: rangeTo });
     setRankingLoading(false);
     if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as OMRankingRow[];
@@ -286,7 +291,7 @@ export default function ManagerOrderOfMeritPage() {
 
       await loadExceptionalTournaments(nextOrgId);
       await loadGroupsAndContests(nextOrgId);
-      await loadRanking(nextOrgId, rankingAsOf);
+      await loadRanking(nextOrgId, rankingFrom, rankingTo);
     } catch (e: any) {
       setError(String(e?.message ?? txt.genericError));
       setRows([]);
@@ -309,7 +314,7 @@ export default function ManagerOrderOfMeritPage() {
       try {
         await loadExceptionalTournaments(organizationId);
         await loadGroupsAndContests(organizationId);
-        await loadRanking(organizationId, rankingAsOf);
+        await loadRanking(organizationId, rankingFrom, rankingTo);
       } catch (e: any) {
         setError(String(e?.message ?? txt.genericError));
       }
@@ -321,13 +326,13 @@ export default function ManagerOrderOfMeritPage() {
     if (!organizationId) return;
     (async () => {
       try {
-        await loadRanking(organizationId, rankingAsOf);
+        await loadRanking(organizationId, rankingFrom, rankingTo);
       } catch (e: any) {
         setError(String(e?.message ?? txt.genericError));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rankingAsOf]);
+  }, [rankingFrom, rankingTo]);
 
   async function onCreateContest() {
     setError(null);
@@ -462,10 +467,16 @@ export default function ManagerOrderOfMeritPage() {
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ fontWeight: 800 }}>{txt.rankingTitle}</div>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDate}</span>
-                <input className="search-input" type="date" value={rankingAsOf} onChange={(e) => setRankingAsOf(e.target.value)} />
-              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateFrom}</span>
+                  <input className="search-input" type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} />
+                </label>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateTo}</span>
+                  <input className="search-input" type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} />
+                </label>
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button

@@ -121,6 +121,7 @@ function initialsFromName(name: string) {
 export default function PlayerOrderOfMeritPage() {
   const { locale } = useI18n();
   const todayInZurich = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date()), []);
+  const yearStartInZurich = useMemo(() => `${todayInZurich.slice(0, 4)}-01-01`, [todayInZurich]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +131,8 @@ export default function PlayerOrderOfMeritPage() {
   const [effectiveUserId, setEffectiveUserId] = useState("");
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [organizationId, setOrganizationId] = useState("");
-  const [rankingAsOf, setRankingAsOf] = useState(todayInZurich);
+  const [rankingFrom, setRankingFrom] = useState(yearStartInZurich);
+  const [rankingTo, setRankingTo] = useState(todayInZurich);
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
@@ -141,7 +143,8 @@ export default function PlayerOrderOfMeritPage() {
       title: labelByLocale(locale, "Ordre du mérite", "Order of Merit", "Order of Merit", "Ordine di merito"),
       loading: labelByLocale(locale, "Chargement…", "Loading…", "Laedt…", "Caricamento…"),
       organization: labelByLocale(locale, "Organisation", "Organization", "Organisation", "Organizzazione"),
-      rankingDate: labelByLocale(locale, "Date de référence", "Reference date", "Stichtag", "Data di riferimento"),
+      rankingDateFrom: labelByLocale(locale, "Du", "From", "Von", "Dal"),
+      rankingDateTo: labelByLocale(locale, "Au", "To", "Bis", "Al"),
       rankingNet: labelByLocale(locale, "Net", "Net", "Netto", "Netto"),
       rankingBrut: labelByLocale(locale, "Brut", "Gross", "Brutto", "Lordo"),
       rankingPos: labelByLocale(locale, "Rang", "Rank", "Rang", "Posizione"),
@@ -151,7 +154,7 @@ export default function PlayerOrderOfMeritPage() {
       rankingTotal: labelByLocale(locale, "Total", "Total", "Total", "Totale"),
       rankingEmpty: labelByLocale(locale, "Aucun score OM.", "No OM scores.", "Keine OM-Scores.", "Nessun punteggio OM."),
       mySummary: labelByLocale(locale, "Mon résumé", "My summary", "Meine Zusammenfassung", "Il mio riepilogo"),
-      summaryAsOf: labelByLocale(locale, "Au", "As of", "Stand", "Al"),
+      summaryAsOf: labelByLocale(locale, "Période", "Period", "Periode", "Periodo"),
       summaryRankNet: labelByLocale(locale, "Classement net", "Net rank", "Netto-Rang", "Classifica netto"),
       summaryRankBrut: labelByLocale(locale, "Classement brut", "Gross rank", "Brutto-Rang", "Classifica lordo"),
       notRanked: labelByLocale(locale, "Pas encore classé.", "Not ranked yet.", "Noch nicht klassiert.", "Non ancora in classifica."),
@@ -180,14 +183,16 @@ export default function PlayerOrderOfMeritPage() {
     [locale]
   );
 
-  async function loadRanking(orgId: string, asOf: string) {
-    if (!orgId || !asOf) {
+  async function loadRanking(orgId: string, fromDate: string, toDate: string) {
+    if (!orgId || !fromDate || !toDate) {
       setRankingRows([]);
       setAvatarByPlayerId({});
       return;
     }
+    const rangeFrom = fromDate <= toDate ? fromDate : toDate;
+    const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setRankingLoading(true);
-    const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_as_of: asOf });
+    const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_from: rangeFrom, p_as_of: rangeTo });
     setRankingLoading(false);
     if (r.error) throw new Error(r.error.message);
     const rows = (r.data ?? []) as OMRankingRow[];
@@ -207,28 +212,33 @@ export default function PlayerOrderOfMeritPage() {
     setAvatarByPlayerId(nextMap);
   }
 
-  async function loadPointDetails(playerId: string, orgId: string, asOf: string) {
-    if (!playerId || !orgId || !asOf) {
+  async function loadPointDetails(playerId: string, orgId: string, fromDate: string, toDate: string) {
+    if (!playerId || !orgId || !fromDate || !toDate) {
       setPointDetails([]);
       return;
     }
+    const rangeFrom = fromDate <= toDate ? fromDate : toDate;
+    const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setDetailsLoading(true);
 
-    const asOfEnd = `${asOf}T23:59:59`;
+    const fromStart = `${rangeFrom}T00:00:00`;
+    const toEnd = `${rangeTo}T23:59:59`;
     const [scoreRes, bonusRes] = await Promise.all([
       supabase
         .from("om_tournament_scores")
         .select("round_id,competition_level,competition_format,rounds_18_count,score_gross,score_net,total_points_net,total_points_brut,calculated_at")
         .eq("organization_id", orgId)
         .eq("player_id", playerId)
-        .lte("calculated_at", asOfEnd)
+        .gte("calculated_at", fromStart)
+        .lte("calculated_at", toEnd)
         .order("calculated_at", { ascending: false }),
       supabase
         .from("om_bonus_entries")
         .select("id,bonus_type,points_net,points_brut,source_table,source_id,description,occurred_on,created_at")
         .eq("organization_id", orgId)
         .eq("player_id", playerId)
-        .lte("occurred_on", asOf)
+        .gte("occurred_on", rangeFrom)
+        .lte("occurred_on", rangeTo)
         .order("occurred_on", { ascending: false }),
     ]);
     setDetailsLoading(false);
@@ -428,7 +438,7 @@ export default function PlayerOrderOfMeritPage() {
       setOrganizationId(firstOrg);
 
       if (firstOrg) {
-        await Promise.all([loadRanking(firstOrg, rankingAsOf), loadPointDetails(playerId, firstOrg, rankingAsOf)]);
+        await Promise.all([loadRanking(firstOrg, rankingFrom, rankingTo), loadPointDetails(playerId, firstOrg, rankingFrom, rankingTo)]);
       } else {
         setPointDetails([]);
       }
@@ -454,13 +464,13 @@ export default function PlayerOrderOfMeritPage() {
     if (!organizationId || !effectiveUserId) return;
     (async () => {
       try {
-        await Promise.all([loadRanking(organizationId, rankingAsOf), loadPointDetails(effectiveUserId, organizationId, rankingAsOf)]);
+        await Promise.all([loadRanking(organizationId, rankingFrom, rankingTo), loadPointDetails(effectiveUserId, organizationId, rankingFrom, rankingTo)]);
       } catch (e: any) {
         setError(String(e?.message ?? "Error"));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, rankingAsOf, effectiveUserId]);
+  }, [organizationId, rankingFrom, rankingTo, effectiveUserId]);
 
   const meRow = rankingRows.find((r) => r.player_id === effectiveUserId) ?? null;
   const periodSlot = rankingRows[0]?.period_slot ?? null;
@@ -495,18 +505,44 @@ export default function PlayerOrderOfMeritPage() {
           <>
             <div className="glass-section">
               <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+                <div style={{ fontWeight: 800 }}>{txt.organization}</div>
+                <select
+                  className="search-input"
+                  value={organizationId}
+                  onChange={(e) => setOrganizationId(e.target.value)}
+                  style={{ width: "100%" }}
+                >
+                  {orgs.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+                {orgs.length === 0 ? <div style={{ opacity: 0.72 }}>{txt.noOrg}</div> : null}
+              </div>
+            </div>
+
+            <div className="glass-section">
+              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
                 <div style={{ fontWeight: 800 }}>{txt.mySummary}</div>
                 {!meRow ? (
                   <div style={{ opacity: 0.72 }}>{txt.notRanked}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ fontSize: 13, opacity: 0.75 }}>
-                      {txt.summaryAsOf} {fmtActivityDate(rankingAsOf, locale)}
+                      {txt.summaryAsOf} {fmtActivityDate(rankingFrom, locale)} - {fmtActivityDate(rankingTo, locale)}
                     </div>
                     <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "8px 10px" }}>
+                      <div
+                        style={{
+                          border: "1px solid rgba(22,101,52,0.22)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          background: "linear-gradient(180deg, rgba(220,252,231,0.65), rgba(255,255,255,0.9))",
+                        }}
+                      >
                         <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankNet}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2 }}>#{meRow.rank_net}</div>
+                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{meRow.rank_net}</div>
                         <div style={{ fontSize: 13, marginTop: 4 }}>
                           {txt.rankingTournament}: <strong>{points(meRow.tournament_points_net)}</strong> · {txt.rankingBonus}:{" "}
                           <strong>{points(meRow.bonus_points_net)}</strong>
@@ -515,9 +551,16 @@ export default function PlayerOrderOfMeritPage() {
                           {txt.rankingTotal}: <strong>{points(meRow.total_points_net)}</strong>
                         </div>
                       </div>
-                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "8px 10px" }}>
+                      <div
+                        style={{
+                          border: "1px solid rgba(30,64,175,0.2)",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          background: "linear-gradient(180deg, rgba(219,234,254,0.65), rgba(255,255,255,0.9))",
+                        }}
+                      >
                         <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankBrut}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2 }}>#{meRow.rank_brut}</div>
+                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{meRow.rank_brut}</div>
                         <div style={{ fontSize: 13, marginTop: 4 }}>
                           {txt.rankingTournament}: <strong>{points(meRow.tournament_points_brut)}</strong> · {txt.rankingBonus}:{" "}
                           <strong>{points(meRow.bonus_points_brut)}</strong>
@@ -536,24 +579,21 @@ export default function PlayerOrderOfMeritPage() {
               <div className="glass-card" style={{ display: "grid", gap: 10 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.organization}</span>
-                    <select className="search-input" value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
-                      {orgs.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.name}
-                        </option>
-                      ))}
-                    </select>
+                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateFrom}</span>
+                    <input className="search-input" type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} />
                   </label>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDate}</span>
-                    <input className="search-input" type="date" value={rankingAsOf} onChange={(e) => setRankingAsOf(e.target.value)} />
+                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateTo}</span>
+                    <input className="search-input" type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} />
                   </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <button
                     type="button"
                     className={`btn ${rankingMode === "net" ? "btn-active-om-light" : ""}`}
                     onClick={() => setRankingMode("net")}
                     aria-pressed={rankingMode === "net"}
+                    style={{ width: "100%" }}
                   >
                     {txt.rankingNet}
                   </button>
@@ -562,6 +602,7 @@ export default function PlayerOrderOfMeritPage() {
                     className={`btn ${rankingMode === "brut" ? "btn-active-om-light" : ""}`}
                     onClick={() => setRankingMode("brut")}
                     aria-pressed={rankingMode === "brut"}
+                    style={{ width: "100%" }}
                   >
                     {txt.rankingBrut}
                   </button>

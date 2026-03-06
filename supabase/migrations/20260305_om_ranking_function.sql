@@ -4,6 +4,7 @@
 
 create or replace function public.om_ranking_snapshot(
   p_org_id uuid,
+  p_from date default null,
   p_as_of date default ((now() at time zone 'Europe/Zurich')::date)
 )
 returns table(
@@ -28,7 +29,7 @@ as $$
 declare
   v_slot smallint;
   v_limit integer;
-  v_year_start date;
+  v_from date;
 begin
   if p_org_id is null then
     raise exception 'organization_required';
@@ -65,7 +66,10 @@ begin
 
   v_slot := public.om_period_slot(p_as_of);
   v_limit := public.om_period_limit(v_slot);
-  v_year_start := make_date(extract(year from p_as_of)::int, 1, 1);
+  v_from := coalesce(p_from, make_date(extract(year from p_as_of)::int, 1, 1));
+  if v_from > p_as_of then
+    v_from := p_as_of;
+  end if;
 
   return query
   with
@@ -84,7 +88,7 @@ begin
     from public.om_tournament_scores s
     join public.golf_rounds g on g.id = s.round_id
     where s.organization_id = p_org_id
-      and s.calculated_at::date >= v_year_start
+      and s.calculated_at::date >= v_from
       and s.calculated_at::date <= p_as_of
   ),
   dedup_scores as (
@@ -161,7 +165,7 @@ begin
       coalesce(sum(be.points_brut), 0)::numeric(12,2) as bonus_points_brut
     from public.om_bonus_entries be
     where be.organization_id = p_org_id
-      and be.occurred_on >= v_year_start
+      and be.occurred_on >= v_from
       and be.occurred_on <= p_as_of
     group by be.player_id
   ),
@@ -206,4 +210,4 @@ begin
 end;
 $$;
 
-grant execute on function public.om_ranking_snapshot(uuid, date) to authenticated;
+grant execute on function public.om_ranking_snapshot(uuid, date, date) to authenticated;
