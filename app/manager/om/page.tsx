@@ -31,6 +31,10 @@ type OMRankingRow = {
   period_slot: number;
   period_limit: number;
 };
+type ProfileAvatarRow = {
+  id: string;
+  avatar_url: string | null;
+};
 type GroupLite = { id: string; name: string | null; is_active: boolean | null };
 type InternalContest = {
   id: string;
@@ -49,6 +53,13 @@ function labelByLocale(locale: string, fr: string, en: string, de: string, it: s
   return en;
 }
 
+function initialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[parts.length - 1].slice(0, 1)}`.toUpperCase();
+}
+
 export default function ManagerOrderOfMeritPage() {
   const { locale } = useI18n();
   const todayInZurich = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date()), []);
@@ -63,6 +74,7 @@ export default function ManagerOrderOfMeritPage() {
   const [organizationId, setOrganizationId] = useState("");
   const [rows, setRows] = useState<ExceptionalTournament[]>([]);
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
+  const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
   const [rankingAsOf, setRankingAsOf] = useState(todayInZurich);
   const [groups, setGroups] = useState<GroupLite[]>([]);
@@ -223,13 +235,28 @@ export default function ManagerOrderOfMeritPage() {
   async function loadRanking(orgId: string, asOf: string) {
     if (!orgId || !asOf) {
       setRankingRows([]);
+      setAvatarByPlayerId({});
       return;
     }
     setRankingLoading(true);
     const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_as_of: asOf });
     setRankingLoading(false);
     if (r.error) throw new Error(r.error.message);
-    setRankingRows((r.data ?? []) as OMRankingRow[]);
+    const rows = (r.data ?? []) as OMRankingRow[];
+    setRankingRows(rows);
+
+    const playerIds = Array.from(new Set(rows.map((row) => row.player_id).filter(Boolean)));
+    if (playerIds.length === 0) {
+      setAvatarByPlayerId({});
+      return;
+    }
+    const profilesRes = await supabase.from("profiles").select("id,avatar_url").in("id", playerIds);
+    if (profilesRes.error) throw new Error(profilesRes.error.message);
+    const nextMap: Record<string, string | null> = {};
+    ((profilesRes.data ?? []) as ProfileAvatarRow[]).forEach((p) => {
+      nextMap[p.id] = p.avatar_url ?? null;
+    });
+    setAvatarByPlayerId(nextMap);
   }
 
   async function loadOrgsAndRows() {
@@ -441,10 +468,20 @@ export default function ManagerOrderOfMeritPage() {
               </label>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" className="btn" onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>
+              <button
+                type="button"
+                className={`btn ${rankingMode === "net" ? "btn-active-om-light" : ""}`}
+                onClick={() => setRankingMode("net")}
+                aria-pressed={rankingMode === "net"}
+              >
                 {txt.rankingNet}
               </button>
-              <button type="button" className="btn" onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>
+              <button
+                type="button"
+                className={`btn ${rankingMode === "brut" ? "btn-active-om-light" : ""}`}
+                onClick={() => setRankingMode("brut")}
+                aria-pressed={rankingMode === "brut"}
+              >
                 {txt.rankingBrut}
               </button>
             </div>
@@ -457,37 +494,47 @@ export default function ManagerOrderOfMeritPage() {
               <div style={{ display: "grid", gap: 8 }}>
                 {sortedRankingRows.map((row) => (
                   <div key={row.player_id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: 8,
-                        gridTemplateColumns: "64px minmax(180px,1fr) minmax(100px,140px) minmax(100px,140px) minmax(100px,140px)",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ fontWeight: 900 }}>
-                        #{rankingMode === "net" ? row.rank_net : row.rank_brut}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{row.full_name}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{txt.rankingTournament}</div>
-                        <div style={{ fontWeight: 800 }}>
-                          {rankingMode === "net" ? formatPoints(row.tournament_points_net) : formatPoints(row.tournament_points_brut)}
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <div
+                          style={{
+                            minWidth: 44,
+                            height: 28,
+                            borderRadius: 999,
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontWeight: 900,
+                            fontSize: 13,
+                          }}
+                        >
+                          #{rankingMode === "net" ? row.rank_net : row.rank_brut}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: "50%",
+                              overflow: "hidden",
+                              background: "rgba(0,0,0,0.08)",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: 12,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {avatarByPlayerId[row.player_id] ? (
+                              <img src={avatarByPlayerId[row.player_id] ?? ""} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <span>{initialsFromName(row.full_name)}</span>
+                            )}
+                          </div>
+                          <div style={{ fontWeight: 800 }}>{row.full_name}</div>
                         </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{txt.rankingBonus}</div>
-                        <div style={{ fontWeight: 800 }}>
-                          {rankingMode === "net" ? formatPoints(row.bonus_points_net) : formatPoints(row.bonus_points_brut)}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{txt.rankingTotal}</div>
-                        <div style={{ fontWeight: 900 }}>
-                          {rankingMode === "net" ? formatPoints(row.total_points_net) : formatPoints(row.total_points_brut)}
-                        </div>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>
+                        {rankingMode === "net" ? formatPoints(row.total_points_net) : formatPoints(row.total_points_brut)}
                       </div>
                     </div>
                   </div>

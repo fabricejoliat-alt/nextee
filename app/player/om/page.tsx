@@ -151,6 +151,9 @@ export default function PlayerOrderOfMeritPage() {
       rankingTotal: labelByLocale(locale, "Total", "Total", "Total", "Totale"),
       rankingEmpty: labelByLocale(locale, "Aucun score OM.", "No OM scores.", "Keine OM-Scores.", "Nessun punteggio OM."),
       mySummary: labelByLocale(locale, "Mon résumé", "My summary", "Meine Zusammenfassung", "Il mio riepilogo"),
+      summaryAsOf: labelByLocale(locale, "Au", "As of", "Stand", "Al"),
+      summaryRankNet: labelByLocale(locale, "Classement net", "Net rank", "Netto-Rang", "Classifica netto"),
+      summaryRankBrut: labelByLocale(locale, "Classement brut", "Gross rank", "Brutto-Rang", "Classifica lordo"),
       notRanked: labelByLocale(locale, "Pas encore classé.", "Not ranked yet.", "Noch nicht klassiert.", "Non ancora in classifica."),
       period: labelByLocale(
         locale,
@@ -497,13 +500,32 @@ export default function PlayerOrderOfMeritPage() {
                   <div style={{ opacity: 0.72 }}>{txt.notRanked}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 6 }}>
-                    <div>
-                      #{rankingMode === "net" ? meRow.rank_net : meRow.rank_brut} ·{" "}
-                      <strong>{rankingMode === "net" ? points(meRow.total_points_net) : points(meRow.total_points_brut)}</strong>
-                    </div>
                     <div style={{ fontSize: 13, opacity: 0.75 }}>
-                      {txt.rankingTournament}: {rankingMode === "net" ? points(meRow.tournament_points_net) : points(meRow.tournament_points_brut)} ·{" "}
-                      {txt.rankingBonus}: {rankingMode === "net" ? points(meRow.bonus_points_net) : points(meRow.bonus_points_brut)}
+                      {txt.summaryAsOf} {fmtActivityDate(rankingAsOf, locale)}
+                    </div>
+                    <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "8px 10px" }}>
+                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankNet}</div>
+                        <div style={{ fontWeight: 900, marginTop: 2 }}>#{meRow.rank_net}</div>
+                        <div style={{ fontSize: 13, marginTop: 4 }}>
+                          {txt.rankingTournament}: <strong>{points(meRow.tournament_points_net)}</strong> · {txt.rankingBonus}:{" "}
+                          <strong>{points(meRow.bonus_points_net)}</strong>
+                        </div>
+                        <div style={{ fontSize: 13 }}>
+                          {txt.rankingTotal}: <strong>{points(meRow.total_points_net)}</strong>
+                        </div>
+                      </div>
+                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "8px 10px" }}>
+                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankBrut}</div>
+                        <div style={{ fontWeight: 900, marginTop: 2 }}>#{meRow.rank_brut}</div>
+                        <div style={{ fontSize: 13, marginTop: 4 }}>
+                          {txt.rankingTournament}: <strong>{points(meRow.tournament_points_brut)}</strong> · {txt.rankingBonus}:{" "}
+                          <strong>{points(meRow.bonus_points_brut)}</strong>
+                        </div>
+                        <div style={{ fontSize: 13 }}>
+                          {txt.rankingTotal}: <strong>{points(meRow.total_points_brut)}</strong>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -527,10 +549,20 @@ export default function PlayerOrderOfMeritPage() {
                     <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDate}</span>
                     <input className="search-input" type="date" value={rankingAsOf} onChange={(e) => setRankingAsOf(e.target.value)} />
                   </label>
-                  <button type="button" className="btn" onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>
+                  <button
+                    type="button"
+                    className={`btn ${rankingMode === "net" ? "btn-active-om-light" : ""}`}
+                    onClick={() => setRankingMode("net")}
+                    aria-pressed={rankingMode === "net"}
+                  >
                     {txt.rankingNet}
                   </button>
-                  <button type="button" className="btn" onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>
+                  <button
+                    type="button"
+                    className={`btn ${rankingMode === "brut" ? "btn-active-om-light" : ""}`}
+                    onClick={() => setRankingMode("brut")}
+                    aria-pressed={rankingMode === "brut"}
+                  >
                     {txt.rankingBrut}
                   </button>
                 </div>
@@ -545,31 +577,46 @@ export default function PlayerOrderOfMeritPage() {
                   <div style={{ display: "grid", gap: 8 }}>
                     {sortedRows.map((r) => (
                       <div key={r.player_id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "60px minmax(180px,1fr) minmax(120px,140px)", alignItems: "center" }}>
-                        <div style={{ fontWeight: 900 }}>#{rankingMode === "net" ? r.rank_net : r.rank_brut}</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                             <div
                               style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: "50%",
-                                overflow: "hidden",
-                                background: "rgba(0,0,0,0.08)",
+                                minWidth: 44,
+                                height: 28,
+                                borderRadius: 999,
+                                border: "1px solid rgba(0,0,0,0.10)",
                                 display: "grid",
                                 placeItems: "center",
-                                fontSize: 12,
-                                fontWeight: 800,
+                                fontWeight: 900,
+                                fontSize: 13,
                               }}
                             >
-                              {avatarByPlayerId[r.player_id] ? (
-                                <img src={avatarByPlayerId[r.player_id] ?? ""} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                              ) : (
-                                <span>{initialsFromName(r.full_name)}</span>
-                              )}
+                              #{rankingMode === "net" ? r.rank_net : r.rank_brut}
                             </div>
-                            <div style={{ fontWeight: 800 }}>{r.full_name}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: "50%",
+                                  overflow: "hidden",
+                                  background: "rgba(0,0,0,0.08)",
+                                  display: "grid",
+                                  placeItems: "center",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {avatarByPlayerId[r.player_id] ? (
+                                  <img src={avatarByPlayerId[r.player_id] ?? ""} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <span>{initialsFromName(r.full_name)}</span>
+                                )}
+                              </div>
+                              <div style={{ fontWeight: 800 }}>{r.full_name}</div>
+                            </div>
                           </div>
-                          <div style={{ textAlign: "right", fontWeight: 900 }}>
+                          <div style={{ fontWeight: 900, fontSize: 16 }}>
                             {rankingMode === "net" ? points(r.total_points_net) : points(r.total_points_brut)}
                           </div>
                         </div>

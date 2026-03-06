@@ -461,6 +461,19 @@ a.btn{ padding: 8px 12px !important; }
   color: #123322 !important;
 }
 
+/* Lighter variant for OM Net/Brut toggles */
+.btn-active-om-light{
+  background: #dcfce7 !important;
+  border-color: #86efac !important;
+  color: #166534 !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55) !important;
+}
+.btn-active-om-light:hover{
+  background: #dcfce7 !important;
+  border-color: #86efac !important;
+  color: #166534 !important;
+}
+
 .btn-active-dark{
   background: #c7cdd6 !important;
   border-color: #aeb7c3 !important;
