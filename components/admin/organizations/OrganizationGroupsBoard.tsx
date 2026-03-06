@@ -371,9 +371,6 @@ export default function OrganizationGroupsBoard({
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontWeight: 900, fontSize: 14, color: "#166534" }}>{g.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700 }}>
-                      Head coach: {headCoach ? fullName(headCoach) : "Non défini"}
-                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {(categoriesByGroup[g.id] ?? []).map((cat) => (
@@ -412,7 +409,7 @@ export default function OrganizationGroupsBoard({
                       background: "rgba(16,185,129,0.04)",
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6, color: "#111" }}>
                       Joueurs ({groupPlayerIds.length}) - déposer ici
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -476,7 +473,7 @@ export default function OrganizationGroupsBoard({
                       background: "rgba(59,130,246,0.04)",
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6, color: "#111" }}>
                       Coachs ({groupCoachIds.length}) - déposer ici
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
