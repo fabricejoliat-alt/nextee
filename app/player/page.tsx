@@ -266,6 +266,18 @@ function pickTrainingVolumeTarget(
   return matched ?? rows[0] ?? null;
 }
 
+function objectiveForMonth(
+  target: TrainingVolumeTargetRow | null,
+  seasonMonths: number[],
+  offseasonMonths: number[],
+  month: number
+) {
+  if (!target) return 0;
+  const inSeason =
+    seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
+  return inSeason ? target.minutes_inseason : target.minutes_offseason;
+}
+
 function monthRangeLocal(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
@@ -729,26 +741,45 @@ export default function PlayerHomePage() {
     setHeroLoading(false);
     writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: heroClubs });
 
-    // Training volume config from first active club
+    // Training volume config from active clubs: keep the highest monthly objective
     if (cids.length > 0) {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token ?? "";
         if (token) {
-          const tvRes = await fetch(
-            `/api/player/clubs/${cids[0]}/training-volume?player_id=${encodeURIComponent(effectiveUid)}`,
-            {
-              method: "GET",
-              headers: { Authorization: `Bearer ${token}` },
-              cache: "no-store",
-            }
+          const clubIds = Array.from(new Set(cids));
+          const month = new Date().getMonth() + 1;
+          const handicap = (profRes.data as Profile | null)?.handicap ?? null;
+
+          const responses = await Promise.all(
+            clubIds.map(async (clubId) => {
+              const res = await fetch(
+                `/api/player/clubs/${clubId}/training-volume?player_id=${encodeURIComponent(effectiveUid)}`,
+                {
+                  method: "GET",
+                  headers: { Authorization: `Bearer ${token}` },
+                  cache: "no-store",
+                }
+              );
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) return null;
+              const rows = Array.isArray(json?.rows) ? (json.rows as TrainingVolumeTargetRow[]) : [];
+              const seasonMonths = parseMonthArray(json?.settings?.season_months);
+              const offseasonMonths = parseMonthArray(json?.settings?.offseason_months);
+              const target = pickTrainingVolumeTarget(typeof handicap === "number" ? handicap : null, rows);
+              const objective = objectiveForMonth(target, seasonMonths, offseasonMonths, month);
+              return { rows, seasonMonths, offseasonMonths, objective };
+            })
           );
-          const tvJson = await tvRes.json().catch(() => ({}));
-          if (tvRes.ok) {
-            const nextRows = Array.isArray(tvJson?.rows) ? (tvJson.rows as TrainingVolumeTargetRow[]) : [];
-            setTrainingVolumeRows(nextRows);
-            setTrainingSeasonMonths(parseMonthArray(tvJson?.settings?.season_months));
-            setTrainingOffseasonMonths(parseMonthArray(tvJson?.settings?.offseason_months));
+
+          const best = responses
+            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
+            .sort((a, b) => b.objective - a.objective)[0];
+
+          if (best) {
+            setTrainingVolumeRows(best.rows);
+            setTrainingSeasonMonths(best.seasonMonths);
+            setTrainingOffseasonMonths(best.offseasonMonths);
           } else {
             setTrainingVolumeRows([]);
             setTrainingSeasonMonths([]);

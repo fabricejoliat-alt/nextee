@@ -40,6 +40,36 @@ type TrainingItemRow = {
   minutes: number;
 };
 
+type CoachEvaluationFeedbackRow = {
+  event_id: string;
+  coach_id: string;
+  engagement: number | null;
+  attitude: number | null;
+  performance: number | null;
+  private_note: string | null;
+  player_note: string | null;
+};
+
+type CoachEvaluationEventRow = {
+  id: string;
+  starts_at: string;
+  event_type: string | null;
+  status: "scheduled" | "cancelled" | null;
+  club_id: string | null;
+  title: string | null;
+};
+
+type CoachEvaluationRow = {
+  event_id: string;
+  starts_at: string;
+  title: string | null;
+  event_type: string | null;
+  engagement: number | null;
+  attitude: number | null;
+  application: number | null;
+  note: string | null;
+};
+
 type GolfRoundRow = {
   id: string;
   start_at: string;
@@ -72,6 +102,7 @@ type GolfHoleRow = {
 
 type Preset = "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
+type EvalChartMode = "curve" | "trend";
 type Role = "coach" | "manager" | "player";
 type ClubMemberRow = { club_id: string; role: Role; is_active: boolean | null };
 type ProfileLite = {
@@ -329,6 +360,10 @@ function fullName(p?: ProfileLite | null) {
   return `${f} ${l}`.trim() || "—";
 }
 
+function shortDate(iso: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "2-digit" }).format(new Date(iso));
+}
+
 function initials(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
@@ -384,6 +419,10 @@ export default function GolfDashboardPage() {
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
   const [coachId, setCoachId] = useState<string>("");
   const [trainingScope, setTrainingScope] = useState<TrainingScope>("all");
+  const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
+  const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
+  const [coachEvalPage, setCoachEvalPage] = useState(0);
+  const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
 
   useEffect(() => {
     (async () => {
@@ -610,6 +649,75 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [canLoadData, fromDate, playerId, toDate]);
+
+  // ===== LOAD COACH EVALUATIONS (past trainings) =====
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData || !coachId || !playerId || sharedClubIds.length === 0) {
+        setCoachEvaluations([]);
+        return;
+      }
+
+      setLoadingCoachEvaluations(true);
+      try {
+        const fbRes = await supabase
+          .from("club_event_coach_feedback")
+          .select("event_id,coach_id,engagement,attitude,performance,private_note,player_note")
+          .eq("player_id", playerId)
+          .eq("coach_id", coachId)
+          .limit(500);
+        if (fbRes.error) throw new Error(fbRes.error.message);
+
+        const feedbacks = (fbRes.data ?? []) as CoachEvaluationFeedbackRow[];
+        const eventIds = Array.from(new Set(feedbacks.map((x) => x.event_id).filter(Boolean)));
+        if (eventIds.length === 0) {
+          setCoachEvaluations([]);
+          setCoachEvalPage(0);
+          return;
+        }
+
+        const evRes = await supabase
+          .from("club_events")
+          .select("id,starts_at,event_type,status,club_id,title")
+          .in("id", eventIds)
+          .in("event_type", ["training", "camp"])
+          .lt("starts_at", new Date().toISOString())
+          .limit(1000);
+        if (evRes.error) throw new Error(evRes.error.message);
+
+        const events = (evRes.data ?? []) as CoachEvaluationEventRow[];
+        const eventById = new Map(events.map((e) => [e.id, e]));
+
+        const merged = feedbacks
+          .map((fb) => {
+            const ev = eventById.get(fb.event_id);
+            if (!ev) return null;
+            if (!ev.club_id || !sharedClubIds.includes(ev.club_id)) return null;
+            const notePlayer = String(fb.player_note ?? "").trim();
+            const notePrivate = String(fb.private_note ?? "").trim();
+            return {
+              event_id: fb.event_id,
+              starts_at: ev.starts_at,
+              title: ev.title ?? null,
+              event_type: ev.event_type ?? null,
+              engagement: fb.engagement,
+              attitude: fb.attitude,
+              application: fb.performance,
+              note: notePlayer || notePrivate || null,
+            } as CoachEvaluationRow;
+          })
+          .filter((x): x is CoachEvaluationRow => Boolean(x))
+          .sort((a, b) => (a.starts_at > b.starts_at ? -1 : 1));
+
+        setCoachEvaluations(merged);
+        setCoachEvalPage(0);
+      } catch {
+        setCoachEvaluations([]);
+      } finally {
+        setLoadingCoachEvaluations(false);
+      }
+    })();
+  }, [canLoadData, coachId, playerId, sharedClubIds]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {
@@ -1476,6 +1584,64 @@ function presetToSelectValue(p: Preset): Preset {
     return f || "ce joueur";
   }, [playerProfile?.first_name]);
 
+  const coachEvalCurveSeries = useMemo(() => {
+    const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
+    return asc.map((x) => ({
+      date: shortDate(x.starts_at, dateLocale),
+      engagement: x.engagement,
+      attitude: x.attitude,
+      application: x.application,
+    }));
+  }, [coachEvaluations, dateLocale]);
+
+  const coachEvalTrendSeries = useMemo(() => {
+    const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
+    if (asc.length < 2) return [];
+
+    const linearTrendEnds = (key: "engagement" | "attitude" | "application") => {
+      const pts = asc
+        .map((row, i) => ({ x: i, y: row[key] }))
+        .filter((p): p is { x: number; y: number } => typeof p.y === "number" && Number.isFinite(p.y));
+      if (pts.length < 2) return { start: null as number | null, end: null as number | null };
+
+      const n = pts.length;
+      const sx = pts.reduce((s, p) => s + p.x, 0);
+      const sy = pts.reduce((s, p) => s + p.y, 0);
+      const sxx = pts.reduce((s, p) => s + p.x * p.x, 0);
+      const sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
+      const den = n * sxx - sx * sx;
+      if (den === 0) return { start: null as number | null, end: null as number | null };
+
+      const a = (n * sxy - sx * sy) / den;
+      const b = (sy - a * sx) / n;
+      const x0 = 0;
+      const x1 = asc.length - 1;
+      const y0 = Math.max(0, Math.min(6, a * x0 + b));
+      const y1 = Math.max(0, Math.min(6, a * x1 + b));
+      return { start: Math.round(y0 * 10) / 10, end: Math.round(y1 * 10) / 10 };
+    };
+
+    const eng = linearTrendEnds("engagement");
+    const att = linearTrendEnds("attitude");
+    const app = linearTrendEnds("application");
+
+    return [
+      { point: "Début", engagement: eng.start, attitude: att.start, application: app.start },
+      { point: "Fin", engagement: eng.end, attitude: att.end, application: app.end },
+    ];
+  }, [coachEvaluations]);
+
+  const coachEvalNotes = useMemo(
+    () => coachEvaluations.filter((x) => String(x.note ?? "").trim().length > 0),
+    [coachEvaluations]
+  );
+  const coachEvalPageSize = 5;
+  const coachEvalVisibleNotes = useMemo(() => {
+    const start = coachEvalPage * coachEvalPageSize;
+    return coachEvalNotes.slice(start, start + coachEvalPageSize);
+  }, [coachEvalNotes, coachEvalPage]);
+  const coachEvalHasMore = (coachEvalPage + 1) * coachEvalPageSize < coachEvalNotes.length;
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -1544,6 +1710,170 @@ function presetToSelectValue(p: Preset): Preset {
                 {sharedClubNames.length ? sharedClubNames.join(" • ") : "Club —"}
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card">
+            <div className="card-title" style={{ marginBottom: 10 }}>Suivi des évaluations</div>
+
+            {loadingCoachEvaluations ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            ) : coachEvaluations.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <span className="pill-soft">{coachEvaluations.length} évaluations passées</span>
+                  <div style={{ display: "inline-flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setCoachEvalChartMode("curve")}
+                      style={coachEvalChartMode === "curve" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                    >
+                      Courbe
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setCoachEvalChartMode("trend")}
+                      style={coachEvalChartMode === "trend" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                    >
+                      Tendance
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: 280 }}>
+                  {coachEvalChartMode === "curve" ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={coachEvalCurveSeries}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis domain={[0, 6]} />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="engagement" name="Engagement" stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
+                        <Line type="monotone" dataKey="attitude" name="Attitude" stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
+                        <Line type="monotone" dataKey="application" name="Application" stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={coachEvalTrendSeries}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="point" />
+                        <YAxis domain={[0, 6]} />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot />
+                        <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(55,65,81,0.9)" strokeWidth={3} dot />
+                        <Line type="linear" dataKey="application" name="Application" stroke="rgba(34,197,94,0.95)" strokeWidth={3} dot />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                {coachEvalChartMode === "trend" ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {[
+                      {
+                        label: "Engagement",
+                        start: coachEvalTrendSeries[0]?.engagement ?? null,
+                        end: coachEvalTrendSeries[1]?.engagement ?? null,
+                      },
+                      {
+                        label: "Attitude",
+                        start: coachEvalTrendSeries[0]?.attitude ?? null,
+                        end: coachEvalTrendSeries[1]?.attitude ?? null,
+                      },
+                      {
+                        label: "Application",
+                        start: coachEvalTrendSeries[0]?.application ?? null,
+                        end: coachEvalTrendSeries[1]?.application ?? null,
+                      },
+                    ].map((row) => {
+                      const delta =
+                        row.start != null && row.end != null
+                          ? Math.round((row.end - row.start) * 10) / 10
+                          : null;
+                      return (
+                      <div
+                        key={row.label}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                          border: "1px solid rgba(0,0,0,0.08)",
+                          borderRadius: 12,
+                          padding: "8px 10px",
+                          background: "rgba(255,255,255,0.75)",
+                        }}
+                      >
+                        <span style={{ fontWeight: 900 }}>{row.label}</span>
+                        <span style={{ fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                          {row.start ?? "—"} → {row.end ?? "—"}
+                          {delta == null ? "" : delta > 0 ? `  ▲ +${delta}` : delta < 0 ? `  ▼ ${delta}` : "  • 0"}
+                        </span>
+                      </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                    Notes coach ({coachEvalNotes.length})
+                  </div>
+
+                  {coachEvalVisibleNotes.length === 0 ? (
+                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune note texte disponible.</div>
+                  ) : (
+                    coachEvalVisibleNotes.map((row) => (
+                      <div
+                        key={row.event_id}
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.08)",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.78)",
+                          padding: "10px 12px",
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.68)" }}>
+                            {shortDate(row.starts_at, dateLocale)}
+                            {` • ${row.event_type === "camp" ? "Stage" : "Entraînement"}`}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                            Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.note}</div>
+                      </div>
+                    ))
+                  )}
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {coachEvalHasMore ? (
+                      <button type="button" className="btn" onClick={() => setCoachEvalPage((p) => p + 1)}>
+                        Afficher les suivantes
+                      </button>
+                    ) : null}
+                    {coachEvalPage > 0 ? (
+                      <button type="button" className="btn" onClick={() => setCoachEvalPage(0)}>
+                        Revenir au début
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1741,7 +2071,7 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== Trainings KPIs ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
-            <div className="glass-card">
+            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
               <div className="card-title">{t("golfDashboard.volume")}</div>
 
               {loading ? (
@@ -1821,7 +2151,7 @@ function presetToSelectValue(p: Preset): Preset {
               )}
             </div>
 
-            <div className="glass-card">
+            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
               <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
 
               {filteredSessions.length === 0 ? (

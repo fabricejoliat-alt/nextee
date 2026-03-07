@@ -68,6 +68,19 @@ type GolfHoleRow = {
   fairway_hit: boolean | null;
 };
 
+type TrainingVolumeTargetRow = {
+  id: string;
+  ftem_code: string;
+  level_label: string;
+  handicap_label: string;
+  handicap_min: number | null;
+  handicap_max: number | null;
+  motivation_text: string | null;
+  minutes_offseason: number;
+  minutes_inseason: number;
+  sort_order: number;
+};
+
 type Preset = "month" | "last3" | "all" | "custom";
 
 const LOOKBACK_DAYS = 14;
@@ -123,6 +136,45 @@ function avg(values: Array<number | null | undefined>) {
   if (v.length === 0) return null;
   const s = v.reduce((a, b) => a + b, 0);
   return Math.round((s / v.length) * 10) / 10;
+}
+
+function parseMonthArray(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  const uniq = new Set<number>();
+  for (const v of values) {
+    const n = Number(v);
+    if (!Number.isInteger(n)) continue;
+    if (n < 1 || n > 12) continue;
+    uniq.add(n);
+  }
+  return Array.from(uniq);
+}
+
+function pickTrainingVolumeTarget(
+  handicap: number | null | undefined,
+  rows: TrainingVolumeTargetRow[]
+): TrainingVolumeTargetRow | null {
+  if (!rows.length) return null;
+  if (typeof handicap !== "number" || !Number.isFinite(handicap)) return rows[0] ?? null;
+  const matched = rows.find((row) => {
+    if (typeof row.handicap_min !== "number" || typeof row.handicap_max !== "number") return false;
+    const lo = Math.min(row.handicap_min, row.handicap_max);
+    const hi = Math.max(row.handicap_min, row.handicap_max);
+    return handicap >= lo && handicap <= hi;
+  });
+  return matched ?? rows[0] ?? null;
+}
+
+function objectiveForMonth(
+  target: TrainingVolumeTargetRow | null,
+  seasonMonths: number[],
+  offseasonMonths: number[],
+  month: number
+) {
+  if (!target) return 0;
+  const inSeason =
+    seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
+  return inSeason ? target.minutes_inseason : target.minutes_offseason;
 }
 
 function weekStartMonday(d: Date) {
@@ -207,6 +259,61 @@ function RatingBar({
         <span style={{ width: `${pct}%` }} />
       </div>
     </div>
+  );
+}
+
+function ProgressDonut({ percent, size = 156 }: { percent: number; size?: number }) {
+  const p = clamp(percent, 0, 100);
+  const view = 120;
+  const center = view / 2;
+  const r = 44;
+  const c = 2 * Math.PI * r;
+  const [animatedP, setAnimatedP] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimatedP(p), 60);
+    return () => clearTimeout(t);
+  }, [p]);
+  const dashOffset = c - (animatedP / 100) * c;
+  const done = p >= 100;
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${view} ${view}`} aria-label={`Progression ${Math.round(p)}%`}>
+      <defs>
+        <linearGradient id="donutGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="rgba(40,146,89,1)" />
+          <stop offset="100%" stopColor="rgba(16,94,51,1)" />
+        </linearGradient>
+      </defs>
+      <circle cx={center} cy={center} r={r} strokeWidth="12" className="donut-bg" fill="rgba(255,255,255,0.22)" />
+      <circle
+        cx={center}
+        cy={center}
+        r={r}
+        strokeWidth="12"
+        stroke="url(#donutGrad)"
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={dashOffset}
+        style={{ transition: "stroke-dashoffset 900ms cubic-bezier(0.2, 0.9, 0.2, 1)" }}
+        transform={`rotate(-90 ${center} ${center})`}
+      />
+      <text x={center} y={center + 6} textAnchor="middle" className="donut-label">
+        {Math.round(p)}%
+      </text>
+      {done ? (
+        <g>
+          <circle cx={center} cy={center + 28} r={10} fill="rgba(16,94,51,0.18)" />
+          <path
+            d={`M${center - 5} ${center + 28} l3 3 l7 -8`}
+            fill="none"
+            stroke="rgba(16,94,51,0.95)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+        </g>
+      ) : null}
+    </svg>
   );
 }
 
@@ -328,6 +435,10 @@ export default function GolfDashboardPage() {
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
+  const [playerHandicap, setPlayerHandicap] = useState<number | null>(null);
+  const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
+  const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
+  const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
 
   const [preset, setPreset] = useState<Preset>("month");
   const [customOpen, setCustomOpen] = useState(false);
@@ -366,8 +477,75 @@ export default function GolfDashboardPage() {
         const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
         const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
         setIsPerformanceEnabled(perfEnabled);
+
+        const [profileRes, membershipsRes, sessionRes] = await Promise.all([
+          supabase.from("profiles").select("handicap").eq("id", uid).maybeSingle(),
+          supabase.from("club_members").select("club_id").eq("user_id", uid).eq("is_active", true),
+          supabase.auth.getSession(),
+        ]);
+
+        const handicap = (profileRes.data as { handicap?: number | null } | null)?.handicap;
+        if (!profileRes.error) {
+          setPlayerHandicap(typeof handicap === "number" ? handicap : null);
+        } else {
+          setPlayerHandicap(null);
+        }
+
+        const clubIds = Array.from(
+          new Set(
+            (membershipsRes.data ?? [])
+              .map((m: { club_id?: string | null }) => String(m?.club_id ?? ""))
+              .filter(Boolean)
+          )
+        );
+        const token = sessionRes.data.session?.access_token ?? "";
+        if (clubIds.length > 0 && token) {
+          const month = new Date().getMonth() + 1;
+          const responses = await Promise.all(
+            clubIds.map(async (clubId) => {
+              const res = await fetch(
+                `/api/player/clubs/${clubId}/training-volume?player_id=${encodeURIComponent(uid)}`,
+                {
+                  method: "GET",
+                  headers: { Authorization: `Bearer ${token}` },
+                  cache: "no-store",
+                }
+              );
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) return null;
+              const rows = Array.isArray(json?.rows) ? (json.rows as TrainingVolumeTargetRow[]) : [];
+              const seasonMonths = parseMonthArray(json?.settings?.season_months);
+              const offseasonMonths = parseMonthArray(json?.settings?.offseason_months);
+              const target = pickTrainingVolumeTarget(typeof handicap === "number" ? handicap : null, rows);
+              const objective = objectiveForMonth(target, seasonMonths, offseasonMonths, month);
+              return { rows, seasonMonths, offseasonMonths, objective };
+            })
+          );
+
+          const best = responses
+            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
+            .sort((a, b) => b.objective - a.objective)[0];
+
+          if (best) {
+            setTrainingVolumeRows(best.rows);
+            setTrainingSeasonMonths(best.seasonMonths);
+            setTrainingOffseasonMonths(best.offseasonMonths);
+          } else {
+            setTrainingVolumeRows([]);
+            setTrainingSeasonMonths([]);
+            setTrainingOffseasonMonths([]);
+          }
+        } else {
+          setTrainingVolumeRows([]);
+          setTrainingSeasonMonths([]);
+          setTrainingOffseasonMonths([]);
+        }
       } catch {
         setIsPerformanceEnabled(false);
+        setPlayerHandicap(null);
+        setTrainingVolumeRows([]);
+        setTrainingSeasonMonths([]);
+        setTrainingOffseasonMonths([]);
       }
     })();
   }, []);
@@ -727,6 +905,28 @@ function presetToSelectValue(p: Preset): Preset {
 }
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(() => sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0), [sessions]);
+  const trainingVolumeTarget = useMemo(
+    () => pickTrainingVolumeTarget(playerHandicap, trainingVolumeRows),
+    [playerHandicap, trainingVolumeRows]
+  );
+  const trainingVolumeObjective = useMemo(() => {
+    const nowMonth = new Date().getMonth() + 1;
+    const inSeason =
+      trainingSeasonMonths.includes(nowMonth) ||
+      (!trainingOffseasonMonths.includes(nowMonth) && trainingSeasonMonths.length > 0);
+    if (!trainingVolumeTarget) return 500;
+    return inSeason ? trainingVolumeTarget.minutes_inseason : trainingVolumeTarget.minutes_offseason;
+  }, [trainingSeasonMonths, trainingOffseasonMonths, trainingVolumeTarget]);
+  const trainingVolumeMotivation = useMemo(() => {
+    const text = String(trainingVolumeTarget?.motivation_text ?? "").trim();
+    return text || null;
+  }, [trainingVolumeTarget]);
+  const trainingVolumePercent = useMemo(
+    () => (trainingVolumeObjective > 0 ? (totalMinutes / trainingVolumeObjective) * 100 : 0),
+    [totalMinutes, trainingVolumeObjective]
+  );
+  const trainingVolumeGoalReached = trainingVolumeObjective > 0 && totalMinutes >= trainingVolumeObjective;
+  const showMonthlyObjective = preset !== "all";
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
@@ -754,20 +954,10 @@ function presetToSelectValue(p: Preset): Preset {
     return m || 1;
   }, [topCats]);
 
-  const prevTotalMinutes = useMemo(() => prevSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0), [prevSessions]);
-  const prevCount = useMemo(() => prevSessions.length, [prevSessions]);
   const prevAvgMotivation = useMemo(() => avg(prevSessions.map((s) => s.motivation)), [prevSessions]);
   const prevAvgDifficulty = useMemo(() => avg(prevSessions.map((s) => s.difficulty)), [prevSessions]);
   const prevAvgSatisfaction = useMemo(() => avg(prevSessions.map((s) => s.satisfaction)), [prevSessions]);
 
-  const deltaMinutes = useMemo(
-    () => (prevRange ? totalMinutes - prevTotalMinutes : null),
-    [prevRange, totalMinutes, prevTotalMinutes]
-  );
-  const deltaCount = useMemo(
-    () => (prevRange ? sessions.length - prevCount : null),
-    [prevRange, sessions.length, prevCount]
-  );
   const deltaMot = useMemo(() => {
     if (!prevRange) return null;
     if (avgMotivation == null || prevAvgMotivation == null) return null;
@@ -1500,64 +1690,54 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== Trainings KPIs ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
-            <div className="glass-card">
+            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
               <div className="card-title">{t("golfDashboard.volume")}</div>
 
               {loading ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : sessions.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: showMonthlyObjective ? "1.2fr 0.8fr" : "1fr",
+                      gap: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
                       <div>
                         <span className="big-number">{totalMinutes}</span>
                         <span className="unit">MIN</span>
                       </div>
-
-                      {deltaMinutes != null && (
-                        <span
-                          className="pill-soft"
-                          style={{
-                            background: "rgba(0,0,0,0.06)",
-                            fontSize: 12,
-                            fontWeight: 950,
-                            color: deltaMinutes >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                          }}
-                          title={t("golfDashboard.previousPeriodComparison")}
-                        >
-                          {deltaMinutes >= 0 ? "▲" : "▼"} {Math.abs(deltaMinutes)} min
-                        </span>
-                      )}
+                      {showMonthlyObjective ? (
+                        <div style={{ marginTop: 8, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
+                          {t("playerHome.goal")}: {trainingVolumeObjective} {t("common.min")}
+                        </div>
+                      ) : null}
+                      {trainingVolumeMotivation ? (
+                        <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
+                          {trainingVolumeMotivation}
+                        </div>
+                      ) : null}
+                      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span className="pill-soft">⛳ {sessions.length} {t("golfDashboard.sessions")}</span>
+                        {showMonthlyObjective && trainingVolumeGoalReached ? (
+                          <span className="pill-soft" style={{ background: "rgba(47,125,79,0.14)", color: "rgba(16,94,51,1)", fontWeight: 950 }}>
+                            {pickLocaleText(locale, "Objectif atteint", "Goal reached")}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                      <span className="pill-soft">⛳ {sessions.length} {t("golfDashboard.sessions")}</span>
-
-                      {deltaCount != null && (
-                        <span
-                          className="pill-soft"
-                          style={{
-                            background: "rgba(0,0,0,0.06)",
-                            fontSize: 12,
-                            fontWeight: 950,
-                            color: deltaCount >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                          }}
-                          title={t("golfDashboard.previousPeriodComparison")}
-                        >
-                          {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} {t("golfDashboard.sessions")}
-                        </span>
-                      )}
+                    <div className="donut-wrap">
+                      {showMonthlyObjective ? <ProgressDonut percent={trainingVolumePercent} size={168} /> : null}
                     </div>
-
                   </div>
 
                   <div className="hr-soft" style={{ margin: "2px 0" }} />
 
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("golfDashboard.breakdown")}</div>
-
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={typeRowStyle}>
                         <div style={typeRowLeftStyle}>{typeLabelLong("club", t)}</div>
@@ -1580,7 +1760,7 @@ function presetToSelectValue(p: Preset): Preset {
             </div>
 
             {isPerformanceEnabled ? (
-              <div className="glass-card">
+              <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
                 <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
 
                 {sessions.length === 0 ? (
