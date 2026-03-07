@@ -128,6 +128,19 @@ type HomeUpcomingItem =
   | { kind: "session"; key: string; dateIso: string; session: HomeSessionRow }
   | { kind: "competition"; key: string; dateIso: string; competition: HomePlayerActivityRow };
 
+type TrainingVolumeTargetRow = {
+  id: string;
+  ftem_code: string;
+  level_label: string;
+  handicap_label: string;
+  handicap_min: number | null;
+  handicap_max: number | null;
+  motivation_text: string | null;
+  minutes_offseason: number;
+  minutes_inseason: number;
+  sort_order: number;
+};
+
 type PlayerHomePageCache = {
   profile: Profile | null;
   clubs: Club[];
@@ -222,6 +235,35 @@ function avg(values: Array<number | null>) {
   if (v.length === 0) return null;
   const sum = v.reduce((a, b) => a + b, 0);
   return Math.round((sum / v.length) * 10) / 10;
+}
+
+function parseMonthArray(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  const uniq = new Set<number>();
+  for (const v of values) {
+    const n = Number(v);
+    if (!Number.isInteger(n)) continue;
+    if (n < 1 || n > 12) continue;
+    uniq.add(n);
+  }
+  return Array.from(uniq);
+}
+
+function pickTrainingVolumeTarget(
+  handicap: number | null | undefined,
+  rows: TrainingVolumeTargetRow[]
+): TrainingVolumeTargetRow | null {
+  if (!rows.length) return null;
+  if (typeof handicap !== "number" || !Number.isFinite(handicap)) return rows[0] ?? null;
+
+  const matched = rows.find((row) => {
+    if (typeof row.handicap_min !== "number" || typeof row.handicap_max !== "number") return false;
+    const lo = Math.min(row.handicap_min, row.handicap_max);
+    const hi = Math.max(row.handicap_min, row.handicap_max);
+    return handicap >= lo && handicap <= hi;
+  });
+
+  return matched ?? rows[0] ?? null;
 }
 
 function monthRangeLocal(now = new Date()) {
@@ -412,6 +454,9 @@ export default function PlayerHomePage() {
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [upcomingIndex, setUpcomingIndex] = useState(0);
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
+  const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
+  const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
+  const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
 
   const bucket = "marketplace";
 
@@ -434,6 +479,28 @@ export default function PlayerHomePage() {
     return names.join(" • ");
   }, [clubs]);
 
+  const trainingVolumeObjective = useMemo(() => {
+    const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
+    const nowMonth = new Date().getMonth() + 1;
+    const inSeason =
+      trainingSeasonMonths.includes(nowMonth) ||
+      (!trainingOffseasonMonths.includes(nowMonth) && trainingSeasonMonths.length > 0);
+    if (!target) return 500;
+    return inSeason ? target.minutes_inseason : target.minutes_offseason;
+  }, [profile?.handicap, trainingVolumeRows, trainingSeasonMonths, trainingOffseasonMonths]);
+
+  const trainingVolumeLevel = useMemo(() => {
+    const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
+    if (!target) return null;
+    return target.level_label;
+  }, [profile?.handicap, trainingVolumeRows]);
+
+  const trainingVolumeMotivation = useMemo(() => {
+    const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
+    const text = String(target?.motivation_text ?? "").trim();
+    return text || null;
+  }, [profile?.handicap, trainingVolumeRows]);
+
   const trainingsSummary = useMemo(() => {
     const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
     const count = monthSessions.length;
@@ -454,7 +521,7 @@ export default function PlayerHomePage() {
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 3);
 
-    const objective = 500;
+    const objective = trainingVolumeObjective;
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
     // ✅ Tendance = dernière valeur vs précédente (ignorer null)
@@ -476,7 +543,7 @@ export default function PlayerHomePage() {
       deltaDifficulty,
       deltaSatisfaction,
     };
-  }, [monthSessions, monthItems, t]);
+  }, [monthSessions, monthItems, t, trainingVolumeObjective]);
 
   const topMax = useMemo(() => {
     const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
@@ -661,6 +728,47 @@ export default function PlayerHomePage() {
     }
     setHeroLoading(false);
     writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: heroClubs });
+
+    // Training volume config from first active club
+    if (cids.length > 0) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (token) {
+          const tvRes = await fetch(
+            `/api/player/clubs/${cids[0]}/training-volume?player_id=${encodeURIComponent(effectiveUid)}`,
+            {
+              method: "GET",
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            }
+          );
+          const tvJson = await tvRes.json().catch(() => ({}));
+          if (tvRes.ok) {
+            const nextRows = Array.isArray(tvJson?.rows) ? (tvJson.rows as TrainingVolumeTargetRow[]) : [];
+            setTrainingVolumeRows(nextRows);
+            setTrainingSeasonMonths(parseMonthArray(tvJson?.settings?.season_months));
+            setTrainingOffseasonMonths(parseMonthArray(tvJson?.settings?.offseason_months));
+          } else {
+            setTrainingVolumeRows([]);
+            setTrainingSeasonMonths([]);
+            setTrainingOffseasonMonths([]);
+          }
+        } else {
+          setTrainingVolumeRows([]);
+          setTrainingSeasonMonths([]);
+          setTrainingOffseasonMonths([]);
+        }
+      } catch {
+        setTrainingVolumeRows([]);
+        setTrainingSeasonMonths([]);
+        setTrainingOffseasonMonths([]);
+      }
+    } else {
+      setTrainingVolumeRows([]);
+      setTrainingSeasonMonths([]);
+      setTrainingOffseasonMonths([]);
+    }
 
     // Latest marketplace items
     if (cids.length > 0) {
@@ -1148,7 +1256,10 @@ export default function PlayerHomePage() {
             <div className="hero-title">{heroLoading && !profile ? `${t("playerHome.hello")}…` : `${displayHello(profile, t)} 👋`}</div>
 
             <div className="hero-sub">
-              <div>Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</div>
+              <div>
+                Handicap {typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}
+                {trainingVolumeLevel ? ` • ${trainingVolumeLevel}` : ""}
+              </div>
             </div>
 
             <div className="hero-club truncate">{heroClubLine}</div>
@@ -1373,6 +1484,11 @@ export default function PlayerHomePage() {
                 <div className="hr-soft" />
 
                 <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>{t("playerHome.goal")}: {trainingsSummary.objective} {t("common.min")}</div>
+                {trainingVolumeMotivation ? (
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
+                    {trainingVolumeMotivation}
+                  </div>
+                ) : null}
 
                 <div style={{ marginTop: 10 }}>
                   <span className="pill-soft">⛳ {trainingsSummary.count} {t("golfDashboard.sessions")}</span>

@@ -68,7 +68,7 @@ export default function LoginPage() {
               <span className="auth-brand-nex">Activi</span>
               <span className="auth-brand-tee">Tee</span>
             </div>
-            <div className="auth-tagline">Junior Golf Platform</div>
+            <div className="auth-tagline">Organize. Track. Develop.</div>
           </div>
 
           <form onSubmit={handleLogin} className="auth-form">
