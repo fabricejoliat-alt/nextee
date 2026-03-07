@@ -12,6 +12,7 @@ type UserRow = {
   last_name: string | null;
   username: string | null;
   role: AppRole | null;
+  is_performance: boolean | null;
 };
 
 function labelName(u: UserRow) {
@@ -156,6 +157,7 @@ export default function UsersAdmin() {
       last_name: u.last_name ?? "",
       username: u.username ?? "",
       role: (u.role ?? "player") as AppRole,
+      is_performance: u.is_performance ?? false,
     });
   }
 
@@ -183,6 +185,7 @@ export default function UsersAdmin() {
         last_name: (form.last_name ?? "").toString().trim() || null,
         username: (form.username ?? "").toString().trim().toLowerCase() || null,
         role: (form.role ?? "player").toString().trim().toLowerCase(),
+        is_performance: (form.role ?? "player") === "player" ? Boolean(form.is_performance) : null,
         auth_password: authPassword || null,
       };
 
@@ -298,6 +301,11 @@ export default function UsersAdmin() {
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           username: {u.username ?? "—"} • rôle: {u.role ?? "player"}
                         </div>
+                        {(u.role ?? "player") === "player" && (
+                          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                            mode performance: {u.is_performance ? "oui" : "non"}
+                          </div>
+                        )}
                       </div>
 
                       <button className="btn" onClick={() => startEdit(u)}>
@@ -340,6 +348,17 @@ export default function UsersAdmin() {
                         <option value="captain">Capitaine</option>
                         <option value="staff">Staff</option>
                       </select>
+
+                      {(form.role ?? "player") === "player" && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form.is_performance)}
+                            onChange={(e) => setForm((f) => ({ ...f, is_performance: e.target.checked }))}
+                          />
+                          Mode performance
+                        </label>
+                      )}
 
                       <input
                         placeholder="Changer mot de passe (optionnel)"

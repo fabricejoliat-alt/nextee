@@ -18,6 +18,7 @@ type CoachGroup = {
   club_id: string;
   name: string;
   is_active: boolean;
+  is_performance: boolean;
   head_coach_user_id: string | null;
   clubs?: Club | null;
 };
@@ -26,6 +27,7 @@ type ClubMemberRow = {
   club_id: string;
   user_id: string;
   is_active: boolean | null;
+  is_performance: boolean | null;
   role: Role;
 };
 
@@ -296,6 +298,7 @@ export default function CoachGroupEditPage() {
   // editable group info
   const [groupName, setGroupName] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [isPerformance, setIsPerformance] = useState(false);
 
   // categories
   const [newCat, setNewCat] = useState("");
@@ -304,6 +307,7 @@ export default function CoachGroupEditPage() {
   // club members (for adding)
   const [clubMembersPlayers, setClubMembersPlayers] = useState<ProfileLite[]>([]);
   const [clubMembersCoaches, setClubMembersCoaches] = useState<ProfileLite[]>([]); // ✅ only role=coach
+  const [playerPerformanceById, setPlayerPerformanceById] = useState<Record<string, boolean>>({});
 
   async function loadClubMembers(cid: string, uid: string) {
     if (!cid) {
@@ -314,7 +318,7 @@ export default function CoachGroupEditPage() {
 
     const { data: mem, error: memErr } = await supabase
       .from("club_members")
-      .select("club_id,user_id,is_active,role")
+      .select("club_id,user_id,is_active,is_performance,role")
       .eq("club_id", cid)
       .eq("is_active", true);
 
@@ -329,6 +333,13 @@ export default function CoachGroupEditPage() {
     const uniq = (arr: string[]) => Array.from(new Set(arr)).filter(Boolean);
 
     const playerIds = uniq(members.filter((m) => m.role === "player").map((m) => m.user_id));
+    const perfByPlayer: Record<string, boolean> = {};
+    members
+      .filter((m) => m.role === "player")
+      .forEach((m) => {
+        perfByPlayer[m.user_id] = Boolean(m.is_performance);
+      });
+    setPlayerPerformanceById(perfByPlayer);
 
     // ✅ assistants = ONLY role "coach"
     const coachIds = uniq(members.filter((m) => m.role === "coach").map((m) => m.user_id));
@@ -375,7 +386,7 @@ export default function CoachGroupEditPage() {
       .from("coach_groups")
       .select(
         `
-        id,created_at,club_id,name,is_active,head_coach_user_id,
+        id,created_at,club_id,name,is_active,is_performance,head_coach_user_id,
         clubs:clubs ( id, name )
       `
       )
@@ -423,6 +434,7 @@ export default function CoachGroupEditPage() {
     if (g) {
       setGroupName(g.name ?? "");
       setIsActive(!!g.is_active);
+      setIsPerformance(!!g.is_performance);
     }
 
     const catRes = await supabase
@@ -522,6 +534,7 @@ export default function CoachGroupEditPage() {
       .update({
         name: groupName.trim(),
         is_active: isActive,
+        is_performance: isPerformance,
       })
       .eq("id", group.id);
 
@@ -624,6 +637,28 @@ export default function CoachGroupEditPage() {
     const { error } = await supabase.rpc("coach_group_delete_player", {
       p_group_id: groupId,
       p_group_player_id: rowId,
+    });
+
+    if (error) {
+      setErr(error.message);
+      setBusy(false);
+      return;
+    }
+
+    await load();
+    setBusy(false);
+  }
+
+  async function togglePlayerPerformance(playerUserId: string) {
+    if (!group?.club_id || !playerUserId || busy) return;
+    setBusy(true);
+    setErr(null);
+
+    const currentlyEnabled = Boolean(playerPerformanceById[playerUserId]);
+    const { error } = await supabase.rpc("set_player_performance_mode", {
+      p_org_id: group.club_id,
+      p_player_id: playerUserId,
+      p_enabled: !currentlyEnabled,
     });
 
     if (error) {
@@ -767,6 +802,17 @@ export default function CoachGroupEditPage() {
                           style={{ width: 18, height: 18 }}
                         />
                         <span style={fieldLabelStyle}>Groupe actif</span>
+                      </label>
+
+                      <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <input
+                          type="checkbox"
+                          checked={isPerformance}
+                          onChange={(e) => setIsPerformance(e.target.checked)}
+                          disabled={busy}
+                          style={{ width: 18, height: 18 }}
+                        />
+                        <span style={fieldLabelStyle}>Mode performance (groupe)</span>
                       </label>
 
                       <button
@@ -929,10 +975,27 @@ export default function CoachGroupEditPage() {
                                   <div style={{ display: "flex", gap: 10 }}>
                                     <button
                                       type="button"
+                                      className={`btn ${playerPerformanceById[row.player_user_id] ? "btn-active-om-light" : ""}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void togglePlayerPerformance(row.player_user_id);
+                                      }}
+                                      disabled={busy || isPerformance}
+                                      style={{ padding: "10px 12px" }}
+                                      title={isPerformance ? "Forcé ON via groupe performance" : "Activer / désactiver le mode performance"}
+                                    >
+                                      {isPerformance
+                                        ? "Performance ON (groupe)"
+                                        : playerPerformanceById[row.player_user_id]
+                                        ? "Performance ON"
+                                        : "Performance OFF"}
+                                    </button>
+                                    <button
+                                      type="button"
                                       className="btn btn-danger soft"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        removePlayerFromGroup(row.id);
+                                        void removePlayerFromGroup(row.id);
                                       }}
                                       disabled={busy}
                                       style={{ padding: "10px 12px" }}

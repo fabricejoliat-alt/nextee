@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
@@ -296,6 +297,7 @@ export default function TrainingsListPage() {
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
   const [effectivePlayerName, setEffectivePlayerName] = useState<string>("");
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [showCompetitionForm, setShowCompetitionForm] = useState(false);
   const [activityCreateType, setActivityCreateType] = useState<"competition" | "camp">("competition");
@@ -357,6 +359,19 @@ export default function TrainingsListPage() {
     );
   }, [sessions, nowTs]);
 
+  const linkedSessionByEventId = useMemo(() => {
+    const map: Record<string, SessionRow> = {};
+    for (const s of sessions) {
+      const linkedId = uuidOrNull(s.club_event_id);
+      if (!linkedId) continue;
+      const prev = map[linkedId];
+      if (!prev || new Date(s.start_at).getTime() > new Date(prev.start_at).getTime()) {
+        map[linkedId] = s;
+      }
+    }
+    return map;
+  }, [sessions]);
+
   const completeSessionIds = useMemo(() => {
     const set = new Set<string>();
     for (const s of sessions) {
@@ -403,6 +418,22 @@ export default function TrainingsListPage() {
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
   }, [sessions, nowTs]);
 
+  const matchesTypeFilter = (it: DisplayItem) => {
+    if (plannedTypeFilter === "all") return true;
+    if (it.kind === "event") {
+      if (plannedTypeFilter === "training") return it.event.event_type === "training";
+      return it.event.event_type === plannedTypeFilter;
+    }
+    if (it.kind === "competition") {
+      return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
+    }
+    if (it.kind === "session") {
+      if (plannedTypeFilter === "training") return it.session.session_type === "club";
+      return it.session.session_type === plannedTypeFilter;
+    }
+    return true;
+  };
+
   const displayItems = useMemo<DisplayItem[]>(() => {
     if (filterMode === "planned") {
       const futureSessionLinkedEventIds = new Set(
@@ -435,15 +466,7 @@ export default function TrainingsListPage() {
       }));
 
       const allPlannedItems = [...plannedEventItems, ...futureSessionItems, ...plannedCompetitionItems];
-      const filteredPlannedItems =
-        plannedTypeFilter === "all"
-          ? allPlannedItems
-          : allPlannedItems.filter((it) => {
-              if (it.kind === "event") return it.event.event_type === plannedTypeFilter;
-              if (it.kind === "competition") return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
-              if (it.kind === "session") return it.session.session_type === plannedTypeFilter;
-              return true;
-            });
+      const filteredPlannedItems = allPlannedItems.filter(matchesTypeFilter);
 
       return filteredPlannedItems.sort(
         (a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()
@@ -478,39 +501,71 @@ export default function TrainingsListPage() {
     }));
 
     const allPastItems = [...pastSessionItems, ...pastEventItems, ...pastCompetitionItems];
-    const filteredPastItems =
-      plannedTypeFilter === "all"
-        ? allPastItems
-        : allPastItems.filter((it) => {
-            if (it.kind === "event") return it.event.event_type === plannedTypeFilter;
-            if (it.kind === "competition") return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
-            if (it.kind === "session") return it.session.session_type === plannedTypeFilter;
-            return true;
-          });
+    const filteredPastItems = allPastItems.filter(matchesTypeFilter);
 
     return filteredPastItems.sort(
       (a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()
     );
   }, [filterMode, plannedEvents, futureSessions, pastSessions, plannedCompetitions, pastCompetitions, pastAttendeeEvents, plannedTypeFilter]);
 
-  const plannedVisibleEventCount = useMemo(() => {
+  const plannedCount = useMemo(() => {
     const futureSessionLinkedEventIds = new Set(
       futureSessions
         .map((s) => uuidOrNull(s.club_event_id))
         .filter((x): x is string => typeof x === "string" && x.length > 0)
     );
-    return plannedEvents.filter((event) => !futureSessionLinkedEventIds.has(event.id)).length;
-  }, [plannedEvents, futureSessions]);
-  const plannedCount = plannedVisibleEventCount + futureSessions.length + plannedCompetitions.length;
-  const pastVisibleEventCount = useMemo(() => {
+    const plannedEventItems: DisplayItem[] = plannedEvents
+      .filter((event) => !futureSessionLinkedEventIds.has(event.id))
+      .map((event) => ({
+        kind: "event",
+        key: `event-${event.id}`,
+        dateIso: event.starts_at,
+        event,
+      }));
+    const futureSessionItems: DisplayItem[] = futureSessions.map((session) => ({
+      kind: "session",
+      key: `session-${session.id}`,
+      dateIso: session.start_at,
+      session,
+    }));
+    const plannedCompetitionItems: DisplayItem[] = plannedCompetitions.map((competition) => ({
+      kind: "competition",
+      key: `competition-${competition.id}`,
+      dateIso: competition.starts_at,
+      competition,
+    }));
+    return [...plannedEventItems, ...futureSessionItems, ...plannedCompetitionItems].filter(matchesTypeFilter).length;
+  }, [plannedEvents, futureSessions, plannedCompetitions, plannedTypeFilter]);
+
+  const pastCount = useMemo(() => {
     const pastSessionLinkedEventIds = new Set(
       pastSessions
         .map((s) => uuidOrNull(s.club_event_id))
         .filter((x): x is string => typeof x === "string" && x.length > 0)
     );
-    return pastAttendeeEvents.filter((event) => !pastSessionLinkedEventIds.has(event.id)).length;
-  }, [pastSessions, pastAttendeeEvents]);
-  const pastCount = pastSessions.length + pastVisibleEventCount + pastCompetitions.length;
+    const pastSessionItems: DisplayItem[] = pastSessions.map((session) => ({
+      kind: "session",
+      key: `session-${session.id}`,
+      dateIso: session.start_at,
+      session,
+    }));
+    const pastEventItems: DisplayItem[] = pastAttendeeEvents
+      .filter((event) => !pastSessionLinkedEventIds.has(event.id))
+      .map((event) => ({
+        kind: "event",
+        key: `event-${event.id}`,
+        dateIso: event.starts_at,
+        event,
+      }));
+    const pastCompetitionItems: DisplayItem[] = pastCompetitions.map((competition) => ({
+      kind: "competition",
+      key: `competition-${competition.id}`,
+      dateIso: competition.starts_at,
+      competition,
+    }));
+    return [...pastSessionItems, ...pastEventItems, ...pastCompetitionItems].filter(matchesTypeFilter).length;
+  }, [pastSessions, pastAttendeeEvents, pastCompetitions, plannedTypeFilter]);
+
   const totalCount = displayItems.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
@@ -528,6 +583,8 @@ export default function TrainingsListPage() {
       const { effectiveUserId: uid, viewerUserId: actorId } = await resolveEffectivePlayerContext();
       setViewerUserId(actorId);
       setEffectiveUserId(uid);
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+      setPerformanceEnabled(perfEnabled);
       const pageCache = readClientPageCache<TrainingsPageCache>(
         trainingsPageCacheKey(uid),
         TRAININGS_CACHE_TTL_MS
@@ -1287,15 +1344,14 @@ export default function TrainingsListPage() {
               disabled={loading}
             >
               <option value="all">{pickLocaleText(locale, "Toute l'activité", "All activity")}</option>
-              <option value="training">{pickLocaleText(locale, "Entraînement", "Training")}</option>
+              <option value="training">{pickLocaleText(locale, "Entraînement du club", "Club training")}</option>
+              <option value="individual">{pickLocaleText(locale, "Entraînement individuel", "Individual training")}</option>
+              <option value="private">{pickLocaleText(locale, "Cours privé", "Private lesson")}</option>
               <option value="interclub">{pickLocaleText(locale, "Interclubs", "Interclub")}</option>
               <option value="camp">{pickLocaleText(locale, "Stage", "Camp")}</option>
               <option value="session">{pickLocaleText(locale, "Réunion", "Session")}</option>
               <option value="event">{pickLocaleText(locale, "Événement", "Event")}</option>
               <option value="competition">{pickLocaleText(locale, "Compétition", "Competition")}</option>
-              <option value="club">{pickLocaleText(locale, "Entraînement club", "Club training")}</option>
-              <option value="private">{pickLocaleText(locale, "Cours privé", "Private lesson")}</option>
-              <option value="individual">{pickLocaleText(locale, "Entraînement individuel", "Individual training")}</option>
             </select>
 
             <div style={{ display: "inline-flex", width: "100%", border: "1px solid rgba(0,0,0,0.14)", borderRadius: 10, overflow: "hidden" }}>
@@ -1351,6 +1407,7 @@ export default function TrainingsListPage() {
                 {pagedItems.map((item) => {
                   if (item.kind === "event") {
                     const e = item.event;
+                    const linkedSession = linkedSessionByEventId[e.id] ?? null;
                     const clubName = clubNameById[e.club_id] ?? t("common.club");
                     const groupName = e.group_id ? groupNameById[e.group_id] : null;
                     const eventEnd =
@@ -1481,6 +1538,23 @@ export default function TrainingsListPage() {
                               ) : null}
 
                             </>
+                          ) : null}
+
+                          {e.event_type === "training" ? (
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                              <Link
+                                className="btn"
+                                href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}
+                              >
+                                {t("common.view")}
+                              </Link>
+                              {performanceEnabled && !isUpcomingEvent ? (
+                                <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                                  <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {pickLocaleText(locale, "Évaluer", "Evaluate")}
+                                </Link>
+                              ) : null}
+                            </div>
                           ) : null}
 
                         </div>
@@ -1723,6 +1797,13 @@ export default function TrainingsListPage() {
                             <Link className="btn" href={`/player/golf/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
                               {t("common.view")}
                             </Link>
+
+                            {performanceEnabled && isPastSession && !completeSessionIds.has(s.id) ? (
+                              <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                                <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {pickLocaleText(locale, "Évaluer", "Evaluate")}
+                              </Link>
+                            ) : null}
 
                             {canEditSession ? (
                               <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>

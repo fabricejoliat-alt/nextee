@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
   Home,
@@ -107,6 +108,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
   const [parentChildren, setParentChildren] = useState<ParentChildLite[]>([]);
   const [selectedChildId, setSelectedChildId] = useState("");
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   function readDrawerFooterCache(): DrawerFooterCache | null {
     if (typeof window === "undefined") return null;
@@ -263,6 +265,14 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       if (viewerRole === "parent" && selectedChildId) uid = selectedChildId;
       if (!uid) {
         setPendingEvalCount(0);
+        setPerformanceEnabled(false);
+        return;
+      }
+
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+      setPerformanceEnabled(perfEnabled);
+      if (!perfEnabled) {
+        setPendingEvalCount(0);
         return;
       }
 
@@ -377,28 +387,36 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             icon: PlusCircle,
             href: ROUTES.trainingsNew,
           },
-          {
-            label:
-              locale === "fr"
-                ? `Entrainement à évaluer (${pendingEvalCount})`
-                : `To complete (${pendingEvalCount})`,
-            icon: ClipboardList,
-            href: ROUTES.trainingsToComplete,
-          },
+          ...(performanceEnabled
+            ? [
+                {
+                  label:
+                    locale === "fr"
+                      ? `Entrainements à évaluer (${pendingEvalCount})`
+                      : `To complete (${pendingEvalCount})`,
+                  icon: ClipboardList,
+                  href: ROUTES.trainingsToComplete,
+                },
+              ]
+            : []),
           { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
-          {
-            label:
-              locale === "fr"
-                ? "Ordre du mérite"
-                : locale === "de"
-                ? "Order of Merit"
-                : locale === "it"
-                ? "Ordine di merito"
-                : "Order of Merit",
-            icon: Trophy,
-            href: ROUTES.om,
-          },
+          ...(performanceEnabled
+            ? [
+                {
+                  label:
+                    locale === "fr"
+                      ? "Ordre du mérite"
+                      : locale === "de"
+                      ? "Order of Merit"
+                      : locale === "it"
+                      ? "Ordine di merito"
+                      : "Order of Merit",
+                  icon: Trophy,
+                  href: ROUTES.om,
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -411,7 +429,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
     ],
-    [t, locale, pendingEvalCount]
+    [t, locale, pendingEvalCount, performanceEnabled]
   );
 
   async function handleLogout() {

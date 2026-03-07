@@ -98,6 +98,11 @@ function initials(p?: ProfileMini | null) {
   return (fi + li) || "👤";
 }
 
+function isArchivedGroupName(name: string | null | undefined) {
+  const v = String(name ?? "").trim().toUpperCase();
+  return v.startsWith("__ARCHIVE");
+}
+
 function avatarNode(p?: ProfileMini | null) {
   if (p?.avatar_url) {
     return (
@@ -397,6 +402,7 @@ export default function CoachGroupsPage() {
       });
 
     return mapped
+      .filter((x) => !isArchivedGroupName(x.group.name))
       .filter((x) => {
         const matchesQ =
           !query ||
@@ -596,7 +602,7 @@ export default function CoachGroupsPage() {
                                 <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.6 }}>{t("coachGroups.noPlayer")}</div>
                               ) : (
                                 <>
-                                  {playerProfiles.slice(0, 3).map((p) => (
+                                  {playerProfiles.map((p) => (
                                     <div key={p.id} style={miniRowStyle}>
                                       <div style={miniAvatarBoxStyle} aria-hidden="true">
                                         {avatarNode(p)}
@@ -606,11 +612,6 @@ export default function CoachGroupsPage() {
                                       </div>
                                     </div>
                                   ))}
-                                  {playerProfiles.length > 3 ? (
-                                    <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>
-                                      +{playerProfiles.length - 3} {t(playerProfiles.length - 3 > 1 ? "coachGroups.otherPlural" : "coachGroups.otherSingle")}
-                                    </div>
-                                  ) : null}
                                 </>
                               )}
                             </div>

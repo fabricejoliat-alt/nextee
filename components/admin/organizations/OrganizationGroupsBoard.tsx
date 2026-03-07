@@ -361,7 +361,7 @@ export default function OrganizationGroupsBoard({
               className="card"
               key={g.id}
               style={{
-                border: "2px solid #86efac",
+                border: "2px solid #166534",
                 background: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98))",
                 padding: 10,
                 boxShadow: "0 1px 0 rgba(22,101,52,0.08)",
@@ -383,6 +383,7 @@ export default function OrganizationGroupsBoard({
                           background: "rgba(0,0,0,0.04)",
                           fontSize: 10,
                           fontWeight: 800,
+                          color: "#111",
                         }}
                       >
                         {cat}

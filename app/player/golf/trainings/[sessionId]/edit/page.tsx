@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -84,6 +85,7 @@ export default function PlayerTrainingEditPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
   const [nowTs, setNowTs] = useState<number>(() => new Date().getTime());
 
   const [userId, setUserId] = useState("");
@@ -121,6 +123,16 @@ export default function PlayerTrainingEditPage() {
     }, 0);
   }, [items]);
 
+  const nonPerformanceSaveLabel = useMemo(
+    () =>
+      pickLocaleText(
+        locale,
+        "Enregistrer l'entraînement",
+        "Save training"
+      ),
+    [locale]
+  );
+
   const isClubSessionPast = useMemo(() => {
     if (sessionType !== "club") return true;
     if (!startAt) return false;
@@ -129,7 +141,7 @@ export default function PlayerTrainingEditPage() {
     return dt.getTime() < nowTs;
   }, [sessionType, startAt, nowTs]);
 
-  const evaluationDisabled = busy || !isClubSessionPast;
+  const evaluationDisabled = busy || !isClubSessionPast || !performanceEnabled;
 
   const canSave = useMemo(() => {
     if (busy) return false;
@@ -138,6 +150,8 @@ export default function PlayerTrainingEditPage() {
     if (!startAt) return false;
 
     if (sessionType === "club" && !clubIdForTraining) return false;
+
+    if (!performanceEnabled) return true;
 
     const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
     if (!hasValidLine) return false;
@@ -151,7 +165,7 @@ export default function PlayerTrainingEditPage() {
     }
 
     return true;
-  }, [busy, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, performanceEnabled, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
@@ -171,6 +185,8 @@ export default function PlayerTrainingEditPage() {
 
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+      setPerformanceEnabled(perfEnabled);
 
       // 1) load memberships + clubs
       const memRes = await supabase
@@ -275,7 +291,7 @@ export default function PlayerTrainingEditPage() {
       setItems(draft.length > 0 ? draft : []);
       setLoading(false);
     })();
-  }, [sessionId, t]);
+  }, [sessionId, t, locale]);
 
   function addLine() {
     setItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
@@ -312,9 +328,9 @@ export default function PlayerTrainingEditPage() {
       return;
     }
 
-    const mot = motivation ? Number(motivation) : null;
-    const dif = difficulty ? Number(difficulty) : null;
-    const sat = satisfaction ? Number(satisfaction) : null;
+    const mot = performanceEnabled && motivation ? Number(motivation) : null;
+    const dif = performanceEnabled && difficulty ? Number(difficulty) : null;
+    const sat = performanceEnabled && satisfaction ? Number(satisfaction) : null;
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
 
@@ -330,7 +346,7 @@ export default function PlayerTrainingEditPage() {
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
-        notes: notes.trim() || null,
+        notes: performanceEnabled ? notes.trim() || null : null,
         total_minutes: totalMinutes,
       })
       .eq("id", sessionId);
@@ -341,26 +357,30 @@ export default function PlayerTrainingEditPage() {
       return;
     }
 
-    // 2) replace items (simple & safe)
-    const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
-    if (delItems.error) {
-      setError(delItems.error.message);
-      setBusy(false);
-      return;
-    }
+    // 2) replace items only for performance players
+    if (performanceEnabled) {
+      const delItems = await supabase.from("training_session_items").delete().eq("session_id", sessionId);
+      if (delItems.error) {
+        setError(delItems.error.message);
+        setBusy(false);
+        return;
+      }
 
-    const payload = items.map((it) => ({
-      session_id: sessionId,
-      category: it.category,
-      minutes: Number(it.minutes),
-      note: it.note.trim() || null,
-    }));
+      const payload = items.map((it) => ({
+        session_id: sessionId,
+        category: it.category,
+        minutes: Number(it.minutes),
+        note: it.note.trim() || null,
+      }));
 
-    const ins = await supabase.from("training_session_items").insert(payload);
-    if (ins.error) {
-      setError(ins.error.message);
-      setBusy(false);
-      return;
+      if (payload.length > 0) {
+        const ins = await supabase.from("training_session_items").insert(payload);
+        if (ins.error) {
+          setError(ins.error.message);
+          setBusy(false);
+          return;
+        }
+      }
     }
 
     router.push("/player/golf/trainings");
@@ -403,6 +423,23 @@ export default function PlayerTrainingEditPage() {
             <CompactLoadingBlock label={t("common.loading")} />
           ) : (
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+              {!performanceEnabled ? (
+                <div
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.70)",
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontWeight: 850,
+                    color: "rgba(0,0,0,0.68)",
+                  }}
+                >
+                  {locale === "fr"
+                    ? "Mode non-performance: tu peux modifier les informations de base, mais pas la structure ni l'évaluation."
+                    : "Non-performance mode: you can edit basic information, but not structure or evaluation."}
+                </div>
+              ) : null}
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Date, lieu et type d'entrainement", "Date, place and training type")}
@@ -494,6 +531,8 @@ export default function PlayerTrainingEditPage() {
               </div>
 
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                {performanceEnabled ? (
+                <>
                 <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
                 {items.length === 0 ? (
@@ -580,8 +619,11 @@ export default function PlayerTrainingEditPage() {
                     + {t("trainingNew.addSection")}
                   </button>
                 </div>
+                </>
+                ) : null}
               </div>
 
+              {performanceEnabled ? (
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
@@ -705,6 +747,11 @@ export default function PlayerTrainingEditPage() {
                   {busy ? t("trainingNew.saving") : t("common.save")}
                 </button>
               </div>
+              ) : (
+                <button className="cta-green" type="submit" disabled={!canSave || busy} style={{ width: "100%" }}>
+                  {busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}
+                </button>
+              )}
             </form>
           )}
         </div>

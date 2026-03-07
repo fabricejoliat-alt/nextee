@@ -444,7 +444,7 @@ export default function CoachEventPlayerDetailPage() {
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                        Engagement <b>{coachFb.engagement ?? "—"}</b> • Attitude <b>{coachFb.attitude ?? "—"}</b> • Performance{" "}
+                        Engagement <b>{coachFb.engagement ?? "—"}</b> • Attitude <b>{coachFb.attitude ?? "—"}</b> • Application{" "}
                         <b>{coachFb.performance ?? "—"}</b>
                       </div>
 

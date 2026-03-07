@@ -50,7 +50,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const { data: membersRows, error: membersError } = await supabaseAdmin
       .from("club_members")
-      .select("id,club_id,user_id,role,is_active,created_at")
+      .select("id,club_id,user_id,role,is_active,is_performance,created_at")
       .eq("club_id", clubId)
       .order("created_at", { ascending: false });
 
@@ -142,6 +142,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       user_id: String(m.user_id),
       role: m.role,
       is_active: m.is_active,
+      is_performance: m.is_performance,
       auth_email: authEmailById.get(String(m.user_id)) ?? null,
       profiles: profileById.get(String(m.user_id)) ?? null,
     }));
@@ -248,11 +249,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       if (raw == null || raw === "") {
         profilePatch.handicap = null;
       } else {
-        const n = Number(raw);
-        if (!Number.isFinite(n)) {
-          return NextResponse.json({ error: "Invalid handicap" }, { status: 400 });
+        const rawText = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+        if (rawText === "AP") {
+          profilePatch.handicap = null;
+          // AP is accepted as a non-numeric handicap marker.
+        } else {
+          const n = Number(raw);
+          if (!Number.isFinite(n)) {
+            return NextResponse.json({ error: "Invalid handicap" }, { status: 400 });
+          }
+          profilePatch.handicap = n;
         }
-        profilePatch.handicap = n;
       }
     }
 

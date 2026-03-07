@@ -169,12 +169,25 @@ begin
       and be.occurred_on <= p_as_of
     group by be.player_id
   ),
-  players as (
+  eligible_players as (
+    select distinct cm.user_id as player_id
+    from public.club_members cm
+    where cm.club_id = p_org_id
+      and cm.role = 'player'
+      and cm.is_active = true
+      and coalesce(cm.is_performance, false) = true
+  ),
+  players_raw as (
     select tn.player_id as player_id from tour_net tn
     union
     select tb.player_id as player_id from tour_brut tb
     union
     select bo.player_id as player_id from bonus bo
+  ),
+  players as (
+    select pr.player_id
+    from players_raw pr
+    join eligible_players ep on ep.player_id = pr.player_id
   ),
   totals as (
     select

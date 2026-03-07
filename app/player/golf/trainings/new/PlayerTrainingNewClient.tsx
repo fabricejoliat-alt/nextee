@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -51,6 +52,24 @@ type ExistingSessionItemRow = {
   category: string;
   minutes: number;
   note: string | null;
+};
+
+type CoachFeedbackRow = {
+  event_id: string;
+  player_id: string;
+  coach_id: string;
+  engagement: number | null;
+  attitude: number | null;
+  performance: number | null;
+  visible_to_player: boolean;
+  player_note: string | null;
+};
+
+type CoachProfileLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
@@ -129,6 +148,12 @@ function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
 
+function coachRatingPercent(value: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  const raw = (value / 6) * 100;
+  return Math.max(0, Math.min(100, raw));
+}
+
 export default function PlayerTrainingNewPage() {
   const { t, locale } = useI18n();
   const router = useRouter();
@@ -149,6 +174,7 @@ export default function PlayerTrainingNewPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [userId, setUserId] = useState("");
 
@@ -181,6 +207,8 @@ export default function PlayerTrainingNewPage() {
   const [linkedEvent, setLinkedEvent] = useState<ClubEventRow | null>(null);
   const [linkedGroupName, setLinkedGroupName] = useState<string>("");
   const [existingSessionId, setExistingSessionId] = useState<string>("");
+  const [coachFeedback, setCoachFeedback] = useState<CoachFeedbackRow[]>([]);
+  const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
 
   // ✅ coaches (planned: display only / non-planned club: checkbox list)
   const [coachOptions, setCoachOptions] = useState<CoachOption[]>([]);
@@ -201,9 +229,10 @@ export default function PlayerTrainingNewPage() {
   const inputsDisabled = busy || plannedEventLocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
   const showSensationsCard = useMemo(() => {
+    if (!performanceEnabled) return false;
     const ts = new Date(startAt).getTime();
     return Number.isFinite(ts) && ts < Date.now();
-  }, [startAt]);
+  }, [performanceEnabled, startAt]);
 
   const nonPlannedCoachSummary = useMemo(() => {
     if (linkedEvent) return "";
@@ -214,6 +243,16 @@ export default function PlayerTrainingNewPage() {
     if (names.length === 0) return "";
     return `${t("common.coach")} : ${names.join(", ")}`;
   }, [linkedEvent, sessionType, coachOptions, selectedCoachIds, t]);
+
+  const nonPerformanceSaveLabel = useMemo(
+    () =>
+      pickLocaleText(
+        locale,
+        "Enregistrer l'entraînement",
+        "Save training"
+      ),
+    [locale]
+  );
 
   const coachNameForSave = useMemo(() => {
     // ✅ planned: save read-only summary based on event coaches
@@ -245,6 +284,8 @@ export default function PlayerTrainingNewPage() {
     if (!startAt) return false;
     if (sessionType === "club" && !clubIdForTraining) return false;
 
+    if (!performanceEnabled) return true;
+
     const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
     if (!hasValidLine) return false;
 
@@ -257,7 +298,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, plannedEventLocked, userId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, performanceEnabled, plannedEventLocked, userId, startAt, sessionType, clubIdForTraining, items]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -437,6 +478,8 @@ export default function PlayerTrainingNewPage() {
 
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+      setPerformanceEnabled(perfEnabled);
 
       // memberships
       const memRes = await supabase.from("club_members").select("club_id").eq("user_id", uid).eq("is_active", true);
@@ -531,6 +574,41 @@ export default function PlayerTrainingNewPage() {
           setCoachOptions(opts);
           setSelectedCoachIds([]); // pas utilisé en planned
 
+          const coachFeedbackRes = await supabase
+            .from("club_event_coach_feedback")
+            .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,player_note")
+            .eq("event_id", ev.id)
+            .eq("player_id", uid)
+            .eq("visible_to_player", true);
+
+          if (!coachFeedbackRes.error) {
+            const fb = (coachFeedbackRes.data ?? []) as CoachFeedbackRow[];
+            setCoachFeedback(fb);
+            const coachIds = Array.from(new Set(fb.map((r) => r.coach_id)));
+            if (coachIds.length > 0) {
+              const cpRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds);
+              if (!cpRes.error) {
+                const map: Record<string, CoachProfileLite> = {};
+                (cpRes.data ?? []).forEach((p: any) => {
+                  map[String(p.id)] = {
+                    id: String(p.id),
+                    first_name: p.first_name ?? null,
+                    last_name: p.last_name ?? null,
+                    avatar_url: p.avatar_url ?? null,
+                  };
+                });
+                setCoachProfilesById(map);
+              } else {
+                setCoachProfilesById({});
+              }
+            } else {
+              setCoachProfilesById({});
+            }
+          } else {
+            setCoachFeedback([]);
+            setCoachProfilesById({});
+          }
+
           let prefilledFromExistingSession = false;
           const existingSessionRes = await supabase
             .from("training_sessions")
@@ -607,6 +685,8 @@ export default function PlayerTrainingNewPage() {
         }
       } else {
         setPlannedStructureItems([]);
+        setCoachFeedback([]);
+        setCoachProfilesById({});
       }
 
       setLoading(false);
@@ -693,9 +773,9 @@ export default function PlayerTrainingNewPage() {
     }
 
     const club_id = sessionType === "club" ? clubIdForTraining : null;
-    const mot = showSensationsCard && motivation ? Number(motivation) : null;
-    const dif = showSensationsCard && difficulty ? Number(difficulty) : null;
-    const sat = showSensationsCard && satisfaction ? Number(satisfaction) : null;
+    const mot = performanceEnabled && showSensationsCard && motivation ? Number(motivation) : null;
+    const dif = performanceEnabled && showSensationsCard && difficulty ? Number(difficulty) : null;
+    const sat = performanceEnabled && showSensationsCard && satisfaction ? Number(satisfaction) : null;
 
     // ✅ if linkedEvent, mark attendee present (UPDATE only)
     if (linkedEvent) {
@@ -721,7 +801,7 @@ export default function PlayerTrainingNewPage() {
       motivation: mot,
       difficulty: dif,
       satisfaction: sat,
-      notes: showSensationsCard ? notes.trim() || null : null,
+      notes: performanceEnabled && showSensationsCard ? notes.trim() || null : null,
       total_minutes: totalMinutes,
       club_event_id: linkedEvent?.id ?? null,
     };
@@ -766,18 +846,22 @@ export default function PlayerTrainingNewPage() {
       sessionId = String(insertSession.data.id);
     }
 
-    const payload = items.map((it) => ({
-      session_id: sessionId,
-      category: it.category,
-      minutes: Number(it.minutes),
-      note: it.note.trim() || null,
-    }));
+    if (performanceEnabled) {
+      const payload = items.map((it) => ({
+        session_id: sessionId,
+        category: it.category,
+        minutes: Number(it.minutes),
+        note: it.note.trim() || null,
+      }));
 
-    const insertItems = await supabase.from("training_session_items").insert(payload);
-    if (insertItems.error) {
-      setError(insertItems.error.message);
-      setBusy(false);
-      return;
+      if (payload.length > 0) {
+        const insertItems = await supabase.from("training_session_items").insert(payload);
+        if (insertItems.error) {
+          setError(insertItems.error.message);
+          setBusy(false);
+          return;
+        }
+      }
     }
 
     router.push("/player/golf/trainings");
@@ -1031,6 +1115,69 @@ export default function PlayerTrainingNewPage() {
                       </div>
                     ) : null}
 
+                    {showCoachSectionPlannedReadOnly && coachFeedback.length > 0 ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{t("trainingDetail.coachEvaluation")}</span>
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            background: "rgba(255,255,255,0.75)",
+                            padding: "10px 12px",
+                            display: "grid",
+                            gap: 10,
+                          }}
+                        >
+                          {coachFeedback.map((fb, idx) => {
+                            const cp = coachProfilesById[fb.coach_id];
+                            const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
+                            return (
+                              <div key={`${fb.coach_id}-${idx}`} style={{ display: "grid", gap: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{coachName}</div>
+                                <div style={{ display: "grid", gap: 10 }}>
+                                  <div style={{ display: "grid", gap: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Engagement</div>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.engagement ?? "—"}</div>
+                                    </div>
+                                    <div className="bar">
+                                      <span style={{ width: `${coachRatingPercent(fb.engagement)}%` }} />
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: "grid", gap: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Attitude</div>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.attitude ?? "—"}</div>
+                                    </div>
+                                    <div className="bar">
+                                      <span style={{ width: `${coachRatingPercent(fb.attitude)}%` }} />
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: "grid", gap: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Application</div>
+                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.performance ?? "—"}</div>
+                                    </div>
+                                    <div className="bar">
+                                      <span style={{ width: `${coachRatingPercent(fb.performance)}%` }} />
+                                    </div>
+                                  </div>
+
+                                  {String(fb.player_note ?? "").trim() ? (
+                                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)", whiteSpace: "pre-wrap" }}>
+                                      {fb.player_note}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {showCoachSectionAsCheckboxes ? (
                       <div style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{t("trainingNew.coachOptional")}</span>
@@ -1140,6 +1287,7 @@ export default function PlayerTrainingNewPage() {
                   </div>
                 </div>
 
+                {performanceEnabled ? (
                 <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
@@ -1286,6 +1434,18 @@ export default function PlayerTrainingNewPage() {
                     </button>
                   ) : null}
                 </div>
+                ) : null}
+
+                {!performanceEnabled ? (
+                  <button
+                    className="cta-green"
+                    type="submit"
+                    disabled={!canSave || busy}
+                    style={{ width: "100%" }}
+                  >
+                    {busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}
+                  </button>
+                ) : null}
 
                 {showSensationsCard ? (
                   <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>

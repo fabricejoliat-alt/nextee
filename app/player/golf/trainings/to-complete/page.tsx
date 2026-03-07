@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Pencil } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -115,6 +116,7 @@ export default function PlayerTrainingsToCompletePage() {
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [eventById, setEventById] = useState<Record<string, PlannedEventRow>>({});
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -122,6 +124,16 @@ export default function PlayerTrainingsToCompletePage() {
       setError(null);
       try {
         const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+        setPerformanceEnabled(perfEnabled);
+        if (!perfEnabled) {
+          setRows([]);
+          setClubNameById({});
+          setGroupNameById({});
+          setEventById({});
+          setLoading(false);
+          return;
+        }
 
         const sRes = await supabase
           .from("training_sessions")
@@ -305,6 +317,21 @@ export default function PlayerTrainingsToCompletePage() {
           <div className="glass-card">
             {loading ? (
               <ListLoadingBlock label={t("common.loading")} />
+            ) : !performanceEnabled ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                  {pickLocaleText(
+                    locale,
+                    "Le mode performance doit être activé pour évaluer les entraînements.",
+                    "Performance mode must be enabled to evaluate trainings."
+                  )}
+                </div>
+                <div>
+                  <Link className="btn" href="/player/golf/trainings?type=training">
+                    {t("common.back")}
+                  </Link>
+                </div>
+              </div>
             ) : rows.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
                 {pickLocaleText(locale, "Aucun entraînement à évaluer.", "No training to complete.")}

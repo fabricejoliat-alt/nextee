@@ -10,6 +10,7 @@ type MemberRow = {
   user_id: string;
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
+  is_performance: boolean | null;
   auth_email?: string | null;
   profiles?: {
     id: string;
@@ -31,8 +32,10 @@ type MemberRow = {
 
 type EditForm = {
   id: string;
+  user_id: string;
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean;
+  is_performance: boolean;
   first_name: string;
   last_name: string;
   username: string;
@@ -54,6 +57,13 @@ function labelName(m: MemberRow) {
   return n || "Utilisateur";
 }
 
+function generatePassword(len = 12) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
 export default function ManagerUsersPage() {
   const [clubId, setClubId] = useState("");
   const [clubNamesById, setClubNamesById] = useState<Record<string, string>>({});
@@ -70,6 +80,9 @@ export default function ManagerUsersPage() {
   const [cRole, setCRole] = useState<"manager" | "coach" | "player" | "parent">("player");
   const [createdCreds, setCreatedCreds] = useState<{ username: string; tempPassword: string | null } | null>(null);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | "manager" | "coach" | "player" | "parent">("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<EditForm>>({});
@@ -189,8 +202,10 @@ export default function ManagerUsersPage() {
     setEditingId(m.id);
     setForm({
       id: m.id,
+      user_id: m.user_id,
       role: m.role,
       is_active: m.is_active ?? true,
+      is_performance: m.is_performance ?? false,
       first_name: m.profiles?.first_name ?? "",
       last_name: m.profiles?.last_name ?? "",
       username: m.profiles?.username ?? "",
@@ -227,6 +242,8 @@ export default function ManagerUsersPage() {
       first_name: (form.first_name ?? "").toString().trim(),
       last_name: (form.last_name ?? "").toString().trim(),
       username: (form.username ?? "").toString().trim().toLowerCase(),
+      auth_email: (form.auth_email ?? "").toString().trim().toLowerCase(),
+      auth_password: (form.auth_password ?? "").toString(),
     };
 
     if ((form.role ?? "player") === "player") {
@@ -265,6 +282,19 @@ export default function ManagerUsersPage() {
       return;
     }
 
+    if ((form.role ?? "player") === "player" && form.user_id) {
+      const { error: perfError } = await supabase.rpc("set_player_performance_mode", {
+        p_org_id: clubId,
+        p_player_id: form.user_id,
+        p_enabled: Boolean(form.is_performance),
+      });
+      if (perfError) {
+        setError(perfError.message || "Erreur sauvegarde mode performance");
+        setSavingId(null);
+        return;
+      }
+    }
+
     setSavingId(null);
     cancelEdit();
     await loadMembers(clubId);
@@ -280,8 +310,9 @@ export default function ManagerUsersPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sorted;
     return sorted.filter((m) => {
+      if (roleFilter !== "all" && m.role !== roleFilter) return false;
+      if (!q) return true;
       const haystack = [
         labelName(m),
         m.profiles?.username ?? "",
@@ -292,7 +323,25 @@ export default function ManagerUsersPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [search, sorted]);
+  }, [search, sorted, roleFilter]);
+
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, totalItems);
+  const paginated = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, roleFilter, clubId, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   return (
     <div style={{ display: "grid", gap: 16, width: "min(980px, 100%)", margin: "0 auto", boxSizing: "border-box" }}>
@@ -359,13 +408,57 @@ export default function ManagerUsersPage() {
 
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Liste</h2>
-        <div style={{ marginBottom: 10, maxWidth: 360 }}>
-          <input
-            placeholder="Rechercher un utilisateur"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={inputStyle}
-          />
+        <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
+          <div style={{ maxWidth: 420 }}>
+            <input
+              placeholder="Rechercher (nom, username, email, rôle)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ maxWidth: 260 }}>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as any)} style={inputStyle}>
+              <option value="all">Tous les rôles</option>
+              <option value="player">Joueurs</option>
+              <option value="parent">Parents</option>
+              <option value="coach">Coachs</option>
+              <option value="manager">Managers</option>
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+              {totalItems === 0 ? "0 résultat" : `${pageStart}-${pageEnd} sur ${totalItems}`}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13 }}>
+                Par page
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  style={{ ...inputStyle, padding: "6px 10px", borderRadius: 10 }}
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <button className="btn" type="button" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                Précédent
+              </button>
+              <div style={{ fontSize: 13, fontWeight: 700, minWidth: 70, textAlign: "center" }}>
+                Page {currentPage}/{totalPages}
+              </div>
+              <button
+                className="btn"
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Suivant
+              </button>
+            </div>
+          </div>
         </div>
 
         {loading ? (
@@ -374,7 +467,7 @@ export default function ManagerUsersPage() {
           <div style={{ color: "var(--muted)" }}>Aucun utilisateur.</div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
-            {filtered.map((m) => {
+            {paginated.map((m) => {
               const isEditing = editingId === m.id;
               const isPlayerProfileEdit = (form.role ?? m.role) === "player";
               const isParentProfileEdit = (form.role ?? m.role) === "parent";
@@ -403,6 +496,11 @@ export default function ManagerUsersPage() {
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           statut: {m.is_active ? "actif" : "archivé"}
                         </div>
+                        {m.role === "player" && (
+                          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                            mode performance: {m.is_performance ? "oui" : "non"}
+                          </div>
+                        )}
                       </div>
 
                       <button className="btn" onClick={() => startEdit(m)}>
@@ -412,37 +510,89 @@ export default function ManagerUsersPage() {
                   ) : (
                     <>
                       <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-                        <input
-                          placeholder="Prénom"
-                          value={(form.first_name ?? "") as string}
-                          onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
-                          style={inputStyle}
-                        />
-                        <input
-                          placeholder="Nom"
-                          value={(form.last_name ?? "") as string}
-                          onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
-                          style={inputStyle}
-                        />
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800 }}>Prénom</span>
+                          <input
+                            placeholder="Prénom"
+                            value={(form.first_name ?? "") as string}
+                            onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+                            style={inputStyle}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800 }}>Nom</span>
+                          <input
+                            placeholder="Nom"
+                            value={(form.last_name ?? "") as string}
+                            onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+                            style={inputStyle}
+                          />
+                        </label>
                       </div>
 
-                      <input
-                        placeholder="Username"
-                        value={(form.username ?? "") as string}
-                        onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                        style={inputStyle}
-                      />
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800 }}>Username</span>
+                        <input
+                          placeholder="Username"
+                          value={(form.username ?? "") as string}
+                          onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                          style={inputStyle}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800 }}>Adresse e-mail</span>
+                        <input
+                          placeholder="Adresse e-mail"
+                          type="email"
+                          value={(form.auth_email ?? "") as string}
+                          onChange={(e) => setForm((f) => ({ ...f, auth_email: e.target.value }))}
+                          style={inputStyle}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800 }}>Nouveau mot de passe</span>
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(220px, 360px) auto",
+                            gap: 8,
+                            alignItems: "center",
+                            maxWidth: 520,
+                          }}
+                        >
+                          <input
+                            placeholder="Nouveau mot de passe (min 8)"
+                            type="text"
+                            value={(form.auth_password ?? "") as string}
+                            onChange={(e) => setForm((f) => ({ ...f, auth_password: e.target.value }))}
+                            style={inputStyle}
+                          />
+                          <button
+                            className="btn"
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, auth_password: generatePassword(12) }))}
+                            style={{ padding: "8px 10px", borderRadius: 10, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}
+                          >
+                            Générer
+                          </button>
+                        </div>
+                      </label>
 
-                      <select
-                        value={(form.role ?? "player") as string}
-                        onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as any }))}
-                        style={inputStyle}
-                      >
-                        <option value="player">Joueur</option>
-                        <option value="coach">Coach</option>
-                        <option value="manager">Manager</option>
-                        <option value="parent">Parent</option>
-                      </select>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800 }}>Rôle</span>
+                        <select
+                          value={(form.role ?? "player") as string}
+                          onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as any }))}
+                          style={inputStyle}
+                        >
+                          <option value="player">Joueur</option>
+                          <option value="coach">Coach</option>
+                          <option value="manager">Manager</option>
+                          <option value="parent">Parent</option>
+                        </select>
+                      </label>
 
                       <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <input
@@ -452,6 +602,17 @@ export default function ManagerUsersPage() {
                         />
                         Actif
                       </label>
+
+                      {isPlayerProfileEdit && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form.is_performance)}
+                            onChange={(e) => setForm((f) => ({ ...f, is_performance: e.target.checked }))}
+                          />
+                          Mode performance
+                        </label>
+                      )}
 
                       {isPlayerProfileEdit && (
                         <>
@@ -487,7 +648,7 @@ export default function ManagerUsersPage() {
                               <option value="left">Gaucher</option>
                             </select>
                             <input
-                              placeholder="Handicap"
+                              placeholder="Handicap (ex: 12.4 ou AP)"
                               value={(form.handicap ?? "") as string}
                               onChange={(e) => setForm((f) => ({ ...f, handicap: e.target.value }))}
                               style={inputStyle}
@@ -538,13 +699,6 @@ export default function ManagerUsersPage() {
                               placeholder="Email login"
                               value={(form.auth_email ?? "") as string}
                               onChange={(e) => setForm((f) => ({ ...f, auth_email: e.target.value }))}
-                              style={inputStyle}
-                            />
-                            <input
-                              placeholder="Nouveau mot de passe (min 8)"
-                              type="password"
-                              value={(form.auth_password ?? "") as string}
-                              onChange={(e) => setForm((f) => ({ ...f, auth_password: e.target.value }))}
                               style={inputStyle}
                             />
                           </div>

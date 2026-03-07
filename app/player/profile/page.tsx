@@ -278,6 +278,7 @@ export default function PlayerProfilePage() {
   function parseHandicap(): number | null {
     const v = handicap.trim();
     if (v === "") return null;
+    if (v.toUpperCase() === "AP") return null;
     const n = Number(v);
     if (Number.isNaN(n)) return null;
     return n;
@@ -291,7 +292,8 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     const hc = parseHandicap();
-    if (viewerRole === "player" && handicap.trim() !== "" && hc === null) {
+    const isApHandicap = handicap.trim().toUpperCase() === "AP";
+    if (viewerRole === "player" && handicap.trim() !== "" && hc === null && !isApHandicap) {
       setError(t("playerProfile.error.invalidHandicap"));
       setBusy(false);
       return;

@@ -53,6 +53,13 @@ function isAllowedImage(file: File) {
   return okTypes.includes(file.type);
 }
 
+function normalizeDisplayEmail(rawEmail?: string | null) {
+  const email = (rawEmail ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return rawEmail ?? "";
+}
+
 export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -65,6 +72,8 @@ export default function PlayerProfilePage() {
 
   const [userId, setUserId] = useState("");
   const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -127,7 +136,7 @@ export default function PlayerProfilePage() {
 
     const uid = userRes.user.id;
     setUserId(uid);
-    setEmail(userRes.user.email ?? "");
+    setEmail(normalizeDisplayEmail(userRes.user.email));
 
     // profile
     const profRes = await supabase
@@ -218,6 +227,19 @@ export default function PlayerProfilePage() {
     setError(null);
     setInfo(null);
 
+    if (newPassword.trim() || confirmPassword.trim()) {
+      if (newPassword.length < 8) {
+        setError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+        setBusy(false);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError("La confirmation du mot de passe ne correspond pas.");
+        setBusy(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("profiles")
       .upsert(
@@ -243,6 +265,19 @@ export default function PlayerProfilePage() {
       setError(error.message);
       setBusy(false);
       return;
+    }
+
+    if (newPassword.trim()) {
+      const { error: authError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (authError) {
+        setError(authError.message);
+        setBusy(false);
+        return;
+      }
+      setNewPassword("");
+      setConfirmPassword("");
     }
 
     setInfo("Profile saved ✅");
@@ -390,7 +425,7 @@ export default function PlayerProfilePage() {
                 fontSize: 12,
                 letterSpacing: 0.6,
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.88)",
+                color: "rgba(0,0,0,0.85)",
                 cursor: loading || avatarBusy ? "default" : "pointer",
                 opacity: loading ? 0.6 : 1,
               }}
@@ -531,7 +566,36 @@ export default function PlayerProfilePage() {
                     </Field>
 
                     <Field label="Email (login)">
-                      <input value={email} disabled />
+                      <input value={email || "Non renseigné"} disabled />
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="hr-soft" />
+
+                {/* Mot de passe */}
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    Mot de passe
+                  </div>
+
+                  <div className="grid-2">
+                    <Field label="Nouveau mot de passe">
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Au moins 8 caractères"
+                      />
+                    </Field>
+
+                    <Field label="Confirmer le mot de passe">
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Répéter le nouveau mot de passe"
+                      />
                     </Field>
                   </div>
                 </div>

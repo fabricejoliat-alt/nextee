@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     const nextUsername =
       typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+    const nextPerformance = typeof body.is_performance === "boolean" ? body.is_performance : null;
 
     // Update profile fields
     const profilePatch: any = {
@@ -71,6 +72,30 @@ export async function POST(req: NextRequest) {
 
       const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(userId, patch);
       if (authErr) return NextResponse.json({ error: authErr.message }, { status: 400 });
+    }
+
+    if (nextPerformance !== null) {
+      if (nextPerformance === false) {
+        const { data: forcedGroup, error: forcedGroupErr } = await supabaseAdmin
+          .from("coach_group_players")
+          .select("group_id,coach_groups!inner(id,is_active,is_performance)")
+          .eq("player_user_id", userId)
+          .eq("coach_groups.is_active", true)
+          .eq("coach_groups.is_performance", true)
+          .limit(1);
+        if (forcedGroupErr) return NextResponse.json({ error: forcedGroupErr.message }, { status: 400 });
+        if ((forcedGroup ?? []).length > 0) {
+          return NextResponse.json({ error: "forced_by_performance_group" }, { status: 400 });
+        }
+      }
+
+      const { error: perfErr } = await supabaseAdmin
+        .from("club_members")
+        .update({ is_performance: nextPerformance })
+        .eq("user_id", userId)
+        .eq("role", "player")
+        .eq("is_active", true);
+      if (perfErr) return NextResponse.json({ error: perfErr.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });

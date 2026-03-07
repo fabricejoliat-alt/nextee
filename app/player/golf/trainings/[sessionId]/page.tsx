@@ -440,6 +440,32 @@ export default function PlayerTrainingDetailPage() {
                   <div className="card-title" style={{ marginBottom: 0 }}>
                     {t("trainingDetail.coachEvaluation")}
                   </div>
+                  <div
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      borderRadius: 12,
+                      background: "#fff",
+                      padding: 10,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "rgba(0,0,0,0.65)",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <div>
+                      {pickLocaleText(locale, "Engagement: implication dans l’entrainement", "Engagement: involvement in training")}
+                    </div>
+                    <div>
+                      {pickLocaleText(locale, "Attitude: comportement et esprit", "Attitude: behavior and mindset")}
+                    </div>
+                    <div>
+                      {pickLocaleText(
+                        locale,
+                        "Application: qualité de mise en pratique des exercices",
+                        "Application: quality of applying the drills in practice"
+                      )}
+                    </div>
+                  </div>
 
                   {coachFeedback.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>

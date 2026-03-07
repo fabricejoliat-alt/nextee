@@ -7,6 +7,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { PlusCircle } from "lucide-react";
@@ -402,6 +403,7 @@ export default function PlayerHomePage() {
   const [holesPlayedMonth, setHolesPlayedMonth] = useState<number>(0);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
+  const [isPerformanceEnabled, setIsPerformanceEnabled] = useState<boolean>(false);
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
@@ -569,6 +571,8 @@ export default function PlayerHomePage() {
       viewerUid = ctx.viewerUserId;
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
+      const performanceEnabled = await isEffectivePlayerPerformanceEnabled(effectiveUid);
+      setIsPerformanceEnabled(performanceEnabled);
       const pageCache = readClientPageCache<PlayerHomePageCache>(
         playerHomeCacheKey(effectiveUid),
         PLAYER_HOME_CACHE_TTL_MS
@@ -1381,79 +1385,81 @@ export default function PlayerHomePage() {
             </div>
           </div>
 
-          <div className="grid-2" style={{ marginTop: 12 }}>
-            {/* Top secteurs */}
-            <div className="glass-card">
-              <div className="card-title">{t("playerHome.topSections")}</div>
+          {isPerformanceEnabled ? (
+            <div className="grid-2" style={{ marginTop: 12 }}>
+              {/* Top secteurs */}
+              <div className="glass-card">
+                <div className="card-title">{t("playerHome.topSections")}</div>
 
-              {trainingsSummary.top.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("playerHome.noDataThisMonth")}</div>
-              ) : (
-                <div style={{ display: "grid", gap: 12 }}>
-                  {trainingsSummary.top.map((x) => {
-                    const w = Math.round((x.minutes / topMax) * 100);
-                    return (
-                      <div key={x.cat}>
-                        <div className="bar-row">
-                          <div>{x.label}</div>
-                          <div>{x.minutes}min</div>
+                {trainingsSummary.top.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("playerHome.noDataThisMonth")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {trainingsSummary.top.map((x) => {
+                      const w = Math.round((x.minutes / topMax) * 100);
+                      return (
+                        <div key={x.cat}>
+                          <div className="bar-row">
+                            <div>{x.label}</div>
+                            <div>{x.minutes}min</div>
+                          </div>
+                          <div className="bar">
+                            <span style={{ width: `${w}%` }} />
+                          </div>
                         </div>
-                        <div className="bar">
-                          <span style={{ width: `${w}%` }} />
-                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ✅ Sensations : moyenne du mois + flèche vs séance précédente */}
+              <div className="glass-card">
+                <div className="card-title">{t("trainingDetail.feelings")}</div>
+
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div>
+                    <div className="sense-row">
+                      <div>{t("common.motivation")}</div>
+                      <div style={senseRightStyle}>
+                        <span className="sense-val">{trainingsSummary.motivationAvg ?? "—"}</span>
+                        <ArrowOnly delta={trainingsSummary.deltaMotivation} />
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* ✅ Sensations : moyenne du mois + flèche vs séance précédente */}
-            <div className="glass-card">
-              <div className="card-title">{t("trainingDetail.feelings")}</div>
-
-              <div style={{ display: "grid", gap: 14 }}>
-                <div>
-                  <div className="sense-row">
-                    <div>{t("common.motivation")}</div>
-                    <div style={senseRightStyle}>
-                      <span className="sense-val">{trainingsSummary.motivationAvg ?? "—"}</span>
-                      <ArrowOnly delta={trainingsSummary.deltaMotivation} />
+                    </div>
+                    <div className="bar">
+                      <span style={{ width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
                     </div>
                   </div>
-                  <div className="bar">
-                    <span style={{ width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
-                  </div>
-                </div>
 
-                <div>
-                  <div className="sense-row">
-                    <div>{t("common.difficulty")}</div>
-                    <div style={senseRightStyle}>
-                      <span className="sense-val">{trainingsSummary.difficultyAvg ?? "—"}</span>
-                      <ArrowOnly delta={trainingsSummary.deltaDifficulty} />
+                  <div>
+                    <div className="sense-row">
+                      <div>{t("common.difficulty")}</div>
+                      <div style={senseRightStyle}>
+                        <span className="sense-val">{trainingsSummary.difficultyAvg ?? "—"}</span>
+                        <ArrowOnly delta={trainingsSummary.deltaDifficulty} />
+                      </div>
+                    </div>
+                    <div className="bar">
+                      <span style={{ width: `${clamp(((trainingsSummary.difficultyAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
                     </div>
                   </div>
-                  <div className="bar">
-                    <span style={{ width: `${clamp(((trainingsSummary.difficultyAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
-                  </div>
-                </div>
 
-                <div>
-                  <div className="sense-row">
-                    <div>{t("common.satisfaction")}</div>
-                    <div style={senseRightStyle}>
-                      <span className="sense-val">{trainingsSummary.satisfactionAvg ?? "—"}</span>
-                      <ArrowOnly delta={trainingsSummary.deltaSatisfaction} />
+                  <div>
+                    <div className="sense-row">
+                      <div>{t("common.satisfaction")}</div>
+                      <div style={senseRightStyle}>
+                        <span className="sense-val">{trainingsSummary.satisfactionAvg ?? "—"}</span>
+                        <ArrowOnly delta={trainingsSummary.deltaSatisfaction} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="bar">
-                    <span style={{ width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
+                    <div className="bar">
+                      <span style={{ width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
           <Link href="/player/golf/trainings/new" className="cta-green">
             <PlusCircle size={18} />
@@ -1545,36 +1551,38 @@ export default function PlayerHomePage() {
             </div>
           </div>
 
-          <div className="glass-card" style={{ marginTop: 12 }}>
-            <div className="card-title">{t("playerHome.focus")}</div>
+          {isPerformanceEnabled ? (
+            <div className="glass-card" style={{ marginTop: 12 }}>
+              <div className="card-title">{t("playerHome.focus")}</div>
 
-            <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-              <div className="sense-row">
-                <div>{t("golfDashboard.gir")}</div>
-                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`}</div>
-                  <ArrowOnly delta={focusDelta.gir} />
+              <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                <div className="sense-row">
+                  <div>{t("golfDashboard.gir")}</div>
+                  <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <div className="sense-val">{focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`}</div>
+                    <ArrowOnly delta={focusDelta.gir} />
+                  </div>
                 </div>
-              </div>
 
-              <div className="sense-row">
-                <div>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18-hole rounds)")}</div>
-                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
-                  {/* ✅ inverse couleurs (baisse = bon = vert) */}
-                  <ArrowOnlyInverseGoodDown delta={focusDelta.putt} />
+                <div className="sense-row">
+                  <div>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18-hole rounds)")}</div>
+                  <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
+                    {/* ✅ inverse couleurs (baisse = bon = vert) */}
+                    <ArrowOnlyInverseGoodDown delta={focusDelta.putt} />
+                  </div>
                 </div>
-              </div>
 
-              <div className="sense-row">
-                <div>{t("golfDashboard.fairwaysHit")}</div>
-                <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
-                  <div className="sense-val">{focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`}</div>
-                  <ArrowOnly delta={focusDelta.fw} />
+                <div className="sense-row">
+                  <div>{t("golfDashboard.fairwaysHit")}</div>
+                  <div style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <div className="sense-val">{focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`}</div>
+                    <ArrowOnly delta={focusDelta.fw} />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
           <Link href="/player/golf/rounds/new" className="cta-green">
             <PlusCircle size={18} />

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -127,6 +128,7 @@ export default function PlayerOrderOfMeritPage() {
   const [error, setError] = useState<string | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [effectiveUserId, setEffectiveUserId] = useState("");
   const [orgs, setOrgs] = useState<Org[]>([]);
@@ -179,6 +181,13 @@ export default function PlayerOrderOfMeritPage() {
       ),
       noContests: labelByLocale(locale, "Aucun résultat de concours.", "No contest result.", "Kein Wettbewerbsergebnis.", "Nessun risultato concorso."),
       noOrg: labelByLocale(locale, "Aucune organisation trouvée.", "No organization found.", "Keine Organisation gefunden.", "Nessuna organizzazione trovata."),
+      perfRequired: labelByLocale(
+        locale,
+        "Le mode performance doit être activé pour participer à l'ordre du mérite.",
+        "Performance mode must be enabled to participate in Order of Merit.",
+        "Der Performance-Modus muss aktiviert sein, um am Order of Merit teilzunehmen.",
+        "La modalità performance deve essere attivata per partecipare all'Ordine di merito."
+      ),
     }),
     [locale]
   );
@@ -407,6 +416,16 @@ export default function PlayerOrderOfMeritPage() {
       const ctx = await resolveEffectivePlayerContext();
       const playerId = ctx.effectiveUserId;
       setEffectiveUserId(playerId);
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(playerId);
+      setPerformanceEnabled(perfEnabled);
+      if (!perfEnabled) {
+        setOrgs([]);
+        setOrganizationId("");
+        setRankingRows([]);
+        setAvatarByPlayerId({});
+        setPointDetails([]);
+        return;
+      }
 
       const mRes = await supabase
         .from("club_members")
@@ -502,6 +521,11 @@ export default function PlayerOrderOfMeritPage() {
             <ListLoadingBlock label={txt.loading} />
           </div>
         ) : (
+          !performanceEnabled ? (
+            <div className="glass-section">
+              <div className="marketplace-error">{txt.perfRequired}</div>
+            </div>
+          ) : (
           <>
             <div className="glass-section">
               <div className="glass-card" style={{ display: "grid", gap: 10 }}>
@@ -698,6 +722,7 @@ export default function PlayerOrderOfMeritPage() {
               </div>
             </div>
           </>
+          )
         )}
 
         {error ? (

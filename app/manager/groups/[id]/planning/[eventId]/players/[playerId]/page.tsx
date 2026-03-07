@@ -465,7 +465,7 @@ export default function CoachEventPlayerDetailPage() {
                     <div style={{ display: "grid", gap: 8 }}>
                       <StatBar icon={<Target size={16} />} label="Engagement" value={coachFb.engagement} />
                       <StatBar icon={<Smile size={16} />} label="Attitude" value={coachFb.attitude} />
-                      <StatBar icon={<Mountain size={16} />} label="Performance" value={coachFb.performance} />
+                      <StatBar icon={<Mountain size={16} />} label="Application" value={coachFb.performance} />
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <span className="pill-soft">{coachFb.visible_to_player ? "Visible joueur" : "Invisible joueur"}</span>
                       </div>

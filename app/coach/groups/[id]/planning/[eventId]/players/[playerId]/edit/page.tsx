@@ -625,6 +625,22 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
+                <div
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.68)",
+                    padding: 10,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: "rgba(0,0,0,0.65)",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <div>Engagement: implication dans l’entrainement</div>
+                  <div>Attitude: comportement et esprit</div>
+                  <div>Application: qualité de mise en pratique des exercices</div>
+                </div>
 
                 {attendanceStatus === "absent" ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -693,7 +709,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Performance:</span>
+                      <span style={fieldLabelStyle}>Application:</span>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                         {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
                           const active = draft.performance === v;

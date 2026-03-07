@@ -42,12 +42,31 @@ export async function GET(req: Request) {
     if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
 
     const filtered = (profiles ?? []).filter((p: any) => !adminIds.has(p.id));
+    const profileIds = filtered.map((p: any) => String(p.id));
+
+    const isPerformanceByUser = new Map<string, boolean>();
+    if (profileIds.length > 0) {
+      const { data: memberships, error: membershipsErr } = await supabaseAdmin
+        .from("club_members")
+        .select("user_id,is_performance,role,is_active")
+        .in("user_id", profileIds)
+        .eq("role", "player")
+        .eq("is_active", true);
+      if (membershipsErr) return NextResponse.json({ error: membershipsErr.message }, { status: 400 });
+      for (const m of memberships ?? []) {
+        const uid = String((m as any).user_id);
+        if ((m as any).is_performance === true) isPerformanceByUser.set(uid, true);
+        else if (!isPerformanceByUser.has(uid)) isPerformanceByUser.set(uid, false);
+      }
+    }
+
     const out = filtered.map((p: any) => ({
       id: p.id,
       first_name: p.first_name ?? null,
       last_name: p.last_name ?? null,
       username: p.username ?? null,
       role: p.app_role ?? "player",
+      is_performance: isPerformanceByUser.get(String(p.id)) ?? false,
       email: null,
     }));
 

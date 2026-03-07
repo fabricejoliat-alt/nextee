@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import {
@@ -326,6 +327,7 @@ export default function GolfDashboardPage() {
   const [loadingPrevHoles, setLoadingPrevHoles] = useState(false);
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
 
   const [preset, setPreset] = useState<Preset>("month");
   const [customOpen, setCustomOpen] = useState(false);
@@ -356,6 +358,18 @@ export default function GolfDashboardPage() {
     setFromDate(isoToYMD(start));
     setToDate(isoToYMD(endInclusive));
     setPreset("month");
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+        setIsPerformanceEnabled(perfEnabled);
+      } catch {
+        setIsPerformanceEnabled(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1565,21 +1579,23 @@ function presetToSelectValue(p: Preset): Preset {
               )}
             </div>
 
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
+            {isPerformanceEnabled ? (
+              <div className="glass-card">
+                <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
 
-              {sessions.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
+                {sessions.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 14 }}>
+                    <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                    <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                    <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
-                  {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
-                </div>
-              )}
-            </div>
+                    {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1607,58 +1623,62 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
+        {isPerformanceEnabled ? (
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
 
-            {weekSeries.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div style={{ height: 280 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weekSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="weekLabel" />
-                    <YAxis domain={[0, 6]} />
-                    <Tooltip />
-                    <Legend />
+              {weekSeries.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+              ) : (
+                <div style={{ height: 280 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={weekSeries}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="weekLabel" />
+                      <YAxis domain={[0, 6]} />
+                      <Tooltip />
+                      <Legend />
 
-                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
-                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+                      <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
+                      <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
+                      <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
+        {isPerformanceEnabled ? (
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
 
-            {topCats.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {topCats.slice(0, 8).map((x) => {
-                  const w = Math.round((x.minutes / catMax) * 100);
-                  return (
-                    <div key={x.cat}>
-                      <div className="bar-row">
-                        <div>{x.label}</div>
-                        <div>{x.minutes} min</div>
+              {topCats.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {topCats.slice(0, 8).map((x) => {
+                    const w = Math.round((x.minutes / catMax) * 100);
+                    return (
+                      <div key={x.cat}>
+                        <div className="bar-row">
+                          <div>{x.label}</div>
+                          <div>{x.minutes} min</div>
+                        </div>
+                        <div className="bar">
+                          <span style={{ width: `${w}%` }} />
+                        </div>
                       </div>
-                      <div className="bar">
-                        <span style={{ width: `${w}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {/* ===== Title Rounds ===== */}
         <div className="glass-section" style={{ paddingTop: 0 }}>
@@ -1846,85 +1866,87 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
 
         {/* ===== Training → Course analysis ===== */}
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.trainingToRoundAnalysis")}</div>
+        {isPerformanceEnabled ? (
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">{t("golfDashboard.trainingToRoundAnalysis")}</div>
 
-            {loadingTrainLookback ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.analyzing")}</div>
-            ) : !corr ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, lineHeight: 1.45 }}>
-                {t("golfDashboard.notEnoughDataForCorrelation")}
-                <br />
-                {t("golfDashboard.correlationNeed").replace("{days}", String(LOOKBACK_DAYS))}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                  {t("golfDashboard.correlationIntro").replace("{days}", String(LOOKBACK_DAYS))}
+              {loadingTrainLookback ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.analyzing")}</div>
+              ) : !corr ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, lineHeight: 1.45 }}>
+                  {t("golfDashboard.notEnoughDataForCorrelation")}
+                  <br />
+                  {t("golfDashboard.correlationNeed").replace("{days}", String(LOOKBACK_DAYS))}
                 </div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
+                    {t("golfDashboard.correlationIntro").replace("{days}", String(LOOKBACK_DAYS))}
+                  </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  {[
-                    { label: t("golfDashboard.correlation.volumeScore"), r: corr.mins_vs_score, goodWhen: "neg" as const },
-                    { label: t("golfDashboard.correlation.puttingPutts"), r: corr.putting_vs_putts, goodWhen: "neg" as const },
-                    { label: t("golfDashboard.correlation.longFairways"), r: corr.long_vs_fairway, goodWhen: "pos" as const },
-                    { label: t("golfDashboard.correlation.shortGir"), r: corr.short_vs_gir, goodWhen: "pos" as const },
-                    { label: t("golfDashboard.correlation.mentalDoubles"), r: corr.mental_vs_doubles, goodWhen: "neg" as const },
-                  ].map((x) => {
-                    const st = corrStrength(x.r);
-                    const good = x.r == null ? false : x.goodWhen === "neg" ? x.r < 0 : x.r > 0;
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {[
+                      { label: t("golfDashboard.correlation.volumeScore"), r: corr.mins_vs_score, goodWhen: "neg" as const },
+                      { label: t("golfDashboard.correlation.puttingPutts"), r: corr.putting_vs_putts, goodWhen: "neg" as const },
+                      { label: t("golfDashboard.correlation.longFairways"), r: corr.long_vs_fairway, goodWhen: "pos" as const },
+                      { label: t("golfDashboard.correlation.shortGir"), r: corr.short_vs_gir, goodWhen: "pos" as const },
+                      { label: t("golfDashboard.correlation.mentalDoubles"), r: corr.mental_vs_doubles, goodWhen: "neg" as const },
+                    ].map((x) => {
+                      const st = corrStrength(x.r);
+                      const good = x.r == null ? false : x.goodWhen === "neg" ? x.r < 0 : x.r > 0;
 
-                    return (
-                      <div key={x.label} style={miniRow}>
-                        <div style={{ ...miniLeft, minWidth: 0 }}>{x.label}</div>
-                        <div
-                          style={{
-                            ...miniRight,
-                            color: x.r == null ? "rgba(0,0,0,0.55)" : good ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                          }}
-                          title={x.r == null ? "" : `r=${x.r.toFixed(2)} (n=${corr.n})`}
-                        >
-                          {x.r == null ? "—" : `${good ? "▲" : "▼"} ${t(st.labelKey)}`}
+                      return (
+                        <div key={x.label} style={miniRow}>
+                          <div style={{ ...miniLeft, minWidth: 0 }}>{x.label}</div>
+                          <div
+                            style={{
+                              ...miniRight,
+                              color: x.r == null ? "rgba(0,0,0,0.55)" : good ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
+                            }}
+                            title={x.r == null ? "" : `r=${x.r.toFixed(2)} (n=${corr.n})`}
+                          >
+                            {x.r == null ? "—" : `${good ? "▲" : "▼"} ${t(st.labelKey)}`}
+                          </div>
                         </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="hr-soft" />
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>{t("golfDashboard.adviceTitle")}</div>
+
+                    {courseAdvice.length === 0 ? (
+                      <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noAdviceYet")}</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {courseAdvice.map((t) => (
+                          <div
+                            key={t.title}
+                            style={{
+                              borderWidth: 1,
+                              borderStyle: "solid",
+                              borderColor: "rgba(0,0,0,0.08)",
+                              background: "rgba(255,255,255,0.60)",
+                              borderRadius: 14,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{t.title}</div>
+                            <div style={{ marginTop: 6, color: "rgba(0,0,0,0.60)", fontWeight: 800, lineHeight: 1.4 }}>{t.body}</div>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                    )}
+
+                  </div>
                 </div>
-
-                <div className="hr-soft" />
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>{t("golfDashboard.adviceTitle")}</div>
-
-                  {courseAdvice.length === 0 ? (
-                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noAdviceYet")}</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {courseAdvice.map((t) => (
-                        <div
-                          key={t.title}
-                          style={{
-                            borderWidth: 1,
-                            borderStyle: "solid",
-                            borderColor: "rgba(0,0,0,0.08)",
-                            background: "rgba(255,255,255,0.60)",
-                            borderRadius: 14,
-                            padding: 12,
-                          }}
-                        >
-                          <div style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{t.title}</div>
-                          <div style={{ marginTop: 6, color: "rgba(0,0,0,0.60)", fontWeight: 800, lineHeight: 1.4 }}>{t.body}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div style={{ height: 12 }} />
       </div>

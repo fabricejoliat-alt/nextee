@@ -25,9 +25,8 @@ export default function ManagerParentsPage() {
   const [players, setPlayers] = useState<MembershipProfileRow[]>([]);
   const [parents, setParents] = useState<MembershipProfileRow[]>([]);
   const [links, setLinks] = useState<LinkRow[]>([]);
-  const [playerId, setPlayerId] = useState("");
-  const [parentId, setParentId] = useState("");
   const [linksSearch, setLinksSearch] = useState("");
+  const [pendingParentByPlayer, setPendingParentByPlayer] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,15 +116,6 @@ export default function ManagerParentsPage() {
     return m;
   }, [parents]);
 
-  const playerOptions = useMemo<PickerOption[]>(
-    () =>
-      players.map((p) => ({
-        id: p.user_id,
-        label: fullName(p.profiles),
-      })),
-    [players]
-  );
-
   const parentOptions = useMemo<PickerOption[]>(
     () =>
       parents.map((p) => ({
@@ -135,18 +125,27 @@ export default function ManagerParentsPage() {
     [parents]
   );
 
-  const filteredLinks = useMemo(() => {
-    const q = linksSearch.trim().toLowerCase();
-    if (!q) return links;
-    return links.filter((l) => {
-      const player = fullName(playerMap[l.player_id]).toLowerCase();
-      const parent = fullName(parentMap[l.guardian_user_id]).toLowerCase();
-      return `${player} ${parent}`.includes(q);
-    });
-  }, [links, linksSearch, playerMap, parentMap]);
+  const linksByPlayer = useMemo(() => {
+    const map: Record<string, LinkRow[]> = {};
+    for (const link of links) {
+      if (!map[link.player_id]) map[link.player_id] = [];
+      map[link.player_id].push(link);
+    }
+    return map;
+  }, [links]);
 
-  async function addLink(e: React.FormEvent) {
-    e.preventDefault();
+  const filteredPlayers = useMemo(() => {
+    const q = linksSearch.trim().toLowerCase();
+    if (!q) return players;
+    return players.filter((p) => {
+      const playerName = fullName(p.profiles).toLowerCase();
+      if (playerName.includes(q)) return true;
+      const playerLinks = linksByPlayer[p.user_id] ?? [];
+      return playerLinks.some((l) => fullName(parentMap[l.guardian_user_id]).toLowerCase().includes(q));
+    });
+  }, [players, linksByPlayer, linksSearch, parentMap]);
+
+  async function addLinkForPlayer(playerId: string, parentId: string) {
     if (!clubId || !playerId || !parentId) return;
     setBusy(true);
     setError(null);
@@ -164,6 +163,7 @@ export default function ManagerParentsPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      setPendingParentByPlayer((prev) => ({ ...prev, [playerId]: "" }));
       await loadLinks(clubId);
     } catch (e: any) {
       setError(e?.message ?? "Erreur de sauvegarde.");
@@ -227,26 +227,6 @@ export default function ManagerParentsPage() {
                 ))}
               </select>
             </label>
-
-            <form onSubmit={addLink} style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr auto" }}>
-              <SearchablePicker
-                options={playerOptions}
-                value={playerId}
-                onChange={setPlayerId}
-                placeholder={tr("Choisir un junior", "Select junior")}
-                searchPlaceholder={tr("Rechercher un junior", "Search junior")}
-              />
-              <SearchablePicker
-                options={parentOptions}
-                value={parentId}
-                onChange={setParentId}
-                placeholder={tr("Choisir un parent", "Select parent")}
-                searchPlaceholder={tr("Rechercher un parent", "Search parent")}
-              />
-              <button className="btn" type="submit" disabled={busy || !playerId || !parentId}>
-                {tr("Rattacher", "Link")}
-              </button>
-            </form>
           </div>
         </div>
 
@@ -261,22 +241,63 @@ export default function ManagerParentsPage() {
             </div>
             {loading ? (
               <ListLoadingBlock label={tr("Chargement...", "Loading...")} />
-            ) : filteredLinks.length === 0 ? (
-              <div style={{ opacity: 0.7 }}>{tr("Aucun rattachement.", "No links.")}</div>
+            ) : filteredPlayers.length === 0 ? (
+              <div style={{ opacity: 0.7 }}>{tr("Aucun junior.", "No junior.")}</div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
-                {filteredLinks.map((l) => (
-                  <div key={`${l.player_id}-${l.guardian_user_id}`} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                      <div style={{ fontWeight: 900 }}>
-                        {fullName(playerMap[l.player_id])} <span style={{ opacity: 0.6 }}>↔</span> {fullName(parentMap[l.guardian_user_id])}
+                {filteredPlayers.map((player) => {
+                  const playerLinks = linksByPlayer[player.user_id] ?? [];
+                  const selectedParentId = pendingParentByPlayer[player.user_id] ?? "";
+                  const availableParents = parentOptions.filter((option) => !playerLinks.some((l) => l.guardian_user_id === option.id));
+                  return (
+                    <div
+                      key={player.user_id}
+                      className="marketplace-item"
+                      style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12, display: "grid", gap: 10 }}
+                    >
+                      <div style={{ fontWeight: 900 }}>{fullName(player.profiles)}</div>
+                      {playerLinks.length === 0 ? (
+                        <div style={{ opacity: 0.7 }}>{tr("Aucun parent rattaché.", "No linked parent.")}</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          {playerLinks.map((l) => (
+                            <div
+                              key={`${l.player_id}-${l.guardian_user_id}`}
+                              style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}
+                            >
+                              <div>{fullName(parentMap[l.guardian_user_id])}</div>
+                              <button className="btn btn-danger soft" type="button" disabled={busy} onClick={() => removeLink(l)}>
+                                {tr("Retirer", "Remove")}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+                        <SearchablePicker
+                          options={availableParents}
+                          value={selectedParentId}
+                          onChange={(nextId) =>
+                            setPendingParentByPlayer((prev) => ({
+                              ...prev,
+                              [player.user_id]: nextId,
+                            }))
+                          }
+                          placeholder={tr("Choisir un parent", "Select parent")}
+                          searchPlaceholder={tr("Rechercher un parent", "Search parent")}
+                        />
+                        <button
+                          className="btn"
+                          type="button"
+                          disabled={busy || !selectedParentId}
+                          onClick={() => addLinkForPlayer(player.user_id, selectedParentId)}
+                        >
+                          {tr("Rattacher", "Link")}
+                        </button>
                       </div>
-                      <button className="btn btn-danger soft" type="button" disabled={busy} onClick={() => removeLink(l)}>
-                        {tr("Retirer", "Remove")}
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
