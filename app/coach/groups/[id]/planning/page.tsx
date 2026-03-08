@@ -95,7 +95,7 @@ type SeriesInsert = {
 const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "session" | "event"; label: string }> = [
   { value: "training", label: "Entraînement" },
   { value: "interclub", label: "Interclub" },
-  { value: "camp", label: "Stage" },
+  { value: "camp", label: "Stage/Camp" },
   { value: "session", label: "Séance" },
   { value: "event", label: "Événement" },
 ];
@@ -406,7 +406,7 @@ export default function CoachGroupPlanningPage() {
   const eventTypeLabelLocalized = (v: string | null | undefined) => {
     if (v === "training") return tr("Entraînement", "Training");
     if (v === "interclub") return tr("Interclub", "Interclub");
-    if (v === "camp") return tr("Stage", "Camp");
+    if (v === "camp") return tr("Stage/Camp", "Camp");
     if (v === "session") return tr("Séance", "Session");
     return tr("Événement", "Event");
   };
@@ -1191,7 +1191,7 @@ export default function CoachGroupPlanningPage() {
                 <option value="all">{tr("Tous les types", "All types")}</option>
                 <option value="training">{tr("Entraînement", "Training")}</option>
                 <option value="interclub">{tr("Interclub", "Interclub")}</option>
-                <option value="camp">{tr("Stage", "Camp")}</option>
+                <option value="camp">{tr("Stage/Camp", "Camp")}</option>
                 <option value="session">{tr("Séance", "Session")}</option>
                 <option value="event">{tr("Événement", "Event")}</option>
               </select>

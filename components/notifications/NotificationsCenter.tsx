@@ -40,6 +40,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   const [userId, setUserId] = useState("");
   const [rows, setRows] = useState<Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>>([]);
   const [viewerRole, setViewerRole] = useState<string>("player");
+  const [threadTitlesById, setThreadTitlesById] = useState<Record<string, string>>({});
+  const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string }>>({});
+  const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
 
   function toErrorMessage(e: unknown, fallback: string) {
     if (e instanceof Error && e.message) return e.message;
@@ -90,6 +93,69 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       if (res.ok) setViewerRole(String(json?.membership?.role ?? "player"));
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const threadIds = Array.from(
+        new Set(
+          rows
+            .map((r) => {
+              const n = r.notification;
+              if (!n || n.kind !== "thread_message") return "";
+              return String((n.data ?? {}).thread_id ?? "").trim();
+            })
+            .filter(Boolean)
+        )
+      );
+      const missing = threadIds.filter((id) => !threadTitlesById[id]);
+      if (missing.length === 0) return;
+
+      const res = await supabase.from("message_threads").select("id,title").in("id", missing);
+      if (res.error) return;
+      const next = { ...threadTitlesById };
+      for (const row of res.data ?? []) {
+        next[String((row as any).id)] = String((row as any).title ?? "").trim();
+      }
+      setThreadTitlesById(next);
+
+      const metaRes = await supabase
+        .from("message_threads")
+        .select("id,thread_type,player_id,created_by")
+        .in("id", missing);
+      if (!metaRes.error) {
+        const nextMeta = { ...threadMetaById };
+        const profileIds = new Set<string>();
+        for (const row of metaRes.data ?? []) {
+          const id = String((row as any).id ?? "");
+          const thread_type = String((row as any).thread_type ?? "");
+          const player_id = String((row as any).player_id ?? "");
+          const created_by = String((row as any).created_by ?? "");
+          nextMeta[id] = { thread_type, player_id, created_by };
+          if (player_id) profileIds.add(player_id);
+          if (created_by) profileIds.add(created_by);
+        }
+        setThreadMetaById(nextMeta);
+
+        const missingProfiles = Array.from(profileIds).filter((id) => !profileNamesById[id]);
+        if (missingProfiles.length > 0) {
+          const profRes = await supabase
+            .from("profiles")
+            .select("id,first_name,last_name,username")
+            .in("id", missingProfiles);
+          if (!profRes.error) {
+            const nextProfiles = { ...profileNamesById };
+            for (const p of profRes.data ?? []) {
+              const fullName = `${String((p as any).first_name ?? "").trim()} ${String((p as any).last_name ?? "").trim()}`.trim();
+              const fallback = String((p as any).username ?? "").trim();
+              nextProfiles[String((p as any).id)] = fullName || fallback || String((p as any).id).slice(0, 8);
+            }
+            setProfileNamesById(nextProfiles);
+          }
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
 
   const unreadCount = useMemo(() => rows.filter((r) => !r.recipient.is_read).length, [rows]);
 
@@ -173,6 +239,18 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     }
   }
 
+  function resolveNotificationHref(notification: NotificationRow | null) {
+    const data = (notification?.data ?? {}) as Record<string, unknown>;
+    const explicit = String(data.url ?? "").trim();
+    if (explicit) return explicit;
+
+    if (String(notification?.kind ?? "") === "thread_message") {
+      const threadId = String(data.thread_id ?? "").trim();
+      if (threadId) return `${homeHref}/messages?thread_id=${encodeURIComponent(threadId)}`;
+    }
+    return null;
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -220,7 +298,20 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
               <div className="marketplace-list marketplace-list-top">
                 {rows.map((r) => {
                   const n = r.notification;
-                  const href = (n?.data?.url as string | undefined) || null;
+                  const href = resolveNotificationHref(n);
+                  const threadId = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_id ?? "").trim() : "";
+                  const threadTitleFromData = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_title ?? "").trim() : "";
+                  const threadMeta = threadId ? threadMetaById[threadId] : null;
+                  const counterpartName =
+                    threadMeta?.thread_type === "player"
+                      ? ((viewerRole === "player" || viewerRole === "parent")
+                          ? profileNamesById[threadMeta.created_by]
+                          : profileNamesById[threadMeta.player_id]) ?? ""
+                      : "";
+                  const threadTitle =
+                    counterpartName
+                      ? `${tr("Discussion avec", "Discussion with", "Diskussion mit", "Discussione con")} ${counterpartName}`
+                      : threadTitleFromData || (threadId ? threadTitlesById[threadId] ?? "" : "");
                   const card = (
                     <div
                       className="marketplace-item"
@@ -231,9 +322,38 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                           <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">{n?.title ?? tr("Notification", "Notification")}</div>
                           {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
-                        {n?.body ? <div style={{ fontSize: 12, fontWeight: 750, color: "rgba(0,0,0,0.75)" }}>{n.body}</div> : null}
+                        {n?.kind === "thread_message" && threadTitle ? (
+                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.7)" }} className="truncate">
+                            {threadTitle}
+                          </div>
+                        ) : null}
+                        {n?.body ? (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              fontStyle: "italic",
+                              lineHeight: 1.35,
+                              color: "rgba(0,0,0,0.68)",
+                            }}
+                          >
+                            {n.body}
+                          </div>
+                        ) : null}
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
                         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="btn"
+                              onClick={() => {
+                                applyChildContextFromNotification(n, href);
+                                if (!r.recipient.is_read) void onRead(r.recipient.id);
+                              }}
+                            >
+                              {tr("Ouvrir", "Open", "Öffnen", "Apri")}
+                            </Link>
+                          ) : null}
                           {!r.recipient.is_read ? (
                             <button
                               className="btn"
@@ -251,6 +371,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                           <button
                             className="btn btn-danger soft"
                             type="button"
+                            title={tr("Effacer", "Delete", "Löschen", "Elimina")}
+                            aria-label={tr("Effacer", "Delete", "Löschen", "Elimina")}
                             disabled={busy}
                             onClick={(e) => {
                               e.preventDefault();
@@ -258,33 +380,13 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                               void onDelete(r.recipient.id);
                             }}
                           >
-                            <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                            {tr("Effacer", "Delete", "Löschen", "Elimina")}
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
                     </div>
                   );
-
-                  return (
-                    <div key={r.recipient.id}>
-                      {card}
-                      {href ? (
-                        <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-                          <Link
-                            href={href}
-                            className="btn"
-                            onClick={() => {
-                              applyChildContextFromNotification(n, href);
-                              if (!r.recipient.is_read) void onRead(r.recipient.id);
-                            }}
-                          >
-                            {tr("Ouvrir", "Open", "Öffnen", "Apri")}
-                          </Link>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
+                  return <div key={r.recipient.id}>{card}</div>;
                 })}
               </div>
             )}

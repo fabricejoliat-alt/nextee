@@ -92,7 +92,7 @@ type SeriesInsert = {
 const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "session" | "event"; label: string }> = [
   { value: "training", label: "Entraînement" },
   { value: "interclub", label: "Interclub" },
-  { value: "camp", label: "Stage" },
+  { value: "camp", label: "Stage/Camp" },
   { value: "session", label: "Séance" },
   { value: "event", label: "Événement" },
 ];
@@ -360,7 +360,7 @@ export default function CoachGroupPlanningPage() {
   const eventTypeLabelLocalized = (v: string | null | undefined) => {
     if (v === "training") return tr("Entraînement", "Training");
     if (v === "interclub") return tr("Interclub", "Interclub");
-    if (v === "camp") return tr("Stage", "Camp");
+    if (v === "camp") return tr("Stage/Camp", "Camp");
     if (v === "session") return tr("Séance", "Session");
     return tr("Événement", "Event");
   };
@@ -757,8 +757,8 @@ export default function CoachGroupPlanningPage() {
     setError(null);
 
     try {
-      if ((eventType === "session" || eventType === "event") && !eventTitle.trim()) {
-        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
+        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
       }
 
       const startDt = new Date(startsAtLocal);
@@ -866,8 +866,8 @@ export default function CoachGroupPlanningPage() {
     setError(null);
 
     try {
-      if ((eventType === "session" || eventType === "event") && !eventTitle.trim()) {
-        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
+        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
       }
       if (!startDate || !endDate) throw new Error(tr("Dates de récurrence manquantes.", "Missing recurrence dates."));
       if (endDate < startDate) throw new Error(tr("La date de fin doit être après la date de début.", "End date must be after start date."));
@@ -1131,16 +1131,16 @@ export default function CoachGroupPlanningPage() {
                     </select>
                   </label>
 
-                  {(eventType === "session" || eventType === "event") ? (
+                  {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>
-                        {eventType === "session" ? tr("Nom de la séance", "Session name") : tr("Nom de l’événement", "Event name")}
+                        {eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
                       </span>
                       <input
                         value={eventTitle}
                         onChange={(e) => setEventTitle(e.target.value)}
                         disabled={busy}
-                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : eventType === "camp" ? tr("Ex: Stage de Pâques", "E.g. Easter camp") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
                       />
                     </label>
                   ) : null}
@@ -1209,16 +1209,16 @@ export default function CoachGroupPlanningPage() {
                     </select>
                   </label>
 
-                  {(eventType === "session" || eventType === "event") ? (
+                  {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>
-                        {eventType === "session" ? tr("Nom de la séance", "Session name") : tr("Nom de l’événement", "Event name")}
+                        {eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
                       </span>
                       <input
                         value={eventTitle}
                         onChange={(e) => setEventTitle(e.target.value)}
                         disabled={busy}
-                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : eventType === "camp" ? tr("Ex: Stage de Pâques", "E.g. Easter camp") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
                       />
                     </label>
                   ) : null}

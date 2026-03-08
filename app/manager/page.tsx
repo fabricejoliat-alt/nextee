@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Building2, CalendarDays, Layers3, Link2Off, UserCheck, UserCog, UserX, Users } from "lucide-react";
+import { Building2, CalendarDays, Layers3, Link2Off, MessageCircle, UserCheck, UserCog, UserX, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 
 type GroupRow = { id: string; name: string | null; club_id: string; is_active: boolean | null };
 type EventLite = {
@@ -99,6 +100,7 @@ export default function ManagerHomePage() {
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [upcomingEvents, setUpcomingEvents] = useState<EventLite[]>([]);
   const [me, setMe] = useState<ProfileLite | null>(null);
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [stats, setStats] = useState<DashboardStats>({
     clubsCount: 0,
     usersCount: 0,
@@ -483,12 +485,63 @@ export default function ManagerHomePage() {
     })();
   }, [locale, assiduityWindow]);
 
+  useEffect(() => {
+    const ids = Array.from(new Set(upcomingEvents.map((e) => String(e.id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [upcomingEvents]);
+
   function eventTypeLabel(v: EventLite["event_type"]) {
     if (v === "training") return tr("Entraînement", "Training");
     if (v === "interclub") return "Interclub";
-    if (v === "camp") return tr("Stage", "Camp");
+    if (v === "camp") return tr("Stage/Camp", "Camp");
     if (v === "session") return tr("Séance", "Session");
     return tr("Événement", "Event");
+  }
+
+  function renderMessagePill(eventId: string) {
+    const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+    const hasMessages = (badge.message_count ?? 0) > 0;
+    const hasUnread = (badge.unread_count ?? 0) > 0;
+    return (
+      <Link
+        href={`/manager/messages?event_id=${encodeURIComponent(eventId)}`}
+        className="pill-soft"
+        title={tr("Messagerie", "Messages")}
+        aria-label={tr("Ouvrir la messagerie de l'événement", "Open event messages")}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
+      >
+        <MessageCircle size={14} />
+        {tr("Messagerie", "Messages")}
+        <span
+          style={{
+            minWidth: 18,
+            height: 18,
+            padding: "0 6px",
+            borderRadius: 999,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 11,
+            fontWeight: 900,
+            color: "white",
+            background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+          }}
+        >
+          {badge.message_count ?? 0}
+        </span>
+      </Link>
+    );
   }
 
   function displayHello() {
@@ -763,18 +816,21 @@ export default function ManagerHomePage() {
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {upcomingEvents.slice(0, 10).map((e) => (
-                  <Link key={e.id} href={`/manager/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
-                    <div className="marketplace-item">
-                      <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">
-                        {eventTypeLabel(e.event_type)} — {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                  <div key={e.id} className="marketplace-item">
+                    <Link href={`/manager/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link" style={{ textDecoration: "none" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                        <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">
+                          {eventTypeLabel(e.event_type)} — {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                        </div>
+                        {renderMessagePill(e.id)}
                       </div>
                       <div style={{ opacity: 0.8, fontWeight: 750, fontSize: 12, marginTop: 4 }}>
                         <CalendarDays size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                         {fmtDateTime(e.starts_at, dateLocale)}
                       </div>
                       {e.location_text ? <div style={{ opacity: 0.72, fontWeight: 750, fontSize: 12, marginTop: 4 }}>📍 {e.location_text}</div> : null}
-                    </div>
-                  </Link>
+                    </Link>
+                  </div>
                 ))}
               </div>
             )}

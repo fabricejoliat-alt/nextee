@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, MessageCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 
 type EventLite = {
   id: string;
@@ -64,6 +65,51 @@ function isSameDay(aIso: string, bIso: string | null) {
   );
 }
 
+function MessageBadgePills({
+  messageCount,
+  unreadCount,
+}: {
+  messageCount: number;
+  unreadCount: number;
+}) {
+  return (
+    <>
+      <span
+        style={{
+          marginLeft: 6,
+          minWidth: 18,
+          height: 18,
+          padding: "0 6px",
+          borderRadius: 999,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          fontWeight: 900,
+          color: "white",
+          background: "rgba(107,114,128,0.95)",
+        }}
+      >
+        {messageCount}
+      </span>
+      {unreadCount > 0 ? (
+        <span
+          aria-label="messages non lus"
+          style={{
+            marginLeft: 5,
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            display: "inline-block",
+            background: "rgba(220,38,38,0.95)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.9)",
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 export default function CoachHomePage() {
   const { t, locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
@@ -74,6 +120,7 @@ export default function CoachHomePage() {
   const [upcomingEvents, setUpcomingEvents] = useState<EventLite[]>([]);
   const [me, setMe] = useState<ProfileLite | null>(null);
   const [organizationNames, setOrganizationNames] = useState<string[]>([]);
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
 
   useEffect(() => {
     (async () => {
@@ -140,10 +187,26 @@ export default function CoachHomePage() {
     })();
   }, [locale]);
 
+  useEffect(() => {
+    const ids = Array.from(new Set([...pendingEvalEvents, ...upcomingEvents].map((e) => String(e.id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingEvalEvents, upcomingEvents]);
+
   function eventTypeLabel(v: EventLite["event_type"]) {
     if (v === "training") return tr("Entraînement", "Training");
     if (v === "interclub") return "Interclub";
-    if (v === "camp") return tr("Stage", "Camp");
+    if (v === "camp") return tr("Stage/Camp", "Camp");
     if (v === "session") return tr("Séance", "Session");
     return tr("Événement", "Event");
   }
@@ -165,6 +228,26 @@ export default function CoachHomePage() {
     if (names.length === 0) return "—";
     return names.join(" • ");
   }, [organizationNames]);
+
+  function renderMessagePill(eventId: string) {
+    const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+    return (
+      <Link
+        href={`/coach/messages?event_id=${encodeURIComponent(eventId)}`}
+        className="pill-soft"
+        title={tr("Messagerie", "Messages")}
+        aria-label={tr("Ouvrir la messagerie de l'événement", "Open event messages")}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
+      >
+        <MessageCircle size={14} />
+        {tr("Messagerie", "Messages")}
+        <MessageBadgePills
+          messageCount={badge.message_count ?? 0}
+          unreadCount={badge.unread_count ?? 0}
+        />
+      </Link>
+    );
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -218,8 +301,8 @@ export default function CoachHomePage() {
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pendingEvalEvents.slice(0, 12).map((e) => (
-                  <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
-                    <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                  <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                    <Link href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link" style={{ textDecoration: "none" }}>
                       <div style={{ display: "grid", gap: 10 }}>
                         <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
                           {isSameDay(e.starts_at, e.ends_at) ? (
@@ -232,8 +315,11 @@ export default function CoachHomePage() {
                           )}
                         </div>
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                          </div>
+                          {renderMessagePill(e.id)}
                         </div>
                         {e.location_text ? (
                           <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
@@ -258,8 +344,8 @@ export default function CoachHomePage() {
                           </span>
                         </div>
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                  </div>
                 ))}
               </div>
             )}
@@ -278,8 +364,8 @@ export default function CoachHomePage() {
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {upcomingEvents.slice(0, 5).map((e) => (
-                  <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
-                    <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                  <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                    <Link href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link" style={{ textDecoration: "none" }}>
                       <div style={{ display: "grid", gap: 10 }}>
                         <div
                           style={{
@@ -309,8 +395,11 @@ export default function CoachHomePage() {
                           )}
                         </div>
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                          </div>
+                          {renderMessagePill(e.id)}
                         </div>
                         {e.location_text ? (
                           <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
@@ -318,8 +407,8 @@ export default function CoachHomePage() {
                           </div>
                         ) : null}
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                  </div>
                 ))}
               </div>
             )}

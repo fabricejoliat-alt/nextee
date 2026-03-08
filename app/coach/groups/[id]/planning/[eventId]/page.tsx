@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { Users, ArrowRight, Pencil, PlusCircle, Trash2 } from "lucide-react";
+import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -25,14 +25,14 @@ type EventRow = {
 function eventTypeLabel(v: string | null | undefined) {
   if (v === "training") return "Entraînement";
   if (v === "interclub") return "Interclub";
-  if (v === "camp") return "Stage";
+  if (v === "camp") return "Stage/Camp";
   if (v === "session") return "Séance";
   return "Événement";
 }
 function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
   if (v === "training") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Entraînement", "Training");
   if (v === "interclub") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Interclub", "Interclub");
-  if (v === "camp") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Stage", "Camp");
+  if (v === "camp") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Stage/Camp", "Camp");
   if (v === "session") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Séance", "Session");
   return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Événement", "Event");
 }
@@ -388,6 +388,10 @@ export default function CoachEventDetailPage() {
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning`}>
                 {tr("Planification", "Planning")}
+              </Link>
+              <Link className="cta-green cta-green-inline" href={`/coach/messages?event_id=${encodeURIComponent(eventId)}`}>
+                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                {tr("Fil discussion", "Thread")}
               </Link>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
                 {t("common.edit")}

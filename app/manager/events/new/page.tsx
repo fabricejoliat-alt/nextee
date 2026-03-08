@@ -32,7 +32,7 @@ type CreateDataResponse = {
 const EVENT_TYPES: Array<{ value: EventType; fr: string; en: string }> = [
   { value: "training", fr: "Entraînement", en: "Training" },
   { value: "interclub", fr: "Interclub", en: "Interclub" },
-  { value: "camp", fr: "Stage", en: "Camp" },
+  { value: "camp", fr: "Stage/Camp", en: "Camp" },
   { value: "session", fr: "Séance", en: "Session" },
   { value: "event", fr: "Événement", en: "Event" },
 ];
@@ -227,8 +227,8 @@ export default function ManagerEventCreatePage() {
       setError(tr("Sélectionne au moins un groupe.", "Select at least one group."));
       return;
     }
-    if ((eventType === "session" || eventType === "event") && !title.trim()) {
-      setError(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+    if ((eventType === "session" || eventType === "event" || eventType === "camp") && !title.trim()) {
+      setError(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
       return;
     }
     if (mode === "series" && endDate < startDate) {
@@ -348,10 +348,10 @@ export default function ManagerEventCreatePage() {
                 </select>
               </label>
 
-              {(eventType === "session" || eventType === "event") ? (
+              {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 900 }}>
-                    {eventType === "session" ? tr("Nom de la séance", "Session name") : tr("Nom de l’événement", "Event name")}
+                    {eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
                   </span>
                   <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving || loading} />
                 </label>

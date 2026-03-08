@@ -11,9 +11,10 @@ import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter, Trash2 } from "lucide-react";
+import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter, MessageCircle, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 
 type SessionRow = {
   id: string;
@@ -242,6 +243,52 @@ function clamp(n: number, a: number, b: number) {
 
 const MAX_SCORE = 6;
 
+function MessageBadgePills({
+  messageCount,
+  unreadCount,
+}: {
+  messageCount: number;
+  unreadCount: number;
+}) {
+  return (
+    <>
+      <span
+        style={{
+          marginLeft: 6,
+          minWidth: 18,
+          height: 18,
+          padding: "0 6px",
+          borderRadius: 999,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          fontWeight: 900,
+          color: "white",
+          background: "rgba(107,114,128,0.95)",
+        }}
+      >
+        {messageCount}
+      </span>
+      {unreadCount > 0 ? (
+        <span
+          aria-label="messages non lus"
+          title={`${unreadCount} non lus`}
+          style={{
+            marginLeft: 5,
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            display: "inline-block",
+            background: "rgba(220,38,38,0.95)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.9)",
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function RatingBar({
   icon,
   label,
@@ -282,6 +329,7 @@ export default function TrainingsListPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [attendeeEvents, setAttendeeEvents] = useState<PlannedEventRow[]>([]);
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [competitionEvents, setCompetitionEvents] = useState<PlayerActivityEventRow[]>([]);
 
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
@@ -333,6 +381,23 @@ export default function TrainingsListPage() {
   const scheduledEvents = useMemo(() => {
     return attendeeEvents.filter((ev) => ev.status === "scheduled");
   }, [attendeeEvents]);
+
+  useEffect(() => {
+    const ids = Array.from(new Set(scheduledEvents.map((e) => String(e.id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [scheduledEvents]);
+
   const pastSessions = useMemo(() => {
     const sorted = sessions
       .filter((s) => new Date(s.start_at).getTime() < nowTs)
@@ -1434,6 +1499,7 @@ export default function TrainingsListPage() {
                     if (e.event_type !== "training") {
                       eventTitle = customName ? `${eventType} • ${customName}` : eventType;
                     }
+                    const messageBadge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
 
                     return (
                       <div
@@ -1546,7 +1612,15 @@ export default function TrainingsListPage() {
                                 className="btn"
                                 href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}
                               >
-                                {t("common.view")}
+                                {pickLocaleText(locale, "Détails", "Details")}
+                              </Link>
+                              <Link className="btn" href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}>
+                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {pickLocaleText(locale, "Messagerie", "Messages")}
+                                <MessageBadgePills
+                                  messageCount={messageBadge.message_count ?? 0}
+                                  unreadCount={messageBadge.unread_count ?? 0}
+                                />
                               </Link>
                               {performanceEnabled && !isUpcomingEvent ? (
                                 <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
@@ -1795,8 +1869,23 @@ export default function TrainingsListPage() {
 
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <Link className="btn" href={`/player/golf/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
-                              {t("common.view")}
+                              {pickLocaleText(locale, "Détails", "Details")}
                             </Link>
+                            {linkedEvent ? (
+                              <Link className="btn" href={`/player/messages?event_id=${encodeURIComponent(linkedEvent.id)}`} onClick={(e) => e.stopPropagation()}>
+                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {pickLocaleText(locale, "Messagerie", "Messages")}
+                                {(() => {
+                                  const badge = messageBadgesByEventId[String(linkedEvent.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+                                  return (
+                                    <MessageBadgePills
+                                      messageCount={badge.message_count ?? 0}
+                                      unreadCount={badge.unread_count ?? 0}
+                                    />
+                                  );
+                                })()}
+                              </Link>
+                            ) : null}
 
                             {performanceEnabled && isPastSession && !completeSessionIds.has(s.id) ? (
                               <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>

@@ -18,6 +18,7 @@ import {
   LogOut,
   X,
   Trophy,
+  MessageCircle,
 } from "lucide-react";
 
 /**
@@ -28,6 +29,7 @@ const ROUTES = {
   golfDashboard: "/player/golf",
   
   trainingsList: "/player/golf/trainings?type=all",
+  messages: "/player/messages",
   trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
@@ -371,6 +373,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         label: locale === "fr" ? "Mon activité" : "My activity",
         icon: ClipboardList,
         href: ROUTES.trainingsList,
+      },
+      {
+        label: locale === "fr" ? "Messages" : "Messages",
+        icon: MessageCircle,
+        href: ROUTES.messages,
       },
       {
         label: t("player.myGolf"),

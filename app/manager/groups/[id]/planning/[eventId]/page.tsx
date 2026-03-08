@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Users, ArrowRight, Pencil, PlusCircle, Trash2 } from "lucide-react";
+import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -341,6 +341,10 @@ export default function CoachEventDetailPage() {
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning`}>
                 {tr("Planification", "Planning")}
+              </Link>
+              <Link className="cta-green cta-green-inline" href={`/manager/messages?event_id=${encodeURIComponent(eventId)}`}>
+                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                {tr("Fil discussion", "Thread")}
               </Link>
               <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning/${eventId}/edit`}>
                 {t("common.edit")}

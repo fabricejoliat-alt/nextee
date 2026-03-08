@@ -8,9 +8,10 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
+import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { PlusCircle } from "lucide-react";
+import { MessageCircle, PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
@@ -465,6 +466,7 @@ export default function PlayerHomePage() {
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [upcomingIndex, setUpcomingIndex] = useState(0);
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
@@ -1221,6 +1223,29 @@ export default function PlayerHomePage() {
     void updateTrainingAttendance(event, next);
   }
 
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        upcomingActivities
+          .filter((x) => x.kind === "event")
+          .map((x) => String((x as any).event?.id ?? ""))
+          .filter(Boolean)
+      )
+    );
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [upcomingActivities]);
+
   const avatarUrl = useMemo(() => {
     const base = profile?.avatar_url?.trim() || "";
     if (!base) return null;
@@ -1371,8 +1396,44 @@ export default function PlayerHomePage() {
                       <div className="hr-soft" style={{ margin: "1px 0" }} />
 
                       <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {eventTitle}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {eventTitle}
+                          </div>
+                          {(() => {
+                            const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+                            const hasMessages = (badge.message_count ?? 0) > 0;
+                            const hasUnread = (badge.unread_count ?? 0) > 0;
+                            return (
+                              <Link
+                                href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}
+                                className="pill-soft"
+                                title={pickLocaleText(locale, "Messagerie", "Messages")}
+                                aria-label={pickLocaleText(locale, "Ouvrir la messagerie de l'événement", "Open event messages")}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
+                              >
+                                <MessageCircle size={14} />
+                                {pickLocaleText(locale, "Messagerie", "Messages")}
+                                <span
+                                  style={{
+                                    minWidth: 18,
+                                    height: 18,
+                                    padding: "0 6px",
+                                    borderRadius: 999,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    color: "white",
+                                    background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+                                  }}
+                                >
+                                  {badge.message_count ?? 0}
+                                </span>
+                              </Link>
+                            );
+                          })()}
                         </div>
                         {isAttendanceEvent && !isCollapsedTraining ? (
                           <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">

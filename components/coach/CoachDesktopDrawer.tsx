@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { Home, Users, CalendarDays, User, LogOut, X } from "lucide-react";
+import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle } from "lucide-react";
 
 const ROUTES = {
   home: "/coach",
   groups: "/coach/groups",
   calendar: "/coach/calendar",
   players: "/coach/players",
+  messages: "/coach/messages",
   profileEdit: "/coach/profile",
 } as const;
 
@@ -28,7 +29,7 @@ function isActive(pathname: string, href: string) {
 export default function CoachDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
 
@@ -78,8 +79,9 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
       { label: t("coach.myGroups"), icon: Users, href: ROUTES.groups },
       { label: t("nav.calendar"), icon: CalendarDays, href: ROUTES.calendar },
       { label: t("coach.players"), icon: User, href: ROUTES.players },
+      { label: locale === "fr" ? "Messages" : "Messages", icon: MessageCircle, href: ROUTES.messages },
     ],
-    [t]
+    [t, locale]
   );
 
   async function handleLogout() {

@@ -13,6 +13,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 };
 
 export const NOTIFICATION_KIND_OPTIONS: Array<{ kind: string; labelFr: string; labelEn: string }> = [
+  { kind: "thread_message", labelFr: "Nouveaux messages", labelEn: "New messages" },
   { kind: "coach_event_created", labelFr: "Nouveaux entraînements/événements", labelEn: "New trainings/events" },
   { kind: "coach_event_updated", labelFr: "Modifications d’événements", labelEn: "Event updates" },
   { kind: "coach_event_deleted", labelFr: "Annulations d’événements", labelEn: "Event cancellations" },

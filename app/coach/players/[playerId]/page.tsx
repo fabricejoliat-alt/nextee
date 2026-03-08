@@ -18,7 +18,8 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X } from "lucide-react";
+import { Flame, MessageCircle, Mountain, Smile, CalendarRange, SlidersHorizontal, X } from "lucide-react";
+import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -422,6 +423,7 @@ export default function GolfDashboardPage() {
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
   const [coachEvalPage, setCoachEvalPage] = useState(0);
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
 
   useEffect(() => {
@@ -1642,6 +1644,22 @@ function presetToSelectValue(p: Preset): Preset {
   }, [coachEvalNotes, coachEvalPage]);
   const coachEvalHasMore = (coachEvalPage + 1) * coachEvalPageSize < coachEvalNotes.length;
 
+  useEffect(() => {
+    const ids = Array.from(new Set(coachEvalNotes.map((x) => String(x.event_id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [coachEvalNotes]);
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -1848,8 +1866,40 @@ function presetToSelectValue(p: Preset): Preset {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.68)" }}>
                             {shortDate(row.starts_at, dateLocale)}
-                            {` • ${row.event_type === "camp" ? "Stage" : "Entraînement"}`}
+                            {` • ${row.event_type === "camp" ? "Stage/Camp" : "Entraînement"}`}
                           </div>
+                          {(() => {
+                            const badge = messageBadgesByEventId[String(row.event_id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+                            const hasMessages = (badge.message_count ?? 0) > 0;
+                            const hasUnread = (badge.unread_count ?? 0) > 0;
+                            return (
+                              <Link
+                                href={`/coach/messages?event_id=${encodeURIComponent(row.event_id)}`}
+                                className="pill-soft"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                              >
+                                <MessageCircle size={14} />
+                                Messagerie
+                                <span
+                                  style={{
+                                    minWidth: 18,
+                                    height: 18,
+                                    padding: "0 6px",
+                                    borderRadius: 999,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 11,
+                                    fontWeight: 900,
+                                    color: "white",
+                                    background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+                                  }}
+                                >
+                                  {badge.message_count ?? 0}
+                                </span>
+                              </Link>
+                            );
+                          })()}
                           <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
                             Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
                           </div>

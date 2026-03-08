@@ -19,6 +19,7 @@ type EventRow = {
   group_id: string;
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title: string | null;
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number;
@@ -48,7 +49,7 @@ type SeriesRow = {
 const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "session" | "event"; label: string }> = [
   { value: "training", label: "Entraînement" },
   { value: "interclub", label: "Interclub" },
-  { value: "camp", label: "Stage" },
+  { value: "camp", label: "Stage/Camp" },
   { value: "session", label: "Séance" },
   { value: "event", label: "Événement" },
 ];
@@ -259,7 +260,7 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
 function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
   if (v === "training") return pickLocaleText(locale, "Entraînement", "Training");
   if (v === "interclub") return pickLocaleText(locale, "Interclub", "Interclub");
-  if (v === "camp") return pickLocaleText(locale, "Stage", "Camp");
+  if (v === "camp") return pickLocaleText(locale, "Stage/Camp", "Camp");
   if (v === "session") return pickLocaleText(locale, "Séance", "Session");
   return pickLocaleText(locale, "Événement", "Event");
 }
@@ -289,6 +290,7 @@ export default function CoachEventEditPage() {
   const [startsAtLocal, setStartsAtLocal] = useState("");
   const [endsAtLocal, setEndsAtLocal] = useState("");
   const [eventType, setEventType] = useState<"training" | "interclub" | "camp" | "session" | "event">("training");
+  const [eventTitle, setEventTitle] = useState<string>("");
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
   const [locationText, setLocationText] = useState<string>("");
   const [coachNote, setCoachNote] = useState<string>("");
@@ -514,7 +516,7 @@ export default function CoachEventEditPage() {
       // event
       const eRes = await supabase
         .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
         .eq("id", eventId)
         .maybeSingle();
 
@@ -526,6 +528,7 @@ export default function CoachEventEditPage() {
       setStartsAtLocal(isoToLocalInput(ev.starts_at));
       setEndsAtLocal(isoToLocalInput(ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + ev.duration_minutes * 60000).toISOString()));
       setEventType(ev.event_type ?? "training");
+      setEventTitle(ev.title ?? "");
       setDurationMinutes(ev.duration_minutes);
       setLocationText(ev.location_text ?? "");
       setCoachNote(ev.coach_note ?? "");
@@ -597,6 +600,7 @@ export default function CoachEventEditPage() {
           setEndDate(s.end_date ?? toYMD(addDays(new Date(), 60)));
           setSeriesActive(!!s.is_active);
           setEventType(s.event_type ?? ev.event_type ?? "training");
+          setEventTitle(s.title ?? ev.title ?? "");
           setCoachNote(s.coach_note ?? ev.coach_note ?? "");
         } else {
           setEditScope("occurrence");
@@ -782,6 +786,15 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
+      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
+        throw new Error(
+          eventType === "session"
+            ? "Nom de la séance requis."
+            : eventType === "camp"
+            ? "Nom du stage/camp requis."
+            : "Nom de l’événement requis."
+        );
+      }
       const attendeeStatusRes = await supabase
         .from("club_event_attendees")
         .select("player_id,status")
@@ -823,6 +836,7 @@ export default function CoachEventEditPage() {
         .from("club_events")
         .update({
           event_type: eventType,
+          title: eventTitle.trim() || null,
           starts_at: nextStartIso,
           ends_at: nextEndIso,
           duration_minutes: durationForDb,
@@ -920,6 +934,15 @@ export default function CoachEventEditPage() {
     setError(null);
 
     try {
+      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
+        throw new Error(
+          eventType === "session"
+            ? "Nom de la séance requis."
+            : eventType === "camp"
+            ? "Nom du stage/camp requis."
+            : "Nom de l’événement requis."
+        );
+      }
       if (!startDate || !endDate) throw new Error("Missing recurrence dates.");
       if (endDate < startDate) throw new Error("End date must be after start date.");
 
@@ -928,6 +951,7 @@ export default function CoachEventEditPage() {
         .from("club_event_series")
         .update({
           event_type: eventType,
+          title: eventTitle.trim() || null,
           weekday,
           time_of_day: timeOfDay.length === 5 ? `${timeOfDay}:00` : timeOfDay,
           interval_weeks: intervalWeeks,
@@ -1246,6 +1270,20 @@ export default function CoachEventEditPage() {
                         </select>
                       </label>
 
+                      {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>
+                            {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                          </span>
+                          <input
+                            value={eventTitle}
+                            onChange={(e) => setEventTitle(e.target.value)}
+                            disabled={busy}
+                            placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                          />
+                        </label>
+                      ) : null}
+
                       <div className="grid-2">
                         <label style={{ display: "grid", gap: 6 }}>
                           <span style={fieldLabelStyle}>Date de début</span>
@@ -1332,6 +1370,20 @@ export default function CoachEventEditPage() {
                               ))}
                             </select>
                           </label>
+
+                          {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={fieldLabelStyle}>
+                                {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                              </span>
+                              <input
+                                value={eventTitle}
+                                onChange={(e) => setEventTitle(e.target.value)}
+                                disabled={busy}
+                                placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                              />
+                            </label>
+                          ) : null}
 
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
