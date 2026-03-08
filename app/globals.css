@@ -787,6 +787,49 @@ input[type="radio"]{
   border-color: rgba(185,28,28,0.35);
 }
 
+/* Player drawer compact variant */
+.drawer-panel--player-compact .drawer-top{
+  height: 54px;
+  padding: 0 12px;
+}
+
+.drawer-panel--player-compact .drawer-brand{
+  font-size: 18px;
+}
+
+.drawer-panel--player-compact .drawer-nav{
+  padding: 10px;
+  gap: 8px;
+}
+
+.drawer-panel--player-compact .drawer-item{
+  padding: 9px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.drawer-panel--player-compact .drawer-item-left{
+  gap: 8px;
+}
+
+.drawer-panel--player-compact .drawer-sub{
+  margin-top: 6px;
+  gap: 6px;
+  padding-left: 8px;
+  margin-left: 8px;
+}
+
+.drawer-panel--player-compact .drawer-subitem{
+  padding: 8px 10px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+
+.drawer-panel--player-compact .drawer-account{
+  padding: 12px;
+  gap: 8px;
+}
+
 /* =========================================================
    8) TOGGLE (switch)
    ========================================================= */

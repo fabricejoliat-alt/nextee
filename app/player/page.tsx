@@ -1400,40 +1400,6 @@ export default function PlayerHomePage() {
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                             {eventTitle}
                           </div>
-                          {(() => {
-                            const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-                            const hasMessages = (badge.message_count ?? 0) > 0;
-                            const hasUnread = (badge.unread_count ?? 0) > 0;
-                            return (
-                              <Link
-                                href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}
-                                className="pill-soft"
-                                title={pickLocaleText(locale, "Messagerie", "Messages")}
-                                aria-label={pickLocaleText(locale, "Ouvrir la messagerie de l'événement", "Open event messages")}
-                                style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
-                              >
-                                <MessageCircle size={14} />
-                                {pickLocaleText(locale, "Messagerie", "Messages")}
-                                <span
-                                  style={{
-                                    minWidth: 18,
-                                    height: 18,
-                                    padding: "0 6px",
-                                    borderRadius: 999,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: 11,
-                                    fontWeight: 900,
-                                    color: "white",
-                                    background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
-                                  }}
-                                >
-                                  {badge.message_count ?? 0}
-                                </span>
-                              </Link>
-                            );
-                          })()}
                         </div>
                         {isAttendanceEvent && !isCollapsedTraining ? (
                           <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
@@ -1451,17 +1417,63 @@ export default function PlayerHomePage() {
                           ) : null}
                           {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
                           {showEventStructure ? (
-                            <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                              {eventStructure.map((p, i) => {
-                                const extra = (p.note ?? "").trim();
+                            <div style={{ display: "grid", gap: 8 }}>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                                {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
+                              </div>
+                              <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                                {eventStructure.map((p, i) => {
+                                  const extra = (p.note ?? "").trim();
+                                  return (
+                                    <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                      {activityCategoryLabel(p.category)} — {p.minutes} min
+                                      {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {e.event_type === "training" ? (
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                              <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                                {pickLocaleText(locale, "Détails", "Details")}
+                              </Link>
+                              {(() => {
+                                const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+                                const hasMessages = (badge.message_count ?? 0) > 0;
+                                const hasUnread = (badge.unread_count ?? 0) > 0;
                                 return (
-                                  <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                    {activityCategoryLabel(p.category)} — {p.minutes} min
-                                    {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                  </li>
+                                  <Link
+                                    className="btn"
+                                    href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}
+                                    title={pickLocaleText(locale, "Messagerie", "Messages")}
+                                    aria-label={pickLocaleText(locale, "Ouvrir la messagerie de l'événement", "Open event messages")}
+                                  >
+                                    <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                    {pickLocaleText(locale, "Messagerie", "Messages")}
+                                    <span
+                                      style={{
+                                        minWidth: 18,
+                                        height: 18,
+                                        marginLeft: 6,
+                                        padding: "0 6px",
+                                        borderRadius: 999,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: 11,
+                                        fontWeight: 900,
+                                        color: "white",
+                                        background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+                                      }}
+                                    >
+                                      {badge.message_count ?? 0}
+                                    </span>
+                                  </Link>
                                 );
-                              })}
-                            </ul>
+                              })()}
+                            </div>
                           ) : null}
                         </>
                       ) : null}

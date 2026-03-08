@@ -7,6 +7,13 @@ function mustEnv(name: string) {
   return v;
 }
 
+function normalizeAuthEmailInput(raw: string) {
+  const email = (raw ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return email;
+}
+
 async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
@@ -76,6 +83,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         city: string | null;
         avs_no: string | null;
         avatar_url: string | null;
+        staff_function: string | null;
       }
     >();
     if (userIds.length > 0) {
@@ -97,6 +105,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
             "city",
             "avs_no",
             "avatar_url",
+            "staff_function",
           ].join(",")
         )
         .in("id", userIds);
@@ -119,6 +128,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
             city: (p.city ?? null) as string | null,
             avs_no: (p.avs_no ?? null) as string | null,
             avatar_url: (p.avatar_url ?? null) as string | null,
+            staff_function: (p.staff_function ?? null) as string | null,
           },
         ])
       );
@@ -166,7 +176,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const memberId = String(body.memberId ?? "");
     const role = String(body.role ?? "").trim();
     const isActive = body.is_active;
-    const authEmail = typeof body.auth_email === "string" ? body.auth_email.trim().toLowerCase() : "";
+    const authEmailRaw = typeof body.auth_email === "string" ? body.auth_email : "";
+    const authEmail = normalizeAuthEmailInput(authEmailRaw);
     const authPassword = typeof body.auth_password === "string" ? body.auth_password : "";
     const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : null;
     const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
@@ -197,7 +208,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (has("auth_email") || has("auth_password")) {
       const authPatch: Record<string, any> = {};
       if (has("auth_email")) {
-        if (authEmail && !authEmail.includes("@")) {
+        if (authEmailRaw.trim() && !authEmail) {
+          // ignore technical placeholder addresses like *@noemail.local
+        } else if (authEmail && !authEmail.includes("@")) {
           return NextResponse.json({ error: "Invalid email" }, { status: 400 });
         }
         if (authEmail) authPatch.email = authEmail;
@@ -234,6 +247,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     putString("postal_code");
     putString("city");
     putString("avs_no");
+    putString("staff_function");
 
     if (has("handedness")) {
       const raw = body.handedness;

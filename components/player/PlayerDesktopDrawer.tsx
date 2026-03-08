@@ -19,6 +19,7 @@ import {
   X,
   Trophy,
   MessageCircle,
+  ListChecks,
 } from "lucide-react";
 
 /**
@@ -30,6 +31,7 @@ const ROUTES = {
   
   trainingsList: "/player/golf/trainings?type=all",
   messages: "/player/messages",
+  support: "/player/encadrement",
   trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
@@ -370,12 +372,30 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.home,
       },
       {
-        label: locale === "fr" ? "Mon activité" : "My activity",
+        label: locale === "fr" ? "Activité" : "Activity",
         icon: ClipboardList,
-        href: ROUTES.trainingsList,
+        children: [
+          {
+            label: locale === "fr" ? "Planning" : "Planning",
+            icon: ClipboardList,
+            href: ROUTES.trainingsList,
+          },
+          ...(performanceEnabled
+            ? [
+                {
+                  label:
+                    locale === "fr"
+                      ? `À compléter (${pendingEvalCount})`
+                      : `To complete (${pendingEvalCount})`,
+                  icon: ListChecks,
+                  href: ROUTES.trainingsToComplete,
+                },
+              ]
+            : []),
+        ],
       },
       {
-        label: locale === "fr" ? "Messages" : "Messages",
+        label: locale === "fr" ? "Messagerie" : "Messages",
         icon: MessageCircle,
         href: ROUTES.messages,
       },
@@ -394,18 +414,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             icon: PlusCircle,
             href: ROUTES.trainingsNew,
           },
-          ...(performanceEnabled
-            ? [
-                {
-                  label:
-                    locale === "fr"
-                      ? `Entrainements à évaluer (${pendingEvalCount})`
-                      : `To complete (${pendingEvalCount})`,
-                  icon: ClipboardList,
-                  href: ROUTES.trainingsToComplete,
-                },
-              ]
-            : []),
           { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
           ...(performanceEnabled
@@ -425,6 +433,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
               ]
             : []),
         ],
+      },
+      {
+        label: locale === "fr" ? "Encadrement" : "Support team",
+        icon: User,
+        href: ROUTES.support,
       },
       {
         label: t("nav.marketplace"),
@@ -457,7 +470,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         onClick={onClose}
       />
 
-      <aside className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
+      <aside className="drawer-panel drawer-panel--left drawer-panel--player-compact" aria-label={t("common.navigation")}>
         {/* Top bar */}
         <div className="drawer-top">
           <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee">

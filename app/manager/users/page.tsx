@@ -27,6 +27,7 @@ type MemberRow = {
     city: string | null;
     avs_no: string | null;
     avatar_url: string | null;
+    staff_function: string | null;
   } | null;
 };
 
@@ -50,6 +51,7 @@ type EditForm = {
   postal_code: string;
   city: string;
   avs_no: string;
+  staff_function: string;
 };
 
 function labelName(m: MemberRow) {
@@ -62,6 +64,13 @@ function generatePassword(len = 12) {
   let out = "";
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+function normalizeAuthEmailInput(raw?: string | null) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return email;
 }
 
 export default function ManagerUsersPage() {
@@ -77,6 +86,7 @@ export default function ManagerUsersPage() {
   const [cLast, setCLast] = useState("");
   const [cEmail, setCEmail] = useState("");
   const [cPhone, setCPhone] = useState("");
+  const [cStaffFunction, setCStaffFunction] = useState("");
   const [cRole, setCRole] = useState<"manager" | "coach" | "player" | "parent">("player");
   const [createdCreds, setCreatedCreds] = useState<{ username: string; tempPassword: string | null } | null>(null);
   const [search, setSearch] = useState("");
@@ -175,6 +185,7 @@ export default function ManagerUsersPage() {
         last_name: cLast.trim(),
         email: cEmail.trim().toLowerCase(),
         phone: cPhone.trim(),
+        staff_function: cRole === "manager" || cRole === "coach" ? cStaffFunction.trim() : "",
         role: cRole,
       }),
     });
@@ -194,6 +205,7 @@ export default function ManagerUsersPage() {
     setCLast("");
     setCEmail("");
     setCPhone("");
+    setCStaffFunction("");
     setCRole("player");
     await loadMembers(clubId);
   }
@@ -209,7 +221,7 @@ export default function ManagerUsersPage() {
       first_name: m.profiles?.first_name ?? "",
       last_name: m.profiles?.last_name ?? "",
       username: m.profiles?.username ?? "",
-      auth_email: m.auth_email ?? "",
+      auth_email: normalizeAuthEmailInput(m.auth_email),
       auth_password: "",
       phone: m.profiles?.phone ?? "",
       birth_date: m.profiles?.birth_date ?? "",
@@ -220,6 +232,7 @@ export default function ManagerUsersPage() {
       postal_code: m.profiles?.postal_code ?? "",
       city: m.profiles?.city ?? "",
       avs_no: m.profiles?.avs_no ?? "",
+      staff_function: m.profiles?.staff_function ?? "",
     });
   }
 
@@ -242,7 +255,7 @@ export default function ManagerUsersPage() {
       first_name: (form.first_name ?? "").toString().trim(),
       last_name: (form.last_name ?? "").toString().trim(),
       username: (form.username ?? "").toString().trim().toLowerCase(),
-      auth_email: (form.auth_email ?? "").toString().trim().toLowerCase(),
+      auth_email: normalizeAuthEmailInput(form.auth_email as string),
       auth_password: (form.auth_password ?? "").toString(),
     };
 
@@ -258,12 +271,17 @@ export default function ManagerUsersPage() {
       payload.avs_no = (form.avs_no ?? "").toString().trim();
     }
     if ((form.role ?? "player") === "parent") {
-      payload.auth_email = (form.auth_email ?? "").toString().trim().toLowerCase();
+      payload.auth_email = normalizeAuthEmailInput(form.auth_email as string);
       payload.auth_password = (form.auth_password ?? "").toString();
       payload.phone = (form.phone ?? "").toString().trim();
       payload.address = (form.address ?? "").toString().trim();
       payload.postal_code = (form.postal_code ?? "").toString().trim();
       payload.city = (form.city ?? "").toString().trim();
+    }
+    if ((form.role ?? "player") === "manager" || (form.role ?? "player") === "coach") {
+      payload.staff_function = (form.staff_function ?? "").toString().trim();
+    } else {
+      payload.staff_function = "";
     }
 
     const res = await fetch(`/api/manager/clubs/${clubId}/members`, {
@@ -377,6 +395,14 @@ export default function ManagerUsersPage() {
 
           <input placeholder="Adresse e-mail (optionnel)" value={cEmail} onChange={(e) => setCEmail(e.target.value)} style={inputStyle} />
           <input placeholder="Téléphone (optionnel)" value={cPhone} onChange={(e) => setCPhone(e.target.value)} style={inputStyle} />
+          {(cRole === "manager" || cRole === "coach") ? (
+            <input
+              placeholder="Fonction (optionnel)"
+              value={cStaffFunction}
+              onChange={(e) => setCStaffFunction(e.target.value)}
+              style={inputStyle}
+            />
+          ) : null}
 
           <select value={cRole} onChange={(e) => setCRole(e.target.value as any)} style={inputStyle}>
             <option value="player">Joueur</option>
@@ -490,6 +516,11 @@ export default function ManagerUsersPage() {
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           username: {m.profiles?.username ?? "—"} • rôle: {m.role}
                         </div>
+                        {(m.role === "manager" || m.role === "coach") && m.profiles?.staff_function ? (
+                          <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                            fonction: {m.profiles.staff_function}
+                          </div>
+                        ) : null}
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           club: {clubNamesById[m.club_id] ?? m.club_id}
                         </div>
@@ -549,6 +580,17 @@ export default function ManagerUsersPage() {
                           style={inputStyle}
                         />
                       </label>
+                      {(form.role === "manager" || form.role === "coach") ? (
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800 }}>Fonction</span>
+                          <input
+                            placeholder="Fonction"
+                            value={(form.staff_function ?? "") as string}
+                            onChange={(e) => setForm((f) => ({ ...f, staff_function: e.target.value }))}
+                            style={inputStyle}
+                          />
+                        </label>
+                      ) : null}
                       <label style={{ display: "grid", gap: 6 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800 }}>Nouveau mot de passe</span>

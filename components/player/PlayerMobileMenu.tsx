@@ -12,11 +12,12 @@ export default function PlayerMobileMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const NAV: NavItem[] = [
     { href: "/player", label: t("nav.home") },
     { href: "/player/golf", label: t("player.myGolf") },
+    { href: "/player/encadrement", label: locale === "fr" ? "Encadrement" : "Support team" },
     { href: "/player/marketplace", label: t("nav.marketplace") },
     { href: "/player/profile", label: t("common.profile") },
   ];

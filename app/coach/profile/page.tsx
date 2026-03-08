@@ -23,6 +23,7 @@ type ProfileRow = {
   address: string | null;
   postal_code: string | null;
   city: string | null;
+  staff_function: string | null;
 
   avatar_url?: string | null; // ✅ NEW
 };
@@ -87,6 +88,7 @@ export default function PlayerProfilePage() {
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
+  const [staffFunction, setStaffFunction] = useState("");
 
   const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
 
@@ -143,6 +145,7 @@ export default function PlayerProfilePage() {
           "address",
           "postal_code",
           "city",
+          "staff_function",
           "avatar_url",
         ].join(",")
       )
@@ -168,6 +171,7 @@ export default function PlayerProfilePage() {
     setAddress(row?.address ?? "");
     setPostalCode(row?.postal_code ?? "");
     setCity(row?.city ?? "");
+    setStaffFunction(row?.staff_function ?? "");
 
     setAvatarDbUrl(row?.avatar_url ?? null);
 
@@ -234,6 +238,7 @@ export default function PlayerProfilePage() {
           address: address.trim() || null,
           postal_code: postalCode.trim() || null,
           city: city.trim() || null,
+          staff_function: staffFunction.trim() || null,
         },
         { onConflict: "id" }
       );
@@ -533,6 +538,13 @@ export default function PlayerProfilePage() {
                       <input value={email} disabled />
                     </Field>
                   </div>
+                  <Field label="Fonction">
+                    <input
+                      value={staffFunction}
+                      onChange={(e) => setStaffFunction(e.target.value)}
+                      placeholder="Ex: Head Pro"
+                    />
+                  </Field>
                 </div>
 
                 <div className="hr-soft" />

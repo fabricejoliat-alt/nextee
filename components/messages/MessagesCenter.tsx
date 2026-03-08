@@ -66,7 +66,6 @@ type CatalogEvent = {
   group_name?: string | null;
 };
 type CatalogPlayer = { id: string; full_name: string; username: string | null };
-
 const THREAD_TYPES: Array<{ value: Thread["thread_type"]; fr: string; en: string }> = [
   { value: "organization", fr: "Organisation", en: "Organization" },
   { value: "group", fr: "Groupe", en: "Group" },
@@ -157,7 +156,12 @@ export default function MessagesCenter({
     return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
   }
 
-  async function loadThreads(orgId: string, preselectId?: string, preselectEventId?: string) {
+  async function loadThreads(
+    orgId: string,
+    preselectId?: string,
+    preselectEventId?: string,
+    roleOverride?: string
+  ) {
     const headers = await authHeader();
     const qs = new URLSearchParams({ organization_id: orgId });
     if (preselectId) qs.set("include_thread_id", preselectId);
@@ -170,10 +174,21 @@ export default function MessagesCenter({
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json?.error ?? tr("Erreur de chargement.", "Loading error."));
     const rawList = (json?.threads ?? []) as Thread[];
+    const effectiveRole = String(roleOverride ?? viewerRole ?? "").trim().toLowerCase();
     const list = rawList.filter((t) => {
-      if (!hideTeamCoachThreadInList) return true;
-      const scope = String(t.player_thread_scope ?? "direct");
-      return !(t.thread_type === "player" && scope === "team");
+      if (hideTeamCoachThreadInList) {
+        const scope = String(t.player_thread_scope ?? "direct");
+        if (t.thread_type === "player" && scope === "team") return false;
+      }
+
+      // Player inbox should not show support-team direct threads by default.
+      // Keep the explicitly opened thread visible when coming from Encadrement.
+      if (effectiveRole === "player" && t.thread_type === "player") {
+        if (preselectId && t.id === preselectId) return true;
+        if (activeThreadId && t.id === activeThreadId) return true;
+        return false;
+      }
+      return true;
     });
     setThreads(list);
     setThreadCounts({
@@ -288,7 +303,8 @@ export default function MessagesCenter({
 
         const meJson = await meRes.json().catch(() => ({}));
         const orgId = String(meJson?.membership?.club_id ?? "").trim();
-        setViewerRole(String(meJson?.membership?.role ?? ""));
+        const membershipRole = String(meJson?.membership?.role ?? "");
+        setViewerRole(membershipRole);
         const targetEventId = String(searchParams.get("event_id") ?? "").trim();
         const targetThreadIdFromQuery = String(searchParams.get("thread_id") ?? "").trim();
         if (!orgId) {
@@ -308,7 +324,7 @@ export default function MessagesCenter({
           const threadJson = await threadRes.json().catch(() => ({}));
           if (threadRes.ok) targetThreadId = String(threadJson?.thread_id ?? "");
         }
-        await loadThreads(orgId, targetThreadId || undefined, targetEventId || undefined);
+        await loadThreads(orgId, targetThreadId || undefined, targetEventId || undefined, membershipRole);
       } catch (e: any) {
         setError(e?.message ?? tr("Erreur de chargement.", "Loading error."));
       } finally {
@@ -780,6 +796,7 @@ export default function MessagesCenter({
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
+                <>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: 10, borderBottom: "1px solid rgba(0,0,0,0.06)", alignItems: "center" }}>
                   {([
                     { key: "all", fr: "Tous", en: "All" },
@@ -950,6 +967,7 @@ export default function MessagesCenter({
                     })}
                   </div>
                 )}
+                </>
               </div>
 
               <div className="glass-card" style={{ display: "grid", gridTemplateRows: "auto 1fr auto", minHeight: 460 }}>

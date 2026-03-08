@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
@@ -18,7 +18,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, FileText } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -79,6 +79,36 @@ type TrainingVolumeTargetRow = {
   minutes_offseason: number;
   minutes_inseason: number;
   sort_order: number;
+};
+
+type TeamThreadMessage = {
+  id: string;
+  thread_id: string;
+  sender_user_id: string;
+  body: string;
+  created_at: string;
+  sender_name?: string | null;
+};
+
+type ProfileLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+};
+
+type PlayerDashboardDocument = {
+  id: string;
+  organization_id: string;
+  player_id: string;
+  uploaded_by: string;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  coach_only: boolean;
+  created_at: string;
+  public_url: string;
 };
 
 type Preset = "month" | "last3" | "all" | "custom";
@@ -459,6 +489,20 @@ export default function GolfDashboardPage() {
 
   const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
   const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
+  const [teamThreadId, setTeamThreadId] = useState<string>("");
+  const [teamMessages, setTeamMessages] = useState<TeamThreadMessage[]>([]);
+  const [teamComposer, setTeamComposer] = useState("");
+  const [teamProfilesById, setTeamProfilesById] = useState<Record<string, ProfileLite>>({});
+  const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
+  const [loadingTeamThread, setLoadingTeamThread] = useState(false);
+  const [loadingTeamMessages, setLoadingTeamMessages] = useState(false);
+  const [sendingTeamMessage, setSendingTeamMessage] = useState(false);
+  const [deletingTeamMessageId, setDeletingTeamMessageId] = useState("");
+  const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const now = new Date();
@@ -549,6 +593,254 @@ export default function GolfDashboardPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setCurrentUserId(String(data.user?.id ?? ""));
+    })();
+  }, []);
+
+  function shortDate(iso: string, localeCode: string) {
+    return new Intl.DateTimeFormat(localeCode, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
+  }
+
+  function teamMessageTime(iso: string) {
+    return new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  }
+
+  function teamMessageDayLabel(iso: string) {
+    return new Intl.DateTimeFormat(dateLocale, {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    }).format(new Date(iso));
+  }
+
+  async function loadTeamThreadMessages(threadId: string, options?: { silent?: boolean }) {
+    if (!threadId) {
+      setTeamMessages([]);
+      return;
+    }
+    if (!options?.silent) setLoadingTeamMessages(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=200`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String((json as any)?.error ?? "Load failed"));
+      const msgs = (((json as any)?.messages ?? []) as TeamThreadMessage[]).slice().reverse();
+      setTeamMessages(msgs);
+
+      const senderIds = Array.from(new Set(msgs.map((m) => String(m.sender_user_id ?? "")).filter(Boolean)));
+      const missing = senderIds.filter((id) => !teamProfilesById[id]);
+      if (missing.length > 0) {
+        const profRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", missing);
+        if (!profRes.error) {
+          setTeamProfilesById((prev) => {
+            const next = { ...prev };
+            for (const p of profRes.data ?? []) next[String((p as any).id)] = p as ProfileLite;
+            return next;
+          });
+        }
+      }
+    } catch {
+      setTeamMessages([]);
+    } finally {
+      if (!options?.silent) setLoadingTeamMessages(false);
+    }
+  }
+
+  async function loadTeamParticipants(threadId: string) {
+    if (!threadId) {
+      setTeamParticipantNames([]);
+      return;
+    }
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) return;
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) return;
+      const names: string[] = Array.isArray(json?.participant_full_names)
+        ? (json.participant_full_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+        : Array.isArray(json?.participant_names)
+          ? (json.participant_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+          : [];
+      setTeamParticipantNames(names);
+    } catch {
+      setTeamParticipantNames([]);
+    }
+  }
+
+  async function ensureAndLoadTeamThread() {
+    setLoadingTeamThread(true);
+    try {
+      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing context");
+      const res = await fetch(`/api/player/team-thread?player_id=${encodeURIComponent(playerId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Team thread unavailable"));
+      const threadId = String(json?.thread_id ?? "");
+      if (!threadId) throw new Error("Team thread unavailable");
+
+      setTeamThreadId(threadId);
+      await loadTeamThreadMessages(threadId);
+      await loadTeamParticipants(threadId);
+    } catch {
+      setTeamThreadId("");
+      setTeamMessages([]);
+      setTeamParticipantNames([]);
+    } finally {
+      setLoadingTeamThread(false);
+    }
+  }
+
+  async function loadDocuments() {
+    setLoadingDocuments(true);
+    try {
+      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing context");
+      const res = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Load documents error"));
+      setDocuments((json?.documents ?? []) as PlayerDashboardDocument[]);
+    } catch {
+      setDocuments([]);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }
+
+  useEffect(() => {
+    void ensureAndLoadTeamThread();
+    void loadDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!teamThreadId) return;
+    const channel = supabase
+      .channel(`player-team-thread:${teamThreadId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
+        () => {
+          window.setTimeout(() => {
+            void loadTeamThreadMessages(teamThreadId, { silent: true });
+          }, 120);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
+        () => {
+          void loadTeamThreadMessages(teamThreadId, { silent: true });
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [teamThreadId]);
+
+  useEffect(() => {
+    if (!teamThreadId) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (!token) return;
+        const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages?limit=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({} as any));
+        if (!res.ok) return;
+        const latest = (json?.messages?.[0] ?? null) as any;
+        if (!latest?.id) return;
+        const latestId = String(latest.id);
+        const currentLatestId = teamMessages.length ? String(teamMessages[teamMessages.length - 1]?.id ?? "") : "";
+        if (latestId && latestId !== currentLatestId) {
+          await loadTeamThreadMessages(teamThreadId, { silent: true });
+        }
+      } catch {
+        // keep silent polling
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [teamThreadId, teamMessages]);
+
+  useEffect(() => {
+    if (!teamMessagesEndRef.current) return;
+    teamMessagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [teamMessages.length, teamThreadId]);
+
+  async function sendTeamMessage() {
+    if (!teamThreadId || !teamComposer.trim() || sendingTeamMessage) return;
+    setSendingTeamMessage(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message_type: "text", body: teamComposer.trim() }),
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Send failed"));
+      setTeamComposer("");
+      await loadTeamThreadMessages(teamThreadId, { silent: true });
+    } catch (e: any) {
+      setError(e?.message ?? "Send failed");
+    } finally {
+      setSendingTeamMessage(false);
+    }
+  }
+
+  async function deleteTeamMessage(messageId: string) {
+    if (!teamThreadId || !messageId || deletingTeamMessageId) return;
+    setDeletingTeamMessageId(messageId);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages/${encodeURIComponent(messageId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      setTeamMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingTeamMessageId("");
+    }
+  }
 
   useEffect(() => {
     const now = new Date();
@@ -1536,6 +1828,215 @@ function presetToSelectValue(p: Preset): Preset {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 4 }}>
+              <div className="card-title" style={{ marginBottom: 0 }}>Fil équipe coachs + joueur + parent(s)</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                Participants: {teamParticipantNames.length ? teamParticipantNames.join(", ") : "—"}
+              </div>
+            </div>
+
+            {loadingTeamThread || loadingTeamMessages ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            ) : !teamThreadId ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Fil équipe indisponible.</div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.08)",
+                    borderRadius: 12,
+                    background: "linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(245,248,250,0.9) 100%)",
+                    padding: 10,
+                    maxHeight: 340,
+                    overflowY: "auto",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  {teamMessages.length === 0 ? (
+                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun message.</div>
+                  ) : (
+                    teamMessages.map((m, idx) => {
+                      const mine = m.sender_user_id === currentUserId;
+                      const p = teamProfilesById[m.sender_user_id];
+                      const label = (
+                        String(m.sender_name ?? "").trim() ||
+                        (p ? `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() : "")
+                      ) || m.sender_user_id.slice(0, 8);
+                      const initialsLabel = (() => {
+                        const first = String(p?.first_name ?? "").trim();
+                        const last = String(p?.last_name ?? "").trim();
+                        const i = `${first ? first[0].toUpperCase() : ""}${last ? last[0].toUpperCase() : ""}`;
+                        return i || (label?.slice(0, 2) ?? "??").toUpperCase();
+                      })();
+                      const prev = idx > 0 ? teamMessages[idx - 1] : null;
+                      const dayKey = new Date(m.created_at).toDateString();
+                      const prevDayKey = prev ? new Date(prev.created_at).toDateString() : "";
+                      const showDay = idx === 0 || dayKey !== prevDayKey;
+
+                      return (
+                        <div key={m.id} style={{ display: "grid", gap: 6 }}>
+                          {showDay ? (
+                            <div style={{ display: "flex", justifyContent: "center" }}>
+                              <span
+                                className="pill-soft"
+                                style={{
+                                  background: "rgba(107,114,128,0.14)",
+                                  borderColor: "rgba(107,114,128,0.24)",
+                                  color: "rgba(55,65,81,0.9)",
+                                  fontWeight: 900,
+                                  fontSize: 11,
+                                }}
+                              >
+                                {teamMessageDayLabel(m.created_at)}
+                              </span>
+                            </div>
+                          ) : null}
+                          <div
+                            style={{
+                              justifySelf: mine ? "end" : "start",
+                              display: "grid",
+                              gridTemplateColumns: mine ? "1fr" : "26px 1fr",
+                              gap: 8,
+                              alignItems: "end",
+                              maxWidth: "88%",
+                            }}
+                          >
+                            {!mine ? (
+                              <div
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 999,
+                                  background: "rgba(53,72,59,0.14)",
+                                  border: "1px solid rgba(53,72,59,0.24)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 10,
+                                  fontWeight: 900,
+                                  color: "rgba(53,72,59,0.9)",
+                                }}
+                              >
+                                {initialsLabel}
+                              </div>
+                            ) : null}
+                            <div
+                              style={{
+                                position: "relative",
+                                borderRadius: 12,
+                                padding: "8px 10px 26px 10px",
+                                paddingRight: 26,
+                                background: mine ? "#1b5e20" : "rgba(0,0,0,0.06)",
+                                color: mine ? "white" : "#111827",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                              }}
+                            >
+                              {mine ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteTeamMessage(m.id)}
+                                  disabled={deletingTeamMessageId === m.id}
+                                  title="Supprimer le message"
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 4,
+                                    right: 4,
+                                    border: "1px solid rgba(255,255,255,0.35)",
+                                    background: "rgba(255,255,255,0.12)",
+                                    color: "white",
+                                    width: 18,
+                                    height: 18,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    borderRadius: 999,
+                                    padding: 0,
+                                    cursor: "pointer",
+                                    opacity: 0.9,
+                                  }}
+                                >
+                                  <X size={11} />
+                                </button>
+                              ) : null}
+                              <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.82, marginBottom: 4 }}>
+                                {label || "—"} • {teamMessageTime(m.created_at)}
+                              </div>
+                              <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.body}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={teamMessagesEndRef} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                  <input
+                    className="input"
+                    placeholder="Écrire..."
+                    value={teamComposer}
+                    onChange={(e) => setTeamComposer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void sendTeamMessage();
+                      }
+                    }}
+                  />
+                  <button className="btn btn-primary" type="button" onClick={() => void sendTeamMessage()} disabled={sendingTeamMessage || !teamComposer.trim()}>
+                    Envoyer
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+            {loadingDocuments ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            ) : documents.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {documents.map((d) => (
+                  <div
+                    key={d.id}
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.08)",
+                      borderRadius: 10,
+                      background: "rgba(255,255,255,0.75)",
+                      padding: "8px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                      <div style={{ fontWeight: 900 }} className="truncate">
+                        <FileText size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                        {d.file_name}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
+                        {shortDate(d.created_at, dateLocale)}
+                      </div>
+                    </div>
+                    <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
+                      Voir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
        {/* ===== Filters ===== */}
 <div className="glass-section">
   <div className="glass-card" style={{ padding: 14 }}>
@@ -2130,6 +2631,66 @@ function presetToSelectValue(p: Preset): Preset {
 
         <div style={{ height: 12 }} />
       </div>
+
+      {viewerDocument ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1200,
+            background: "rgba(0,0,0,0.46)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onClick={() => setViewerDocument(null)}
+        >
+          <div
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "92vh",
+              borderRadius: 14,
+              background: "white",
+              border: "1px solid rgba(0,0,0,0.12)",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.28)",
+              overflow: "hidden",
+              display: "grid",
+              gridTemplateRows: "auto 1fr",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "10px 12px", borderBottom: "1px solid rgba(0,0,0,0.1)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ fontWeight: 900, minWidth: 0 }} className="truncate">
+                {viewerDocument.file_name}
+              </div>
+              <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
+                Fermer
+              </button>
+            </div>
+            <div style={{ padding: 10, overflow: "auto", background: "rgba(248,250,252,1)" }}>
+              {(viewerDocument.mime_type ?? "").startsWith("image/") ? (
+                <img
+                  src={viewerDocument.public_url}
+                  alt={viewerDocument.file_name}
+                  style={{ width: "100%", height: "auto", borderRadius: 10, display: "block" }}
+                />
+              ) : (viewerDocument.mime_type ?? "").startsWith("video/") ? (
+                <div style={{ display: "grid", placeItems: "center" }}>
+                  <video src={viewerDocument.public_url} controls style={{ width: "100%", maxHeight: "74vh", borderRadius: 10 }} />
+                </div>
+              ) : (
+                <iframe
+                  title={viewerDocument.file_name}
+                  src={viewerDocument.public_url}
+                  style={{ width: "100%", minHeight: "72vh", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <style jsx global>{`
         @media (min-width: 900px) {

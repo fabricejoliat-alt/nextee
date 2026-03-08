@@ -76,6 +76,7 @@ const clubId: string | undefined = params?.clubId;
     const first_name = (body?.first_name ?? "").trim();
     const last_name = (body?.last_name ?? "").trim();
     const phone = (body?.phone ?? "").trim();
+    const staffFunction = (body?.staff_function ?? "").trim();
     const role = (body?.role ?? "").trim(); // manager | coach | player | parent
 
     if (!role || !["manager", "coach", "player", "parent"].includes(role)) {
@@ -194,6 +195,7 @@ const clubId: string | undefined = params?.clubId;
           first_name: first_name || null,
           last_name: last_name || null,
           phone: phone || null,
+          staff_function: role === "manager" || role === "coach" ? (staffFunction || null) : null,
           username,
           app_role: role || null,
         },

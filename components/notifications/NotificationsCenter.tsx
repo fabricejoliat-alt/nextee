@@ -41,7 +41,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   const [rows, setRows] = useState<Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>>([]);
   const [viewerRole, setViewerRole] = useState<string>("player");
   const [threadTitlesById, setThreadTitlesById] = useState<Record<string, string>>({});
-  const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string }>>({});
+  const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string; player_thread_scope: string }>>({});
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
 
   function toErrorMessage(e: unknown, fallback: string) {
@@ -120,7 +120,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
 
       const metaRes = await supabase
         .from("message_threads")
-        .select("id,thread_type,player_id,created_by")
+        .select("id,thread_type,player_id,created_by,player_thread_scope")
         .in("id", missing);
       if (!metaRes.error) {
         const nextMeta = { ...threadMetaById };
@@ -130,7 +130,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
           const thread_type = String((row as any).thread_type ?? "");
           const player_id = String((row as any).player_id ?? "");
           const created_by = String((row as any).created_by ?? "");
-          nextMeta[id] = { thread_type, player_id, created_by };
+          const player_thread_scope = String((row as any).player_thread_scope ?? "direct");
+          nextMeta[id] = { thread_type, player_id, created_by, player_thread_scope };
           if (player_id) profileIds.add(player_id);
           if (created_by) profileIds.add(created_by);
         }
@@ -246,7 +247,18 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
 
     if (String(notification?.kind ?? "") === "thread_message") {
       const threadId = String(data.thread_id ?? "").trim();
-      if (threadId) return `${homeHref}/messages?thread_id=${encodeURIComponent(threadId)}`;
+      if (threadId) {
+        const meta = threadMetaById[threadId];
+        if (
+          homeHref.startsWith("/coach") &&
+          meta?.thread_type === "player" &&
+          meta?.player_thread_scope === "team" &&
+          String(meta.player_id ?? "").trim()
+        ) {
+          return `/coach/players/${encodeURIComponent(String(meta.player_id))}`;
+        }
+        return `${homeHref}/messages?thread_id=${encodeURIComponent(threadId)}`;
+      }
     }
     return null;
   }

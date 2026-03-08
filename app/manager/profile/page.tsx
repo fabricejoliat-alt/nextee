@@ -24,6 +24,7 @@ type ProfileRow = {
   address: string | null;
   postal_code: string | null;
   city: string | null;
+  staff_function: string | null;
 
   avatar_url?: string | null; // ✅ NEW
 };
@@ -60,6 +61,13 @@ function normalizeDisplayEmail(rawEmail?: string | null) {
   return rawEmail ?? "";
 }
 
+function sanitizeEditableEmail(rawEmail?: string | null) {
+  const v = String(rawEmail ?? "").trim();
+  if (!v) return "";
+  if (v.toLowerCase().endsWith("@noemail.local")) return "";
+  return v;
+}
+
 export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -71,9 +79,11 @@ export default function PlayerProfilePage() {
   const [info, setInfo] = useState<string | null>(null);
 
   const [userId, setUserId] = useState("");
+  const [authEmailRaw, setAuthEmailRaw] = useState("");
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordEditable, setPasswordEditable] = useState(false);
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -93,10 +103,12 @@ export default function PlayerProfilePage() {
 
   // ✅ NEW
   const [handedness, setHandedness] = useState<"right" | "left" | "">("");
+  const [handicap, setHandicap] = useState("");
 
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
+  const [staffFunction, setStaffFunction] = useState("");
 
   const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
 
@@ -135,8 +147,10 @@ export default function PlayerProfilePage() {
     }
 
     const uid = userRes.user.id;
+    const rawEmail = userRes.user.email ?? "";
     setUserId(uid);
-    setEmail(normalizeDisplayEmail(userRes.user.email));
+    setAuthEmailRaw(rawEmail);
+    setEmail(normalizeDisplayEmail(rawEmail));
 
     // profile
     const profRes = await supabase
@@ -150,9 +164,11 @@ export default function PlayerProfilePage() {
           "birth_date",
           "sex",
           "handedness",
+          "handicap",
           "address",
           "postal_code",
           "city",
+          "staff_function",
           "avatar_url",
         ].join(",")
       )
@@ -174,10 +190,12 @@ export default function PlayerProfilePage() {
     setSex(row?.sex ?? "");
 
     setHandedness((row?.handedness as any) ?? "");
+    setHandicap(row?.handicap == null ? "" : String(row.handicap));
 
     setAddress(row?.address ?? "");
     setPostalCode(row?.postal_code ?? "");
     setCity(row?.city ?? "");
+    setStaffFunction(row?.staff_function ?? "");
 
     setAvatarDbUrl(row?.avatar_url ?? null);
 
@@ -220,6 +238,14 @@ export default function PlayerProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function parseHandicap(): number | null {
+    const v = handicap.trim();
+    if (v === "") return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return n;
+  }
+
   async function save() {
     if (!userId) return;
 
@@ -240,6 +266,27 @@ export default function PlayerProfilePage() {
       }
     }
 
+    const emailTrimmed = sanitizeEditableEmail(email).toLowerCase();
+    const emailNormalized = normalizeDisplayEmail(emailTrimmed).trim().toLowerCase();
+    const currentEmailNormalized = normalizeDisplayEmail(authEmailRaw).trim().toLowerCase();
+
+    if (emailTrimmed && !emailNormalized) {
+      setError("Merci de saisir une adresse e-mail valide (pas @noemail.local).");
+      setBusy(false);
+      return;
+    }
+    if (emailNormalized && !emailNormalized.includes("@")) {
+      setError("Adresse e-mail invalide.");
+      setBusy(false);
+      return;
+    }
+    const handicapValue = parseHandicap();
+    if (handicap.trim() !== "" && handicapValue == null) {
+      setError("Handicap invalide.");
+      setBusy(false);
+      return;
+    }
+
     const { error } = await supabase
       .from("profiles")
       .upsert(
@@ -253,10 +300,12 @@ export default function PlayerProfilePage() {
           sex: sex.trim() || null,
 
           handedness: handedness || null,
+          handicap: handicapValue,
 
           address: address.trim() || null,
           postal_code: postalCode.trim() || null,
           city: city.trim() || null,
+          staff_function: staffFunction.trim() || null,
         },
         { onConflict: "id" }
       );
@@ -265,6 +314,28 @@ export default function PlayerProfilePage() {
       setError(error.message);
       setBusy(false);
       return;
+    }
+
+    // Update login email only when user explicitly entered a value and it changed.
+    if (emailNormalized && emailNormalized !== currentEmailNormalized) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      const emailRes = await fetch("/api/auth/update-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: emailNormalized }),
+      });
+      const emailJson = await emailRes.json().catch(() => ({}));
+      if (!emailRes.ok) {
+        setError(String(emailJson?.error ?? "Erreur mise à jour e-mail"));
+        setBusy(false);
+        return;
+      }
+      setAuthEmailRaw(emailNormalized);
+      setEmail(emailNormalized);
     }
 
     if (newPassword.trim()) {
@@ -486,7 +557,21 @@ export default function PlayerProfilePage() {
             {loading ? (
               <CompactLoadingBlock label="Chargement..." />
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ display: "grid", gap: 16 }}>
+                <input
+                  type="text"
+                  autoComplete="username"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
+                />
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
+                />
                 {/* Identité */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
@@ -535,12 +620,16 @@ export default function PlayerProfilePage() {
                     </Field>
                   </div>
 
-                  {/* ✅ HCP PRO (coach) */}
+                  {/* ✅ HCP */}
                   <div style={{ marginTop: 6 }}>
                     <Field label="HCP">
                       <input
-                        value="PRO"
-                        disabled
+                        type="number"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={handicap}
+                        onChange={(e) => setHandicap(e.target.value)}
+                        placeholder="Ex: 8.4"
                         style={{
                           height: 46,
                           fontSize: 18,
@@ -566,9 +655,24 @@ export default function PlayerProfilePage() {
                     </Field>
 
                     <Field label="Email (login)">
-                      <input value={email || "Non renseigné"} disabled />
+                      <input
+                        type="email"
+                        name="manager_profile_email"
+                        autoComplete="off"
+                        value={email}
+                        onChange={(e) => setEmail(sanitizeEditableEmail(e.target.value))}
+                        onBlur={(e) => setEmail(sanitizeEditableEmail(e.target.value))}
+                        placeholder="name@domain.com"
+                      />
                     </Field>
                   </div>
+                  <Field label="Fonction">
+                    <input
+                      value={staffFunction}
+                      onChange={(e) => setStaffFunction(e.target.value)}
+                      placeholder="Ex: Head Pro"
+                    />
+                  </Field>
                 </div>
 
                 <div className="hr-soft" />
@@ -583,6 +687,10 @@ export default function PlayerProfilePage() {
                     <Field label="Nouveau mot de passe">
                       <input
                         type="password"
+                        name="manager_new_password"
+                        autoComplete="new-password"
+                        readOnly={!passwordEditable}
+                        onFocus={() => setPasswordEditable(true)}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="Au moins 8 caractères"
@@ -592,6 +700,10 @@ export default function PlayerProfilePage() {
                     <Field label="Confirmer le mot de passe">
                       <input
                         type="password"
+                        name="manager_confirm_password"
+                        autoComplete="new-password"
+                        readOnly={!passwordEditable}
+                        onFocus={() => setPasswordEditable(true)}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="Répéter le nouveau mot de passe"

@@ -261,10 +261,6 @@ export async function GET(req: NextRequest) {
     const scopedOrgIds = playerOrgIds.size > 0 ? Array.from(playerOrgIds) : [organizationId];
     if (!scopedOrgIds.includes(organizationId)) scopedOrgIds.push(organizationId);
 
-    for (const playerOrgId of playerOrgIds) {
-      await ensureDefaultPlayerStaffThreads(supabaseAdmin, playerOrgId, callerId);
-    }
-
     const [threadsRes, participantsRes] = await Promise.all([
       supabaseAdmin
         .from("message_threads")
