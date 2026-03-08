@@ -129,6 +129,7 @@ type PlayerDashboardDocument = {
   organization_id: string;
   player_id: string;
   uploaded_by: string;
+  uploaded_by_name?: string | null;
   file_name: string;
   storage_path: string;
   mime_type: string | null;
@@ -2582,6 +2583,7 @@ function presetToSelectValue(p: Preset): Preset {
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
                         {shortDate(d.created_at, dateLocale)}
+                        {` • Uploadé par ${String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8)}`}
                       </div>
                     </div>
                     <div style={{ display: "inline-flex", gap: 8 }}>

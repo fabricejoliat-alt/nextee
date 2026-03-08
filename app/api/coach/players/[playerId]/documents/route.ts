@@ -41,21 +41,36 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
     if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const url = new URL(req.url);
-    const requestedOrgId = String(url.searchParams.get("organization_id") ?? "").trim();
-    const scopedOrgIds = requestedOrgId && sharedOrgIds.includes(requestedOrgId) ? [requestedOrgId] : sharedOrgIds;
-
     const docsRes = await supabaseAdmin
       .from("player_dashboard_documents")
       .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
       .eq("player_id", playerId)
-      .in("organization_id", scopedOrgIds)
       .order("created_at", { ascending: false })
       .limit(200);
     if (docsRes.error) return NextResponse.json({ error: docsRes.error.message }, { status: 400 });
 
+    const uploaderIds = Array.from(
+      new Set((docsRes.data ?? []).map((d: any) => String(d.uploaded_by ?? "")).filter(Boolean))
+    );
+    const uploaderNameById = new Map<string, string>();
+    if (uploaderIds.length > 0) {
+      const profRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name,username")
+        .in("id", uploaderIds);
+      if (!profRes.error) {
+        for (const p of profRes.data ?? []) {
+          const id = String((p as any).id ?? "");
+          const full = `${String((p as any).first_name ?? "").trim()} ${String((p as any).last_name ?? "").trim()}`.trim();
+          const fallback = String((p as any).username ?? "").trim();
+          uploaderNameById.set(id, full || fallback || id.slice(0, 8));
+        }
+      }
+    }
+
     const docs = (docsRes.data ?? []).map((d: any) => ({
       ...d,
+      uploaded_by_name: uploaderNameById.get(String(d.uploaded_by ?? "")) ?? String(d.uploaded_by ?? "").slice(0, 8),
       public_url: supabaseAdmin.storage.from("marketplace").getPublicUrl(String(d.storage_path ?? "")).data.publicUrl,
     }));
     return NextResponse.json({ documents: docs });
@@ -109,10 +124,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       .single();
     if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 
+    let uploadedByName = callerId.slice(0, 8);
+    const uploaderRes = await supabaseAdmin
+      .from("profiles")
+      .select("first_name,last_name,username")
+      .eq("id", callerId)
+      .maybeSingle();
+    if (!uploaderRes.error && uploaderRes.data) {
+      const full = `${String((uploaderRes.data as any).first_name ?? "").trim()} ${String((uploaderRes.data as any).last_name ?? "").trim()}`.trim();
+      uploadedByName = full || String((uploaderRes.data as any).username ?? "").trim() || uploadedByName;
+    }
+
     const publicUrl = supabaseAdmin.storage.from("marketplace").getPublicUrl(objectPath).data.publicUrl;
-    return NextResponse.json({ document: { ...insRes.data, public_url: publicUrl } });
+    return NextResponse.json({ document: { ...insRes.data, uploaded_by_name: uploadedByName, public_url: publicUrl } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
-

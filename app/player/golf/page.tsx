@@ -18,7 +18,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, FileText } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, FileText, Upload } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -102,6 +102,7 @@ type PlayerDashboardDocument = {
   organization_id: string;
   player_id: string;
   uploaded_by: string;
+  uploaded_by_name?: string | null;
   file_name: string;
   storage_path: string;
   mime_type: string | null;
@@ -500,9 +501,12 @@ export default function GolfDashboardPage() {
   const [deletingTeamMessageId, setDeletingTeamMessageId] = useState("");
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
   const [currentUserId, setCurrentUserId] = useState("");
   const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
+  const docFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const now = new Date();
@@ -728,6 +732,51 @@ export default function GolfDashboardPage() {
       setDocuments([]);
     } finally {
       setLoadingDocuments(false);
+    }
+  }
+
+  function openDocumentPicker() {
+    if (uploadingDocument) return;
+    docFileInputRef.current?.click();
+  }
+
+  function onPickDocument(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    setDocFile(file);
+  }
+
+  async function uploadDocument() {
+    if (!docFile || uploadingDocument) return;
+    setUploadingDocument(true);
+    try {
+      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing context");
+
+      const fd = new FormData();
+      fd.append("file", docFile);
+
+      const res = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Upload failed"));
+      const created = json?.document as PlayerDashboardDocument | undefined;
+      if (created?.id) {
+        setDocuments((prev) => [created, ...prev]);
+      } else {
+        await loadDocuments();
+      }
+      setDocFile(null);
+      if (docFileInputRef.current) docFileInputRef.current.value = "";
+    } catch (e: any) {
+      setError(e?.message ?? "Upload failed");
+    } finally {
+      setUploadingDocument(false);
     }
   }
 
@@ -1998,6 +2047,54 @@ function presetToSelectValue(p: Preset): Preset {
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input
+                ref={docFileInputRef}
+                type="file"
+                onChange={onPickDocument}
+                style={{ display: "none" }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={openDocumentPicker}
+                  disabled={uploadingDocument}
+                >
+                  Choisir un fichier
+                </button>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                </span>
+              </div>
+              <div>
+                <button
+                  className="btn btn-primary btn-upload-green"
+                  type="button"
+                  onClick={() => void uploadDocument()}
+                  style={{
+                    opacity: !docFile || uploadingDocument ? 0.65 : 1,
+                    pointerEvents: !docFile || uploadingDocument ? "none" : "auto",
+                  }}
+                >
+                  <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  Upload
+                </button>
+              </div>
+            </div>
             {loadingDocuments ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : documents.length === 0 ? (
@@ -2019,12 +2116,13 @@ function presetToSelectValue(p: Preset): Preset {
                     }}
                   >
                     <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                      <div style={{ fontWeight: 900 }} className="truncate">
+                      <div style={{ fontWeight: 800, fontSize: 13 }} className="truncate">
                         <FileText size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                         {d.file_name}
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
                         {shortDate(d.created_at, dateLocale)}
+                        {` • Uploadé par ${String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8)}`}
                       </div>
                     </div>
                     <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
@@ -2034,6 +2132,13 @@ function presetToSelectValue(p: Preset): Preset {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ===== Title Trainings ===== */}
+        <div className="glass-section" style={{ paddingTop: 0 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>
+            {t("golfDashboard.trainingsTitle")}
           </div>
         </div>
 
@@ -2181,18 +2286,11 @@ function presetToSelectValue(p: Preset): Preset {
   </div>
 </div>
 
-        {/* ===== Title Trainings ===== */}
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-            <div className="section-title" style={{ marginBottom: 0 }}>
-            {t("golfDashboard.trainingsTitle")}
-          </div>
-        </div>
-
         {/* ===== Trainings KPIs ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{t("golfDashboard.volume")}</div>
+              <div className="card-title">{locale === "fr" ? "Mon volume d'entraînement" : t("golfDashboard.volume")}</div>
 
               {loading ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
