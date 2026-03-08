@@ -319,13 +319,21 @@ export default function CoachHomePage() {
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                             {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
                           </div>
-                          {renderMessagePill(e.id)}
                         </div>
-                        {e.location_text ? (
-                          <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                            📍 {e.location_text}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
+                          {e.location_text ? (
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12, minWidth: 0 }} className="truncate">
+                              📍 {e.location_text}
+                            </div>
+                          ) : (
+                            <div style={{ color: "rgba(0,0,0,0.45)", fontWeight: 700, fontSize: 12, minWidth: 0 }} className="truncate">
+                              —
+                            </div>
+                          )}
+                          <div style={{ flexShrink: 0 }}>
+                            {renderMessagePill(e.id)}
                           </div>
-                        ) : null}
+                        </div>
                         <div style={{ display: "flex", justifyContent: "flex-end" }}>
                           <span
                             className="pill-soft"
@@ -399,13 +407,21 @@ export default function CoachHomePage() {
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                             {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
                           </div>
-                          {renderMessagePill(e.id)}
                         </div>
-                        {e.location_text ? (
-                          <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                            📍 {e.location_text}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
+                          {e.location_text ? (
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12, minWidth: 0 }} className="truncate">
+                              📍 {e.location_text}
+                            </div>
+                          ) : (
+                            <div style={{ color: "rgba(0,0,0,0.45)", fontWeight: 700, fontSize: 12, minWidth: 0 }} className="truncate">
+                              —
+                            </div>
+                          )}
+                          <div style={{ flexShrink: 0 }}>
+                            {renderMessagePill(e.id)}
                           </div>
-                        ) : null}
+                        </div>
                       </div>
                     </Link>
                   </div>
