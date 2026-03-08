@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -18,8 +18,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, MessageCircle, Mountain, Smile, CalendarRange, SlidersHorizontal, X } from "lucide-react";
-import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, Upload, FileText, Trash2 } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -112,6 +111,40 @@ type ProfileLite = {
   last_name: string | null;
   handicap: number | null;
   avatar_url: string | null;
+};
+
+type PlannedEventRow = {
+  id: string;
+  starts_at: string;
+  ends_at: string | null;
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
+  title: string | null;
+  group_id: string | null;
+  location_text: string | null;
+  club_id: string | null;
+};
+
+type PlayerDashboardDocument = {
+  id: string;
+  organization_id: string;
+  player_id: string;
+  uploaded_by: string;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  coach_only: boolean;
+  created_at: string;
+  public_url: string;
+};
+
+type TeamThreadMessage = {
+  id: string;
+  thread_id: string;
+  sender_user_id: string;
+  body: string;
+  created_at: string;
+  sender_name?: string | null;
 };
 
 const LOOKBACK_DAYS = 14;
@@ -251,6 +284,38 @@ function RatingBar({
         <span style={{ width: `${pct}%` }} />
       </div>
     </div>
+  );
+}
+
+function VolumeDonut({ percent }: { percent: number }) {
+  const p = clamp(percent, 0, 100);
+  const r = 40;
+  const c = 2 * Math.PI * r;
+  const dash = (p / 100) * c;
+
+  return (
+    <svg width="120" height="120" viewBox="0 0 110 110" aria-label={`Progression ${Math.round(p)}%`}>
+      <circle cx="55" cy="55" r={r} strokeWidth="11" fill="none" stroke="rgba(0,0,0,0.10)" />
+      <circle
+        cx="55"
+        cy="55"
+        r={r}
+        strokeWidth="11"
+        fill="none"
+        stroke="rgba(16,94,51,0.95)"
+        strokeLinecap="round"
+        strokeDasharray={`${dash} ${c}`}
+        transform="rotate(-90 55 55)"
+      />
+      <text
+        x="55"
+        y="60"
+        textAnchor="middle"
+        style={{ fontSize: 17, fontWeight: 900, fill: "rgba(0,0,0,0.75)" }}
+      >
+        {Math.round(p)}%
+      </text>
+    </svg>
   );
 }
 
@@ -423,8 +488,30 @@ export default function GolfDashboardPage() {
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
   const [coachEvalPage, setCoachEvalPage] = useState(0);
-  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
+  const [plannedEvents, setPlannedEvents] = useState<PlannedEventRow[]>([]);
+  const [plannedGroupNameById, setPlannedGroupNameById] = useState<Record<string, string>>({});
+  const [loadingPlannedEvents, setLoadingPlannedEvents] = useState(false);
+  const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string>("");
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const docFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
+  const [teamThreadId, setTeamThreadId] = useState<string>("");
+  const [teamMessages, setTeamMessages] = useState<TeamThreadMessage[]>([]);
+  const [teamProfilesById, setTeamProfilesById] = useState<Record<string, ProfileLite>>({});
+  const [loadingTeamThread, setLoadingTeamThread] = useState(false);
+  const [loadingTeamMessages, setLoadingTeamMessages] = useState(false);
+  const [sendingTeamMessage, setSendingTeamMessage] = useState(false);
+  const [deletingTeamMessageId, setDeletingTeamMessageId] = useState<string>("");
+  const [teamComposer, setTeamComposer] = useState("");
+  const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
+  const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [trainingVolumeLevelFromDb, setTrainingVolumeLevelFromDb] = useState<string | null>(null);
+  const [trainingVolumeObjectiveFromDb, setTrainingVolumeObjectiveFromDb] = useState<number | null>(null);
+  const [trainingVolumeMotivationFromDb, setTrainingVolumeMotivationFromDb] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -471,13 +558,17 @@ export default function GolfDashboardPage() {
         if (sharedClubIds.length === 0) throw new Error("Access denied for this player.");
         setSharedClubIds(sharedClubIds);
 
+        const allPlayerClubIds = Array.from(
+          new Set(((targetRes.data ?? []) as ClubMemberRow[]).map((r) => r.club_id).filter(Boolean))
+        );
+
         const [profileRes, clubsRes] = await Promise.all([
           supabase
             .from("profiles")
             .select("id,first_name,last_name,handicap,avatar_url")
             .eq("id", playerId)
             .maybeSingle(),
-          supabase.from("clubs").select("id,name").in("id", sharedClubIds),
+          supabase.from("clubs").select("id,name").in("id", allPlayerClubIds),
         ]);
 
         if (profileRes.error) throw new Error(profileRes.error.message);
@@ -489,6 +580,29 @@ export default function GolfDashboardPage() {
             .map((c) => String(c.name ?? "").trim())
             .filter(Boolean)
         );
+
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData.session?.access_token ?? "";
+          if (token) {
+            const orgRes = await fetch(
+              `/api/coach/players/${encodeURIComponent(playerId)}/organizations`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              }
+            );
+            const orgJson = await orgRes.json().catch(() => ({}));
+            if (orgRes.ok && Array.isArray(orgJson?.organizations)) {
+              const names = (orgJson.organizations as any[])
+                .map((x: any) => String(x ?? "").trim())
+                .filter(Boolean);
+              if (names.length > 0) setSharedClubNames(Array.from(new Set(names)));
+            }
+          }
+        } catch {
+          // fallback keeps current names
+        }
 
         setCanLoadData(true);
       } catch (e: unknown) {
@@ -974,6 +1088,51 @@ function presetToSelectValue(p: Preset): Preset {
     () => filteredSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0),
     [filteredSessions]
   );
+  const trainingLevel = trainingVolumeLevelFromDb ?? "—";
+  const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
+  const trainingVolumePercent = trainingVolumeObjective > 0 ? Math.max(0, Math.round((totalMinutes / trainingVolumeObjective) * 100)) : 0;
+
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData || !playerId) {
+        setTrainingVolumeLevelFromDb(null);
+        setTrainingVolumeObjectiveFromDb(null);
+        setTrainingVolumeMotivationFromDb(null);
+        return;
+      }
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (!token) {
+          setTrainingVolumeLevelFromDb(null);
+          setTrainingVolumeObjectiveFromDb(null);
+          setTrainingVolumeMotivationFromDb(null);
+          return;
+        }
+        const res = await fetch(
+          `/api/coach/players/${encodeURIComponent(playerId)}/training-volume-level`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setTrainingVolumeLevelFromDb(null);
+          setTrainingVolumeObjectiveFromDb(null);
+          setTrainingVolumeMotivationFromDb(null);
+          return;
+        }
+        const label = String(json?.level_label ?? "").trim();
+        setTrainingVolumeLevelFromDb(label || null);
+        const objective = Number(json?.objective_minutes);
+        setTrainingVolumeObjectiveFromDb(Number.isFinite(objective) && objective > 0 ? objective : null);
+        const motivation = String(json?.motivation_text ?? "").trim();
+        setTrainingVolumeMotivationFromDb(motivation || null);
+      } catch {
+        setTrainingVolumeLevelFromDb(null);
+        setTrainingVolumeObjectiveFromDb(null);
+        setTrainingVolumeMotivationFromDb(null);
+      }
+    })();
+  }, [canLoadData, playerId, sharedClubIds]);
   const avgMotivation = useMemo(() => avg(filteredSessions.map((s) => s.motivation)), [filteredSessions]);
   const avgDifficulty = useMemo(() => avg(filteredSessions.map((s) => s.difficulty)), [filteredSessions]);
   const avgSatisfaction = useMemo(() => avg(filteredSessions.map((s) => s.satisfaction)), [filteredSessions]);
@@ -1645,20 +1804,628 @@ function presetToSelectValue(p: Preset): Preset {
   const coachEvalHasMore = (coachEvalPage + 1) * coachEvalPageSize < coachEvalNotes.length;
 
   useEffect(() => {
-    const ids = Array.from(new Set(coachEvalNotes.map((x) => String(x.event_id ?? "")).filter(Boolean)));
-    if (ids.length === 0) {
-      setMessageBadgesByEventId({});
+    (async () => {
+      if (!canLoadData || !playerId || sharedClubIds.length === 0) {
+        setPlannedEvents([]);
+        setPlannedGroupNameById({});
+        return;
+      }
+      setLoadingPlannedEvents(true);
+      try {
+        const attendeeRes = await supabase
+          .from("club_event_attendees")
+          .select("event_id")
+          .eq("player_id", playerId)
+          .limit(2000);
+        if (attendeeRes.error) throw new Error(attendeeRes.error.message);
+
+        const eventIds = Array.from(
+          new Set((attendeeRes.data ?? []).map((r: any) => String(r.event_id ?? "")).filter(Boolean))
+        );
+        if (eventIds.length === 0) {
+          setPlannedEvents([]);
+          setPlannedGroupNameById({});
+          return;
+        }
+
+        const evRes = await supabase
+          .from("club_events")
+          .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status")
+          .in("id", eventIds)
+          .in("club_id", sharedClubIds)
+          .eq("status", "scheduled")
+          .gte("starts_at", new Date().toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(100);
+        if (evRes.error) throw new Error(evRes.error.message);
+
+        const nextEvents = (evRes.data ?? []) as PlannedEventRow[];
+        setPlannedEvents(nextEvents);
+
+        const groupIds = Array.from(new Set(nextEvents.map((e) => String(e.group_id ?? "")).filter(Boolean)));
+        if (groupIds.length === 0) {
+          setPlannedGroupNameById({});
+          return;
+        }
+        const gRes = await supabase.from("coach_groups").select("id,name").in("id", groupIds);
+        if (gRes.error) throw new Error(gRes.error.message);
+        const byId: Record<string, string> = {};
+        for (const g of gRes.data ?? []) byId[String((g as any).id)] = String((g as any).name ?? "");
+        setPlannedGroupNameById(byId);
+      } catch {
+        setPlannedEvents([]);
+        setPlannedGroupNameById({});
+      } finally {
+        setLoadingPlannedEvents(false);
+      }
+    })();
+  }, [canLoadData, playerId, sharedClubIds]);
+
+  async function loadDocuments() {
+    if (!canLoadData || !playerId) return;
+    setLoadingDocuments(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Load documents error"));
+      setDocuments((json?.documents ?? []) as PlayerDashboardDocument[]);
+    } catch {
+      setDocuments([]);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canLoadData, playerId]);
+
+  function openDocumentPicker() {
+    if (uploadingDocument) return;
+    docFileInputRef.current?.click();
+  }
+
+  function onPickDocument(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    setDocFile(file);
+  }
+
+  async function uploadDocument() {
+    if (!docFile || !playerId || sharedClubIds.length === 0 || uploadingDocument) return;
+    setUploadingDocument(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+
+      const fd = new FormData();
+      fd.append("organization_id", sharedClubIds[0]);
+      fd.append("coach_only", "false");
+      fd.append("file", docFile);
+
+      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Upload failed"));
+      const created = json?.document as PlayerDashboardDocument | undefined;
+      if (created?.id) {
+        setDocuments((prev) => [created, ...prev]);
+      } else {
+        await loadDocuments();
+      }
+      setDocFile(null);
+      if (docFileInputRef.current) docFileInputRef.current.value = "";
+    } catch (e: any) {
+      setError(e?.message ?? "Upload failed");
+    } finally {
+      setUploadingDocument(false);
+    }
+  }
+
+  async function deleteDocument(documentId: string) {
+    if (!documentId || deletingDocumentId) return;
+    const ok = window.confirm(
+      locale === "fr"
+        ? "Supprimer ce document ? (irréversible)"
+        : "Delete this document? (irreversible)"
+    );
+    if (!ok) return;
+    setDeletingDocumentId(documentId);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(documentId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      setDocuments((prev) => prev.filter((d) => d.id !== documentId));
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingDocumentId("");
+    }
+  }
+
+  async function loadTeamThreadMessages(threadId: string, options?: { silent?: boolean }) {
+    if (!threadId) {
+      setTeamMessages([]);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      const badges = await fetchEventMessageBadges(ids);
-      if (!cancelled) setMessageBadgesByEventId(badges);
-    })();
+    if (!options?.silent) setLoadingTeamMessages(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=200`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Load failed"));
+      const msgs = ((json?.messages ?? []) as TeamThreadMessage[]).slice().reverse();
+      setTeamMessages(msgs);
+
+      const senderIds = Array.from(new Set(msgs.map((m) => String(m.sender_user_id ?? "")).filter(Boolean)));
+      const missing = senderIds.filter((id) => !teamProfilesById[id]);
+      if (missing.length > 0) {
+        const profRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", missing);
+        if (!profRes.error) {
+          const next = { ...teamProfilesById };
+          for (const p of profRes.data ?? []) next[String((p as any).id)] = p as ProfileLite;
+          setTeamProfilesById(next);
+        }
+      }
+    } catch {
+      setTeamMessages([]);
+    } finally {
+      if (!options?.silent) setLoadingTeamMessages(false);
+    }
+  }
+
+  async function loadTeamParticipants(threadId: string, organizationId?: string) {
+    if (!threadId) {
+      setTeamParticipantNames([]);
+      return;
+    }
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (token) {
+        const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({} as any));
+        if (res.ok) {
+          const names: string[] = Array.isArray(json?.participant_full_names)
+            ? (json.participant_full_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+            : Array.isArray(json?.participant_names)
+              ? (json.participant_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+              : [];
+          if (names.length > 0) {
+            setTeamParticipantNames(names);
+            return;
+          }
+        }
+      }
+    } catch {
+      // fallback below
+    }
+    if (organizationId) {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (token) {
+          const qs = new URLSearchParams({
+            organization_id: organizationId,
+            include_thread_id: threadId,
+          });
+          const res = await fetch(`/api/messages/threads?${qs.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const json = await res.json().catch(() => ({} as any));
+          if (res.ok) {
+            const thread = (json?.threads ?? []).find((t: any) => String(t?.id ?? "") === threadId);
+            const names: string[] = Array.isArray(thread?.participant_full_names)
+              ? (thread.participant_full_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+              : Array.isArray(thread?.participant_names)
+                ? (thread.participant_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+                : [];
+            if (names.length > 0) {
+              setTeamParticipantNames(Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)));
+              return;
+            }
+          }
+        }
+      } catch {
+        // fallback below
+      }
+    }
+    const pRes = await supabase
+      .from("thread_participants")
+      .select("user_id")
+      .eq("thread_id", threadId);
+    if (pRes.error) {
+      setTeamParticipantNames([]);
+      return;
+    }
+    const ids = Array.from(new Set((pRes.data ?? []).map((r: any) => String(r.user_id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setTeamParticipantNames([]);
+      return;
+    }
+    const profRes = await supabase
+      .from("profiles")
+      .select("id,first_name,last_name")
+      .in("id", ids);
+    if (profRes.error) {
+      setTeamParticipantNames([]);
+      return;
+    }
+    const names = (profRes.data ?? [])
+      .map((p: any) => `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    setTeamParticipantNames(names);
+  }
+
+  async function ensureAndLoadTeamThread() {
+    if (!canLoadData || !playerId || !coachId || sharedClubIds.length === 0) {
+      setTeamThreadId("");
+      setTeamMessages([]);
+      return;
+    }
+    setLoadingTeamThread(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/team-thread`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Team thread unavailable"));
+      const threadId = String(json?.thread_id ?? "");
+      const orgId = String(json?.organization_id ?? sharedClubIds[0] ?? "");
+      if (!threadId) throw new Error("Team thread not found");
+
+      setTeamThreadId(threadId);
+      await loadTeamThreadMessages(threadId);
+      await loadTeamParticipants(threadId, orgId);
+    } catch {
+      setTeamThreadId("");
+      setTeamMessages([]);
+    } finally {
+      setLoadingTeamThread(false);
+    }
+  }
+
+  useEffect(() => {
+    void ensureAndLoadTeamThread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canLoadData, playerId, coachId, sharedClubIds.join(",")]);
+
+  useEffect(() => {
+    if (!teamThreadId) return;
+    const channel = supabase
+      .channel(`coach-player-team-thread:${teamThreadId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
+        (payload) => {
+          const row = payload.new as any;
+          const msg: TeamThreadMessage = {
+            id: String(row?.id ?? ""),
+            thread_id: String(row?.thread_id ?? ""),
+            sender_user_id: String(row?.sender_user_id ?? ""),
+            body: String(row?.body ?? ""),
+            created_at: String(row?.created_at ?? ""),
+            sender_name: null,
+          };
+          setTeamMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          // Ensure sender names and ordering are always fresh across clients.
+          window.setTimeout(() => {
+            void loadTeamThreadMessages(teamThreadId, { silent: true });
+          }, 120);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
+        () => {
+          void loadTeamThreadMessages(teamThreadId, { silent: true });
+        }
+      )
+      .subscribe();
     return () => {
-      cancelled = true;
+      void supabase.removeChannel(channel);
     };
-  }, [coachEvalNotes]);
+  }, [teamThreadId]);
+
+  useEffect(() => {
+    if (!teamThreadId) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (!token) return;
+        const res = await fetch(
+          `/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages?limit=1`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const latest = (json?.messages?.[0] ?? null) as any;
+        if (!latest?.id) return;
+        const latestId = String(latest.id);
+        const currentLatestId = teamMessages.length ? String(teamMessages[teamMessages.length - 1]?.id ?? "") : "";
+        if (latestId && latestId !== currentLatestId) {
+          await loadTeamThreadMessages(teamThreadId, { silent: true });
+        }
+      } catch {
+        // Silent fallback.
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [teamThreadId, teamMessages]);
+
+  async function sendTeamMessage() {
+    if (!teamThreadId || !teamComposer.trim() || sendingTeamMessage) return;
+    setSendingTeamMessage(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message_type: "text", body: teamComposer.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Send failed"));
+      const created = json?.message as TeamThreadMessage | undefined;
+      if (created?.id) {
+        setTeamMessages((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]));
+      } else {
+        await loadTeamThreadMessages(teamThreadId);
+      }
+      setTeamComposer("");
+    } catch (e: any) {
+      setError(e?.message ?? "Send failed");
+    } finally {
+      setSendingTeamMessage(false);
+    }
+  }
+
+  async function deleteTeamMessage(messageId: string) {
+    if (!teamThreadId || !messageId || deletingTeamMessageId) return;
+    setDeletingTeamMessageId(messageId);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages/${encodeURIComponent(messageId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      setTeamMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingTeamMessageId("");
+    }
+  }
+
+  function teamMessageTime(iso: string) {
+    return new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  }
+
+  function teamMessageDayLabel(iso: string) {
+    return new Intl.DateTimeFormat(dateLocale, {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    }).format(new Date(iso));
+  }
+
+  useEffect(() => {
+    if (!teamMessagesEndRef.current) return;
+    teamMessagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [teamMessages.length, teamThreadId]);
+
+  function renderTeamThreadCard() {
+    return (
+      <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gap: 4 }}>
+          <div className="card-title" style={{ marginBottom: 0 }}>Fil équipe coachs + joueur + parent(s)</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+            Participants: {teamParticipantNames.length ? teamParticipantNames.join(", ") : "—"}
+          </div>
+        </div>
+        {loadingTeamThread || loadingTeamMessages ? (
+          <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+        ) : !teamThreadId ? (
+          <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Fil équipe indisponible.</div>
+        ) : (
+          <>
+            <div
+              style={{
+                border: "1px solid rgba(0,0,0,0.08)",
+                borderRadius: 12,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(245,248,250,0.9) 100%)",
+                padding: 10,
+                maxHeight: 340,
+                overflowY: "auto",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              {teamMessages.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun message.</div>
+              ) : (
+                teamMessages.map((m, idx) => {
+                  const mine = m.sender_user_id === coachId;
+                  const p = teamProfilesById[m.sender_user_id];
+                  const label = (
+                    String(m.sender_name ?? "").trim() ||
+                    (p ? `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() : "")
+                  ) || m.sender_user_id.slice(0, 8);
+                  const initialsLabel = (() => {
+                    const first = String(p?.first_name ?? "").trim();
+                    const last = String(p?.last_name ?? "").trim();
+                    const i = `${first ? first[0].toUpperCase() : ""}${last ? last[0].toUpperCase() : ""}`;
+                    return i || (label?.slice(0, 2) ?? "??").toUpperCase();
+                  })();
+                  const prev = idx > 0 ? teamMessages[idx - 1] : null;
+                  const dayKey = new Date(m.created_at).toDateString();
+                  const prevDayKey = prev ? new Date(prev.created_at).toDateString() : "";
+                  const showDay = idx === 0 || dayKey !== prevDayKey;
+                  return (
+                    <div key={m.id} style={{ display: "grid", gap: 6 }}>
+                      {showDay ? (
+                        <div style={{ display: "flex", justifyContent: "center" }}>
+                          <span
+                            className="pill-soft"
+                            style={{
+                              background: "rgba(107,114,128,0.14)",
+                              borderColor: "rgba(107,114,128,0.24)",
+                              color: "rgba(55,65,81,0.9)",
+                              fontWeight: 900,
+                              fontSize: 11,
+                            }}
+                          >
+                            {teamMessageDayLabel(m.created_at)}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          justifySelf: mine ? "end" : "start",
+                          display: "grid",
+                          gridTemplateColumns: mine ? "1fr" : "26px 1fr",
+                          gap: 8,
+                          alignItems: "end",
+                          maxWidth: "88%",
+                        }}
+                      >
+                        {!mine ? (
+                          <div
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 999,
+                              background: "rgba(53,72,59,0.14)",
+                              border: "1px solid rgba(53,72,59,0.24)",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              color: "rgba(53,72,59,0.9)",
+                            }}
+                          >
+                            {initialsLabel}
+                          </div>
+                        ) : null}
+                        <div
+                          style={{
+                            position: "relative",
+                            borderRadius: 12,
+                            padding: "8px 10px 26px 10px",
+                            paddingRight: 26,
+                            background: mine ? "#1b5e20" : "rgba(0,0,0,0.06)",
+                            color: mine ? "white" : "#111827",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          {mine ? (
+                            <button
+                              type="button"
+                              onClick={() => void deleteTeamMessage(m.id)}
+                              disabled={deletingTeamMessageId === m.id}
+                              title="Supprimer le message"
+                              style={{
+                                position: "absolute",
+                                bottom: 4,
+                                right: 4,
+                                border: "1px solid rgba(255,255,255,0.35)",
+                                background: "rgba(255,255,255,0.12)",
+                                color: "white",
+                                width: 18,
+                                height: 18,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                borderRadius: 999,
+                                padding: 0,
+                                cursor: "pointer",
+                                opacity: 0.9,
+                              }}
+                            >
+                              <X size={11} />
+                            </button>
+                          ) : null}
+                          <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.82, marginBottom: 4 }}>
+                            {label || "—"} • {teamMessageTime(m.created_at)}
+                          </div>
+                          <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.body}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={teamMessagesEndRef} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+              <input
+                className="input"
+                placeholder="Écrire..."
+                value={teamComposer}
+                onChange={(e) => setTeamComposer(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void sendTeamMessage();
+                  }
+                }}
+              />
+              <button className="btn btn-primary" type="button" onClick={() => void sendTeamMessage()} disabled={sendingTeamMessage || !teamComposer.trim()}>
+                Envoyer
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -1708,26 +2475,175 @@ function presetToSelectValue(p: Preset): Preset {
                 fontWeight: 900,
                 fontSize: 18,
                 color: "var(--green-dark)",
+                flexShrink: 0,
               }}
             >
               {playerProfile?.avatar_url ? (
-                <img src={playerProfile.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={playerProfile.avatar_url} alt={fullName(playerProfile)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               ) : (
                 initials(playerProfile)
               )}
             </div>
 
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 950, fontSize: 18 }} className="truncate">
-                {fullName(playerProfile)}
+              <div style={{ fontWeight: 950, fontSize: 18, lineHeight: 1.2, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                {fullName(playerProfile) !== "—" ? fullName(playerProfile) : "Joueur"}
               </div>
               <div style={{ opacity: 0.72, fontWeight: 800, marginTop: 4 }}>
-                Handicap {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"}
+                Handicap {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"} • {trainingLevel}
               </div>
-              <div className="truncate" style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                {sharedClubNames.length ? sharedClubNames.join(" • ") : "Club —"}
+              <div style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 12, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                {sharedClubNames.length ? sharedClubNames.join(" • ") : "—"}
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="glass-section">
+          {renderTeamThreadCard()}
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input
+                ref={docFileInputRef}
+                type="file"
+                onChange={onPickDocument}
+                style={{ display: "none" }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={openDocumentPicker}
+                  disabled={uploadingDocument}
+                >
+                  Choisir un fichier
+                </button>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                </span>
+              </div>
+              <div>
+                <button className="btn btn-primary" type="button" onClick={() => void uploadDocument()} disabled={!docFile || uploadingDocument}>
+                  <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  Upload
+                </button>
+              </div>
+            </div>
+
+            {loadingDocuments ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            ) : documents.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {documents.map((d) => (
+                  <div
+                    key={d.id}
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.08)",
+                      borderRadius: 10,
+                      background: "rgba(255,255,255,0.75)",
+                      padding: "8px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
+                      <div style={{ fontWeight: 900 }} className="truncate">
+                        <FileText size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                        {d.file_name}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
+                        {shortDate(d.created_at, dateLocale)}
+                      </div>
+                    </div>
+                    <div style={{ display: "inline-flex", gap: 8 }}>
+                      <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
+                        Voir
+                      </button>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={() => void deleteDocument(d.id)}
+                        disabled={deletingDocumentId === d.id}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Planification du joueur</div>
+            {loadingPlannedEvents ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            ) : plannedEvents.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun événement planifié.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {plannedEvents.slice(0, 12).map((e) => (
+                  <div
+                    key={e.id}
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.08)",
+                      borderRadius: 10,
+                      background: "rgba(255,255,255,0.75)",
+                      padding: "8px 10px",
+                      display: "grid",
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.7)" }}>
+                      {shortDate(e.starts_at, dateLocale)} • {new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(e.starts_at))}
+                    </div>
+                    <div style={{ fontWeight: 900 }}>
+                      {e.event_type === "training"
+                        ? "Entraînement"
+                        : e.event_type === "camp"
+                          ? "Stage/Camp"
+                          : e.event_type === "interclub"
+                            ? "Interclub"
+                            : e.event_type === "session"
+                              ? "Séance"
+                              : "Événement"}
+                      {` • ${String(e.title ?? "").trim() || String(plannedGroupNameById[String(e.group_id ?? "")] ?? "").trim() || "Sans titre"}`}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                        {String(plannedGroupNameById[String(e.group_id ?? "")] ?? "").trim() || "—"}
+                      </div>
+                      <Link className="btn" href={`/coach/groups/${e.group_id}/planning/${e.id}`}>
+                        Détails
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1868,38 +2784,6 @@ function presetToSelectValue(p: Preset): Preset {
                             {shortDate(row.starts_at, dateLocale)}
                             {` • ${row.event_type === "camp" ? "Stage/Camp" : "Entraînement"}`}
                           </div>
-                          {(() => {
-                            const badge = messageBadgesByEventId[String(row.event_id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-                            const hasMessages = (badge.message_count ?? 0) > 0;
-                            const hasUnread = (badge.unread_count ?? 0) > 0;
-                            return (
-                              <Link
-                                href={`/coach/messages?event_id=${encodeURIComponent(row.event_id)}`}
-                                className="pill-soft"
-                                style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
-                              >
-                                <MessageCircle size={14} />
-                                Messagerie
-                                <span
-                                  style={{
-                                    minWidth: 18,
-                                    height: 18,
-                                    padding: "0 6px",
-                                    borderRadius: 999,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: 11,
-                                    fontWeight: 900,
-                                    color: "white",
-                                    background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
-                                  }}
-                                >
-                                  {badge.message_count ?? 0}
-                                </span>
-                              </Link>
-                            );
-                          })()}
                           <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
                             Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
                           </div>
@@ -1927,10 +2811,17 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         </div>
 
+       {/* ===== Title Trainings ===== */}
+        <div className="glass-section" style={{ paddingTop: 0 }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>
+            Volume d'entrainement
+          </div>
+        </div>
+
        {/* ===== Filters ===== */}
-<div className="glass-section">
-  <div className="glass-card" style={{ padding: 14 }}>
-    <div style={{ display: "grid", gap: 12 }}>
+        <div className="glass-section">
+          <div className="glass-card" style={{ padding: 14 }}>
+            <div style={{ display: "grid", gap: 12 }}>
       {/* Label */}
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
         <SlidersHorizontal size={16} />
@@ -2109,13 +3000,6 @@ function presetToSelectValue(p: Preset): Preset {
       )}
     </div>
   </div>
-</div>
-
-        {/* ===== Title Trainings ===== */}
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-          <div className="section-title" style={{ marginBottom: 0 }}>
-            {t("coachPlayerDashboard.trainingsOf").replace("{name}", playerFirstName)}
-          </div>
         </div>
 
         {/* ===== Trainings KPIs ===== */}
@@ -2130,51 +3014,64 @@ function presetToSelectValue(p: Preset): Preset {
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <span className="big-number">{totalMinutes}</span>
-                        <span className="unit">MIN</span>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <span className="big-number">{totalMinutes}</span>
+                          <span className="unit">MIN</span>
+                        </div>
+
+                        {deltaMinutes != null && (
+                          <span
+                            className="pill-soft"
+                            style={{
+                              background: "rgba(0,0,0,0.06)",
+                              fontSize: 12,
+                              fontWeight: 950,
+                              color: deltaMinutes >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
+                            }}
+                            title={t("golfDashboard.previousPeriodComparison")}
+                          >
+                            {deltaMinutes >= 0 ? "▲" : "▼"} {Math.abs(deltaMinutes)} min
+                          </span>
+                        )}
                       </div>
 
-                      {deltaMinutes != null && (
-                        <span
-                          className="pill-soft"
-                          style={{
-                            background: "rgba(0,0,0,0.06)",
-                            fontSize: 12,
-                            fontWeight: 950,
-                            color: deltaMinutes >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                          }}
-                          title={t("golfDashboard.previousPeriodComparison")}
-                        >
-                          {deltaMinutes >= 0 ? "▲" : "▼"} {Math.abs(deltaMinutes)} min
-                        </span>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span className="pill-soft">⛳ {filteredSessions.length} {t("golfDashboard.sessions")}</span>
+
+                        {deltaCount != null && (
+                          <span
+                            className="pill-soft"
+                            style={{
+                              background: "rgba(0,0,0,0.06)",
+                              fontSize: 12,
+                              fontWeight: 950,
+                              color: deltaCount >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
+                            }}
+                            title={t("golfDashboard.previousPeriodComparison")}
+                          >
+                            {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} {t("golfDashboard.sessions")}
+                          </span>
+                        )}
+                      </div>
+
+                      {trainingVolumeObjective > 0 ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.72)" }}>
+                            {t("playerHome.goal")}: {trainingVolumeObjective} {t("common.min")}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {compareLabel && (
+                        <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
                       )}
                     </div>
-
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                      <span className="pill-soft">⛳ {filteredSessions.length} {t("golfDashboard.sessions")}</span>
-
-                      {deltaCount != null && (
-                        <span
-                          className="pill-soft"
-                          style={{
-                            background: "rgba(0,0,0,0.06)",
-                            fontSize: 12,
-                            fontWeight: 950,
-                            color: deltaCount >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                          }}
-                          title={t("golfDashboard.previousPeriodComparison")}
-                        >
-                          {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} {t("golfDashboard.sessions")}
-                        </span>
-                      )}
+                    <div style={{ justifySelf: "center" }}>
+                      <VolumeDonut percent={trainingVolumePercent} />
                     </div>
-
-                    {compareLabel && (
-                      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
-                    )}
                   </div>
 
                   <div className="hr-soft" style={{ margin: "2px 0" }} />
@@ -2543,6 +3440,80 @@ function presetToSelectValue(p: Preset): Preset {
 
         <div style={{ height: 12 }} />
       </div>
+
+      {viewerDocument ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1200,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setViewerDocument(null)}
+        >
+          <div
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "min(86vh, 860px)",
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid rgba(0,0,0,0.1)",
+              boxShadow: "0 20px 48px rgba(0,0,0,0.25)",
+              display: "grid",
+              gridTemplateRows: "auto 1fr",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "10px 12px",
+                borderBottom: "1px solid rgba(0,0,0,0.1)",
+                background: "rgba(248,250,248,0.95)",
+              }}
+            >
+              <div className="truncate" style={{ fontWeight: 900 }}>
+                {viewerDocument.file_name}
+              </div>
+              <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ background: "rgba(245,246,248,0.9)", overflow: "auto" }}>
+              {(viewerDocument.mime_type ?? "").startsWith("image/") ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 12 }}>
+                  <img
+                    src={viewerDocument.public_url}
+                    alt={viewerDocument.file_name}
+                    style={{ maxWidth: "100%", maxHeight: "74vh", objectFit: "contain", borderRadius: 10 }}
+                  />
+                </div>
+              ) : (viewerDocument.mime_type ?? "").startsWith("video/") ? (
+                <div style={{ padding: 12 }}>
+                  <video src={viewerDocument.public_url} controls style={{ width: "100%", maxHeight: "74vh", borderRadius: 10 }} />
+                </div>
+              ) : (
+                <iframe
+                  title={viewerDocument.file_name}
+                  src={viewerDocument.public_url}
+                  style={{ width: "100%", height: "74vh", border: "none", display: "block" }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <style jsx global>{`
         @media (min-width: 900px) {

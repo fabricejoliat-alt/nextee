@@ -1,4 +1,4 @@
--- Allow one player thread per staff member (coach/manager/captain) and player.
+-- Allow one player thread per staff member (coach/manager) and player.
 -- Replaces org+player uniqueness with org+player+created_by uniqueness.
 
 drop index if exists public.idx_message_threads_unique_player_per_org;
@@ -25,4 +25,3 @@ create unique index if not exists idx_message_threads_unique_player_per_staff
   where thread_type = 'player'
     and player_id is not null
     and created_by is not null;
-

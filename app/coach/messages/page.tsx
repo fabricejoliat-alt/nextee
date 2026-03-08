@@ -8,6 +8,7 @@ export default function CoachMessagesPage() {
       titleEn="Coach messages"
       titleDe="Trainer-Nachrichten"
       titleIt="Messaggi coach"
+      hideTeamCoachThreadInList
     />
   );
 }

@@ -14,12 +14,14 @@ type Props = {
   titleEn: string;
   titleDe?: string;
   titleIt?: string;
+  hideTeamCoachThreadInList?: boolean;
 };
 
 type Thread = {
   id: string;
   organization_id: string;
   thread_type: "organization" | "group" | "event" | "player";
+  player_thread_scope?: "direct" | "team" | string | null;
   title: string;
   display_title?: string;
   group_id?: string | null;
@@ -72,7 +74,14 @@ const THREAD_TYPES: Array<{ value: Thread["thread_type"]; fr: string; en: string
   { value: "player", fr: "Joueur", en: "Player" },
 ];
 
-export default function MessagesCenter({ homeHref, titleFr, titleEn, titleDe, titleIt }: Props) {
+export default function MessagesCenter({
+  homeHref,
+  titleFr,
+  titleEn,
+  titleDe,
+  titleIt,
+  hideTeamCoachThreadInList = false,
+}: Props) {
   const { locale } = useI18n();
   const searchParams = useSearchParams();
   const tr = (fr: string, en: string, de?: string, it?: string) => {
@@ -160,7 +169,12 @@ export default function MessagesCenter({ homeHref, titleFr, titleEn, titleDe, ti
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json?.error ?? tr("Erreur de chargement.", "Loading error."));
-    const list = (json?.threads ?? []) as Thread[];
+    const rawList = (json?.threads ?? []) as Thread[];
+    const list = rawList.filter((t) => {
+      if (!hideTeamCoachThreadInList) return true;
+      const scope = String(t.player_thread_scope ?? "direct");
+      return !(t.thread_type === "player" && scope === "team");
+    });
     setThreads(list);
     setThreadCounts({
       active: Number(json?.counts?.active ?? 0),
@@ -870,19 +884,43 @@ export default function MessagesCenter({ homeHref, titleFr, titleEn, titleDe, ti
                               <div style={{ fontWeight: 850, fontSize: 12 }} className="truncate">
                                 {t.thread_type === "group" ? groupHeader || (t.display_title || t.title) : (t.display_title || t.title)}
                               </div>
-                              {t.unread_count > 0 ? (
-                                <span
-                                  className="pill-soft"
-                                  style={{
-                                    background: "rgba(220,38,38,0.16)",
-                                    borderColor: "rgba(220,38,38,0.35)",
-                                    color: "rgba(153,27,27,1)",
-                                    fontWeight: 900,
-                                  }}
-                                >
-                                  {t.unread_count}
-                                </span>
-                              ) : null}
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                {t.unread_count > 0 ? (
+                                  <span
+                                    className="pill-soft"
+                                    style={{
+                                      background: "rgba(220,38,38,0.16)",
+                                      borderColor: "rgba(220,38,38,0.35)",
+                                      color: "rgba(153,27,27,1)",
+                                      fontWeight: 900,
+                                    }}
+                                  >
+                                    {t.unread_count}
+                                  </span>
+                                ) : null}
+                                {canArchiveForMe ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void setThreadArchived(t.id, !(t.me?.is_archived ?? false));
+                                    }}
+                                    disabled={busy}
+                                    style={{
+                                      fontSize: 10,
+                                      padding: "2px 7px",
+                                      lineHeight: 1.15,
+                                      borderRadius: 8,
+                                      border: "1px solid rgba(0,0,0,0.16)",
+                                      background: "rgba(255,255,255,0.9)",
+                                      color: "#4b5563",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {t.me?.is_archived ? tr("Désarchiver", "Unarchive") : tr("Archiver", "Archive")}
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                             <div style={{ fontSize: 11, opacity: 0.65 }}>
                               {t.thread_type === "group"
@@ -898,27 +936,6 @@ export default function MessagesCenter({ homeHref, titleFr, titleEn, titleDe, ti
                             ) : null}
                             <div style={{ fontSize: 10, opacity: 0.5 }}>{fmtDate(t.last_message?.created_at ?? t.updated_at)}</div>
                           </button>
-                          {canArchiveForMe ? (
-                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                              <button
-                                type="button"
-                                onClick={() => setThreadArchived(t.id, !(t.me?.is_archived ?? false))}
-                                disabled={busy}
-                                style={{
-                                  fontSize: 10,
-                                  padding: "2px 7px",
-                                  lineHeight: 1.15,
-                                  borderRadius: 8,
-                                  border: "1px solid rgba(0,0,0,0.16)",
-                                  background: "rgba(255,255,255,0.9)",
-                                  color: "#4b5563",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                {t.me?.is_archived ? tr("Désarchiver", "Unarchive") : tr("Archiver", "Archive")}
-                              </button>
-                            </div>
-                          ) : null}
                         </div>
                       );
                     })}

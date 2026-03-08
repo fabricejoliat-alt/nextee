@@ -35,7 +35,7 @@ async function ensureDefaultPlayerStaffThreads(
       .select("user_id,role")
       .eq("club_id", organizationId)
       .eq("is_active", true)
-      .in("role", ["manager", "coach", "captain"]),
+      .in("role", ["manager", "coach"]),
     supabaseAdmin
       .from("player_guardians")
       .select("guardian_user_id")
@@ -44,14 +44,57 @@ async function ensureDefaultPlayerStaffThreads(
   ]);
   if (staffRes.error || guardianRes.error) return;
 
+  const staffMembers = (staffRes.data ?? []) as Array<{ user_id: string | null; role: string | null }>;
   const staffIds: string[] = Array.from(
-    new Set((staffRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim()).filter(Boolean))
+    new Set(staffMembers.map((r) => String(r.user_id ?? "").trim()).filter(Boolean))
   );
   if (staffIds.length === 0) return;
+  const coachIds: string[] = Array.from(
+    new Set(
+      staffMembers
+        .filter((r) => String(r.role ?? "") === "coach")
+        .map((r) => String(r.user_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 
   const guardianIds: string[] = Array.from(
     new Set((guardianRes.data ?? []).map((r: any) => String((r as any).guardian_user_id ?? "").trim()).filter(Boolean))
   );
+
+  const playerGroupsRes = await supabaseAdmin
+    .from("coach_group_players")
+    .select("group_id")
+    .eq("player_user_id", callerId);
+  if (playerGroupsRes.error) return;
+  const rawGroupIds = Array.from(
+    new Set((playerGroupsRes.data ?? []).map((r: any) => String(r.group_id ?? "").trim()).filter(Boolean))
+  );
+  let teamCoachIds: string[] = [];
+  if (rawGroupIds.length > 0) {
+    const [groupCoachesRes, activeCoachMembersRes] = await Promise.all([
+      supabaseAdmin
+        .from("coach_group_coaches")
+        .select("group_id,coach_user_id")
+        .in("group_id", rawGroupIds),
+      supabaseAdmin
+        .from("club_members")
+        .select("user_id")
+        .eq("is_active", true)
+        .eq("role", "coach"),
+    ]);
+    if (groupCoachesRes.error || activeCoachMembersRes.error) return;
+    const activeCoachIds = new Set(
+      (activeCoachMembersRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim()).filter(Boolean)
+    );
+    teamCoachIds = Array.from(
+      new Set(
+        (groupCoachesRes.data ?? [])
+          .map((r: any) => String(r.coach_user_id ?? "").trim())
+          .filter((id: string) => Boolean(id) && activeCoachIds.has(id))
+      )
+    );
+  }
 
   const threadSelect =
     "id,organization_id,thread_type,title,group_id,event_id,player_id,created_by,is_locked,is_active,created_at,updated_at";
@@ -123,14 +166,14 @@ async function ensureDefaultPlayerStaffThreads(
   if (existingTeamThreadRes.error) return;
 
   let teamThreadId = String((existingTeamThreadRes.data as any)?.id ?? "");
-  if (!teamThreadId) {
-    const preferredActor = staffIds[0] ?? callerId;
+  if (!teamThreadId && teamCoachIds.length > 0) {
+    const preferredActor = teamCoachIds[0] ?? callerId;
     const insTeamRes = await supabaseAdmin
       .from("message_threads")
       .insert({
         organization_id: organizationId,
         thread_type: "player",
-        title: "Équipe coachs",
+        title: "Fil équipe coachs + joueur + parent(s)",
         player_id: callerId,
         player_thread_scope: "team",
         created_by: preferredActor,
@@ -144,13 +187,42 @@ async function ensureDefaultPlayerStaffThreads(
   }
   if (!teamThreadId) return;
 
-  const teamParticipantRows = staffIds.map((sid) => ({
-    thread_id: teamThreadId,
-    user_id: sid,
-    can_post: true,
-  }));
+  const teamParticipantRows: Array<{ thread_id: string; user_id: string; can_post: boolean }> = [
+    ...teamCoachIds.map((sid) => ({
+      thread_id: teamThreadId,
+      user_id: sid,
+      can_post: true,
+    })),
+    { thread_id: teamThreadId, user_id: callerId, can_post: true },
+    ...guardianIds.map((gid) => ({
+      thread_id: teamThreadId,
+      user_id: gid,
+      can_post: true,
+    })),
+  ];
   if (teamParticipantRows.length > 0) {
     await supabaseAdmin.from("thread_participants").upsert(teamParticipantRows, { onConflict: "thread_id,user_id" });
+  }
+  const existingTeamParticipantsRes = await supabaseAdmin
+    .from("thread_participants")
+    .select("user_id")
+    .eq("thread_id", teamThreadId);
+  if (!existingTeamParticipantsRes.error) {
+    const allowed = new Set([...teamCoachIds, callerId, ...guardianIds]);
+    const toRemove = Array.from(
+      new Set(
+        (existingTeamParticipantsRes.data ?? [])
+          .map((r: any) => String(r.user_id ?? "").trim())
+          .filter((uid: string) => Boolean(uid) && !allowed.has(uid))
+      )
+    );
+    if (toRemove.length > 0) {
+      await supabaseAdmin
+        .from("thread_participants")
+        .delete()
+        .eq("thread_id", teamThreadId)
+        .in("user_id", toRemove);
+    }
   }
 }
 
@@ -181,7 +253,7 @@ export async function GET(req: NextRequest) {
       const role = String((row as any).role ?? "").trim();
       if (!oid) continue;
       memberOrgIds.add(oid);
-      if (["manager", "coach", "captain"].includes(role)) staffOrgIds.add(oid);
+      if (["manager", "coach"].includes(role)) staffOrgIds.add(oid);
       if (role === "player") playerOrgIds.add(oid);
     }
     if (!memberOrgIds.has(organizationId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -358,6 +430,48 @@ export async function GET(req: NextRequest) {
     const participantUserIds: string[] = Array.from(
       new Set((threadParticipantsRes.data ?? []).map((r: any) => String(r.user_id ?? "")).filter((v: string) => Boolean(v)))
     );
+    const participantIdsByThread = new Map<string, string[]>();
+    for (const row of threadParticipantsRes.data ?? []) {
+      const tid = String((row as any).thread_id ?? "");
+      const uid = String((row as any).user_id ?? "");
+      if (!tid || !uid) continue;
+      const prev = participantIdsByThread.get(tid) ?? [];
+      if (!prev.includes(uid)) prev.push(uid);
+      participantIdsByThread.set(tid, prev);
+    }
+
+    const [coachParticipantsRes, guardianLinksRes] = await Promise.all([
+      participantUserIds.length
+        ? supabaseAdmin
+            .from("club_members")
+            .select("user_id")
+            .eq("is_active", true)
+            .eq("role", "coach")
+            .in("user_id", participantUserIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      playerIds.length
+        ? supabaseAdmin
+            .from("player_guardians")
+            .select("player_id,guardian_user_id,can_view")
+            .in("player_id", playerIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    if (coachParticipantsRes.error) return NextResponse.json({ error: coachParticipantsRes.error.message }, { status: 400 });
+    if (guardianLinksRes.error) return NextResponse.json({ error: guardianLinksRes.error.message }, { status: 400 });
+    const coachParticipantIds = new Set(
+      (coachParticipantsRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim()).filter(Boolean)
+    );
+    const guardianIdsByPlayer = new Map<string, Set<string>>();
+    for (const row of guardianLinksRes.data ?? []) {
+      const pid = String((row as any).player_id ?? "").trim();
+      const gid = String((row as any).guardian_user_id ?? "").trim();
+      const canView = (row as any).can_view;
+      if (!pid || !gid || (canView !== null && canView !== true)) continue;
+      const prev = guardianIdsByPlayer.get(pid) ?? new Set<string>();
+      prev.add(gid);
+      guardianIdsByPlayer.set(pid, prev);
+    }
+
     const missingParticipantProfileIds = participantUserIds.filter((id) => !profileNameById.has(id));
     if (missingParticipantProfileIds.length > 0) {
       const extraProfilesRes = await supabaseAdmin
@@ -375,15 +489,44 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const visibleThreadById = new Map<string, any>();
+    for (const t of visibleThreads) visibleThreadById.set(String((t as any).id ?? ""), t);
     const participantNamesByThread = new Map<string, string[]>();
-    for (const row of threadParticipantsRes.data ?? []) {
-      const tid = String((row as any).thread_id ?? "");
-      const uid = String((row as any).user_id ?? "");
-      if (!tid || !uid) continue;
-      const name = participantFirstNameById.get(uid) ?? uid.slice(0, 8);
-      const prev = participantNamesByThread.get(tid) ?? [];
-      if (!prev.includes(name)) prev.push(name);
-      participantNamesByThread.set(tid, prev);
+    const participantFullNamesByThread = new Map<string, string[]>();
+    for (const [tid, userIds] of participantIdsByThread.entries()) {
+      const thread = visibleThreadById.get(tid);
+      const isTeamThread =
+        String((thread as any)?.thread_type ?? "") === "player" &&
+        String((thread as any)?.player_thread_scope ?? "direct") === "team";
+
+      if (!isTeamThread) {
+        const firstNames = userIds.map((uid) => participantFirstNameById.get(uid) ?? uid.slice(0, 8));
+        const fullNames = userIds.map((uid) => profileNameById.get(uid) ?? uid.slice(0, 8));
+        participantNamesByThread.set(tid, firstNames);
+        participantFullNamesByThread.set(tid, fullNames);
+        continue;
+      }
+
+      const threadPlayerId = String((thread as any)?.player_id ?? "").trim();
+      const guardianSet = guardianIdsByPlayer.get(threadPlayerId) ?? new Set<string>();
+      const entries = userIds.map((uid) => {
+        const firstName = participantFirstNameById.get(uid) ?? uid.slice(0, 8);
+        const fullName = profileNameById.get(uid) ?? uid.slice(0, 8);
+        const isCoach = coachParticipantIds.has(uid);
+        const isParent = guardianSet.has(uid);
+        return {
+          firstName: isParent ? `${firstName} (p)` : firstName,
+          fullName: isParent ? `${fullName} (p)` : fullName,
+          sortName: fullName,
+          isCoach,
+        };
+      });
+      entries.sort((a, b) => {
+        if (a.isCoach !== b.isCoach) return a.isCoach ? -1 : 1;
+        return a.sortName.localeCompare(b.sortName, "fr", { sensitivity: "base" });
+      });
+      participantNamesByThread.set(tid, entries.map((e) => e.firstName));
+      participantFullNamesByThread.set(tid, entries.map((e) => e.fullName));
     }
 
     const lastByThread = new Map<string, any>();
@@ -476,7 +619,7 @@ export async function GET(req: NextRequest) {
         }
       } else if (t.thread_type === "player") {
         if (String((t as any).player_thread_scope ?? "direct") === "team") {
-          displayTitle = "Équipe coachs";
+          displayTitle = "Fil équipe coachs + joueur + parent(s)";
         } else if (staffOrgIds.has(String(t.organization_id ?? ""))) {
           displayTitle = profileNameById.get(String(t.player_id ?? "")) ?? displayTitle;
         } else {
@@ -491,7 +634,16 @@ export async function GET(req: NextRequest) {
           t.thread_type === "group" || t.thread_type === "event"
             ? (groupCategoriesById.get(String(t.group_id ?? "")) ?? [])
             : [],
-        participant_names: t.thread_type === "group" ? (participantNamesByThread.get(String(t.id)) ?? []) : [],
+        participant_names:
+          t.thread_type === "group" ||
+          (t.thread_type === "player" && String((t as any).player_thread_scope ?? "direct") === "team")
+            ? (participantNamesByThread.get(String(t.id)) ?? [])
+            : [],
+        participant_full_names:
+          t.thread_type === "group" ||
+          (t.thread_type === "player" && String((t as any).player_thread_scope ?? "direct") === "team")
+            ? (participantFullNamesByThread.get(String(t.id)) ?? [])
+            : [],
         last_message: lastByThread.get(String(t.id)) ?? null,
         unread_count: unreadByThread.get(String(t.id)) ?? 0,
         me: myParticipantByThread.get(String(t.id)) ?? {
@@ -627,11 +779,11 @@ export async function POST(req: NextRequest) {
         .select("user_id,role")
         .eq("club_id", organizationId)
         .eq("is_active", true)
-        .in("role", ["manager", "coach", "captain", "player", "parent"]);
+        .in("role", ["manager", "coach", "player", "parent"]);
       if (!memRes.error) {
         for (const row of memRes.data ?? []) {
           const role = String(row.role ?? "");
-          setParticipant(String(row.user_id), ["manager", "coach", "captain"].includes(role));
+          setParticipant(String(row.user_id), ["manager", "coach"].includes(role));
         }
       }
     } else if (threadType === "group" && groupId) {

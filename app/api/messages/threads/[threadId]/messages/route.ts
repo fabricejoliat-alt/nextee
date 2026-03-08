@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 
+function buildSenderName(row: any) {
+  const full = `${String(row?.first_name ?? "").trim()} ${String(row?.last_name ?? "").trim()}`.trim();
+  const fallback = String(row?.username ?? "").trim();
+  return full || fallback || "";
+}
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ threadId: string }> }) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -31,7 +37,27 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ threadId: s
 
     const msgRes = await query;
     if (msgRes.error) return NextResponse.json({ error: msgRes.error.message }, { status: 400 });
-    return NextResponse.json({ messages: msgRes.data ?? [] });
+
+    const rows = msgRes.data ?? [];
+    const senderIds = Array.from(new Set(rows.map((r: any) => String(r.sender_user_id ?? "")).filter(Boolean)));
+    const namesById = new Map<string, string>();
+    if (senderIds.length > 0) {
+      const profRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name,username")
+        .in("id", senderIds);
+      if (!profRes.error) {
+        for (const p of profRes.data ?? []) {
+          namesById.set(String((p as any).id), buildSenderName(p));
+        }
+      }
+    }
+
+    const enriched = rows.map((r: any) => ({
+      ...r,
+      sender_name: namesById.get(String(r.sender_user_id ?? "")) || null,
+    }));
+    return NextResponse.json({ messages: enriched });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
@@ -71,6 +97,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
       .single();
     if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 
+    const senderProfileRes = await supabaseAdmin
+      .from("profiles")
+      .select("first_name,last_name,username")
+      .eq("id", callerId)
+      .maybeSingle();
+    const senderName = senderProfileRes.error ? "" : buildSenderName(senderProfileRes.data ?? {});
+
     const threadRes = await supabaseAdmin
       .from("message_threads")
       .select("thread_type,event_id")
@@ -82,7 +115,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
       });
     }
 
-    return NextResponse.json({ message: insRes.data });
+    return NextResponse.json({
+      message: {
+        ...(insRes.data as any),
+        sender_name: senderName || null,
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
