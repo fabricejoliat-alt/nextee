@@ -2489,10 +2489,10 @@ function presetToSelectValue(p: Preset): Preset {
               <div style={{ fontWeight: 950, fontSize: 18, lineHeight: 1.2, whiteSpace: "normal", overflowWrap: "anywhere" }}>
                 {fullName(playerProfile) !== "—" ? fullName(playerProfile) : "Joueur"}
               </div>
-              <div style={{ opacity: 0.72, fontWeight: 800, marginTop: 4 }}>
+              <div style={{ opacity: 0.72, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
                 Handicap {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"} • {trainingLevel}
               </div>
-              <div style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 12, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+              <div style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 10, whiteSpace: "normal", overflowWrap: "anywhere" }}>
                 {sharedClubNames.length ? sharedClubNames.join(" • ") : "—"}
               </div>
             </div>
@@ -2540,7 +2540,15 @@ function presetToSelectValue(p: Preset): Preset {
                 </span>
               </div>
               <div>
-                <button className="btn btn-primary" type="button" onClick={() => void uploadDocument()} disabled={!docFile || uploadingDocument}>
+                <button
+                  className="btn btn-primary btn-upload-green"
+                  type="button"
+                  onClick={() => void uploadDocument()}
+                  style={{
+                    opacity: !docFile || uploadingDocument ? 0.65 : 1,
+                    pointerEvents: !docFile || uploadingDocument ? "none" : "auto",
+                  }}
+                >
                   <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                   Upload
                 </button>

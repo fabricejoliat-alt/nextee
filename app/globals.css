@@ -441,6 +441,17 @@ a.btn{ padding: 8px 12px !important; }
 
 .btn-danger:hover{ background: #991b1b !important; }
 
+.btn-upload-green{
+  background: var(--green-dark) !important;
+  border-color: var(--green-dark) !important;
+  color: #fff !important;
+}
+
+.btn-upload-green:hover{
+  background: #2b3a2f !important;
+  border-color: #2b3a2f !important;
+}
+
 /* (si tu veux garder la variante “soft” que tu avais) */
 .btn-danger.soft{
   border-color: #f1b3b3 !important;

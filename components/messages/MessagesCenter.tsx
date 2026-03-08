@@ -780,7 +780,7 @@ export default function MessagesCenter({
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: 10, borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: 10, borderBottom: "1px solid rgba(0,0,0,0.06)", alignItems: "center" }}>
                   {([
                     { key: "all", fr: "Tous", en: "All" },
                     { key: "event", fr: "Événement", en: "Event" },
@@ -839,7 +839,7 @@ export default function MessagesCenter({
                 {filteredThreads.length === 0 ? (
                   <div style={{ padding: 14, fontWeight: 800, opacity: 0.7 }}>{tr("Aucun fil de discussion.", "No discussion thread.")}</div>
                 ) : (
-                  <div style={{ display: "grid", maxHeight: 430, overflowY: "auto" }}>
+                  <div style={{ display: "grid", maxHeight: "min(56svh, 460px)", overflowY: "auto" }}>
                     {filteredThreads.map((t) => {
                       const active = t.id === activeThreadId;
                       const groupHeader =
@@ -861,16 +861,23 @@ export default function MessagesCenter({
                             gap: 5,
                             textAlign: "left",
                             width: "100%",
+                            minWidth: 0,
                             borderBottom: "1px solid rgba(0,0,0,0.14)",
                             background: active ? "rgba(27,94,32,0.1)" : "white",
                             padding: "12px 12px",
                           }}
                         >
-                          <button
-                            type="button"
+                          <div
+                            role="button"
+                            tabIndex={0}
                             onClick={() => setActiveThreadId(t.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setActiveThreadId(t.id);
+                              }
+                            }}
                             style={{
-                              border: "none",
                               background: "transparent",
                               textAlign: "left",
                               display: "grid",
@@ -880,8 +887,8 @@ export default function MessagesCenter({
                               cursor: "pointer",
                             }}
                           >
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                              <div style={{ fontWeight: 850, fontSize: 12 }} className="truncate">
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", minWidth: 0 }}>
+                              <div style={{ fontWeight: 850, fontSize: 12, minWidth: 0 }} className="truncate">
                                 {t.thread_type === "group" ? groupHeader || (t.display_title || t.title) : (t.display_title || t.title)}
                               </div>
                               <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -903,18 +910,20 @@ export default function MessagesCenter({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      e.preventDefault();
                                       void setThreadArchived(t.id, !(t.me?.is_archived ?? false));
                                     }}
                                     disabled={busy}
                                     style={{
                                       fontSize: 10,
-                                      padding: "2px 7px",
+                                      padding: "2px 6px",
                                       lineHeight: 1.15,
                                       borderRadius: 8,
                                       border: "1px solid rgba(0,0,0,0.16)",
                                       background: "rgba(255,255,255,0.9)",
                                       color: "#4b5563",
                                       cursor: "pointer",
+                                      whiteSpace: "nowrap",
                                     }}
                                   >
                                     {t.me?.is_archived ? tr("Désarchiver", "Unarchive") : tr("Archiver", "Archive")}
@@ -930,12 +939,12 @@ export default function MessagesCenter({
                                   : tr("Aucun message", "No message")}
                             </div>
                             {t.thread_type === "group" && (t.participant_names?.length ?? 0) > 0 ? (
-                              <div style={{ fontSize: 10, opacity: 0.58 }} className="truncate">
+                              <div style={{ fontSize: 10, opacity: 0.58, minWidth: 0 }} className="truncate">
                                 {tr("Participants", "Participants")}: {t.participant_names!.join(", ")}
                               </div>
                             ) : null}
                             <div style={{ fontSize: 10, opacity: 0.5 }}>{fmtDate(t.last_message?.created_at ?? t.updated_at)}</div>
-                          </button>
+                          </div>
                         </div>
                       );
                     })}
