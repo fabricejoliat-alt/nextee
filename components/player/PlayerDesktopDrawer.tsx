@@ -372,6 +372,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.home,
       },
       {
+        label: locale === "fr" ? "Messagerie" : "Messages",
+        icon: MessageCircle,
+        href: ROUTES.messages,
+      },
+      {
         label: locale === "fr" ? "Activité" : "Activity",
         icon: ClipboardList,
         children: [
@@ -393,11 +398,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
               ]
             : []),
         ],
-      },
-      {
-        label: locale === "fr" ? "Messagerie" : "Messages",
-        icon: MessageCircle,
-        href: ROUTES.messages,
       },
       {
         label: t("player.myGolf"),
@@ -442,11 +442,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       {
         label: t("nav.marketplace"),
         icon: Store,
-        children: [
-          { label: t("player.allListings"), icon: Tags, href: ROUTES.marketplaceAll },
-          { label: t("player.myListings"), icon: ClipboardList, href: ROUTES.marketplaceMine },
-          { label: t("player.newListing"), icon: PlusCircle, href: ROUTES.marketplaceNew },
-        ],
+        href: ROUTES.marketplaceAll,
       },
     ],
     [t, locale, pendingEvalCount, performanceEnabled]
