@@ -177,11 +177,13 @@ export default function ParentIntakePublicPage() {
               </div>
             ))}
 
-            <div>
-              <button type="button" className="btn" onClick={() => canAddParent && setParents((p) => [...p, { ...EMPTY_PARENT }])} disabled={!canAddParent}>
-                Ajouter un 2e parent
-              </button>
-            </div>
+            {canAddParent ? (
+              <div>
+                <button type="button" className="btn" onClick={() => setParents((p) => [...p, { ...EMPTY_PARENT }])}>
+                  Ajouter un 2e parent
+                </button>
+              </div>
+            ) : null}
 
             <div className="hr-soft" />
             <div
