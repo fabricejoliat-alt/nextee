@@ -18,6 +18,17 @@ type ChildForm = {
 
 const EMPTY_PARENT: ParentForm = { firstName: "", lastName: "", email: "" };
 const EMPTY_CHILD: ChildForm = { firstName: "", lastName: "", birthDate: "", handicap: "" };
+const DATE_INPUT_STYLE: React.CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+  minHeight: 44,
+  boxSizing: "border-box",
+  fontSize: 16,
+  lineHeight: "20px",
+  color: "rgba(0,0,0,0.85)",
+  WebkitAppearance: "none",
+  appearance: "none",
+};
 
 export default function ParentIntakePublicPage() {
   const [parents, setParents] = useState<ParentForm[]>([{ ...EMPTY_PARENT }]);
@@ -111,7 +122,7 @@ export default function ParentIntakePublicPage() {
           </div>
         </div>
 
-        <div className="glass-section">
+        <div className="glass-section" style={{ paddingInline: 10 }}>
           <div
             className="glass-card"
             style={{
@@ -153,7 +164,7 @@ export default function ParentIntakePublicPage() {
           </div>
         </div>
 
-        <div className="glass-section">
+        <div className="glass-section" style={{ paddingInline: 10 }}>
           <form
             className="glass-card"
             onSubmit={submitForm}
@@ -199,7 +210,13 @@ export default function ParentIntakePublicPage() {
                 <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr" }}>
                   <input className="input" style={{ width: "100%" }} placeholder="Prénom" value={child.firstName} onChange={(e) => updateChild(idx, { firstName: e.target.value })} />
                   <input className="input" style={{ width: "100%" }} placeholder="Nom" value={child.lastName} onChange={(e) => updateChild(idx, { lastName: e.target.value })} />
-                  <input className="input" style={{ width: "100%" }} type="date" value={child.birthDate} onChange={(e) => updateChild(idx, { birthDate: e.target.value })} />
+                  <input
+                    className="input"
+                    style={DATE_INPUT_STYLE}
+                    type="date"
+                    value={child.birthDate}
+                    onChange={(e) => updateChild(idx, { birthDate: e.target.value })}
+                  />
                   <input className="input" style={{ width: "100%" }} placeholder="Handicap (si connu)" value={child.handicap} onChange={(e) => updateChild(idx, { handicap: e.target.value })} />
                 </div>
               </div>
