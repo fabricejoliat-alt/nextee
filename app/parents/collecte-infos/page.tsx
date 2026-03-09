@@ -111,18 +111,18 @@ export default function ParentIntakePublicPage() {
     <div className="player-dashboard-bg">
       <PublicSimpleHeader />
 
-      <div className="app-shell marketplace-page">
+      <div className="app-shell marketplace-page" style={{ paddingInline: 10 }}>
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                Formulaire représentants légaux & juniors
+                Golf Club de Sion - Section Junior
               </div>
             </div>
           </div>
         </div>
 
-        <div className="glass-section" style={{ paddingInline: 10 }}>
+        <div className="glass-section">
           <div
             className="glass-card"
             style={{
@@ -137,7 +137,7 @@ export default function ParentIntakePublicPage() {
               className="card-title"
               style={{ marginBottom: 0, color: "var(--green-dark)", letterSpacing: 0.2 }}
             >
-              Section Junior – Activation des comptes parents
+              Activation des comptes parents
             </div>
             <div
               style={{
@@ -164,7 +164,7 @@ export default function ParentIntakePublicPage() {
           </div>
         </div>
 
-        <div className="glass-section" style={{ paddingInline: 10 }}>
+        <div className="glass-section">
           <form
             className="glass-card"
             onSubmit={submitForm}
