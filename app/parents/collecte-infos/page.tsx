@@ -114,13 +114,13 @@ export default function ParentIntakePublicPage() {
       <div className="app-shell marketplace-page" style={{ paddingInline: 14 }}>
         <div className="glass-section">
           <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gap: 8, paddingLeft: 16 }}>
               <div
                 className="section-title"
-                style={{ marginBottom: 0, fontSize: "clamp(16px, 3vw, 21px)", lineHeight: 1.16 }}
+                style={{ marginBottom: 0, fontSize: "clamp(15px, 2.7vw, 19px)", lineHeight: 1.16 }}
               >
                 <span style={{ display: "block" }}>Golf Club de Sion</span>
-                <span style={{ display: "block" }}>Section Junior</span>
+                <span style={{ display: "block", fontSize: "0.9em", fontWeight: 600 }}>Section Junior</span>
               </div>
             </div>
           </div>
