@@ -21,11 +21,15 @@ const EMPTY_CHILD: ChildForm = { firstName: "", lastName: "", birthDate: "", han
 const DATE_INPUT_STYLE: React.CSSProperties = {
   width: "100%",
   minWidth: 0,
-  minHeight: 44,
+  minHeight: 48,
   boxSizing: "border-box",
   fontSize: 16,
   lineHeight: "20px",
   color: "rgba(0,0,0,0.85)",
+  backgroundColor: "#fff",
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 10,
+  padding: "10px 12px",
   WebkitAppearance: "none",
   appearance: "none",
 };
@@ -154,19 +158,8 @@ export default function ParentIntakePublicPage() {
               }}
             >
               <p style={{ margin: 0 }}>
-                Chers parents, dans le cadre du développement de sa section junior, le Golf Club de Sion utilisera dès cette saison{" "}
-                <strong>ActiviTee</strong>, une plateforme dédiée à l’organisation de ses activités, à la planification des entraînements et au suivi de la progression des joueurs.
+                Nous vous remercions de bien vouloir compléter le formulaire ci-dessous. Les informations recueillies permettront de créer les comptes parents et de les associer aux joueurs juniors inscrits dans la section junior. En cas de questions, merci de les adresser à info@activitee.golf
               </p>
-              <p style={{ margin: 0 }}>
-                Nous vous remercions de bien vouloir compléter ce formulaire. Les informations recueillies permettront de créer les comptes parents et de les associer aux joueurs juniors inscrits dans la section junior.
-              </p>
-              <p style={{ margin: 0 }}>
-                Vous recevrez dans quelques jours un e-mail vous permettant d’activer votre compte sur la plateforme, de valider le consentement lié à la protection des données et d’accéder au suivi des activités et de la progression de votre (vos) enfant(s). Sans votre consentement le junior ne pourra pas accéder à l'espace qui lui est spécialement dédié.
-              </p>
-              <p style={{ margin: 0 }}>
-                Nous vous remercions par avance pour votre collaboration et l’attention portée à cette démarche. Nous nous réjouissons de vous accompagner, ainsi que vos enfants, dans cette nouvelle étape du développement de la section junior.
-              </p>
-              <div style={{ marginTop: 2, fontWeight: 700, color: "rgba(27,94,32,0.92)" }}>Le comité junior</div>
             </div>
           </div>
         </div>
@@ -217,13 +210,18 @@ export default function ParentIntakePublicPage() {
                 <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr" }}>
                   <input className="input" style={{ width: "100%" }} placeholder="Prénom" value={child.firstName} onChange={(e) => updateChild(idx, { firstName: e.target.value })} />
                   <input className="input" style={{ width: "100%" }} placeholder="Nom" value={child.lastName} onChange={(e) => updateChild(idx, { lastName: e.target.value })} />
-                  <input
-                    className="input"
-                    style={DATE_INPUT_STYLE}
-                    type="date"
-                    value={child.birthDate}
-                    onChange={(e) => updateChild(idx, { birthDate: e.target.value })}
-                  />
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "rgba(0,0,0,0.68)" }}>
+                      Date de naissance
+                    </span>
+                    <input
+                      className="input"
+                      style={DATE_INPUT_STYLE}
+                      type="date"
+                      value={child.birthDate}
+                      onChange={(e) => updateChild(idx, { birthDate: e.target.value })}
+                    />
+                  </label>
                   <input className="input" style={{ width: "100%" }} placeholder="Handicap (si connu)" value={child.handicap} onChange={(e) => updateChild(idx, { handicap: e.target.value })} />
                 </div>
               </div>
