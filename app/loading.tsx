@@ -1,14 +1,17 @@
 export default function AppLoading() {
   return (
-    <div className="app-splash-screen" role="status" aria-live="polite" aria-label="Chargement de l'application">
-      <div className="app-splash-card">
-        <div className="app-splash-brand" aria-label="ActiviTee">
-          <span className="app-splash-brand-nex">Activi</span>
-          <span className="app-splash-brand-tee">Tee</span>
-        </div>
-        <div className="app-splash-subtitle">Golf app junior</div>
-        <div className="app-splash-loader" />
-      </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeContent: "center",
+        gap: 12,
+        background:
+          "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.64) 35%, rgba(255,255,255,0.55) 100%)",
+      }}
+    >
+      <div className="route-loading-spinner" />
+      <div className="route-loading-text">Chargement…</div>
     </div>
   );
 }
