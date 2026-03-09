@@ -154,7 +154,7 @@ export default function ParentIntakePublicPage() {
               }}
             >
               <p style={{ margin: 0 }}>
-                Dans le cadre du développement de sa section junior, le Golf Club de Sion utilisera dès cette saison{" "}
+                Chers parents, dans le cadre du développement de sa section junior, le Golf Club de Sion utilisera dès cette saison{" "}
                 <strong>ActiviTee</strong>, une plateforme dédiée à l’organisation de ses activités, à la planification des entraînements et au suivi de la progression des joueurs.
               </p>
               <p style={{ margin: 0 }}>
@@ -162,6 +162,9 @@ export default function ParentIntakePublicPage() {
               </p>
               <p style={{ margin: 0 }}>
                 Vous recevrez dans quelques jours un e-mail vous permettant d’activer votre compte sur la plateforme, de valider le consentement lié à la protection des données et d’accéder au suivi des activités et de la progression de votre (vos) enfant(s). Sans votre consentement le junior ne pourra pas accéder à l'espace qui lui est spécialement dédié.
+              </p>
+              <p style={{ margin: 0 }}>
+                Nous vous remercions par avance pour votre collaboration et l’attention portée à cette démarche. Nous nous réjouissons de vous accompagner, ainsi que vos enfants, dans cette nouvelle étape du développement de la section junior.
               </p>
               <div style={{ marginTop: 2, fontWeight: 700, color: "rgba(27,94,32,0.92)" }}>Le comité junior</div>
             </div>
