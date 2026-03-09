@@ -146,7 +146,7 @@ export default function ParentIntakePublicPage() {
                 Nous vous remercions de bien vouloir compléter ce formulaire. Les informations recueillies permettront de créer les comptes parents et de les associer aux joueurs juniors inscrits dans la section junior.
               </p>
               <p style={{ margin: 0 }}>
-                Les parents recevront dans quelques jours un e-mail leur permettant d’activer leur compte sur la plateforme, de valider le consentement lié à la protection des données et d’accéder au suivi des activités et de la progression de leur enfant.
+                Vous recevrez dans quelques jours un e-mail vous permettant d’activer votre compte sur la plateforme, de valider le consentement lié à la protection des données et d’accéder au suivi des activités et de la progression de votre (vos) enfant(s).
               </p>
               <div style={{ marginTop: 2, fontWeight: 700, color: "rgba(27,94,32,0.92)" }}>Le comité junior</div>
             </div>
