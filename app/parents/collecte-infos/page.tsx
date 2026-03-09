@@ -111,12 +111,16 @@ export default function ParentIntakePublicPage() {
     <div className="player-dashboard-bg">
       <PublicSimpleHeader />
 
-      <div className="app-shell marketplace-page" style={{ paddingInline: 10 }}>
+      <div className="app-shell marketplace-page" style={{ paddingInline: 14 }}>
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Golf Club de Sion - Section Junior
+              <div
+                className="section-title"
+                style={{ marginBottom: 0, fontSize: "clamp(16px, 3vw, 21px)", lineHeight: 1.16 }}
+              >
+                <span style={{ display: "block" }}>Golf Club de Sion</span>
+                <span style={{ display: "block" }}>Section Junior</span>
               </div>
             </div>
           </div>
