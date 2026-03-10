@@ -35,6 +35,7 @@ export default function ManagerParentsPage() {
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [linksSearch, setLinksSearch] = useState("");
   const [pendingParentByPlayer, setPendingParentByPlayer] = useState<Record<string, string>>({});
+  const [activePickerPlayerId, setActivePickerPlayerId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -246,7 +247,7 @@ export default function ManagerParentsPage() {
         </div>
 
         <div className="glass-section">
-          <div className="glass-card">
+          <div className="glass-card" style={{ overflow: "visible" }}>
             <div style={{ marginBottom: 10, maxWidth: 360 }}>
               <input
                 value={linksSearch}
@@ -268,7 +269,15 @@ export default function ManagerParentsPage() {
                     <div
                       key={player.user_id}
                       className="marketplace-item"
-                      style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12, display: "grid", gap: 10 }}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        display: "grid",
+                        gap: 10,
+                        overflow: "visible",
+                        position: "relative",
+                        zIndex: activePickerPlayerId === player.user_id ? 900 : 1,
+                      }}
                     >
                       <div style={{ fontWeight: 900 }}>{fullName(player.profiles)}</div>
                       {playerLinks.length === 0 ? (
@@ -292,6 +301,12 @@ export default function ManagerParentsPage() {
                         <SearchablePicker
                           options={availableParents}
                           value={selectedParentId}
+                          onOpenChange={(open) => {
+                            setActivePickerPlayerId((prev) => {
+                              if (open) return player.user_id;
+                              return prev === player.user_id ? "" : prev;
+                            });
+                          }}
                           onChange={(nextId) =>
                             setPendingParentByPlayer((prev) => ({
                               ...prev,
@@ -326,12 +341,14 @@ function SearchablePicker({
   options,
   value,
   onChange,
+  onOpenChange,
   placeholder,
   searchPlaceholder,
 }: {
   options: PickerOption[];
   value: string;
   onChange: (id: string) => void;
+  onOpenChange?: (open: boolean) => void;
   placeholder: string;
   searchPlaceholder: string;
 }) {
@@ -351,23 +368,32 @@ function SearchablePicker({
   }, [options, query]);
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", zIndex: open ? 4000 : "auto" }}>
       <input
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
           onChange("");
           setOpen(true);
+          onOpenChange?.(true);
         }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onFocus={() => {
+          setOpen(true);
+          onOpenChange?.(true);
+        }}
+        onBlur={() =>
+          setTimeout(() => {
+            setOpen(false);
+            onOpenChange?.(false);
+          }, 120)
+        }
         placeholder={searchPlaceholder}
       />
       {open && (
         <div
           style={{
             position: "absolute",
-            zIndex: 20,
+            zIndex: 5000,
             top: "calc(100% + 4px)",
             left: 0,
             right: 0,
@@ -391,6 +417,7 @@ function SearchablePicker({
                   onChange(o.id);
                   setQuery(o.label);
                   setOpen(false);
+                  onOpenChange?.(false);
                 }}
                 style={{
                   width: "100%",
