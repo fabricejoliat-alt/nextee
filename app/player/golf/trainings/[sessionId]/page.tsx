@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Flame, Mountain, Smile } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -163,6 +164,7 @@ export default function PlayerTrainingDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [session, setSession] = useState<SessionDbRow | null>(null);
   const [items, setItems] = useState<ItemDbRow[]>([]);
@@ -183,6 +185,8 @@ export default function PlayerTrainingDetailPage() {
         if (!sessionId) throw new Error(t("trainingDetail.error.missingId"));
 
         const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
+        setPerformanceEnabled(perfEnabled);
 
         const sRes = await supabase
           .from("training_sessions")
@@ -276,9 +280,10 @@ export default function PlayerTrainingDetailPage() {
             setGroupName("");
           }
         } else {
-          setGroupName("");
-          setPlannedItems([]);
-        }
+        setGroupName("");
+        setPlannedItems([]);
+        setPerformanceEnabled(false);
+      }
 
         // ✅ coach feedback (only visible_to_player)
         if (s.club_event_id) {
@@ -557,6 +562,7 @@ export default function PlayerTrainingDetailPage() {
                 </div>
               ) : null}
 
+              {performanceEnabled ? (
               <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Structure de l'entraînement", "Training structure")}
@@ -608,8 +614,9 @@ export default function PlayerTrainingDetailPage() {
                   )}
                 </div>
               </div>
+              ) : null}
 
-              {new Date(session.start_at).getTime() < Date.now() ? (
+              {performanceEnabled && new Date(session.start_at).getTime() < Date.now() ? (
                 <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
                     {pickLocaleText(locale, "Mes sensations et remarques", "My feelings and notes")}
@@ -650,7 +657,7 @@ export default function PlayerTrainingDetailPage() {
                     </Link>
                   </div>
                 </div>
-              ) : (
+              ) : performanceEnabled ? (
                 <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
                   <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
                     {t("trainingDetail.backToList")}
@@ -659,6 +666,55 @@ export default function PlayerTrainingDetailPage() {
                   <Link className="btn" href={`/player/golf/trainings/${sessionId}/edit`}>
                     {t("common.edit")}
                   </Link>
+                </div>
+              ) : (
+                <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    {pickLocaleText(locale, "Durée et notes", "Duration and notes")}
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      borderRadius: 14,
+                      background: "#fff",
+                      padding: 12,
+                      fontSize: 13,
+                      fontWeight: 900,
+                      color: "rgba(0,0,0,0.75)",
+                    }}
+                  >
+                    {pickLocaleText(locale, "Durée", "Duration")} : {Math.max(0, Number(session.total_minutes ?? 0))} {t("common.min")}
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{t("trainingDetail.notes")}</div>
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 14,
+                        background: "#fff",
+                        padding: 12,
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "rgba(0,0,0,0.72)",
+                        lineHeight: 1.4,
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {session.notes?.trim() || pickLocaleText(locale, "Non saisi.", "Not entered.")}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                    <button type="button" className="btn" onClick={() => router.push("/player/golf/trainings")}>
+                      {t("trainingDetail.backToList")}
+                    </button>
+
+                    <Link className="btn" href={`/player/golf/trainings/${sessionId}/edit`}>
+                      {t("common.edit")}
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>

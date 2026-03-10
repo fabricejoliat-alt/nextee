@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
 
     const form = await req.formData();
     const file = form.get("file");
+    const providedName = String(form.get("file_name") ?? "").trim();
     if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
 
     const originalName = safeFileName(file.name || "document");
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
         organization_id: organizationId,
         player_id: playerId,
         uploaded_by: callerId,
-        file_name: file.name || originalName,
+        file_name: providedName || file.name || originalName,
         storage_path: objectPath,
         mime_type: file.type || null,
         size_bytes: file.size ?? null,
@@ -136,6 +137,102 @@ export async function POST(req: NextRequest) {
 
     const publicUrl = supabaseAdmin.storage.from("marketplace").getPublicUrl(objectPath).data.publicUrl;
     return NextResponse.json({ document: { ...insRes.data, uploaded_by_name: uploadedByName, public_url: publicUrl } });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+
+    const { supabaseAdmin, callerId } = await requireCaller(accessToken);
+    const body = (await req.json().catch(() => ({}))) as {
+      document_id?: string | null;
+      file_name?: string | null;
+      player_id?: string | null;
+    };
+
+    const documentId = String(body?.document_id ?? "").trim();
+    const nextName = String(body?.file_name ?? "").trim();
+    const playerId = String(body?.player_id ?? callerId).trim();
+    if (!documentId) return NextResponse.json({ error: "Missing document_id" }, { status: 400 });
+    if (!nextName) return NextResponse.json({ error: "Missing file_name" }, { status: 400 });
+    if (!playerId) return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
+
+    const docRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .select("id,player_id,uploaded_by")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (docRes.error) return NextResponse.json({ error: docRes.error.message }, { status: 400 });
+    if (!docRes.data) return NextResponse.json({ error: "Document not found" }, { status: 404 });
+
+    if (String((docRes.data as any).player_id ?? "") !== playerId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
+      return NextResponse.json({ error: "Only uploader can rename this document" }, { status: 403 });
+    }
+
+    const updRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .update({ file_name: nextName })
+      .eq("id", documentId)
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .single();
+    if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 400 });
+
+    return NextResponse.json({ document: updRes.data });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+
+    const { supabaseAdmin, callerId } = await requireCaller(accessToken);
+    const body = (await req.json().catch(() => ({}))) as {
+      document_id?: string | null;
+      player_id?: string | null;
+    };
+
+    const documentId = String(body?.document_id ?? "").trim();
+    const playerId = String(body?.player_id ?? callerId).trim();
+    if (!documentId) return NextResponse.json({ error: "Missing document_id" }, { status: 400 });
+    if (!playerId) return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
+
+    const docRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .select("id,player_id,uploaded_by,storage_path")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (docRes.error) return NextResponse.json({ error: docRes.error.message }, { status: 400 });
+    if (!docRes.data) return NextResponse.json({ error: "Document not found" }, { status: 404 });
+
+    if (String((docRes.data as any).player_id ?? "") !== playerId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
+      return NextResponse.json({ error: "Only uploader can delete this document" }, { status: 403 });
+    }
+
+    const path = String((docRes.data as any).storage_path ?? "").trim();
+    if (path) {
+      await supabaseAdmin.storage.from("marketplace").remove([path]);
+    }
+
+    const delRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .delete()
+      .eq("id", documentId);
+    if (delRes.error) return NextResponse.json({ error: delRes.error.message }, { status: 400 });
+
+    return NextResponse.json({ ok: true, id: documentId });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }

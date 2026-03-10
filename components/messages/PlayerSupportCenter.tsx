@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { MessageCircle } from "lucide-react";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 
 type SupervisionStaff = {
   organization_id: string;
@@ -36,6 +37,7 @@ export default function PlayerSupportCenter() {
   const [busyId, setBusyId] = useState("");
   const [rows, setRows] = useState<SupervisionStaff[]>([]);
   const [badgesByThreadId, setBadgesByThreadId] = useState<Record<string, ThreadBadge>>({});
+  const [effectivePlayerId, setEffectivePlayerId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const tr = (fr: string, en: string) => (locale === "fr" ? fr : en);
@@ -49,8 +51,12 @@ export default function PlayerSupportCenter() {
     setLoading(true);
     setError(null);
     try {
+      const ctx = await resolveEffectivePlayerContext();
+      setEffectivePlayerId(ctx.effectiveUserId);
       const headers = await authHeader();
-      const res = await fetch("/api/messages/supervision", { method: "GET", headers, cache: "no-store" });
+      const q = new URLSearchParams();
+      if (ctx.effectiveUserId) q.set("child_id", ctx.effectiveUserId);
+      const res = await fetch(`/api/messages/supervision?${q.toString()}`, { method: "GET", headers, cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? tr("Erreur de chargement.", "Loading error.")));
       const staffRows = (json?.staff ?? []) as SupervisionStaff[];
@@ -90,6 +96,7 @@ export default function PlayerSupportCenter() {
         body: JSON.stringify({
           organization_id: row.organization_id,
           staff_user_id: row.staff_user_id,
+          child_id: effectivePlayerId || undefined,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -125,6 +132,15 @@ export default function PlayerSupportCenter() {
   const coachRows = rows.filter((r) => r.role === "coach").slice().sort(sortByLastName);
   const committeeRows = rows.filter((r) => r.role !== "coach").slice().sort(sortByLastName);
 
+  function visibleEmail(raw: string | null | undefined) {
+    const email = String(raw ?? "").trim();
+    if (!email || !email.includes("@")) return null;
+    const normalized = email.toLowerCase();
+    // Hide technical auth placeholders when no real email was provided.
+    if (normalized.endsWith("@users.noreply.supabase.io")) return null;
+    return email;
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page" style={{ display: "grid", gap: 12 }}>
@@ -149,190 +165,200 @@ export default function PlayerSupportCenter() {
                   Coachs
                 </div>
                 {coachRows.map((row) => (
-                  <div
-                    key={`${row.organization_id}-${row.staff_user_id}`}
-                    style={{
-                      display: "grid",
-                      gap: 8,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.92)",
-                      padding: "12px 12px",
-                      boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    <div style={{ display: "grid", gridTemplateColumns: "40px 1fr", gap: 10, alignItems: "start" }}>
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "999px",
-                          overflow: "hidden",
-                          background: "rgba(15,23,42,0.12)",
-                          display: "grid",
-                          placeItems: "center",
-                          fontSize: 12,
-                          fontWeight: 900,
-                          color: "rgba(15,23,42,0.78)",
-                        }}
-                      >
-                        {row.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={row.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        ) : (
-                          (row.full_name || "?").slice(0, 1).toUpperCase()
-                        )}
+                  (() => {
+                    const email = visibleEmail(row.email);
+                    return (
+                    <div
+                      key={`${row.organization_id}-${row.staff_user_id}`}
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        border: "1px solid rgba(0,0,0,0.08)",
+                        borderRadius: 14,
+                        background: "rgba(255,255,255,0.92)",
+                        padding: "12px 12px",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "40px 1fr", gap: 10, alignItems: "start" }}>
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "999px",
+                            overflow: "hidden",
+                            background: "rgba(15,23,42,0.12)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "rgba(15,23,42,0.78)",
+                          }}
+                        >
+                          {row.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={row.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            (row.full_name || "?").slice(0, 1).toUpperCase()
+                          )}
+                        </div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <div style={{ fontWeight: 900, fontSize: 13 }}>
+                            {row.full_name}
+                            {row.staff_function ? ` • ${row.staff_function}` : ""}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                            {row.organization_name}
+                          </div>
+                          <div style={{ height: 4 }} />
+                          <div style={{ display: "grid", gap: 2, fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.6)" }}>
+                            {row.phone ? <div>{`Tél. ${row.phone}`}</div> : null}
+                            {email ? <div>{email}</div> : null}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ display: "grid", gap: 4 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13 }}>
-                          {row.full_name}
-                          {row.staff_function ? ` • ${row.staff_function}` : ""}
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.organization_name}
-                        </div>
-                        <div style={{ height: 4 }} />
-                        <div style={{ display: "grid", gap: 2, fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.6)" }}>
-                          {row.phone ? <div>{`Tél. ${row.phone}`}</div> : null}
-                          {row.email ? <div>{row.email}</div> : null}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 2 }}>
-                      {(() => {
-                        const threadId = String(row.thread_id ?? "").trim();
-                        const badge = threadId
-                          ? badgesByThreadId[threadId] ?? { message_count: 0, unread_count: 0 }
-                          : { message_count: 0, unread_count: 0 };
-                        const hasMessages = (badge.message_count ?? 0) > 0;
-                        const hasUnread = (badge.unread_count ?? 0) > 0;
-                        return (
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => void openThread(row)}
-                            disabled={busyId === row.staff_user_id}
-                          >
-                            <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                            {tr("Messagerie", "Messages")}
-                            <span
-                              style={{
-                                minWidth: 18,
-                                height: 18,
-                                marginLeft: 6,
-                                padding: "0 6px",
-                                borderRadius: 999,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 11,
-                                fontWeight: 900,
-                                color: "white",
-                                background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
-                              }}
+                      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 2 }}>
+                        {(() => {
+                          const threadId = String(row.thread_id ?? "").trim();
+                          const badge = threadId
+                            ? badgesByThreadId[threadId] ?? { message_count: 0, unread_count: 0 }
+                            : { message_count: 0, unread_count: 0 };
+                          const hasMessages = (badge.message_count ?? 0) > 0;
+                          const hasUnread = (badge.unread_count ?? 0) > 0;
+                          return (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => void openThread(row)}
+                              disabled={busyId === row.staff_user_id}
                             >
-                              {badge.message_count ?? 0}
-                            </span>
-                          </button>
-                        );
-                      })()}
+                              <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {tr("Messagerie", "Messages")}
+                              <span
+                                style={{
+                                  minWidth: 18,
+                                  height: 18,
+                                  marginLeft: 6,
+                                  padding: "0 6px",
+                                  borderRadius: 999,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  color: "white",
+                                  background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+                                }}
+                              >
+                                {badge.message_count ?? 0}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                      </div>
                     </div>
-                  </div>
+                    );
+                  })()
                 ))}
 
                 <div style={{ fontWeight: 900, color: "var(--green-dark)", textTransform: "uppercase", fontSize: 13, marginTop: 4 }}>
                   Comité
                 </div>
                 {committeeRows.map((row) => (
-                  <div
-                    key={`${row.organization_id}-${row.staff_user_id}`}
-                    style={{
-                      display: "grid",
-                      gap: 8,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 14,
-                      background: "rgba(255,255,255,0.92)",
-                      padding: "12px 12px",
-                      boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
-                    }}
-                  >
-                    <div style={{ display: "grid", gridTemplateColumns: "40px 1fr", gap: 10, alignItems: "start" }}>
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: "999px",
-                          overflow: "hidden",
-                          background: "rgba(15,23,42,0.12)",
-                          display: "grid",
-                          placeItems: "center",
-                          fontSize: 12,
-                          fontWeight: 900,
-                          color: "rgba(15,23,42,0.78)",
-                        }}
-                      >
-                        {row.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={row.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        ) : (
-                          (row.full_name || "?").slice(0, 1).toUpperCase()
-                        )}
+                  (() => {
+                    const email = visibleEmail(row.email);
+                    return (
+                    <div
+                      key={`${row.organization_id}-${row.staff_user_id}`}
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        border: "1px solid rgba(0,0,0,0.08)",
+                        borderRadius: 14,
+                        background: "rgba(255,255,255,0.92)",
+                        padding: "12px 12px",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "40px 1fr", gap: 10, alignItems: "start" }}>
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "999px",
+                            overflow: "hidden",
+                            background: "rgba(15,23,42,0.12)",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "rgba(15,23,42,0.78)",
+                          }}
+                        >
+                          {row.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={row.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            (row.full_name || "?").slice(0, 1).toUpperCase()
+                          )}
+                        </div>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <div style={{ fontWeight: 900, fontSize: 13 }}>
+                            {row.full_name}
+                            {row.staff_function ? ` • ${row.staff_function}` : ""}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                            {row.organization_name}
+                          </div>
+                          <div style={{ height: 4 }} />
+                          <div style={{ display: "grid", gap: 2, fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.6)" }}>
+                            {row.phone ? <div>{`Tél. ${row.phone}`}</div> : null}
+                            {email ? <div>{email}</div> : null}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ display: "grid", gap: 4 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13 }}>
-                          {row.full_name}
-                          {row.staff_function ? ` • ${row.staff_function}` : ""}
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.organization_name}
-                        </div>
-                        <div style={{ height: 4 }} />
-                        <div style={{ display: "grid", gap: 2, fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.6)" }}>
-                          {row.phone ? <div>{`Tél. ${row.phone}`}</div> : null}
-                          {row.email ? <div>{row.email}</div> : null}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 2 }}>
-                      {(() => {
-                        const threadId = String(row.thread_id ?? "").trim();
-                        const badge = threadId
-                          ? badgesByThreadId[threadId] ?? { message_count: 0, unread_count: 0 }
-                          : { message_count: 0, unread_count: 0 };
-                        const hasMessages = (badge.message_count ?? 0) > 0;
-                        const hasUnread = (badge.unread_count ?? 0) > 0;
-                        return (
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => void openThread(row)}
-                            disabled={busyId === row.staff_user_id}
-                          >
-                            <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                            {tr("Messagerie", "Messages")}
-                            <span
-                              style={{
-                                minWidth: 18,
-                                height: 18,
-                                marginLeft: 6,
-                                padding: "0 6px",
-                                borderRadius: 999,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 11,
-                                fontWeight: 900,
-                                color: "white",
-                                background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
-                              }}
+                      <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 2 }}>
+                        {(() => {
+                          const threadId = String(row.thread_id ?? "").trim();
+                          const badge = threadId
+                            ? badgesByThreadId[threadId] ?? { message_count: 0, unread_count: 0 }
+                            : { message_count: 0, unread_count: 0 };
+                          const hasMessages = (badge.message_count ?? 0) > 0;
+                          const hasUnread = (badge.unread_count ?? 0) > 0;
+                          return (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => void openThread(row)}
+                              disabled={busyId === row.staff_user_id}
                             >
-                              {badge.message_count ?? 0}
-                            </span>
-                          </button>
-                        );
-                      })()}
+                              <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {tr("Messagerie", "Messages")}
+                              <span
+                                style={{
+                                  minWidth: 18,
+                                  height: 18,
+                                  marginLeft: 6,
+                                  padding: "0 6px",
+                                  borderRadius: 999,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  color: "white",
+                                  background: !hasMessages ? "rgba(107,114,128,0.95)" : hasUnread ? "rgba(220,38,38,0.95)" : "rgba(22,163,74,0.95)",
+                                }}
+                              >
+                                {badge.message_count ?? 0}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                      </div>
                     </div>
-                  </div>
+                    );
+                  })()
                 ))}
               </>
             )}

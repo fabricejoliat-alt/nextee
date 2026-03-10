@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle } from "lucide-react";
+import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle, Send } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -68,16 +68,24 @@ type EventStructureItemRow = {
   position: number | null;
 };
 
+type ThreadMessageRow = {
+  id: string;
+  sender_user_id: string;
+  sender_name: string | null;
+  body: string | null;
+  created_at: string;
+};
+
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    weekday: "short",
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const datePart = new Intl.DateTimeFormat("fr-CH", {
     day: "2-digit",
-    month: "short",
+    month: "long",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(d);
+  const timePart = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} à ${timePart}`;
 }
 
 function fmtDateTimeRange(startIso: string, endIso: string | null) {
@@ -86,16 +94,26 @@ function fmtDateTimeRange(startIso: string, endIso: string | null) {
   const end = new Date(endIso);
   const sameDay = start.toDateString() === end.toDateString();
   if (sameDay) {
+    const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start);
     const datePart = new Intl.DateTimeFormat("fr-CH", {
-      weekday: "short",
       day: "2-digit",
-      month: "short",
+      month: "long",
       year: "numeric",
     }).format(start);
     const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
-    return `${datePart} • ${timeFmt.format(start)} → ${timeFmt.format(end)}`;
+    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} de ${timeFmt.format(start)} à ${timeFmt.format(end)}`;
   }
-  return `${fmtDateTime(startIso)} → ${fmtDateTime(endIso)}`;
+  return `${fmtDateTime(startIso)} au ${fmtDateTime(endIso)}`;
+}
+
+function fmtMessageTime(iso: string) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }
 
 function nameOf(first: string | null, last: string | null) {
@@ -173,6 +191,13 @@ export default function CoachEventDetailPage() {
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
   const [structureItems, setStructureItems] = useState<EventStructureItemRow[]>([]);
+  const [meId, setMeId] = useState("");
+  const [eventThreadId, setEventThreadId] = useState<string>("");
+  const [eventThreadMessages, setEventThreadMessages] = useState<ThreadMessageRow[]>([]);
+  const [eventThreadParticipants, setEventThreadParticipants] = useState<string[]>([]);
+  const [loadingEventThread, setLoadingEventThread] = useState(false);
+  const [threadComposer, setThreadComposer] = useState("");
+  const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
 
@@ -205,6 +230,7 @@ export default function CoachEventDetailPage() {
 
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userRes.user) throw new Error("Session invalide.");
+      setMeId(String(userRes.user.id ?? ""));
 
       // attendees (⚠️ no join, because no FK on player_id -> profiles.id)
       const aRes = await supabase
@@ -278,6 +304,55 @@ export default function CoachEventDetailPage() {
       if (structRes.error) throw new Error(structRes.error.message);
       setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
 
+      // Thread preview
+      setLoadingEventThread(true);
+      try {
+        const { data: sessRes } = await supabase.auth.getSession();
+        const token = sessRes.session?.access_token ?? "";
+        if (!token) {
+          setEventThreadId("");
+          setEventThreadMessages([]);
+          setEventThreadParticipants([]);
+        } else {
+          const threadRes = await fetch(`/api/messages/event-thread?event_id=${encodeURIComponent(ev.id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const threadJson = await threadRes.json().catch(() => ({}));
+          if (!threadRes.ok) throw new Error(String(threadJson?.error ?? "Thread load failed"));
+          const threadId = String(threadJson?.thread_id ?? "");
+          setEventThreadId(threadId);
+          if (threadId) {
+            const [msgRes, partRes] = await Promise.all([
+              fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=20`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              }),
+              fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              }),
+            ]);
+            const msgJson = await msgRes.json().catch(() => ({}));
+            const partJson = await partRes.json().catch(() => ({}));
+            if (!msgRes.ok) throw new Error(String(msgJson?.error ?? "Messages load failed"));
+            if (!partRes.ok) throw new Error(String(partJson?.error ?? "Participants load failed"));
+            const msgs = ((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse();
+            setEventThreadMessages(msgs);
+            setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
+          } else {
+            setEventThreadMessages([]);
+            setEventThreadParticipants([]);
+          }
+        }
+      } catch {
+        setEventThreadId("");
+        setEventThreadMessages([]);
+        setEventThreadParticipants([]);
+      } finally {
+        setLoadingEventThread(false);
+      }
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
@@ -288,6 +363,11 @@ export default function CoachEventDetailPage() {
       setCoaches([]);
       setSelectedCoachIds([]);
       setStructureItems([]);
+      setMeId("");
+      setEventThreadId("");
+      setEventThreadMessages([]);
+      setEventThreadParticipants([]);
+      setLoadingEventThread(false);
       setLoading(false);
     }
   }
@@ -373,6 +453,39 @@ export default function CoachEventDetailPage() {
     void setAttendanceStatus(playerId, next);
   }
 
+  async function sendThreadMessage() {
+    const trimmed = threadComposer.trim();
+    if (!eventThreadId || !trimmed || sendingThreadMessage) return;
+    setSendingThreadMessage(true);
+    try {
+      const { data: sessRes } = await supabase.auth.getSession();
+      const token = sessRes.session?.access_token ?? "";
+      if (!token) throw new Error(tr("Session invalide.", "Invalid session."));
+
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(eventThreadId)}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message_type: "text", body: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? tr("Envoi impossible.", "Failed to send message.")));
+
+      const created = json?.message as ThreadMessageRow | undefined;
+      if (created?.id) {
+        setEventThreadMessages((prev) => [...prev, created].slice(-20));
+      }
+      setThreadComposer("");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : tr("Envoi impossible.", "Failed to send message.");
+      setError(message);
+    } finally {
+      setSendingThreadMessage(false);
+    }
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -388,10 +501,6 @@ export default function CoachEventDetailPage() {
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning`}>
                 {tr("Planification", "Planning")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href={`/coach/messages?event_id=${encodeURIComponent(eventId)}`}>
-                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                {tr("Fil discussion", "Thread")}
               </Link>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
                 {t("common.edit")}
@@ -415,23 +524,20 @@ export default function CoachEventDetailPage() {
                   <div className="card-title" style={{ marginBottom: 0 }}>
                     {eventTypeLabelLocalized(event.event_type, locale)} — {groupName || tr("Groupe", "Group")}
                   </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <span className="pill-soft">{clubName || t("common.club")}</span>
+                  </div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                     <div className="marketplace-item-title" style={{ fontSize: 28, lineHeight: 1.15, fontWeight: 980 }}>
                       {fmtDateTimeRange(event.starts_at, event.ends_at)}
                     </div>
                     <div className="marketplace-price-pill">{event.duration_minutes} {t("common.min")}</div>
                   </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <span className="pill-soft">{eventTypeLabelLocalized(event.event_type, locale)}</span>
-                    <span className="pill-soft">{clubName || t("common.club")}</span>
-                    {event.series_id ? <span className="pill-soft">{tr("Récurrent", "Recurring")}</span> : <span className="pill-soft">{tr("Unique", "Single")}</span>}
-                    {event.location_text ? (
-                      <span style={{ color: "rgba(0,0,0,0.68)", fontWeight: 800, fontSize: 12 }}>
-                        📍 {event.location_text}
-                      </span>
-                    ) : null}
-                  </div>
+                  {event.location_text ? (
+                    <div style={{ color: "rgba(0,0,0,0.68)", fontWeight: 800, fontSize: 12 }}>
+                      📍 {event.location_text}
+                    </div>
+                  ) : null}
 
                   {event.coach_note?.trim() ? (
                     <div
@@ -449,6 +555,97 @@ export default function CoachEventDetailPage() {
                       {event.coach_note}
                     </div>
                   ) : null}
+                </div>
+
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <MessageCircle size={16} />
+                    Fil de discussion
+                  </div>
+                  {loadingEventThread ? (
+                    <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                      <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(0,0,0,0.72)", whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                        Participants: {eventThreadParticipants.length > 0 ? eventThreadParticipants.join(", ") : "—"}
+                      </div>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.94)",
+                          padding: 10,
+                          display: "grid",
+                          gap: 8,
+                        }}
+                      >
+                        {eventThreadMessages.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun message.</div>
+                        ) : (
+                          <div
+                            style={{
+                              overflow: "auto",
+                              maxHeight: 320,
+                              display: "grid",
+                              gap: 8,
+                              paddingTop: 2,
+                              paddingRight: 8,
+                              alignContent: "start",
+                            }}
+                          >
+                            {eventThreadMessages.map((m) => {
+                              const mine = String(m.sender_user_id ?? "") === meId;
+                              return (
+                              <div
+                                key={m.id}
+                                style={{
+                                  justifySelf: mine ? "end" : "start",
+                                  maxWidth: "82%",
+                                  borderRadius: 12,
+                                  padding: "8px 10px",
+                                  background: mine ? "#1b5e20" : "rgba(0,0,0,0.05)",
+                                  color: mine ? "white" : "#111827",
+                                }}
+                              >
+                                <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, marginBottom: 4 }}>
+                                  {String(m.sender_name ?? "").trim() || "Membre"} • {fmtMessageTime(m.created_at)}
+                                </div>
+                                <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>
+                                  {String(m.body ?? "").trim() || "—"}
+                                </div>
+                              </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+                        <input
+                          className="input"
+                          value={threadComposer}
+                          onChange={(e) => setThreadComposer(e.target.value)}
+                          placeholder={tr("Écrire un message…", "Write a message...")}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void sendThreadMessage();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={!eventThreadId || !threadComposer.trim() || sendingThreadMessage}
+                          onClick={() => void sendThreadMessage()}
+                        >
+                          <Send size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                          {sendingThreadMessage ? tr("Envoi…", "Sending...") : tr("Envoyer", "Send")}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
@@ -510,27 +707,48 @@ export default function CoachEventDetailPage() {
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                      {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
+                    </div>
                   </div>
 
-                  {structureItems.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {tr("Non saisi.", "Not entered.")}
+                  <div
+                    style={{
+                      border: "1px solid rgba(0,0,0,0.10)",
+                      borderRadius: 12,
+                      background: "rgba(255,255,255,0.88)",
+                      padding: 10,
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    {structureItems.length === 0 ? (
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          {tr("Non saisi.", "Not entered.")}
+                        </div>
+                      </div>
+                    ) : (
+                      <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                        {structureItems.map((it, idx) => {
+                          const extra = String(it.note ?? "").trim();
+                          return (
+                            <li key={`proposed-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              {categoryLabel(it.category)} — {it.minutes} min
+                              {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
+                        {tr("Éditer", "Edit")}
+                      </Link>
                     </div>
-                  ) : (
-                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                      {structureItems.map((it, idx) => {
-                        const extra = String(it.note ?? "").trim();
-                        return (
-                          <li key={`proposed-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {categoryLabel(it.category)} — {it.minutes} min
-                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
+                  </div>
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>

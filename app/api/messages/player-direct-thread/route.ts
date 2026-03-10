@@ -4,6 +4,7 @@ import { requireCaller } from "@/app/api/messages/_lib";
 type Body = {
   organization_id?: string;
   staff_user_id?: string;
+  child_id?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -14,16 +15,30 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as Body;
     const organizationId = String(body.organization_id ?? "").trim();
     const staffUserId = String(body.staff_user_id ?? "").trim();
+    const childId = String(body.child_id ?? "").trim();
     if (!organizationId || !staffUserId) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
+    let effectivePlayerId = callerId;
+    if (childId && childId !== callerId) {
+      const guardianRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id")
+        .eq("guardian_user_id", callerId)
+        .eq("player_id", childId)
+        .eq("can_view", true)
+        .maybeSingle();
+      if (guardianRes.error) return NextResponse.json({ error: guardianRes.error.message }, { status: 400 });
+      if (!guardianRes.data?.player_id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      effectivePlayerId = String(guardianRes.data.player_id);
+    }
 
     const [playerMembershipRes, staffMembershipRes] = await Promise.all([
       supabaseAdmin
         .from("club_members")
         .select("id")
         .eq("club_id", organizationId)
-        .eq("user_id", callerId)
+        .eq("user_id", effectivePlayerId)
         .eq("is_active", true)
         .eq("role", "player")
         .limit(1)
@@ -48,7 +63,7 @@ export async function POST(req: NextRequest) {
       .select("id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at")
       .eq("organization_id", organizationId)
       .eq("thread_type", "player")
-      .eq("player_id", callerId)
+      .eq("player_id", effectivePlayerId)
       .eq("created_by", staffUserId)
       .eq("player_thread_scope", "direct")
       .eq("is_active", true)
@@ -65,7 +80,7 @@ export async function POST(req: NextRequest) {
           organization_id: organizationId,
           thread_type: "player",
           title: "Discussion",
-          player_id: callerId,
+          player_id: effectivePlayerId,
           player_thread_scope: "direct",
           created_by: staffUserId,
           is_locked: false,
@@ -80,7 +95,7 @@ export async function POST(req: NextRequest) {
           .select("id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at")
           .eq("organization_id", organizationId)
           .eq("thread_type", "player")
-          .eq("player_id", callerId)
+          .eq("player_id", effectivePlayerId)
           .eq("created_by", staffUserId)
           .eq("player_thread_scope", "direct")
           .eq("is_active", true)
@@ -102,12 +117,12 @@ export async function POST(req: NextRequest) {
     const guardiansRes = await supabaseAdmin
       .from("player_guardians")
       .select("guardian_user_id,can_view")
-      .eq("player_id", callerId)
+      .eq("player_id", effectivePlayerId)
       .or("can_view.is.null,can_view.eq.true");
     if (guardiansRes.error) return NextResponse.json({ error: guardiansRes.error.message }, { status: 400 });
 
     const participantRows: Array<{ thread_id: string; user_id: string; can_post: boolean }> = [
-      { thread_id: threadId, user_id: callerId, can_post: true },
+      { thread_id: threadId, user_id: effectivePlayerId, can_post: true },
       { thread_id: threadId, user_id: staffUserId, can_post: true },
       ...((guardiansRes.data ?? [])
         .map((r: any) => String(r.guardian_user_id ?? "").trim())
@@ -123,4 +138,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
-

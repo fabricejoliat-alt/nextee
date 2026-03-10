@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import CountUpNumber from "@/components/ui/CountUpNumber";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -19,7 +20,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, Upload, FileText, Trash2 } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, Upload } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -218,6 +219,33 @@ function typeLabelLong(sessionType: SessionType, t: (key: string) => string) {
   if (sessionType === "club") return t("trainingDetail.typeClub");
   if (sessionType === "private") return t("trainingDetail.typePrivate");
   return t("trainingDetail.typeIndividual");
+}
+
+function documentPicto(mimeType: string | null | undefined, fileName: string) {
+  const mime = String(mimeType ?? "").toLowerCase();
+  const n = String(fileName ?? "").toLowerCase();
+  const ext = n.includes(".") ? n.split(".").pop() ?? "" : "";
+
+  if (mime.includes("pdf") || ext === "pdf") return "📕";
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"].includes(ext)) return "🖼️";
+  if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext)) return "🎵";
+  if (mime.startsWith("video/") || ["mp4", "mov", "avi", "mkv", "webm"].includes(ext)) return "🎬";
+  if (mime.includes("spreadsheet") || mime.includes("excel") || ["xls", "xlsx", "csv", "ods"].includes(ext)) return "📊";
+  if (mime.includes("word") || ["doc", "docx", "odt", "rtf"].includes(ext)) return "📝";
+  if (mime.includes("presentation") || ["ppt", "pptx", "odp"].includes(ext)) return "📽️";
+  if (mime.includes("zip") || mime.includes("compressed") || ["zip", "rar", "7z", "tar", "gz"].includes(ext)) return "🗜️";
+  if (
+    mime.includes("json") ||
+    mime.includes("xml") ||
+    mime.includes("javascript") ||
+    mime.includes("typescript") ||
+    mime.includes("html") ||
+    mime.includes("css") ||
+    ["json", "xml", "js", "ts", "tsx", "jsx", "html", "css", "md", "txt"].includes(ext)
+  ) {
+    return "💻";
+  }
+  return "📄";
 }
 
 function deltaArrow(delta: number | null, title = "Previous period comparison") {
@@ -510,8 +538,10 @@ export default function GolfDashboardPage() {
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string>("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string>("");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState<string>("");
   const docFileInputRef = useRef<HTMLInputElement | null>(null);
   const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
   const [teamThreadId, setTeamThreadId] = useState<string>("");
@@ -2119,10 +2149,16 @@ function presetToSelectValue(p: Preset): Preset {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
     setDocFile(file);
+    setDocName(file?.name ?? "");
   }
 
   async function uploadDocument() {
     if (!docFile || !playerId || sharedClubIds.length === 0 || uploadingDocument) return;
+    const finalDocName = docName.trim();
+    if (!finalDocName) {
+      setError("Veuillez saisir un nom de document.");
+      return;
+    }
     setUploadingDocument(true);
     try {
       const { data: sess } = await supabase.auth.getSession();
@@ -2133,6 +2169,7 @@ function presetToSelectValue(p: Preset): Preset {
       fd.append("organization_id", sharedClubIds[0]);
       fd.append("coach_only", "false");
       fd.append("file", docFile);
+      fd.append("file_name", finalDocName);
 
       const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
         method: "POST",
@@ -2148,6 +2185,7 @@ function presetToSelectValue(p: Preset): Preset {
         await loadDocuments();
       }
       setDocFile(null);
+      setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
     } catch (e: any) {
       setError(e?.message ?? "Upload failed");
@@ -2156,21 +2194,55 @@ function presetToSelectValue(p: Preset): Preset {
     }
   }
 
-  async function deleteDocument(documentId: string) {
-    if (!documentId || deletingDocumentId) return;
+  async function renameDocument(doc: PlayerDashboardDocument) {
+    if (!coachId || coachId !== String(doc.uploaded_by ?? "")) return;
+    const currentName = String(doc.file_name ?? "").trim();
+    const nextName = window.prompt("Nouveau nom du document", currentName)?.trim() ?? "";
+    if (!nextName || nextName === currentName) return;
+    setRenamingDocumentId(doc.id);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(doc.id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ file_name: nextName }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Rename failed"));
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
+      );
+      if (viewerDocument?.id === doc.id) {
+        setViewerDocument((prev) => (prev ? { ...prev, file_name: String(json?.document?.file_name ?? nextName) } : prev));
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Rename failed");
+    } finally {
+      setRenamingDocumentId("");
+    }
+  }
+
+  async function deleteDocument(doc: PlayerDashboardDocument) {
+    if (!doc?.id || deletingDocumentId || !coachId || coachId !== String(doc.uploaded_by ?? "")) return;
     const ok = window.confirm(
-      locale === "fr"
-        ? "Supprimer ce document ? (irréversible)"
-        : "Delete this document? (irreversible)"
+      locale === "fr" ? `Supprimer le document "${doc.file_name}" ?` : `Delete document "${doc.file_name}"?`
     );
     if (!ok) return;
-    setDeletingDocumentId(documentId);
+    setDeletingDocumentId(doc.id);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token) throw new Error("Missing token");
       const res = await fetch(
-        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(documentId)}`,
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(doc.id)}`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
@@ -2178,7 +2250,8 @@ function presetToSelectValue(p: Preset): Preset {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
-      setDocuments((prev) => prev.filter((d) => d.id !== documentId));
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+      if (viewerDocument?.id === doc.id) setViewerDocument(null);
     } catch (e: any) {
       setError(e?.message ?? "Delete failed");
     } finally {
@@ -2761,14 +2834,24 @@ function presetToSelectValue(p: Preset): Preset {
                   {docFile ? docFile.name : "Aucun fichier sélectionné"}
                 </span>
               </div>
+              <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
+                <input
+                  className="input"
+                  value={docName}
+                  onChange={(e) => setDocName(e.target.value)}
+                  placeholder="Nom du document"
+                  maxLength={180}
+                />
+              </label>
               <div>
                 <button
                   className="btn btn-primary btn-upload-green"
                   type="button"
                   onClick={() => void uploadDocument()}
                   style={{
-                    opacity: !docFile || uploadingDocument ? 0.65 : 1,
-                    pointerEvents: !docFile || uploadingDocument ? "none" : "auto",
+                    opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
+                    pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
                   }}
                 >
                   <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
@@ -2778,50 +2861,88 @@ function presetToSelectValue(p: Preset): Preset {
             </div>
 
             {loadingDocuments ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+              </div>
             ) : documents.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
             ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {documents.map((d) => (
-                  <div
-                    key={d.id}
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 10,
-                      background: "rgba(255,255,255,0.75)",
-                      padding: "8px 10px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                      <div style={{ fontWeight: 900 }} className="truncate">
-                        <FileText size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                        {d.file_name}
+              <div style={{ display: "grid", gap: 10 }}>
+                {documents.map((d) => {
+                  const uploader = String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8);
+                  const fileName = String(d.file_name ?? "").trim();
+                  const dot = fileName.lastIndexOf(".");
+                  const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
+                  const picto = documentPicto(d.mime_type, fileName);
+                  return (
+                    <div
+                      key={d.id}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.86)",
+                        padding: "10px 12px",
+                        display: "grid",
+                        gap: 8,
+                        boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
+                        <div
+                          aria-hidden
+                          style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: 10,
+                            border: "1px solid rgba(0,0,0,0.14)",
+                            background: "rgba(255,255,255,0.9)",
+                            color: "rgba(0,0,0,0.66)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <span style={{ fontSize: 16, lineHeight: 1 }}>{picto}</span>
+                        </div>
+                        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                          <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.6)", lineHeight: 1.35 }}>
+                            {ext} · {shortDate(d.created_at, dateLocale)}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
+                            Uploadé par {uploader}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
-                        {shortDate(d.created_at, dateLocale)}
-                        {` • Uploadé par ${String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8)}`}
+
+                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
+                          Voir
+                        </button>
+                        {String(d.uploaded_by ?? "") === coachId ? (
+                          <>
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={() => void renameDocument(d)}
+                              disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
+                            >
+                              {renamingDocumentId === d.id ? "..." : "Renommer"}
+                            </button>
+                            <button
+                              className="btn btn-danger soft"
+                              type="button"
+                              onClick={() => void deleteDocument(d)}
+                              disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
+                            >
+                              {deletingDocumentId === d.id ? "..." : "Supprimer"}
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </div>
-                    <div style={{ display: "inline-flex", gap: 8 }}>
-                      <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
-                        Voir
-                      </button>
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={() => void deleteDocument(d.id)}
-                        disabled={deletingDocumentId === d.id}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -3249,7 +3370,7 @@ function presetToSelectValue(p: Preset): Preset {
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                         <div>
-                          <span className="big-number">{totalMinutes}</span>
+                          <CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" />
                           <span className="unit">MIN</span>
                         </div>
 

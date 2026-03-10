@@ -100,14 +100,31 @@ type PlayerPlannedStructureItemRow = {
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    weekday: "short",
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const datePart = new Intl.DateTimeFormat("fr-CH", {
     day: "2-digit",
-    month: "short",
+    month: "long",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(d);
+  const timePart = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} à ${timePart}`;
+}
+
+function fmtDateTimeRange(startIso: string, durationMinutes: number) {
+  const start = new Date(startIso);
+  const end = new Date(start.getTime() + Math.max(1, Number(durationMinutes || 0)) * 60_000);
+  const sameDay = start.toDateString() === end.toDateString();
+  if (sameDay) {
+    const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start);
+    const datePart = new Intl.DateTimeFormat("fr-CH", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(start);
+    const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} de ${timeFmt.format(start)} à ${timeFmt.format(end)}`;
+  }
+  return `${fmtDateTime(startIso)} au ${fmtDateTime(end.toISOString())}`;
 }
 
 function nameOf(first: string | null, last: string | null) {
@@ -116,16 +133,20 @@ function nameOf(first: string | null, last: string | null) {
 
 function categoryLabel(cat: string) {
   const map: Record<string, string> = {
-    warmup_mobility: "Warmup / mobility",
+    warmup_mobility: "Échauffement / mobilité",
+    warmup: "Échauffement",
+    mobility: "Mobilité",
     long_game: "Long jeu",
+    long: "Long jeu",
     putting: "Putting",
-    wedging: "Wedging",
-    pitching: "Pitching",
-    chipping: "Chipping",
+    wedging: "Approches (wedging)",
+    pitching: "Approches levées (pitching)",
+    chipping: "Approches roulées (chipping)",
     bunker: "Bunker",
     course: "Parcours",
     mental: "Mental",
-    fitness: "Fitness",
+    fitness: "Physique",
+    physical: "Physique",
     other: "Autre",
   };
   return map[cat] ?? cat;
@@ -402,7 +423,11 @@ export default function CoachEventPlayerDetailPage() {
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            <div className="glass-card">
+              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+              </div>
+            </div>
           ) : !event || !player ? (
             <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
           ) : (
@@ -440,13 +465,15 @@ export default function CoachEventPlayerDetailPage() {
                   <span className="pill-soft" style={{ ...attendanceStyle, fontWeight: 950 }}>{attendanceLabel}</span>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
-                  <span className="pill-soft">{event.duration_minutes} min</span>
-                  <span className="pill-soft">{clubName || "Club"}</span>
-                  <span className="pill-soft">{groupName || "Groupe"}</span>
-                  {event.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
-                  {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.80)" }}>
+                    {fmtDateTimeRange(event.starts_at, event.duration_minutes)}
+                  </div>
+                  {event.location_text ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                      📍 {event.location_text}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -464,7 +491,16 @@ export default function CoachEventPlayerDetailPage() {
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "grid", gap: 6 }}>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.88)",
+                          padding: 10,
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
                         <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Planifiée par le coach</div>
                         {displayedPlannedItems.length > 0 ? (
                           <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
@@ -483,7 +519,16 @@ export default function CoachEventPlayerDetailPage() {
                         )}
                       </div>
 
-                      <div style={{ display: "grid", gap: 6 }}>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.88)",
+                          padding: 10,
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
                         <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Réalisée par le joueur</div>
                         {items.length > 0 ? (
                           <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>

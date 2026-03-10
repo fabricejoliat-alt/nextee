@@ -518,7 +518,9 @@ export default function PlayerOrderOfMeritPage() {
 
         {loading ? (
           <div className="glass-section">
-            <ListLoadingBlock label={txt.loading} />
+            <div className="glass-card">
+              <ListLoadingBlock label={txt.loading} />
+            </div>
           </div>
         ) : (
           !performanceEnabled ? (

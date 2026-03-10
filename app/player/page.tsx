@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
@@ -513,7 +514,7 @@ export default function PlayerHomePage() {
     const inSeason =
       trainingSeasonMonths.includes(nowMonth) ||
       (!trainingOffseasonMonths.includes(nowMonth) && trainingSeasonMonths.length > 0);
-    if (!target) return 500;
+    if (!target) return 0;
     return inSeason ? target.minutes_inseason : target.minutes_offseason;
   }, [profile?.handicap, trainingVolumeRows, trainingSeasonMonths, trainingOffseasonMonths]);
 
@@ -1739,13 +1740,17 @@ export default function PlayerHomePage() {
                 <div className="muted-uc">{thisMonthTitle}</div>
 
                 <div style={{ marginTop: 6 }}>
-                  <span className="big-number">{trainingsSummary.totalMinutes}</span>
+                  <CountUpNumber value={trainingsSummary.totalMinutes} durationMs={2000} className="big-number" />
                   <span className="unit">{t("playerHome.minutesUnit")}</span>
                 </div>
 
                 <div className="hr-soft" />
 
-                <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>{t("playerHome.goal")}: {trainingsSummary.objective} {t("common.min")}</div>
+                {trainingsSummary.objective > 0 ? (
+                  <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
+                    {t("playerHome.goal")}: {trainingsSummary.objective} {t("common.min")}
+                  </div>
+                ) : null}
                 {trainingVolumeMotivation ? (
                   <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
                     {trainingVolumeMotivation}

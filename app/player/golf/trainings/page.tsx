@@ -1856,7 +1856,7 @@ export default function TrainingsListPage() {
                             </ul>
                           )}
 
-                          {isPastSession ? (
+                          {performanceEnabled && isPastSession ? (
                             <>
                               {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
                               <div style={{ display: "grid", gap: 10 }}>

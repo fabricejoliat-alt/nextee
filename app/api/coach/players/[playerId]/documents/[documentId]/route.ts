@@ -42,7 +42,7 @@ export async function DELETE(
 
     const docRes = await supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,organization_id,storage_path")
+      .select("id,organization_id,storage_path,uploaded_by")
       .eq("id", documentId)
       .eq("player_id", playerId)
       .maybeSingle();
@@ -50,6 +50,9 @@ export async function DELETE(
     if (!docRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (!sharedOrgIds.includes(String(docRes.data.organization_id ?? ""))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
+      return NextResponse.json({ error: "Only uploader can delete this document" }, { status: 403 });
     }
 
     await supabaseAdmin.storage.from("marketplace").remove([String(docRes.data.storage_path ?? "")]);
@@ -62,3 +65,49 @@ export async function DELETE(
   }
 }
 
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ playerId: string; documentId: string }> }
+) {
+  try {
+    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+    const { playerId, documentId } = await ctx.params;
+    if (!playerId || !documentId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
+
+    const { supabaseAdmin, callerId } = await requireCaller(accessToken);
+    const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
+    if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const body = (await req.json().catch(() => ({}))) as { file_name?: string | null };
+    const nextName = String(body?.file_name ?? "").trim();
+    if (!nextName) return NextResponse.json({ error: "Missing file_name" }, { status: 400 });
+
+    const docRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .select("id,organization_id,uploaded_by")
+      .eq("id", documentId)
+      .eq("player_id", playerId)
+      .maybeSingle();
+    if (docRes.error) return NextResponse.json({ error: docRes.error.message }, { status: 400 });
+    if (!docRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!sharedOrgIds.includes(String(docRes.data.organization_id ?? ""))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
+      return NextResponse.json({ error: "Only uploader can rename this document" }, { status: 403 });
+    }
+
+    const updRes = await supabaseAdmin
+      .from("player_dashboard_documents")
+      .update({ file_name: nextName })
+      .eq("id", documentId)
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .single();
+    if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 400 });
+
+    return NextResponse.json({ document: updRes.data });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  }
+}

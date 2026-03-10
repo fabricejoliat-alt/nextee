@@ -358,6 +358,7 @@ export default function CoachGroupPlanningPage() {
   const [eventCoachIds, setEventCoachIds] = useState<Record<string, string[]>>({});
   const [eventAttendeeIds, setEventAttendeeIds] = useState<Record<string, string[]>>({});
   const [eventPresentPlayerIds, setEventPresentPlayerIds] = useState<Record<string, string[]>>({});
+  const [eventAbsentPlayerIds, setEventAbsentPlayerIds] = useState<Record<string, string[]>>({});
   const [eventEvaluatedPlayerIds, setEventEvaluatedPlayerIds] = useState<Record<string, string[]>>({});
   const [pendingEvaluationCount, setPendingEvaluationCount] = useState(0);
   const [coachEditBusy, setCoachEditBusy] = useState<Record<string, boolean>>({});
@@ -872,16 +873,21 @@ export default function CoachGroupPlanningPage() {
         if (eaRes.error) throw new Error(eaRes.error.message);
         const attendeesByEvent: Record<string, string[]> = {};
         const presentByEvent: Record<string, string[]> = {};
+        const absentByEvent: Record<string, string[]> = {};
         ((eaRes.data ?? []) as EventAttendeeRow[]).forEach((r) => {
           if (!attendeesByEvent[r.event_id]) attendeesByEvent[r.event_id] = [];
           attendeesByEvent[r.event_id].push(r.player_id);
           if (r.status === "present") {
             if (!presentByEvent[r.event_id]) presentByEvent[r.event_id] = [];
             presentByEvent[r.event_id].push(r.player_id);
+          } else if (r.status === "absent" || r.status === "excused") {
+            if (!absentByEvent[r.event_id]) absentByEvent[r.event_id] = [];
+            absentByEvent[r.event_id].push(r.player_id);
           }
         });
         setEventAttendeeIds(attendeesByEvent);
         setEventPresentPlayerIds(presentByEvent);
+        setEventAbsentPlayerIds(absentByEvent);
 
         const cfRes = await supabase
           .from("club_event_coach_feedback")
@@ -899,6 +905,7 @@ export default function CoachGroupPlanningPage() {
         setEventCoachIds({});
         setEventAttendeeIds({});
         setEventPresentPlayerIds({});
+        setEventAbsentPlayerIds({});
         setEventEvaluatedPlayerIds({});
       }
 
@@ -914,6 +921,7 @@ export default function CoachGroupPlanningPage() {
       setEventCoachIds({});
       setEventAttendeeIds({});
       setEventPresentPlayerIds({});
+      setEventAbsentPlayerIds({});
       setEventEvaluatedPlayerIds({});
       setPendingEvaluationCount(0);
       setFilterCounts({ upcoming: 0, past: 0, range: 0 });
@@ -1315,12 +1323,14 @@ export default function CoachGroupPlanningPage() {
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {listedEvents.map((e) => (
-                  <div key={e.id} className="marketplace-item">
+                  <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
                     {(() => {
                       const coachIds = Array.from(new Set(eventCoachIds[e.id] ?? []));
                       const attendeeIds = Array.from(new Set(eventAttendeeIds[e.id] ?? []));
                       const showEvaluationWarning = eventNeedsEvaluation(e);
                       const playerIds = attendeeIds.filter((id) => playerIdSet.has(id));
+                      const presentIds = Array.from(new Set((eventPresentPlayerIds[e.id] ?? []).filter((id) => playerIdSet.has(id))));
+                      const absentIds = Array.from(new Set((eventAbsentPlayerIds[e.id] ?? []).filter((id) => playerIdSet.has(id))));
                       const inviteIds = attendeeIds.filter((id) => !playerIdSet.has(id) && !coachIdSet.has(id));
 
                       const renderPeopleLine = (label: string, ids: string[]) => {
@@ -1387,13 +1397,15 @@ export default function CoachGroupPlanningPage() {
 
                       return (
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                         <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                           {fmtDateTimeRange(e.starts_at, e.ends_at)}
                         </div>
 
                         <div className="marketplace-price-pill">{e.duration_minutes} min</div>
                       </div>
+
+                      <div className="hr-soft" style={{ margin: "1px 0" }} />
 
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <span className="pill-soft">{eventTypeLabelLocalized(e.event_type)}</span>
@@ -1424,7 +1436,9 @@ export default function CoachGroupPlanningPage() {
                       <div style={{ display: "grid", gap: 6 }}>
                         {renderPeopleLine(tr("Coachs", "Coaches"), coachIds)}
                         <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Joueurs", "Players"), playerIds)}
+                        {renderPeopleLine(tr("Participants", "Participants"), presentIds.length > 0 ? presentIds : playerIds)}
+                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
+                        {renderPeopleLine(tr("Absents", "Absent"), absentIds)}
                         <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
                         {renderPeopleLine(tr("Invités", "Guests"), inviteIds)}
                       </div>

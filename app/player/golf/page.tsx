@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -18,7 +19,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, FileText, Upload } from "lucide-react";
+import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, Upload } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -222,6 +223,33 @@ function typeLabelLong(sessionType: SessionType, t: (key: string) => string) {
   if (sessionType === "club") return t("trainingDetail.typeClub");
   if (sessionType === "private") return t("trainingDetail.typePrivate");
   return t("trainingDetail.typeIndividual");
+}
+
+function documentPicto(mimeType: string | null | undefined, fileName: string) {
+  const mime = String(mimeType ?? "").toLowerCase();
+  const n = String(fileName ?? "").toLowerCase();
+  const ext = n.includes(".") ? n.split(".").pop() ?? "" : "";
+
+  if (mime.includes("pdf") || ext === "pdf") return "📕";
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"].includes(ext)) return "🖼️";
+  if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext)) return "🎵";
+  if (mime.startsWith("video/") || ["mp4", "mov", "avi", "mkv", "webm"].includes(ext)) return "🎬";
+  if (mime.includes("spreadsheet") || mime.includes("excel") || ["xls", "xlsx", "csv", "ods"].includes(ext)) return "📊";
+  if (mime.includes("word") || ["doc", "docx", "odt", "rtf"].includes(ext)) return "📝";
+  if (mime.includes("presentation") || ["ppt", "pptx", "odp"].includes(ext)) return "📽️";
+  if (mime.includes("zip") || mime.includes("compressed") || ["zip", "rar", "7z", "tar", "gz"].includes(ext)) return "🗜️";
+  if (
+    mime.includes("json") ||
+    mime.includes("xml") ||
+    mime.includes("javascript") ||
+    mime.includes("typescript") ||
+    mime.includes("html") ||
+    mime.includes("css") ||
+    ["json", "xml", "js", "ts", "tsx", "jsx", "html", "css", "md", "txt"].includes(ext)
+  ) {
+    return "💻";
+  }
+  return "📄";
 }
 
 function deltaArrow(delta: number | null, title = "Previous period comparison") {
@@ -506,6 +534,7 @@ export default function GolfDashboardPage() {
   const [teamComposer, setTeamComposer] = useState("");
   const [teamProfilesById, setTeamProfilesById] = useState<Record<string, ProfileLite>>({});
   const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
+  const authTokenRef = useRef<string>("");
   const [loadingTeamThread, setLoadingTeamThread] = useState(false);
   const [loadingTeamMessages, setLoadingTeamMessages] = useState(false);
   const [sendingTeamMessage, setSendingTeamMessage] = useState(false);
@@ -513,7 +542,10 @@ export default function GolfDashboardPage() {
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string>("");
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string>("");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState<string>("");
   const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
   const [currentUserId, setCurrentUserId] = useState("");
   const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -632,6 +664,14 @@ export default function GolfDashboardPage() {
     }).format(new Date(iso));
   }
 
+  async function getAuthToken(): Promise<string> {
+    if (authTokenRef.current) return authTokenRef.current;
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token ?? "";
+    if (token) authTokenRef.current = token;
+    return token;
+  }
+
   async function loadTeamThreadMessages(threadId: string, options?: { silent?: boolean }) {
     if (!threadId) {
       setTeamMessages([]);
@@ -639,8 +679,7 @@ export default function GolfDashboardPage() {
     }
     if (!options?.silent) setLoadingTeamMessages(true);
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? "";
+      const token = await getAuthToken();
       if (!token) throw new Error("Missing token");
       const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -676,8 +715,7 @@ export default function GolfDashboardPage() {
       return;
     }
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? "";
+      const token = await getAuthToken();
       if (!token) return;
       const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -700,8 +738,7 @@ export default function GolfDashboardPage() {
     setLoadingTeamThread(true);
     try {
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? "";
+      const token = await getAuthToken();
       if (!token || !playerId) throw new Error("Missing context");
       const res = await fetch(`/api/player/team-thread?player_id=${encodeURIComponent(playerId)}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -713,8 +750,8 @@ export default function GolfDashboardPage() {
       if (!threadId) throw new Error("Team thread unavailable");
 
       setTeamThreadId(threadId);
-      await loadTeamThreadMessages(threadId);
-      await loadTeamParticipants(threadId);
+      void loadTeamThreadMessages(threadId);
+      void loadTeamParticipants(threadId);
     } catch {
       setTeamThreadId("");
       setTeamMessages([]);
@@ -755,10 +792,16 @@ export default function GolfDashboardPage() {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
     setDocFile(file);
+    setDocName(file?.name ?? "");
   }
 
   async function uploadDocument() {
     if (!docFile || uploadingDocument) return;
+    const finalDocName = docName.trim();
+    if (!finalDocName) {
+      setError("Veuillez saisir un nom de document.");
+      return;
+    }
     setUploadingDocument(true);
     try {
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
@@ -768,6 +811,7 @@ export default function GolfDashboardPage() {
 
       const fd = new FormData();
       fd.append("file", docFile);
+      fd.append("file_name", finalDocName);
 
       const res = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
         method: "POST",
@@ -783,6 +827,7 @@ export default function GolfDashboardPage() {
         await loadDocuments();
       }
       setDocFile(null);
+      setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
     } catch (e: any) {
       setError(e?.message ?? "Upload failed");
@@ -791,7 +836,76 @@ export default function GolfDashboardPage() {
     }
   }
 
+  async function renameDocument(doc: PlayerDashboardDocument) {
+    if (!currentUserId || currentUserId !== String(doc.uploaded_by ?? "")) return;
+    const currentName = String(doc.file_name ?? "").trim();
+    const nextName = window.prompt("Nouveau nom du document", currentName)?.trim() ?? "";
+    if (!nextName || nextName === currentName) return;
+    setRenamingDocumentId(doc.id);
+    try {
+      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const token = await getAuthToken();
+      if (!token || !playerId) throw new Error("Missing context");
+      const res = await fetch(`/api/player/documents`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document_id: doc.id,
+          player_id: playerId,
+          file_name: nextName,
+        }),
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Rename failed"));
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
+      );
+      if (viewerDocument?.id === doc.id) {
+        setViewerDocument((prev) => (prev ? { ...prev, file_name: String(json?.document?.file_name ?? nextName) } : prev));
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Rename failed");
+    } finally {
+      setRenamingDocumentId("");
+    }
+  }
+
+  async function deleteDocument(doc: PlayerDashboardDocument) {
+    if (!currentUserId || currentUserId !== String(doc.uploaded_by ?? "")) return;
+    const ok = window.confirm(`Supprimer le document "${doc.file_name}" ?`);
+    if (!ok) return;
+    setDeletingDocumentId(doc.id);
+    try {
+      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const token = await getAuthToken();
+      if (!token || !playerId) throw new Error("Missing context");
+      const res = await fetch(`/api/player/documents`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document_id: doc.id,
+          player_id: playerId,
+        }),
+      });
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+      if (viewerDocument?.id === doc.id) setViewerDocument(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingDocumentId("");
+    }
+  }
+
   useEffect(() => {
+    void getAuthToken();
     void ensureAndLoadTeamThread();
     void loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -828,7 +942,8 @@ export default function GolfDashboardPage() {
     const timer = window.setInterval(async () => {
       try {
         const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token ?? "";
+        const token = sess.session?.access_token ?? authTokenRef.current ?? "";
+        if (sess.session?.access_token) authTokenRef.current = sess.session.access_token;
         if (!token) return;
         const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages?limit=1`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -1412,7 +1527,7 @@ function presetToSelectValue(p: Preset): Preset {
     const inSeason =
       trainingSeasonMonths.includes(nowMonth) ||
       (!trainingOffseasonMonths.includes(nowMonth) && trainingSeasonMonths.length > 0);
-    if (!trainingVolumeTarget) return 500;
+    if (!trainingVolumeTarget) return 0;
     return inSeason ? trainingVolumeTarget.minutes_inseason : trainingVolumeTarget.minutes_offseason;
   }, [trainingSeasonMonths, trainingOffseasonMonths, trainingVolumeTarget]);
   const trainingVolumeMotivation = useMemo(() => {
@@ -1424,7 +1539,7 @@ function presetToSelectValue(p: Preset): Preset {
     [totalMinutes, trainingVolumeObjective]
   );
   const trainingVolumeGoalReached = trainingVolumeObjective > 0 && totalMinutes >= trainingVolumeObjective;
-  const showMonthlyObjective = preset !== "all";
+  const showMonthlyObjective = preset !== "all" && trainingVolumeObjective > 0;
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
@@ -2043,8 +2158,10 @@ function presetToSelectValue(p: Preset): Preset {
               </div>
             </div>
 
-            {loadingTeamThread || loadingTeamMessages ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+            {(loadingTeamThread && !teamThreadId) || loadingTeamMessages ? (
+              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+              </div>
             ) : !teamThreadId ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Fil équipe indisponible.</div>
             ) : (
@@ -2218,33 +2335,43 @@ function presetToSelectValue(p: Preset): Preset {
                   gap: 10,
                   flexWrap: "wrap",
                 }}
-              >
-                <button
-                  type="button"
-                  className="btn"
+                >
+                  <button
+                    type="button"
+                    className="btn"
                   onClick={openDocumentPicker}
                   disabled={uploadingDocument}
                 >
                   Choisir un fichier
                 </button>
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
-                  }}
-                >
-                  {docFile ? docFile.name : "Aucun fichier sélectionné"}
-                </span>
-              </div>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                  </span>
+                </div>
+              <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
+                <input
+                  className="input"
+                  value={docName}
+                  onChange={(e) => setDocName(e.target.value)}
+                  placeholder="Nom du document"
+                  maxLength={180}
+                />
+              </label>
               <div>
                 <button
                   className="btn btn-primary btn-upload-green"
                   type="button"
                   onClick={() => void uploadDocument()}
                   style={{
-                    opacity: !docFile || uploadingDocument ? 0.65 : 1,
-                    pointerEvents: !docFile || uploadingDocument ? "none" : "auto",
+                    opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
+                    pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
                   }}
                 >
                   <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
@@ -2253,40 +2380,88 @@ function presetToSelectValue(p: Preset): Preset {
               </div>
             </div>
             {loadingDocuments ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+              </div>
             ) : documents.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
             ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {documents.map((d) => (
-                  <div
-                    key={d.id}
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 10,
-                      background: "rgba(255,255,255,0.75)",
-                      padding: "8px 10px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, display: "grid", gap: 2 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13 }} className="truncate">
-                        <FileText size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                        {d.file_name}
+              <div style={{ display: "grid", gap: 10 }}>
+                {documents.map((d) => {
+                  const uploader = String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8);
+                  const fileName = String(d.file_name ?? "").trim();
+                  const dot = fileName.lastIndexOf(".");
+                  const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
+                  const picto = documentPicto(d.mime_type, fileName);
+                  return (
+                    <div
+                      key={d.id}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.86)",
+                        padding: "10px 12px",
+                        display: "grid",
+                        gap: 8,
+                        boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
+                        <div
+                          aria-hidden
+                          style={{
+                            width: 30,
+                            height: 30,
+                            borderRadius: 10,
+                            border: "1px solid rgba(0,0,0,0.14)",
+                            background: "rgba(255,255,255,0.9)",
+                            color: "rgba(0,0,0,0.66)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <span style={{ fontSize: 16, lineHeight: 1 }}>{picto}</span>
+                        </div>
+                        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                          <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.6)", lineHeight: 1.35 }}>
+                            {ext} · {shortDate(d.created_at, dateLocale)}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
+                            Uploadé par {uploader}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.6)" }}>
-                        {shortDate(d.created_at, dateLocale)}
-                        {` • Uploadé par ${String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8)}`}
+
+                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
+                          Voir
+                        </button>
+                        {String(d.uploaded_by ?? "") === currentUserId ? (
+                          <>
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={() => void renameDocument(d)}
+                              disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
+                            >
+                              {renamingDocumentId === d.id ? "..." : "Renommer"}
+                            </button>
+                            <button
+                              className="btn btn-danger soft"
+                              type="button"
+                              onClick={() => void deleteDocument(d)}
+                              disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
+                            >
+                              {deletingDocumentId === d.id ? "..." : "Supprimer"}
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </div>
-                    <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
-                      Voir
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2450,7 +2625,9 @@ function presetToSelectValue(p: Preset): Preset {
               <div className="card-title">{locale === "fr" ? "Mon volume d'entraînement" : t("golfDashboard.volume")}</div>
 
               {loading ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                  <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+                </div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   <div
@@ -2463,7 +2640,7 @@ function presetToSelectValue(p: Preset): Preset {
                   >
                     <div>
                       <div>
-                        <span className="big-number">{totalMinutes}</span>
+                        <CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" />
                         <span className="unit">MIN</span>
                       </div>
                       {showMonthlyObjective ? (

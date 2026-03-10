@@ -379,26 +379,24 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       {
         label: locale === "fr" ? "Activité" : "Activity",
         icon: ClipboardList,
-        children: [
-          {
-            label: locale === "fr" ? "Planning" : "Planning",
-            icon: ClipboardList,
-            href: ROUTES.trainingsList,
-          },
-          ...(performanceEnabled
-            ? [
-                {
-                  label:
-                    locale === "fr"
-                      ? `À compléter (${pendingEvalCount})`
-                      : `To complete (${pendingEvalCount})`,
-                  icon: ListChecks,
-                  href: ROUTES.trainingsToComplete,
-                },
-              ]
-            : []),
-        ],
+        href: ROUTES.trainingsList,
       },
+      ...(performanceEnabled
+        ? [
+            {
+              label:
+                locale === "fr"
+                  ? pendingEvalCount > 0
+                    ? `Activité à compléter (${pendingEvalCount})`
+                    : "Activité à compléter"
+                  : pendingEvalCount > 0
+                  ? `Activity to complete (${pendingEvalCount})`
+                  : "Activity to complete",
+              icon: ListChecks,
+              href: ROUTES.trainingsToComplete,
+            },
+          ]
+        : []),
       {
         label: t("player.myGolf"),
         icon: Flag,
@@ -416,24 +414,24 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           },
           { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
-          ...(performanceEnabled
-            ? [
-                {
-                  label:
-                    locale === "fr"
-                      ? "Ordre du mérite"
-                      : locale === "de"
-                      ? "Order of Merit"
-                      : locale === "it"
-                      ? "Ordine di merito"
-                      : "Order of Merit",
-                  icon: Trophy,
-                  href: ROUTES.om,
-                },
-              ]
-            : []),
         ],
       },
+      ...(performanceEnabled
+        ? [
+            {
+              label:
+                locale === "fr"
+                  ? "Ordre du mérite"
+                  : locale === "de"
+                  ? "Order of Merit"
+                  : locale === "it"
+                  ? "Ordine di merito"
+                  : "Order of Merit",
+              icon: Trophy,
+              href: ROUTES.om,
+            },
+          ]
+        : []),
       {
         label: locale === "fr" ? "Encadrement" : "Support team",
         icon: User,
@@ -483,6 +481,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         <nav className="drawer-nav">
           {nav.map((item) => {
             const Icon = item.icon;
+            const highlightToComplete = item.href === ROUTES.trainingsToComplete && pendingEvalCount > 0;
             const activeTop = item.href
               ? isTrainingChildActive(pathname, searchParams, item.href)
               : item.children?.some((c) => isTrainingChildActive(pathname, searchParams, c.href));
@@ -496,8 +495,14 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                   onClick={onClose}
                 >
                   <span className="drawer-item-left">
-                    <Icon size={18} strokeWidth={2} />
-                    <span>{item.label}</span>
+                    <Icon
+                      size={18}
+                      strokeWidth={2}
+                      color={highlightToComplete ? "#b91c1c" : undefined}
+                    />
+                    <span style={highlightToComplete ? { color: "#b91c1c", fontWeight: 900 } : undefined}>
+                      {item.label}
+                    </span>
                   </span>
                 </Link>
               );
@@ -526,15 +531,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                       >
                         <span className="drawer-item-left">
                           <CIcon size={16} strokeWidth={2} />
-                          <span
-                            style={
-                              c.href === ROUTES.trainingsToComplete && pendingEvalCount > 0
-                                ? { color: "#b91c1c", fontWeight: 900 }
-                                : undefined
-                            }
-                          >
-                            {c.label}
-                          </span>
+                          <span>{c.label}</span>
                         </span>
                       </Link>
                     );

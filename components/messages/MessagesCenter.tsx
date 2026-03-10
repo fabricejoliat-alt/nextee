@@ -99,6 +99,7 @@ export default function MessagesCenter({
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [activeThreadParticipantNames, setActiveThreadParticipantNames] = useState<string[]>([]);
   const [composerText, setComposerText] = useState("");
   const [meId, setMeId] = useState("");
   const [profilesById, setProfilesById] = useState<Record<string, ProfileLite>>({});
@@ -337,11 +338,43 @@ export default function MessagesCenter({
   useEffect(() => {
     if (!activeThreadId) {
       setMessages([]);
+      setActiveThreadParticipantNames([]);
       return;
     }
     void loadMessages(activeThreadId, "replace");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
+
+  useEffect(() => {
+    (async () => {
+      if (!activeThreadId) {
+        setActiveThreadParticipantNames([]);
+        return;
+      }
+
+      const initial = (threads.find((t) => t.id === activeThreadId)?.participant_names ?? [])
+        .map((v) => String(v ?? "").trim())
+        .filter(Boolean);
+      if (initial.length > 0) setActiveThreadParticipantNames(initial);
+
+      try {
+        const headers = await authHeader();
+        const res = await fetch(`/api/messages/threads/${encodeURIComponent(activeThreadId)}/participants`, {
+          method: "GET",
+          headers,
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const fullNames = ((json?.participant_full_names ?? []) as string[])
+          .map((v) => String(v ?? "").trim())
+          .filter(Boolean);
+        setActiveThreadParticipantNames(fullNames);
+      } catch {
+        // keep existing names when participant lookup fails
+      }
+    })();
+  }, [activeThreadId, threads]);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -434,6 +467,18 @@ export default function MessagesCenter({
   }, [organizationId, activeThreadId, archivedFilter]);
 
   const activeThread = useMemo(() => threads.find((t) => t.id === activeThreadId) ?? null, [threads, activeThreadId]);
+  const activeThreadHeader = useMemo(() => {
+    if (!activeThread) return { line1: "", line2: "" };
+    const rawTitle = String(activeThread.display_title || activeThread.title || "").trim();
+    if (activeThread.thread_type !== "event") {
+      return { line1: rawTitle, line2: "" };
+    }
+    const parts = rawTitle.split("•").map((p) => p.trim()).filter(Boolean);
+    const line1 = parts[0] || rawTitle;
+    const groupName = String(activeThread.group_name ?? "").trim();
+    const line2 = groupName || parts[1] || "";
+    return { line1, line2 };
+  }, [activeThread]);
   const filteredThreads = useMemo(
     () => (threadFilter === "all" ? threads : threads.filter((t) => t.thread_type === threadFilter)),
     [threads, threadFilter]
@@ -970,15 +1015,27 @@ export default function MessagesCenter({
                 </>
               </div>
 
-              <div className="glass-card" style={{ display: "grid", gridTemplateRows: "auto 1fr auto", minHeight: 460 }}>
+              <div className="glass-card" style={{ display: "grid", gridTemplateRows: "auto 1fr", minHeight: 460 }}>
                 {activeThread ? (
                   <>
-                    <div style={{ paddingBottom: 8, borderBottom: "1px solid rgba(0,0,0,0.08)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ paddingBottom: 8, borderBottom: "1px solid rgba(0,0,0,0.08)", display: "flex", alignItems: "flex-start", gap: 8 }}>
                       <MessageCircle size={16} />
-                      <div style={{ fontWeight: 900 }}>
-                        {activeThread.thread_type === "group"
-                          ? String(activeThread.group_name ?? "").trim() || tr("Non renseigné", "Not set")
-                          : activeThread.display_title || activeThread.title}
+                      <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
+                        <div style={{ fontWeight: 900 }}>
+                          {activeThread.thread_type === "group"
+                            ? String(activeThread.group_name ?? "").trim() || tr("Non renseigné", "Not set")
+                            : activeThreadHeader.line1}
+                        </div>
+                        {activeThreadHeader.line2 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.78 }}>
+                            {activeThreadHeader.line2}
+                          </div>
+                        ) : null}
+                        {activeThreadParticipantNames.length > 0 ? (
+                          <div style={{ fontSize: 11, opacity: 0.72, whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                            {tr("Participants", "Participants")}: {activeThreadParticipantNames.join(", ")}
+                          </div>
+                        ) : null}
                       </div>
                       {canArchiveForMe ? (
                         <button
@@ -993,42 +1050,63 @@ export default function MessagesCenter({
                       ) : null}
                     </div>
 
-                    <div style={{ overflow: "auto", maxHeight: 400, display: "grid", gap: 8, paddingTop: 8, alignContent: "start" }}>
-                      {hasOlderMessages ? (
-                        <button className="btn" type="button" onClick={() => loadMessages(activeThread.id, "older")} disabled={messagesLoading}>
-                          {tr("Afficher plus", "Load older")}
-                        </button>
-                      ) : null}
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.94)",
+                        padding: 10,
+                        display: "grid",
+                        gap: 8,
+                        minHeight: 380,
+                        marginTop: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          overflow: "auto",
+                          maxHeight: 400,
+                          display: "grid",
+                          gap: 8,
+                          paddingRight: 8,
+                          alignContent: "start",
+                        }}
+                      >
+                        {hasOlderMessages ? (
+                          <button className="btn" type="button" onClick={() => loadMessages(activeThread.id, "older")} disabled={messagesLoading}>
+                            {tr("Afficher plus", "Load older")}
+                          </button>
+                        ) : null}
 
-                      {messagesLoading && messages.length === 0 ? (
-                        <CompactLoadingBlock label={tr("Chargement…", "Loading...")} />
-                      ) : messages.length === 0 ? (
-                        <div style={{ opacity: 0.65, fontWeight: 700 }}>{tr("Aucun message.", "No message.")}</div>
-                      ) : (
-                        messages.map((m) => {
-                          const mine = m.sender_user_id === meId;
-                          return (
-                            <div
-                              key={m.id}
-                              style={{
-                                justifySelf: mine ? "end" : "start",
-                                maxWidth: "82%",
-                                borderRadius: 12,
-                                padding: "8px 10px",
-                                background: mine ? "#1b5e20" : "rgba(0,0,0,0.05)",
-                                color: mine ? "white" : "#111827",
-                              }}
-                            >
-                              <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, marginBottom: 4 }}>
-                                {personLabel(m.sender_user_id)} {personParentSuffix(m.sender_user_id)} • {fmtDate(m.created_at)}
+                        {messagesLoading && messages.length === 0 ? (
+                          <CompactLoadingBlock label={tr("Chargement…", "Loading...")} />
+                        ) : messages.length === 0 ? (
+                          <div style={{ opacity: 0.65, fontWeight: 700 }}>{tr("Aucun message.", "No message.")}</div>
+                        ) : (
+                          messages.map((m) => {
+                            const mine = m.sender_user_id === meId;
+                            return (
+                              <div
+                                key={m.id}
+                                style={{
+                                  justifySelf: mine ? "end" : "start",
+                                  maxWidth: "82%",
+                                  borderRadius: 12,
+                                  padding: "8px 10px",
+                                  background: mine ? "#1b5e20" : "rgba(0,0,0,0.05)",
+                                  color: mine ? "white" : "#111827",
+                                }}
+                              >
+                                <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, marginBottom: 4 }}>
+                                  {personLabel(m.sender_user_id)} {personParentSuffix(m.sender_user_id)} • {fmtDate(m.created_at)}
+                                </div>
+                                <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.body}</div>
                               </div>
-                              <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.body}</div>
-                            </div>
-                          );
-                        })
-                      )}
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
-
                     <div style={{ paddingTop: 10, borderTop: "1px solid rgba(0,0,0,0.08)", display: "grid", gap: 8 }}>
                       {canPost ? (
                         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>

@@ -272,9 +272,6 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
               <div className="section-title" style={{ marginBottom: 0 }}>
                 {locale === "fr" ? titleFr : locale === "de" ? titleDe : locale === "it" ? titleIt : titleEn}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                {tr("Non lues", "Unread", "Ungelesen", "Non lette")}: {unreadCount}
-              </div>
             </div>
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href={homeHref}>{t("common.back")}</Link>

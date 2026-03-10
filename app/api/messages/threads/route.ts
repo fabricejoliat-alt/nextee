@@ -622,13 +622,20 @@ export async function GET(req: NextRequest) {
           displayTitle = profileNameById.get(String(t.created_by ?? "")) ?? "Coach";
         }
       }
+      const threadGroupId = String(t.group_id ?? "").trim();
+      const eventGroupId =
+        t.thread_type === "event" && t.event_id
+          ? String(eventById.get(String(t.event_id))?.group_id ?? "").trim()
+          : "";
+      const resolvedGroupId = threadGroupId || eventGroupId;
+
       return {
         ...t,
         display_title: displayTitle,
-        group_name: groupsById.get(String(t.group_id ?? "")) ?? "",
+        group_name: groupsById.get(resolvedGroupId) ?? "",
         group_categories:
           t.thread_type === "group" || t.thread_type === "event"
-            ? (groupCategoriesById.get(String(t.group_id ?? "")) ?? [])
+            ? (groupCategoriesById.get(resolvedGroupId) ?? [])
             : [],
         participant_names:
           t.thread_type === "group" ||

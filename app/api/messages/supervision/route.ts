@@ -7,11 +7,27 @@ export async function GET(req: NextRequest) {
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
+    const url = new URL(req.url);
+    const childId = String(url.searchParams.get("child_id") ?? "").trim();
+
+    let effectivePlayerId = callerId;
+    if (childId && childId !== callerId) {
+      const guardianRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id")
+        .eq("guardian_user_id", callerId)
+        .eq("player_id", childId)
+        .eq("can_view", true)
+        .maybeSingle();
+      if (guardianRes.error) return NextResponse.json({ error: guardianRes.error.message }, { status: 400 });
+      if (!guardianRes.data?.player_id) return NextResponse.json({ staff: [] });
+      effectivePlayerId = String(guardianRes.data.player_id);
+    }
 
     const playerMembershipsRes = await supabaseAdmin
       .from("club_members")
       .select("club_id")
-      .eq("user_id", callerId)
+      .eq("user_id", effectivePlayerId)
       .eq("is_active", true)
       .eq("role", "player");
     if (playerMembershipsRes.error) return NextResponse.json({ error: playerMembershipsRes.error.message }, { status: 400 });
@@ -48,7 +64,7 @@ export async function GET(req: NextRequest) {
             .from("message_threads")
             .select("id,organization_id,created_by,updated_at")
             .eq("thread_type", "player")
-            .eq("player_id", callerId)
+            .eq("player_id", effectivePlayerId)
             .eq("is_active", true)
             .eq("player_thread_scope", "direct")
             .in("organization_id", orgIds)

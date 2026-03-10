@@ -102,6 +102,8 @@ export default function PlayerTrainingEditPage() {
   const [coachName, setCoachName] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [isCoachPlannedTraining, setIsCoachPlannedTraining] = useState(false);
+  const [linkedEventDurationMinutes, setLinkedEventDurationMinutes] = useState<number | null>(null);
+  const [nonPerformanceDuration, setNonPerformanceDuration] = useState<string>("");
 
   // sensations 1..6
   const [motivation, setMotivation] = useState<string>("");
@@ -122,6 +124,17 @@ export default function PlayerTrainingEditPage() {
       return sum + (Number.isFinite(v) && v > 0 ? v : 0);
     }, 0);
   }, [items]);
+
+  const effectiveTotalMinutes = useMemo(() => {
+    if (performanceEnabled) return totalMinutes;
+    if (isCoachPlannedTraining && sessionType === "club") {
+      const planned = Number(linkedEventDurationMinutes);
+      if (Number.isFinite(planned) && planned > 0) return Math.round(planned);
+    }
+    const v = Number(nonPerformanceDuration);
+    if (!Number.isFinite(v) || v <= 0) return 0;
+    return Math.round(v);
+  }, [performanceEnabled, totalMinutes, nonPerformanceDuration, isCoachPlannedTraining, sessionType, linkedEventDurationMinutes]);
 
   const nonPerformanceSaveLabel = useMemo(
     () =>
@@ -151,7 +164,11 @@ export default function PlayerTrainingEditPage() {
 
     if (sessionType === "club" && !clubIdForTraining) return false;
 
-    if (!performanceEnabled) return true;
+    if (!performanceEnabled) {
+      if (isCoachPlannedTraining && sessionType === "club") return effectiveTotalMinutes > 0;
+      const v = Number(nonPerformanceDuration);
+      return Number.isFinite(v) && v > 0;
+    }
 
     const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
     if (!hasValidLine) return false;
@@ -165,7 +182,7 @@ export default function PlayerTrainingEditPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
@@ -258,6 +275,22 @@ export default function PlayerTrainingEditPage() {
       setDifficulty(typeof sess.difficulty === "number" ? String(sess.difficulty) : "");
       setSatisfaction(typeof sess.satisfaction === "number" ? String(sess.satisfaction) : "");
       setIsCoachPlannedTraining(Boolean(sess.club_event_id));
+      setNonPerformanceDuration(typeof sess.total_minutes === "number" && sess.total_minutes > 0 ? String(sess.total_minutes) : "");
+      if (sess.club_event_id) {
+        const evRes = await supabase
+          .from("club_events")
+          .select("duration_minutes")
+          .eq("id", sess.club_event_id)
+          .maybeSingle();
+        if (!evRes.error && evRes.data) {
+          const planned = Number(evRes.data.duration_minutes);
+          setLinkedEventDurationMinutes(Number.isFinite(planned) && planned > 0 ? planned : null);
+        } else {
+          setLinkedEventDurationMinutes(null);
+        }
+      } else {
+        setLinkedEventDurationMinutes(null);
+      }
 
       const cid = sess.session_type === "club" ? (sess.club_id ?? "") : "";
       if (sess.session_type === "club") {
@@ -346,8 +379,8 @@ export default function PlayerTrainingEditPage() {
         motivation: mot,
         difficulty: dif,
         satisfaction: sat,
-        notes: performanceEnabled ? notes.trim() || null : null,
-        total_minutes: totalMinutes,
+        notes: notes.trim() || null,
+        total_minutes: effectiveTotalMinutes > 0 ? effectiveTotalMinutes : null,
       })
       .eq("id", sessionId);
 
@@ -423,23 +456,6 @@ export default function PlayerTrainingEditPage() {
             <CompactLoadingBlock label={t("common.loading")} />
           ) : (
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
-              {!performanceEnabled ? (
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.70)",
-                    padding: "10px 12px",
-                    fontSize: 12,
-                    fontWeight: 850,
-                    color: "rgba(0,0,0,0.68)",
-                  }}
-                >
-                  {locale === "fr"
-                    ? "Mode non-performance: tu peux modifier les informations de base, mais pas la structure ni l'évaluation."
-                    : "Non-performance mode: you can edit basic information, but not structure or evaluation."}
-                </div>
-              ) : null}
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Date, lieu et type d'entrainement", "Date, place and training type")}
@@ -456,26 +472,61 @@ export default function PlayerTrainingEditPage() {
                     />
                   </label>
 
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{pickLocaleText(locale, "Total (min)", "Total (min)")}</span>
-                    <div
-                      style={{
-                        height: 42,
-                        borderRadius: 10,
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        background: "rgba(255,255,255,0.65)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "0 12px",
-                        fontWeight: 950,
-                        color: "rgba(0,0,0,0.78)",
-                      }}
-                    >
-                      <span>{totalMinutes}</span>
-                      <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min</span>
+                  {performanceEnabled ? (
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Total (min)", "Total (min)")}</span>
+                      <div
+                        style={{
+                          height: 42,
+                          borderRadius: 10,
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          background: "rgba(255,255,255,0.65)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "0 12px",
+                          fontWeight: 950,
+                          color: "rgba(0,0,0,0.78)",
+                        }}
+                      >
+                        <span>{effectiveTotalMinutes}</span>
+                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Durée (min)", "Duration (min)")}</span>
+                      {isCoachPlannedTraining && sessionType === "club" ? (
+                        <div
+                          style={{
+                            borderRadius: 10,
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            background: "rgba(255,255,255,0.70)",
+                            padding: "10px 12px",
+                            fontSize: 13,
+                            fontWeight: 900,
+                            color: "rgba(0,0,0,0.80)",
+                          }}
+                        >
+                          {effectiveTotalMinutes > 0 ? `${effectiveTotalMinutes} min` : "—"}
+                        </div>
+                      ) : (
+                        <select
+                          value={nonPerformanceDuration}
+                          onChange={(e) => setNonPerformanceDuration(e.target.value)}
+                          disabled={busy}
+                          required
+                        >
+                          <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
+                          {MINUTE_OPTIONS.map((m) => (
+                            <option key={`edit-non-perf-duration-${m}`} value={String(m)}>
+                              {m} min
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <label style={{ display: "grid", gap: 6 }}>
@@ -492,10 +543,20 @@ export default function PlayerTrainingEditPage() {
                   <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
                   <select
                     value={sessionType}
-                    onChange={(e) => setType(e.target.value as SessionType)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (!next) return;
+                      setType(next as SessionType);
+                    }}
                     disabled={busy || isCoachPlannedTraining}
+                    required
                   >
-                    <option value="club">{t("trainingDetail.typeClub")}</option>
+                    <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
+                    {sessionType === "club" ? (
+                      <option value="club" disabled>
+                        {pickLocaleText(locale, "Entraînement club (planifié)", "Club training (planned)")}
+                      </option>
+                    ) : null}
                     <option value="private">{t("trainingDetail.typePrivate")}</option>
                     <option value="individual">{t("trainingDetail.typeIndividual")}</option>
                   </select>
@@ -518,21 +579,35 @@ export default function PlayerTrainingEditPage() {
                     </label>
                   )}
 
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{pickLocaleText(locale, "Coach", "Coach")}</span>
-                    <input
-                      value={coachName}
-                      onChange={(e) => setCoachName(e.target.value)}
-                      disabled
-                      placeholder={t("trainingEdit.coachPlaceholder")}
-                    />
-                  </label>
+                  {sessionType !== "individual" ? (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Coach", "Coach")}</span>
+                      <input
+                        value={coachName}
+                        onChange={(e) => setCoachName(e.target.value)}
+                        disabled
+                        placeholder={pickLocaleText(locale, "Coach (non modifiable ici)", "Coach (read-only here)")}
+                      />
+                    </label>
+                  ) : null}
+
+                  {!performanceEnabled ? (
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Notes / remarques", "Notes / remarks")} ({t("common.optional")})</span>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        disabled={busy}
+                        placeholder={t("roundsNew.notesPlaceholder")}
+                        style={{ minHeight: 90 }}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               </div>
 
+              {performanceEnabled ? (
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
-                {performanceEnabled ? (
-                <>
                 <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
                 {items.length === 0 ? (
@@ -619,9 +694,8 @@ export default function PlayerTrainingEditPage() {
                     + {t("trainingNew.addSection")}
                   </button>
                 </div>
-                </>
-                ) : null}
               </div>
+              ) : null}
 
               {performanceEnabled ? (
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>

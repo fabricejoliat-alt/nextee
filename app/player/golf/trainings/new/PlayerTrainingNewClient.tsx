@@ -9,6 +9,7 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { MessageCircle, Send } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -46,6 +47,7 @@ type ExistingSessionRow = {
   difficulty: number | null;
   satisfaction: number | null;
   notes: string | null;
+  total_minutes: number | null;
 };
 
 type ExistingSessionItemRow = {
@@ -72,13 +74,26 @@ type CoachProfileLite = {
   avatar_url: string | null;
 };
 
-type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
+type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url?: string | null };
+type EventAttendeeUiRow = {
+  player_id: string;
+  status: "expected" | "present" | "absent" | "excused";
+  profile: ProfileLite | null;
+};
+type ThreadMessageRow = {
+  id: string;
+  sender_user_id: string;
+  sender_name: string | null;
+  body: string | null;
+  created_at: string;
+};
 
 type CoachOption = {
   id: string;
   label: string;
   roleLabel: string;
   isHead: boolean;
+  avatar_url?: string | null;
 };
 
 const TRAINING_CATEGORY_VALUES = [
@@ -128,6 +143,20 @@ function normalizeToQuarterHour(localValue: string) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
+function fmtDateTimeRange(startIso: string, durationMinutes: number) {
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return "—";
+  const end = new Date(start.getTime() + Math.max(0, durationMinutes) * 60_000);
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start);
+  const datePart = new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(start);
+  const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} de ${timeFmt.format(start)} à ${timeFmt.format(end)}`;
+}
+
 function buildQuarterHourOptions() {
   const opts: string[] = [];
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -144,6 +173,12 @@ function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
 
+function initialsOf(first: string | null | undefined, last: string | null | undefined) {
+  const fi = (first ?? "").trim().charAt(0).toUpperCase();
+  const li = (last ?? "").trim().charAt(0).toUpperCase();
+  return `${fi}${li}` || "👤";
+}
+
 function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
@@ -152,6 +187,16 @@ function coachRatingPercent(value: number | null) {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   const raw = (value / 6) * 100;
   return Math.max(0, Math.min(100, raw));
+}
+
+function fmtMessageTime(iso: string) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }
 
 export default function PlayerTrainingNewPage() {
@@ -177,6 +222,7 @@ export default function PlayerTrainingNewPage() {
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [userId, setUserId] = useState("");
+  const [viewerUserId, setViewerUserId] = useState("");
 
   // clubs
   const [clubIds, setClubIds] = useState<string[]>([]);
@@ -194,6 +240,8 @@ export default function PlayerTrainingNewPage() {
 
   const [place, setPlace] = useState<string>("");
   const [sessionType, setSessionType] = useState<SessionType>("individual");
+  const [hasChosenTrainingType, setHasChosenTrainingType] = useState(false);
+  const [nonPerformanceMinutes, setNonPerformanceMinutes] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [motivation, setMotivation] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("");
@@ -209,6 +257,15 @@ export default function PlayerTrainingNewPage() {
   const [existingSessionId, setExistingSessionId] = useState<string>("");
   const [coachFeedback, setCoachFeedback] = useState<CoachFeedbackRow[]>([]);
   const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
+  const [eventAttendees, setEventAttendees] = useState<EventAttendeeUiRow[]>([]);
+  const [loadingEventAttendees, setLoadingEventAttendees] = useState(false);
+  const [eventThreadId, setEventThreadId] = useState("");
+  const [eventThreadMessages, setEventThreadMessages] = useState<ThreadMessageRow[]>([]);
+  const [eventThreadParticipants, setEventThreadParticipants] = useState<string[]>([]);
+  const [loadingEventThread, setLoadingEventThread] = useState(false);
+  const [showAllEventAttendees, setShowAllEventAttendees] = useState(false);
+  const [threadComposer, setThreadComposer] = useState("");
+  const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
 
   // ✅ coaches (planned: display only / non-planned club: checkbox list)
   const [coachOptions, setCoachOptions] = useState<CoachOption[]>([]);
@@ -220,6 +277,14 @@ export default function PlayerTrainingNewPage() {
       return sum + (Number.isFinite(v) && v > 0 ? v : 0);
     }, 0);
   }, [items]);
+  const nonPerformanceTotalMinutes = useMemo(() => {
+    if (linkedEvent && sessionType === "club") {
+      const planned = Number(linkedEvent.duration_minutes);
+      return Number.isFinite(planned) && planned > 0 ? planned : 0;
+    }
+    const typed = Number(nonPerformanceMinutes);
+    return Number.isFinite(typed) && typed > 0 ? typed : 0;
+  }, [linkedEvent, sessionType, nonPerformanceMinutes]);
 
   const isLinkedEventPast = useMemo(() => {
     if (!linkedEvent?.starts_at) return true;
@@ -243,16 +308,6 @@ export default function PlayerTrainingNewPage() {
     if (names.length === 0) return "";
     return `${t("common.coach")} : ${names.join(", ")}`;
   }, [linkedEvent, sessionType, coachOptions, selectedCoachIds, t]);
-
-  const nonPerformanceSaveLabel = useMemo(
-    () =>
-      pickLocaleText(
-        locale,
-        "Enregistrer l'entraînement",
-        "Save training"
-      ),
-    [locale]
-  );
 
   const coachNameForSave = useMemo(() => {
     // ✅ planned: save read-only summary based on event coaches
@@ -280,11 +335,12 @@ export default function PlayerTrainingNewPage() {
   const canSave = useMemo(() => {
     if (busy) return false;
     if (plannedEventLocked) return false;
+    if (!linkedEvent && !hasChosenTrainingType) return false;
     if (!userId) return false;
     if (!startAt) return false;
     if (sessionType === "club" && !clubIdForTraining) return false;
 
-    if (!performanceEnabled) return true;
+    if (!performanceEnabled) return nonPerformanceTotalMinutes > 0;
 
     const hasValidLine = items.some((it) => it.category && Number(it.minutes) > 0);
     if (!hasValidLine) return false;
@@ -298,7 +354,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, plannedEventLocked, userId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, performanceEnabled, plannedEventLocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -394,7 +450,7 @@ export default function PlayerTrainingNewPage() {
   // 4) Profiles for names
   const pRes = await supabase
     .from("profiles")
-    .select("id,first_name,last_name")
+    .select("id,first_name,last_name,avatar_url")
     .in("id", coachIds);
 
   if (pRes.error) return [];
@@ -414,6 +470,7 @@ export default function PlayerTrainingNewPage() {
         label,
         isHead,
         roleLabel: isHead ? t("common.coach") : t("trainingNew.extraCoach"),
+        avatar_url: p?.avatar_url ?? null,
       };
     });
 }
@@ -446,7 +503,7 @@ export default function PlayerTrainingNewPage() {
     const coachIds = uniq([...memberCoachIds, ...headCoachIds]).filter(Boolean);
     if (coachIds.length === 0) return [];
 
-    const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", coachIds);
+    const pRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds);
     if (pRes.error) return [];
 
     const byId: Record<string, ProfileLite> = {};
@@ -467,6 +524,7 @@ export default function PlayerTrainingNewPage() {
         label: p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—",
         isHead: false,
         roleLabel: t("common.coach"),
+        avatar_url: p?.avatar_url ?? null,
       };
     });
   }
@@ -478,6 +536,8 @@ export default function PlayerTrainingNewPage() {
 
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
+      const { data: authRes } = await supabase.auth.getUser();
+      setViewerUserId(String(authRes.user?.id ?? ""));
       const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
       setPerformanceEnabled(perfEnabled);
 
@@ -529,6 +589,7 @@ export default function PlayerTrainingNewPage() {
 
           // ✅ force club session
           setSessionType("club");
+          setHasChosenTrainingType(true);
 
           // ✅ prefill actual start from planned start
           setStartAt(normalizeToQuarterHour(toLocalDateTimeInputValue(ev.starts_at)));
@@ -612,7 +673,7 @@ export default function PlayerTrainingNewPage() {
           let prefilledFromExistingSession = false;
           const existingSessionRes = await supabase
             .from("training_sessions")
-            .select("id,start_at,location_text,motivation,difficulty,satisfaction,notes")
+            .select("id,start_at,location_text,motivation,difficulty,satisfaction,notes,total_minutes")
             .eq("user_id", uid)
             .eq("club_event_id", ev.id)
             .order("created_at", { ascending: false })
@@ -628,6 +689,11 @@ export default function PlayerTrainingNewPage() {
               setDifficulty(existing.difficulty != null ? String(existing.difficulty) : "");
               setSatisfaction(existing.satisfaction != null ? String(existing.satisfaction) : "");
               setNotes(existing.notes ?? "");
+              setNonPerformanceMinutes(
+                existing.total_minutes != null && Number(existing.total_minutes) > 0
+                  ? String(existing.total_minutes)
+                  : ""
+              );
 
               const existingItemsRes = await supabase
                 .from("training_session_items")
@@ -687,12 +753,123 @@ export default function PlayerTrainingNewPage() {
         setPlannedStructureItems([]);
         setCoachFeedback([]);
         setCoachProfilesById({});
+        setEventAttendees([]);
+        setEventThreadId("");
+        setEventThreadMessages([]);
+        setEventThreadParticipants([]);
       }
 
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubEventId]);
+
+  useEffect(() => {
+    (async () => {
+      if (!linkedEvent?.id) {
+        setEventAttendees([]);
+        setShowAllEventAttendees(false);
+        setEventThreadId("");
+        setEventThreadMessages([]);
+        setEventThreadParticipants([]);
+        setLoadingEventAttendees(false);
+        setLoadingEventThread(false);
+        return;
+      }
+
+      setShowAllEventAttendees(false);
+      setLoadingEventAttendees(true);
+      try {
+        const { data: sessRes } = await supabase.auth.getSession();
+        const token = sessRes.session?.access_token ?? "";
+        if (!token) throw new Error("Missing token");
+        const q = new URLSearchParams({
+          event_id: linkedEvent.id,
+          child_id: userId,
+        });
+        const res = await fetch(`/api/player/event-attendees?${q.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Attendees load failed"));
+        const rows = (json?.attendees ?? []) as Array<{
+          player_id: string;
+          status: "expected" | "present" | "absent" | "excused";
+          first_name: string | null;
+          last_name: string | null;
+          avatar_url: string | null;
+        }>;
+
+        const list: EventAttendeeUiRow[] = rows.map((a) => ({
+          player_id: String(a.player_id),
+          status: a.status,
+          profile: {
+            id: String(a.player_id),
+            first_name: a.first_name ?? null,
+            last_name: a.last_name ?? null,
+            avatar_url: a.avatar_url ?? null,
+          },
+        }));
+        list.sort((x, y) => nameOf(x.profile?.first_name ?? null, x.profile?.last_name ?? null).localeCompare(
+          nameOf(y.profile?.first_name ?? null, y.profile?.last_name ?? null),
+          "fr"
+        ));
+        setEventAttendees(list);
+      } catch {
+        setEventAttendees([]);
+      } finally {
+        setLoadingEventAttendees(false);
+      }
+
+      setLoadingEventThread(true);
+      try {
+        const { data: sessRes } = await supabase.auth.getSession();
+        const token = sessRes.session?.access_token ?? "";
+        if (!token) {
+          setEventThreadId("");
+          setEventThreadMessages([]);
+          setEventThreadParticipants([]);
+          return;
+        }
+        const threadRes = await fetch(`/api/messages/event-thread?event_id=${encodeURIComponent(linkedEvent.id)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const threadJson = await threadRes.json().catch(() => ({}));
+        if (!threadRes.ok) throw new Error(String(threadJson?.error ?? "Thread load failed"));
+        const threadId = String(threadJson?.thread_id ?? "");
+        setEventThreadId(threadId);
+        if (!threadId) {
+          setEventThreadMessages([]);
+          setEventThreadParticipants([]);
+          return;
+        }
+        const [msgRes, partRes] = await Promise.all([
+          fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=20`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }),
+          fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }),
+        ]);
+        const msgJson = await msgRes.json().catch(() => ({}));
+        const partJson = await partRes.json().catch(() => ({}));
+        if (!msgRes.ok) throw new Error(String(msgJson?.error ?? "Messages load failed"));
+        if (!partRes.ok) throw new Error(String(partJson?.error ?? "Participants load failed"));
+        setEventThreadMessages(((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse());
+        setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
+      } catch {
+        setEventThreadId("");
+        setEventThreadMessages([]);
+        setEventThreadParticipants([]);
+      } finally {
+        setLoadingEventThread(false);
+      }
+    })();
+  }, [linkedEvent?.id, userId]);
 
   // ✅ when NOT planned: load coaches ONLY if user is creating a "club" training
   useEffect(() => {
@@ -742,9 +919,39 @@ export default function PlayerTrainingNewPage() {
     // if linked to an event: type forced club
     if (linkedEvent) return;
 
+    setHasChosenTrainingType(true);
     setSessionType(next);
     if (next === "club" && !clubIdForTraining && clubIds.length > 0) {
       setClubIdForTraining(clubIds[0]);
+    }
+  }
+
+  async function sendThreadMessage() {
+    const trimmed = threadComposer.trim();
+    if (!eventThreadId || !trimmed || sendingThreadMessage) return;
+    setSendingThreadMessage(true);
+    try {
+      const { data: sessRes } = await supabase.auth.getSession();
+      const token = sessRes.session?.access_token ?? "";
+      if (!token) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session."));
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(eventThreadId)}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message_type: "text", body: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? pickLocaleText(locale, "Envoi impossible.", "Failed to send message.")));
+      const created = json?.message as ThreadMessageRow | undefined;
+      if (created?.id) setEventThreadMessages((prev) => [...prev, created].slice(-20));
+      setThreadComposer("");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : pickLocaleText(locale, "Envoi impossible.", "Failed to send message.");
+      setError(message);
+    } finally {
+      setSendingThreadMessage(false);
     }
   }
 
@@ -801,8 +1008,8 @@ export default function PlayerTrainingNewPage() {
       motivation: mot,
       difficulty: dif,
       satisfaction: sat,
-      notes: performanceEnabled && showSensationsCard ? notes.trim() || null : null,
-      total_minutes: totalMinutes,
+      notes: notes.trim() || null,
+      total_minutes: performanceEnabled ? totalMinutes : nonPerformanceTotalMinutes,
       club_event_id: linkedEvent?.id ?? null,
     };
 
@@ -885,11 +1092,6 @@ export default function PlayerTrainingNewPage() {
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {pickLocaleText(locale, "Éditer un entraînement", "Edit a training")}
-              </div>
-
-              
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -913,10 +1115,328 @@ export default function PlayerTrainingNewPage() {
 
         <div className="glass-section">
           {loading ? (
-            <CompactLoadingBlock label={t("common.loading")} />
+            <div
+              className="glass-card"
+              style={{
+                padding: 14,
+                background: "rgba(229,231,235,0.70)",
+                border: "1px solid rgba(0,0,0,0.10)",
+              }}
+            >
+              <CompactLoadingBlock label={pickLocaleText(locale, "Chargement...", "Loading...")} />
+            </div>
           ) : (
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
-                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                {linkedEvent ? (
+                  <>
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {pickLocaleText(locale, "Entraînement", "Training")} — {linkedGroupName || pickLocaleText(locale, "Groupe", "Group")}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span className="pill-soft">{plannedClubName || t("common.club")}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                        <div className="marketplace-item-title" style={{ fontSize: 28, lineHeight: 1.15, fontWeight: 980 }}>
+                          {fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}
+                        </div>
+                        <div className="marketplace-price-pill">{linkedEvent.duration_minutes} {t("common.min")}</div>
+                      </div>
+                      {linkedEvent.location_text ? (
+                        <div style={{ color: "rgba(0,0,0,0.68)", fontWeight: 800, fontSize: 12 }}>
+                          📍 {linkedEvent.location_text}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <MessageCircle size={16} />
+                        {pickLocaleText(locale, "Fil de discussion", "Discussion thread")}
+                      </div>
+                      {loadingEventThread ? (
+                        <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                          <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(0,0,0,0.72)", whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                            {pickLocaleText(locale, "Participants", "Participants")}: {eventThreadParticipants.length > 0 ? eventThreadParticipants.join(", ") : "—"}
+                          </div>
+                          <div
+                            style={{
+                              border: "1px solid rgba(0,0,0,0.10)",
+                              borderRadius: 12,
+                              background: "rgba(255,255,255,0.94)",
+                              padding: 10,
+                              display: "grid",
+                              gap: 8,
+                            }}
+                          >
+                            {eventThreadMessages.length === 0 ? (
+                              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                                {pickLocaleText(locale, "Aucun message.", "No message.")}
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  overflow: "auto",
+                                  maxHeight: 320,
+                                  display: "grid",
+                                  gap: 8,
+                                  paddingTop: 2,
+                                  paddingRight: 8,
+                                  alignContent: "start",
+                                }}
+                              >
+                                {eventThreadMessages.map((m) => {
+                                  const mine = String(m.sender_user_id ?? "") === viewerUserId;
+                                  return (
+                                    <div
+                                      key={m.id}
+                                      style={{
+                                        justifySelf: mine ? "end" : "start",
+                                        maxWidth: "82%",
+                                        borderRadius: 12,
+                                        padding: "8px 10px",
+                                        background: mine ? "#1b5e20" : "rgba(0,0,0,0.05)",
+                                        color: mine ? "white" : "#111827",
+                                      }}
+                                    >
+                                      <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.85, marginBottom: 4 }}>
+                                        {String(m.sender_name ?? "").trim() || pickLocaleText(locale, "Membre", "Member")} • {fmtMessageTime(m.created_at)}
+                                      </div>
+                                      <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{String(m.body ?? "").trim() || "—"}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr auto" }}>
+                            <input
+                              className="input"
+                              value={threadComposer}
+                              onChange={(e) => setThreadComposer(e.target.value)}
+                              placeholder={pickLocaleText(locale, "Écrire un message…", "Write a message...")}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void sendThreadMessage();
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={!eventThreadId || !threadComposer.trim() || sendingThreadMessage}
+                              onClick={() => void sendThreadMessage()}
+                            >
+                              <Send size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                              {sendingThreadMessage ? pickLocaleText(locale, "Envoi…", "Sending...") : pickLocaleText(locale, "Envoyer", "Send")}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {pickLocaleText(locale, "Coachs assignés", "Assigned coaches")}
+                      </div>
+                      {coachOptions.length === 0 ? (
+                        <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>{t("trainingNew.noCoachOnSession")}</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {coachOptions.map((c) => (
+                            <div
+                              key={`coach-top-${c.id}`}
+                              style={{
+                                border: "1px solid rgba(0,0,0,0.10)",
+                                borderRadius: 12,
+                                background: "rgba(255,255,255,0.78)",
+                                padding: "8px 10px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: "50%",
+                                    overflow: "hidden",
+                                    border: "1px solid rgba(0,0,0,0.10)",
+                                    background: "rgba(255,255,255,0.95)",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontWeight: 900,
+                                    fontSize: 11,
+                                    color: "rgba(0,0,0,0.66)",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {c.avatar_url ? (
+                                    <img src={c.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                  ) : (
+                                    initialsOf(
+                                      c.label.split(" ").slice(0, 1).join("") || null,
+                                      c.label.split(" ").slice(1).join(" ") || null
+                                    )
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
+                              </div>
+                              <span className="pill-soft" style={{ fontWeight: 900, whiteSpace: "nowrap" }}>
+                                {c.isHead ? "Head coach" : t("trainingNew.extraCoach")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {pickLocaleText(locale, "Joueurs", "Players")} ({eventAttendees.length})
+                      </div>
+                      {loadingEventAttendees ? (
+                        <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                          <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+                        </div>
+                      ) : eventAttendees.length === 0 ? (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          {pickLocaleText(locale, "Aucun joueur.", "No player.")}
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {(showAllEventAttendees ? eventAttendees : eventAttendees.slice(0, 6)).map((a) => {
+                            const status = a.status;
+                            const statusLabel =
+                              status === "present"
+                                ? pickLocaleText(locale, "Présent", "Present")
+                                : status === "absent"
+                                  ? pickLocaleText(locale, "Absent", "Absent")
+                                  : status === "excused"
+                                    ? pickLocaleText(locale, "Excusé", "Excused")
+                                    : pickLocaleText(locale, "Attendu", "Expected");
+                            const badgeStyle: CSSProperties =
+                              status === "present"
+                                ? { background: "rgba(27,94,32,0.14)", color: "#1b5e20", border: "1px solid rgba(27,94,32,0.24)" }
+                                : status === "absent"
+                                  ? { background: "rgba(198,40,40,0.12)", color: "#b91c1c", border: "1px solid rgba(198,40,40,0.22)" }
+                                  : status === "excused"
+                                    ? { background: "rgba(120,53,15,0.12)", color: "#92400e", border: "1px solid rgba(120,53,15,0.20)" }
+                                    : { background: "rgba(0,0,0,0.08)", color: "rgba(0,0,0,0.72)", border: "1px solid rgba(0,0,0,0.16)" };
+                            return (
+                              <div
+                                key={`evt-att-top-${a.player_id}`}
+                                style={{
+                                  border: "1px solid rgba(0,0,0,0.10)",
+                                  borderRadius: 12,
+                                  background: "rgba(255,255,255,0.78)",
+                                  padding: "8px 10px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: 30,
+                                      height: 30,
+                                      borderRadius: "50%",
+                                      overflow: "hidden",
+                                      border: "1px solid rgba(0,0,0,0.10)",
+                                      background: "rgba(255,255,255,0.95)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontWeight: 900,
+                                      fontSize: 11,
+                                      color: "rgba(0,0,0,0.66)",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {a.profile?.avatar_url ? (
+                                      <img src={a.profile.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                    ) : (
+                                      initialsOf(a.profile?.first_name ?? null, a.profile?.last_name ?? null)
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>
+                                    {nameOf(a.profile?.first_name ?? null, a.profile?.last_name ?? null)}
+                                  </div>
+                                </div>
+                                <span className="pill-soft" style={{ ...badgeStyle, fontWeight: 900, whiteSpace: "nowrap" }}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {eventAttendees.length > 6 ? (
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => setShowAllEventAttendees((prev) => !prev)}
+                                style={{ minHeight: 34, fontWeight: 900, minWidth: 170 }}
+                              >
+                                {showAllEventAttendees
+                                  ? `${pickLocaleText(locale, "Afficher moins", "Show less")} ↑`
+                                  : `${pickLocaleText(locale, "Afficher plus", "Show more")} ↓`}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {pickLocaleText(locale, "Structure planifiée", "Planned structure")}
+                      </div>
+                      <div
+                        style={{
+                          border: "1px solid rgba(0,0,0,0.10)",
+                          borderRadius: 12,
+                          background: "rgba(255,255,255,0.88)",
+                          padding: 10,
+                          display: "grid",
+                          gap: 8,
+                        }}
+                      >
+                        {plannedStructureItems.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                            {pickLocaleText(locale, "Non saisi.", "Not entered.")}
+                          </div>
+                        ) : (
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {plannedStructureItems.map((it, idx) => {
+                              const label = TRAINING_CATEGORIES.find((c) => c.value === it.category)?.label ?? it.category;
+                              const extra = String(it.note ?? "").trim();
+                              return (
+                                <li key={`planned-struct-top-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {label} — {it.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                {!linkedEvent ? (
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{infoCardTitle}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
                     <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
@@ -977,10 +1497,16 @@ export default function PlayerTrainingNewPage() {
                       </div>
                     ) : (
                       <select
-                        value={sessionType}
-                        onChange={(e) => setType(e.target.value as SessionType)}
+                        value={hasChosenTrainingType ? sessionType : ""}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (!next) return;
+                          setType(next as SessionType);
+                        }}
                         disabled={inputsDisabled}
+                        required
                       >
+                        <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
                         <option value="individual">{t("trainingDetail.typeIndividual")}</option>
                         <option value="private">{t("trainingDetail.typePrivate")}</option>
                       </select>
@@ -1022,12 +1548,50 @@ export default function PlayerTrainingNewPage() {
                       </label>
                     )}
 
+                    {!performanceEnabled ? (
+                      linkedEvent && sessionType === "club" ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Durée (min)", "Duration (min)")}</span>
+                          <div
+                            style={{
+                              borderRadius: 10,
+                              border: "1px solid rgba(0,0,0,0.10)",
+                              background: "rgba(255,255,255,0.70)",
+                              padding: "10px 12px",
+                              fontSize: 13,
+                              fontWeight: 900,
+                              color: "rgba(0,0,0,0.80)",
+                            }}
+                          >
+                            {nonPerformanceTotalMinutes > 0 ? `${nonPerformanceTotalMinutes} min` : "—"}
+                          </div>
+                        </div>
+                      ) : (
+                        <label style={{ display: "grid", gap: 6 }}>
+                          <span style={fieldLabelStyle}>{pickLocaleText(locale, "Durée (min)", "Duration (min)")}</span>
+                          <select
+                            value={nonPerformanceMinutes}
+                            onChange={(e) => setNonPerformanceMinutes(e.target.value)}
+                            disabled={inputsDisabled}
+                            required
+                          >
+                            <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
+                            {MINUTE_OPTIONS.map((m) => (
+                              <option key={`non-perf-duration-${m}`} value={String(m)}>
+                                {m} min
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )
+                    ) : null}
+
                     {/* ✅ Coach section:
                         - Planned: read-only display head coach + coachs supplémentaires
                         - Non-planned club: checkbox list
                         - Private/Individual: nothing
                     */}
-                    {showCoachSectionPlannedReadOnly ? (
+                    {showCoachSectionPlannedReadOnly && !linkedEvent ? (
                       <div style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{t("common.coach")}</span>
                         <div
@@ -1284,14 +1848,26 @@ export default function PlayerTrainingNewPage() {
                       </div>
                     ) : null}
 
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Notes / remarques", "Notes / remarks")} ({t("common.optional")})</span>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        disabled={inputsDisabled}
+                        placeholder={t("roundsNew.notesPlaceholder")}
+                        style={{ minHeight: 90 }}
+                      />
+                    </label>
+
                   </div>
                 </div>
+                ) : null}
 
                 {performanceEnabled ? (
-                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
-                  {linkedEvent && plannedStructureItems.length > 0 ? (
+                  {!linkedEvent && plannedStructureItems.length > 0 ? (
                     <div
                       style={{
                         border: "1px solid rgba(0,0,0,0.10)",
@@ -1323,8 +1899,8 @@ export default function PlayerTrainingNewPage() {
                   {linkedEvent ? (
                     <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.58)" }}>
                       {locale === "fr"
-                        ? "Renseigne ci-dessous la structure réellement réalisée."
-                        : "Enter below the structure actually completed."}
+                        ? "Renseigne ci-dessous la structure réellement réalisée. La structure peut être renseignée uniquement lorsque l'entraînement a eu lieu."
+                        : "Enter below the structure actually completed. Structure can only be entered once the training has taken place."}
                     </div>
                   ) : null}
 
@@ -1436,19 +2012,19 @@ export default function PlayerTrainingNewPage() {
                 </div>
                 ) : null}
 
-                {!performanceEnabled ? (
+                {!performanceEnabled && !linkedEvent ? (
                   <button
                     className="cta-green"
                     type="submit"
                     disabled={!canSave || busy}
                     style={{ width: "100%" }}
                   >
-                    {busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}
+                    {busy ? t("trainingNew.saving") : t("common.save")}
                   </button>
                 ) : null}
 
                 {showSensationsCard ? (
-                  <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>
                       {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
                     </div>
@@ -1548,17 +2124,6 @@ export default function PlayerTrainingNewPage() {
                       </label>
                     </div>
 
-                    <label style={{ display: "grid", gap: 6, opacity: inputsDisabled ? 0.65 : 1 }}>
-                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Remarques", "Notes")}</span>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        disabled={inputsDisabled}
-                        placeholder={t("roundsNew.notesPlaceholder")}
-                        style={{ minHeight: 110 }}
-                      />
-                    </label>
-
                     <button
                       className="cta-green"
                       type="submit"
@@ -1569,6 +2134,7 @@ export default function PlayerTrainingNewPage() {
                     </button>
                   </div>
                 ) : null}
+
               </form>
             )}
         </div>

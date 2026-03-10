@@ -93,6 +93,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     const form = await req.formData();
     const organizationId = String(form.get("organization_id") ?? "").trim();
     const coachOnly = String(form.get("coach_only") ?? "false").trim() === "true";
+    const providedName = String(form.get("file_name") ?? "").trim();
     const file = form.get("file");
     if (!organizationId || !sharedOrgIds.includes(organizationId)) {
       return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
         organization_id: organizationId,
         player_id: playerId,
         uploaded_by: callerId,
-        file_name: file.name || originalName,
+        file_name: providedName || file.name || originalName,
         storage_path: objectPath,
         mime_type: file.type || null,
         size_bytes: file.size ?? null,
