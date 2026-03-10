@@ -55,7 +55,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         .from("club_members")
         .select("user_id")
         .eq("club_id", clubId)
-        .eq("is_active", true)
         .eq("role", "parent"),
     ]);
 
@@ -63,7 +62,22 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (parentsRes.error) return NextResponse.json({ error: parentsRes.error.message }, { status: 400 });
 
     const playerIds = Array.from(new Set((playersRes.data ?? []).map((r: any) => String(r.user_id)).filter(Boolean)));
-    const parentIds = Array.from(new Set((parentsRes.data ?? []).map((r: any) => String(r.user_id)).filter(Boolean)));
+    const clubParentIds = Array.from(new Set((parentsRes.data ?? []).map((r: any) => String(r.user_id)).filter(Boolean)));
+
+    let rawLinks: any[] = [];
+    if (playerIds.length > 0) {
+      const linksRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id,guardian_user_id,relation,is_primary")
+        .in("player_id", playerIds);
+      if (linksRes.error) return NextResponse.json({ error: linksRes.error.message }, { status: 400 });
+      rawLinks = linksRes.data ?? [];
+    }
+
+    const linkedGuardianIds = Array.from(
+      new Set(rawLinks.map((r: any) => String(r.guardian_user_id ?? "")).filter(Boolean))
+    );
+    const parentIds = Array.from(new Set([...clubParentIds, ...linkedGuardianIds]));
 
     const allUserIds = Array.from(new Set([...playerIds, ...parentIds]));
     const profileById = new Map<string, { id: string; first_name: string | null; last_name: string | null }>();
@@ -82,16 +96,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
     }
 
-    let links: any[] = [];
-    if (playerIds.length > 0 && parentIds.length > 0) {
-      const linksRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,guardian_user_id,relation,is_primary")
-        .in("player_id", playerIds)
-        .in("guardian_user_id", parentIds);
-      if (linksRes.error) return NextResponse.json({ error: linksRes.error.message }, { status: 400 });
-      links = linksRes.data ?? [];
-    }
+    const links = rawLinks.filter((r: any) => parentIds.includes(String(r.guardian_user_id ?? "")));
 
     return NextResponse.json({
       players: playerIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),

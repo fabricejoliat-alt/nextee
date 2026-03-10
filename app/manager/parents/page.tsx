@@ -17,6 +17,14 @@ function fullName(p?: ProfileLite | null) {
   return `${f} ${l}`.trim() || "—";
 }
 
+function normalizeForSearch(v: string) {
+  return v
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export default function ManagerParentsPage() {
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
@@ -135,15 +143,22 @@ export default function ManagerParentsPage() {
   }, [links]);
 
   const filteredPlayers = useMemo(() => {
-    const q = linksSearch.trim().toLowerCase();
+    const q = normalizeForSearch(linksSearch);
     if (!q) return players;
+
+    const parentMatches = parents.some((p) => normalizeForSearch(fullName(p.profiles)).includes(q));
+    if (parentMatches) {
+      // If query matches a parent, keep all players visible so manager can link quickly.
+      return players;
+    }
+
     return players.filter((p) => {
-      const playerName = fullName(p.profiles).toLowerCase();
+      const playerName = normalizeForSearch(fullName(p.profiles));
       if (playerName.includes(q)) return true;
       const playerLinks = linksByPlayer[p.user_id] ?? [];
-      return playerLinks.some((l) => fullName(parentMap[l.guardian_user_id]).toLowerCase().includes(q));
+      return playerLinks.some((l) => normalizeForSearch(fullName(parentMap[l.guardian_user_id])).includes(q));
     });
-  }, [players, linksByPlayer, linksSearch, parentMap]);
+  }, [players, parents, linksByPlayer, linksSearch, parentMap]);
 
   async function addLinkForPlayer(playerId: string, parentId: string) {
     if (!clubId || !playerId || !parentId) return;
@@ -329,9 +344,10 @@ function SearchablePicker({
   }, [value, options]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options.slice(0, 30);
-    return options.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 30);
+    const q = normalizeForSearch(query);
+    const base = [...options].sort((a, b) => a.label.localeCompare(b.label, "fr-CH", { sensitivity: "base" }));
+    if (!q) return base;
+    return base.filter((o) => normalizeForSearch(o.label).includes(q));
   }, [options, query]);
 
   return (

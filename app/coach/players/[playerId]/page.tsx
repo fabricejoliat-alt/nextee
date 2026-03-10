@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import {
@@ -30,6 +31,7 @@ type TrainingSessionRow = {
   difficulty: number | null;
   satisfaction: number | null;
   session_type: SessionType;
+  club_event_id: string | null;
   club_id: string | null;
   coach_user_id: string | null;
 };
@@ -439,6 +441,13 @@ function initials(p?: ProfileLite | null) {
   return fi + li || "👤";
 }
 
+function eventStartKey(iso: string | null | undefined) {
+  if (!iso) return "";
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return "";
+  return new Date(ms).toISOString().slice(0, 16);
+}
+
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -470,6 +479,11 @@ export default function GolfDashboardPage() {
   const [items, setItems] = useState<TrainingItemRow[]>([]);
 
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
+  const [clubEventDurationById, setClubEventDurationById] = useState<Record<string, number>>({});
+  const [clubEventDurationByStartKey, setClubEventDurationByStartKey] = useState<Record<string, number>>({});
+  const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
+  const [prevPlannedClubMinutes, setPrevPlannedClubMinutes] = useState<number>(0);
+  const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
@@ -731,7 +745,7 @@ export default function GolfDashboardPage() {
 
         let q = supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_id,coach_user_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
           .eq("user_id", uid)
           .order("start_at", { ascending: true });
 
@@ -766,6 +780,17 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [canLoadData, fromDate, playerId, toDate]);
+
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData || !playerId) {
+        setIsPerformanceEnabled(false);
+        return;
+      }
+      const perfEnabled = await isEffectivePlayerPerformanceEnabled(playerId);
+      setIsPerformanceEnabled(perfEnabled);
+    })();
+  }, [canLoadData, playerId]);
 
   // ===== LOAD COACH EVALUATIONS (past trainings) =====
   useEffect(() => {
@@ -851,7 +876,7 @@ export default function GolfDashboardPage() {
 
         let q = supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_id,coach_user_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
           .eq("user_id", uid)
           .order("start_at", { ascending: true });
 
@@ -868,6 +893,189 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [canLoadData, playerId, prevRange, prevRange?.from, prevRange?.to]);
+
+  useEffect(() => {
+    (async () => {
+      const ids = Array.from(
+        new Set(
+          [...sessions, ...prevSessions]
+            .filter((s) => s.session_type === "club")
+            .map((s) => s.club_event_id)
+            .filter((v): v is string => Boolean(v))
+        )
+      );
+      if (ids.length === 0) {
+        setClubEventDurationById({});
+        setClubEventDurationByStartKey({});
+        return;
+      }
+      const res = await supabase
+        .from("club_events")
+        .select("id,duration_minutes,starts_at,ends_at")
+        .in("id", ids);
+      if (res.error) {
+        setClubEventDurationById({});
+        setClubEventDurationByStartKey({});
+        return;
+      }
+      const map: Record<string, number> = {};
+      const byStartKey: Record<string, number> = {};
+      (res.data ?? []).forEach(
+        (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
+        if (!row?.id) return;
+        const mins = Number(row.duration_minutes ?? 0);
+          if (Number.isFinite(mins) && mins > 0) {
+            map[row.id] = mins;
+            const key = eventStartKey(row.starts_at);
+            if (key) byStartKey[key] = mins;
+            return;
+          }
+          if (row.starts_at && row.ends_at) {
+            const startMs = new Date(row.starts_at).getTime();
+            const endMs = new Date(row.ends_at).getTime();
+            const diff = Math.round((endMs - startMs) / 60000);
+            map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
+            const key = eventStartKey(row.starts_at);
+            if (key) byStartKey[key] = map[row.id];
+            return;
+          }
+          map[row.id] = 0;
+        }
+      );
+      const missingClubSessions = [...sessions, ...prevSessions].filter((s) => s.session_type === "club" && !s.club_event_id);
+      if (missingClubSessions.length > 0 && playerId) {
+        const attendeeRes = await supabase
+          .from("club_event_attendees")
+          .select("event_id")
+          .eq("player_id", playerId)
+          .eq("status", "present");
+        const attendeeEventIds = Array.from(
+          new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
+        );
+        if (attendeeEventIds.length > 0) {
+          const starts = missingClubSessions.map((s) => new Date(s.start_at).getTime()).filter((v) => Number.isFinite(v));
+          const minMs = starts.length > 0 ? Math.min(...starts) : null;
+          const maxMs = starts.length > 0 ? Math.max(...starts) : null;
+          if (minMs != null && maxMs != null) {
+            const fallbackRes = await supabase
+              .from("club_events")
+              .select("starts_at,ends_at,duration_minutes")
+              .in("id", attendeeEventIds)
+              .gte("starts_at", new Date(minMs - 60_000).toISOString())
+              .lt("starts_at", new Date(maxMs + 60_000).toISOString());
+            if (!fallbackRes.error) {
+              (fallbackRes.data ?? []).forEach(
+                (row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+                  const key = eventStartKey(row.starts_at);
+                  if (!key || byStartKey[key] > 0) return;
+                  const mins = Number(row.duration_minutes ?? 0);
+                  if (Number.isFinite(mins) && mins > 0) {
+                    byStartKey[key] = mins;
+                    return;
+                  }
+                  if (row.starts_at && row.ends_at) {
+                    const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+                    byStartKey[key] = Number.isFinite(diff) && diff > 0 ? diff : 0;
+                  }
+                }
+              );
+            }
+          }
+        }
+      }
+      setClubEventDurationById(map);
+      setClubEventDurationByStartKey(byStartKey);
+    })();
+  }, [sessions, prevSessions, playerId]);
+
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData || !playerId) {
+        setPlannedClubMinutes(0);
+        return;
+      }
+      const attendeeRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id")
+        .eq("player_id", playerId)
+        .eq("status", "present");
+      const attendeeEventIds = Array.from(
+        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
+      );
+      if (attendeeEventIds.length === 0) {
+        setPlannedClubMinutes(0);
+        return;
+      }
+      let q = supabase
+        .from("club_events")
+        .select("id,club_id,starts_at,ends_at,duration_minutes,status")
+        .in("id", attendeeEventIds)
+        .neq("status", "cancelled")
+        .lt("starts_at", new Date().toISOString());
+      if (fromDate) q = q.gte("starts_at", startOfDayISO(fromDate));
+      if (toDate) q = q.lt("starts_at", nextDayStartISO(toDate));
+      if (trainingScope === "mine_club" && sharedClubIds.length > 0) q = q.in("club_id", sharedClubIds);
+      const res = await q;
+      if (res.error) {
+        setPlannedClubMinutes(0);
+        return;
+      }
+      const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+        const mins = Number(row.duration_minutes ?? 0);
+        if (Number.isFinite(mins) && mins > 0) return sum + mins;
+        if (row.starts_at && row.ends_at) {
+          const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+          return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
+        }
+        return sum;
+      }, 0);
+      setPlannedClubMinutes(total);
+    })();
+  }, [canLoadData, playerId, fromDate, toDate, trainingScope, sharedClubIds]);
+
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData || !playerId || !prevRange) {
+        setPrevPlannedClubMinutes(0);
+        return;
+      }
+      const attendeeRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id")
+        .eq("player_id", playerId)
+        .eq("status", "present");
+      const attendeeEventIds = Array.from(
+        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
+      );
+      if (attendeeEventIds.length === 0) {
+        setPrevPlannedClubMinutes(0);
+        return;
+      }
+      let q = supabase
+        .from("club_events")
+        .select("id,club_id,starts_at,ends_at,duration_minutes,status")
+        .in("id", attendeeEventIds)
+        .neq("status", "cancelled")
+        .gte("starts_at", startOfDayISO(prevRange.from))
+        .lt("starts_at", nextDayStartISO(prevRange.to));
+      if (trainingScope === "mine_club" && sharedClubIds.length > 0) q = q.in("club_id", sharedClubIds);
+      const res = await q;
+      if (res.error) {
+        setPrevPlannedClubMinutes(0);
+        return;
+      }
+      const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+        const mins = Number(row.duration_minutes ?? 0);
+        if (Number.isFinite(mins) && mins > 0) return sum + mins;
+        if (row.starts_at && row.ends_at) {
+          const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+          return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
+        }
+        return sum;
+      }, 0);
+      setPrevPlannedClubMinutes(total);
+    })();
+  }, [canLoadData, playerId, prevRange, trainingScope, sharedClubIds]);
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
@@ -1010,7 +1218,7 @@ export default function GolfDashboardPage() {
 
         const sRes = await supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_id,coach_user_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
           .eq("user_id", uid)
           .gte("start_at", fromISO)
           .lt("start_at", toISO)
@@ -1086,12 +1294,19 @@ function presetToSelectValue(p: Preset): Preset {
 
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(
-    () => filteredSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0),
-    [filteredSessions]
+    () => {
+      if (isPerformanceEnabled) return filteredSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+      const nonClubEffective = filteredSessions
+        .filter((s) => s.session_type !== "club")
+        .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+      return plannedClubMinutes + nonClubEffective;
+    },
+    [isPerformanceEnabled, filteredSessions, plannedClubMinutes]
   );
   const trainingLevel = trainingVolumeLevelFromDb ?? "—";
   const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
   const trainingVolumePercent = trainingVolumeObjective > 0 ? Math.max(0, Math.round((totalMinutes / trainingVolumeObjective) * 100)) : 0;
+  const hasVolumeData = filteredSessions.length > 0 || (!isPerformanceEnabled && plannedClubMinutes > 0);
 
   useEffect(() => {
     (async () => {
@@ -1162,8 +1377,14 @@ function presetToSelectValue(p: Preset): Preset {
   }, [topCats]);
 
   const prevTotalMinutes = useMemo(
-    () => filteredPrevSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0),
-    [filteredPrevSessions]
+    () => {
+      if (isPerformanceEnabled) return filteredPrevSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+      const nonClubEffective = filteredPrevSessions
+        .filter((s) => s.session_type !== "club")
+        .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+      return prevPlannedClubMinutes + nonClubEffective;
+    },
+    [isPerformanceEnabled, filteredPrevSessions, prevPlannedClubMinutes]
   );
   const prevCount = useMemo(() => filteredPrevSessions.length, [filteredPrevSessions]);
   const prevAvgMotivation = useMemo(() => avg(filteredPrevSessions.map((s) => s.motivation)), [filteredPrevSessions]);
@@ -3020,7 +3241,7 @@ function presetToSelectValue(p: Preset): Preset {
 
               {loading ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : filteredSessions.length === 0 ? (
+              ) : !hasVolumeData ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>

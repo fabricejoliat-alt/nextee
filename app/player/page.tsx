@@ -46,6 +46,8 @@ type TrainingSessionRow = {
   motivation: number | null;
   difficulty: number | null;
   satisfaction: number | null;
+  session_type: "club" | "private" | "individual";
+  club_event_id: string | null;
 };
 
 type TrainingItemRow = {
@@ -148,6 +150,8 @@ type PlayerHomePageCache = {
   latestItems: Item[];
   thumbByItemId: Record<string, string>;
   monthSessions: TrainingSessionRow[];
+  monthClubEventDurationById?: Record<string, number>;
+  monthPlannedClubMinutes?: number;
   monthItems: TrainingItemRow[];
   roundsMonth: GolfRoundRow[];
   roundsPrevMonth: GolfRoundRow[];
@@ -433,6 +437,13 @@ function deltaLastVsPrev(values: Array<number | null | undefined>) {
   return Math.round((last - prev) * 10) / 10;
 }
 
+function eventStartKey(iso: string | null | undefined) {
+  if (!iso) return "";
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return "";
+  return new Date(ms).toISOString().slice(0, 16);
+}
+
 export default function PlayerHomePage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -448,6 +459,9 @@ export default function PlayerHomePage() {
   const [thumbByItemId, setThumbByItemId] = useState<Record<string, string>>({});
 
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
+  const [monthClubEventDurationById, setMonthClubEventDurationById] = useState<Record<string, number>>({});
+  const [monthClubEventDurationByStartKey, setMonthClubEventDurationByStartKey] = useState<Record<string, number>>({});
+  const [monthPlannedClubMinutes, setMonthPlannedClubMinutes] = useState<number>(0);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
 
   // ✅ Rounds month + previous month (pour tendances focus)
@@ -515,8 +529,18 @@ export default function PlayerHomePage() {
     return text || null;
   }, [profile?.handicap, trainingVolumeRows]);
 
+  const monthEffectiveMinutes = useMemo(() => {
+    if (isPerformanceEnabled) {
+      return monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+    }
+    const nonClubEffective = monthSessions
+      .filter((s) => s.session_type !== "club")
+      .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+    return monthPlannedClubMinutes + nonClubEffective;
+  }, [isPerformanceEnabled, monthSessions, monthPlannedClubMinutes]);
+
   const trainingsSummary = useMemo(() => {
-    const totalMinutes = monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+    const totalMinutes = monthEffectiveMinutes;
     const count = monthSessions.length;
 
     const motivationAvg = avg(monthSessions.map((s) => s.motivation));
@@ -557,7 +581,7 @@ export default function PlayerHomePage() {
       deltaDifficulty,
       deltaSatisfaction,
     };
-  }, [monthSessions, monthItems, t, trainingVolumeObjective]);
+  }, [monthEffectiveMinutes, monthSessions, monthItems, t, trainingVolumeObjective]);
 
   const topMax = useMemo(() => {
     const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
@@ -664,6 +688,9 @@ export default function PlayerHomePage() {
         setLatestItems(pageCache.latestItems);
         setThumbByItemId(pageCache.thumbByItemId);
         setMonthSessions(pageCache.monthSessions);
+        setMonthClubEventDurationById(pageCache.monthClubEventDurationById ?? {});
+        setMonthClubEventDurationByStartKey({});
+        setMonthPlannedClubMinutes(pageCache.monthPlannedClubMinutes ?? 0);
         setMonthItems(pageCache.monthItems);
         setRoundsMonth(pageCache.roundsMonth);
         setRoundsPrevMonth(pageCache.roundsPrevMonth);
@@ -714,6 +741,9 @@ export default function PlayerHomePage() {
       setLatestItems([]);
       setThumbByItemId({});
       setMonthSessions([]);
+      setMonthClubEventDurationById({});
+      setMonthClubEventDurationByStartKey({});
+      setMonthPlannedClubMinutes(0);
       setMonthItems([]);
       setRoundsMonth([]);
       setRoundsPrevMonth([]);
@@ -847,7 +877,7 @@ export default function PlayerHomePage() {
     const { start, end } = monthRangeLocal(new Date());
     const sRes = await supabase
       .from("training_sessions")
-      .select("id,start_at,total_minutes,motivation,difficulty,satisfaction")
+      .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
       .eq("user_id", effectiveUid)
       .gte("start_at", start.toISOString())
       .lt("start_at", end.toISOString())
@@ -864,8 +894,129 @@ export default function PlayerHomePage() {
       } else {
         setMonthItems([]);
       }
+
+      const monthClubEventIds = Array.from(
+        new Set(
+          sess
+            .filter((s) => s.session_type === "club")
+            .map((s) => s.club_event_id)
+            .filter((v): v is string => Boolean(v))
+        )
+      );
+      if (monthClubEventIds.length > 0) {
+        const evRes = await supabase
+          .from("club_events")
+          .select("id,duration_minutes,starts_at,ends_at")
+          .in("id", monthClubEventIds);
+        const map: Record<string, number> = {};
+        const byStartKey: Record<string, number> = {};
+        if (!evRes.error) {
+          (evRes.data ?? []).forEach(
+            (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
+            if (!row?.id) return;
+            const mins = Number(row.duration_minutes ?? 0);
+              if (Number.isFinite(mins) && mins > 0) {
+                map[row.id] = mins;
+                const key = eventStartKey(row.starts_at);
+                if (key) byStartKey[key] = mins;
+                return;
+              }
+              if (row.starts_at && row.ends_at) {
+                const startMs = new Date(row.starts_at).getTime();
+                const endMs = new Date(row.ends_at).getTime();
+                const diff = Math.round((endMs - startMs) / 60000);
+                map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
+                const key = eventStartKey(row.starts_at);
+                if (key) byStartKey[key] = map[row.id];
+                return;
+              }
+              map[row.id] = 0;
+            }
+          );
+        }
+        const missingClubSessions = sess.filter((s) => s.session_type === "club" && !s.club_event_id);
+        if (missingClubSessions.length > 0) {
+          const attendeeRes = await supabase
+            .from("club_event_attendees")
+            .select("event_id")
+            .eq("player_id", effectiveUid)
+            .eq("status", "present");
+          const attendeeEventIds = Array.from(
+            new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
+          );
+          if (attendeeEventIds.length > 0) {
+            const fallbackRes = await supabase
+              .from("club_events")
+              .select("starts_at,ends_at,duration_minutes")
+              .in("id", attendeeEventIds)
+              .gte("starts_at", start.toISOString())
+              .lt("starts_at", end.toISOString());
+            if (!fallbackRes.error) {
+              (fallbackRes.data ?? []).forEach(
+                (row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+                  const key = eventStartKey(row.starts_at);
+                  if (!key || byStartKey[key] > 0) return;
+                  const mins = Number(row.duration_minutes ?? 0);
+                  if (Number.isFinite(mins) && mins > 0) {
+                    byStartKey[key] = mins;
+                    return;
+                  }
+                  if (row.starts_at && row.ends_at) {
+                    const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+                    byStartKey[key] = Number.isFinite(diff) && diff > 0 ? diff : 0;
+                  }
+                }
+              );
+            }
+          }
+        }
+        setMonthClubEventDurationById(map);
+        setMonthClubEventDurationByStartKey(byStartKey);
+      } else {
+        setMonthClubEventDurationById({});
+        setMonthClubEventDurationByStartKey({});
+      }
+
+      const attendeeRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id")
+        .eq("player_id", effectiveUid)
+        .eq("status", "present");
+      const attendeeEventIds = Array.from(
+        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
+      );
+      if (attendeeEventIds.length > 0) {
+        const nowIso = new Date().toISOString();
+        const plannedRes = await supabase
+          .from("club_events")
+          .select("id,starts_at,ends_at,duration_minutes,status")
+          .in("id", attendeeEventIds)
+          .neq("status", "cancelled")
+          .gte("starts_at", start.toISOString())
+          .lt("starts_at", end.toISOString())
+          .lt("starts_at", nowIso);
+        if (!plannedRes.error) {
+          const total = (plannedRes.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+            const mins = Number(row.duration_minutes ?? 0);
+            if (Number.isFinite(mins) && mins > 0) return sum + mins;
+            if (row.starts_at && row.ends_at) {
+              const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+              return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
+            }
+            return sum;
+          }, 0);
+          setMonthPlannedClubMinutes(total);
+        } else {
+          setMonthPlannedClubMinutes(0);
+        }
+      } else {
+        setMonthPlannedClubMinutes(0);
+      }
     } else {
       setMonthSessions([]);
+      setMonthClubEventDurationById({});
+      setMonthClubEventDurationByStartKey({});
+      setMonthPlannedClubMinutes(0);
       setMonthItems([]);
     }
 
@@ -1069,6 +1220,9 @@ export default function PlayerHomePage() {
       setLatestItems([]);
       setThumbByItemId({});
       setMonthSessions([]);
+      setMonthClubEventDurationById({});
+      setMonthClubEventDurationByStartKey({});
+      setMonthPlannedClubMinutes(0);
       setMonthItems([]);
       setRoundsMonth([]);
       setRoundsPrevMonth([]);
@@ -1095,6 +1249,8 @@ export default function PlayerHomePage() {
       latestItems,
       thumbByItemId,
       monthSessions,
+      monthClubEventDurationById,
+      monthPlannedClubMinutes,
       monthItems,
       roundsMonth,
       roundsPrevMonth,
@@ -1117,6 +1273,8 @@ export default function PlayerHomePage() {
     latestItems,
     thumbByItemId,
     monthSessions,
+    monthClubEventDurationById,
+    monthPlannedClubMinutes,
     monthItems,
     roundsMonth,
     roundsPrevMonth,
