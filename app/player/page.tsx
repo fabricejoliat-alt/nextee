@@ -306,6 +306,13 @@ function rollingYearWindows(now = new Date()) {
   return { curStart, curEnd, prevStart, prevEnd };
 }
 
+function isGIR(par: number | null, score: number | null, putts: number | null) {
+  if (typeof par !== "number") return false;
+  if (typeof score !== "number") return false;
+  if (typeof putts !== "number") return false;
+  return score - putts <= par - 2;
+}
+
 function roundPlayedHolesFromRound(r: GolfRoundRow) {
   const vals = [r.eagles, r.birdies, r.pars, r.bogeys, r.doubles_plus];
   if (vals.some((v) => typeof v === "number")) {
