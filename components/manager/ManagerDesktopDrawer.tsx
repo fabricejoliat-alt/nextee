@@ -13,7 +13,6 @@ const ROUTES = {
   groups: "/manager/groups",
   groupsNew: "/manager/groups/new",
   events: "/manager/calendar",
-  eventsCreate: "/manager/events/new",
   consents: "/manager/parents",
   organizations: "/manager/organizations",
   om: "/manager/om",
@@ -91,8 +90,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: locale === "fr" ? "Organiser les groupes" : "Organize groups", icon: Building2, href: ROUTES.organizations },
         ],
       },
-      { label: locale === "fr" ? "Gestion des événements" : "Event management", icon: CalendarDays, href: ROUTES.events },
-      { label: locale === "fr" ? "Ajouter un événement" : "Add event", icon: CalendarDays, href: ROUTES.eventsCreate },
+      { label: locale === "fr" ? "Activité" : "Activity", icon: CalendarDays, href: ROUTES.events },
       {
         label:
           locale === "fr"

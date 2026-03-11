@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
       is_active: boolean | null;
       head_coach_user_id: string | null;
     }>;
+    const allGroupIds = uniq(groups.map((g) => g.id));
 
     const memberRows = (membersRes.data ?? []) as Array<{
       club_id: string;
@@ -132,6 +133,17 @@ export async function GET(req: NextRequest) {
       role: "player" | "coach" | "parent";
       is_active: boolean;
     }>;
+
+    const [groupPlayersRes, groupCoachesRes] = await Promise.all([
+      allGroupIds.length > 0
+        ? supabaseAdmin.from("coach_group_players").select("group_id,player_user_id").in("group_id", allGroupIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      allGroupIds.length > 0
+        ? supabaseAdmin.from("coach_group_coaches").select("group_id,coach_user_id").in("group_id", allGroupIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+    if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
+    if (groupCoachesRes.error) return NextResponse.json({ error: groupCoachesRes.error.message }, { status: 400 });
 
     const userIds = uniq(memberRows.map((r) => r.user_id));
     const headCoachIds = uniq(groups.map((g) => String(g.head_coach_user_id ?? "")));
@@ -193,12 +205,34 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    const groupPlayers = ((groupPlayersRes.data ?? []) as Array<{ group_id: string; player_user_id: string }>)
+      .map((r) => ({ group_id: String(r.group_id ?? "").trim(), player_id: String(r.player_user_id ?? "").trim() }))
+      .filter((r) => r.group_id && r.player_id);
+
+    const groupCoachesRaw = ((groupCoachesRes.data ?? []) as Array<{ group_id: string; coach_user_id: string }>)
+      .map((r) => ({ group_id: String(r.group_id ?? "").trim(), coach_id: String(r.coach_user_id ?? "").trim() }))
+      .filter((r) => r.group_id && r.coach_id);
+
+    const headCoachLinks = groups
+      .map((g) => ({ group_id: String(g.id ?? "").trim(), coach_id: String(g.head_coach_user_id ?? "").trim() }))
+      .filter((r) => r.group_id && r.coach_id);
+
+    const seenGroupCoach = new Set<string>();
+    const groupCoaches = [...groupCoachesRaw, ...headCoachLinks].filter((r) => {
+      const key = `${r.group_id}:${r.coach_id}`;
+      if (seenGroupCoach.has(key)) return false;
+      seenGroupCoach.add(key);
+      return true;
+    });
+
     return NextResponse.json({
       clubs: clubsRes.data ?? [],
       groups: groupsOut,
       players: usersByRole.player.sort((a, b) => a.name.localeCompare(b.name, "fr-CH")),
       coaches: usersByRole.coach.sort((a, b) => a.name.localeCompare(b.name, "fr-CH")),
       parents: usersByRole.parent.sort((a, b) => a.name.localeCompare(b.name, "fr-CH")),
+      group_players: groupPlayers,
+      group_coaches: groupCoaches,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
@@ -258,10 +292,6 @@ export async function POST(req: NextRequest) {
         ? allGroupIds
         : uniq((payload.groupTarget.ids ?? []).filter((id) => groupById.has(id)));
 
-    if (targetGroupIds.length === 0) {
-      return NextResponse.json({ error: "No target groups selected" }, { status: 400 });
-    }
-
     const groupPlayersMap = new Map<string, Set<string>>();
     ((groupPlayersRes.data ?? []) as Array<{ group_id: string; player_user_id: string }>).forEach((r) => {
       if (!groupPlayersMap.has(r.group_id)) groupPlayersMap.set(r.group_id, new Set());
@@ -297,6 +327,20 @@ export async function POST(req: NextRequest) {
     const selectedPlayers = new Set(uniq(payload.playerTarget.ids ?? []));
     const selectedCoaches = new Set(uniq(payload.coachTarget.ids ?? []));
     const selectedParents = new Set(uniq(payload.parentTarget.ids ?? []));
+
+    if (targetGroupIds.length === 0 && selectedPlayers.size > 0 && selectedCoaches.size > 0) {
+      targetGroupIds = allGroupIds.filter((gid) => {
+        const gp = groupPlayersMap.get(gid) ?? new Set<string>();
+        const gc = groupCoachesMap.get(gid) ?? new Set<string>();
+        const hasAllSelectedPlayers = Array.from(selectedPlayers).every((pid) => gp.has(pid));
+        const hasSelectedCoach = Array.from(selectedCoaches).some((cid) => gc.has(cid));
+        return hasAllSelectedPlayers && hasSelectedCoach;
+      });
+    }
+
+    if (targetGroupIds.length === 0) {
+      return NextResponse.json({ error: "No target groups or compatible player/coach selection" }, { status: 400 });
+    }
 
     const guardiansByPlayer = new Map<string, Set<string>>();
     ((guardiansRes.data ?? []) as Array<{ player_id: string; guardian_user_id: string }>).forEach((r) => {
@@ -358,7 +402,7 @@ export async function POST(req: NextRequest) {
         clubRoles.coaches.forEach((id) => coachTargetIds.add(id));
       } else if (payload.coachTarget.mode === "selected") {
         selectedCoaches.forEach((id) => {
-          if (clubRoles.coaches.has(id)) coachTargetIds.add(id);
+          if (groupCoaches.has(id)) coachTargetIds.add(id);
         });
       } else {
         groupCoaches.forEach((id) => coachTargetIds.add(id));

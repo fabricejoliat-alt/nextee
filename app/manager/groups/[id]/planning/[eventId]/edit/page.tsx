@@ -1086,9 +1086,21 @@ export default function CoachEventEditPage() {
       recipients = [];
     }
 
-    const del = await supabase.from("club_events").delete().eq("id", eventId);
-    if (del.error) setError(del.error.message);
-    if (!del.error && recipients.length > 0 && meId) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) {
+      setError("Session invalide.");
+      setBusy(false);
+      return;
+    }
+
+    const delRes = await fetch(`/api/manager/events/${encodeURIComponent(eventId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const delJson = await delRes.json().catch(() => ({}));
+    if (!delRes.ok) setError(String(delJson?.error ?? "Suppression impossible."));
+    if (delRes.ok && recipients.length > 0 && meId) {
       const eventStart = event?.starts_at ?? new Date().toISOString();
       const eventEnd =
         event?.ends_at ??
@@ -1109,7 +1121,7 @@ export default function CoachEventEditPage() {
     }
 
     setBusy(false);
-    router.push(`/manager/groups/${groupId}/planning`);
+    if (delRes.ok) router.push(`/manager/groups/${groupId}/planning`);
   }
 
   async function removeWholeSeries() {
@@ -1151,11 +1163,15 @@ export default function CoachEventEditPage() {
         );
       }
 
-      const delEvents = await supabase.from("club_events").delete().eq("series_id", event.series_id);
-      if (delEvents.error) throw new Error(delEvents.error.message);
-
-      const delSeries = await supabase.from("club_event_series").delete().eq("id", event.series_id);
-      if (delSeries.error) throw new Error(delSeries.error.message);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
+      const delRes = await fetch(`/api/manager/events/series/${encodeURIComponent(event.series_id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const delJson = await delRes.json().catch(() => ({}));
+      if (!delRes.ok) throw new Error(String(delJson?.error ?? "Suppression impossible."));
 
       if (recipients.length > 0 && meId) {
         const summary =

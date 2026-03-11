@@ -9,7 +9,6 @@ import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { supabase } from "@/lib/supabaseClient";
 
 type EventType = "training" | "interclub" | "camp" | "session" | "event";
-type TargetMode = "none" | "all" | "selected";
 type CreateMode = "single" | "series";
 
 type ClubLite = { id: string; name: string | null };
@@ -26,7 +25,8 @@ type CreateDataResponse = {
   groups: GroupLite[];
   players: UserLite[];
   coaches: UserLite[];
-  parents: UserLite[];
+  group_players?: Array<{ group_id: string; player_id: string }>;
+  group_coaches?: Array<{ group_id: string; coach_id: string }>;
 };
 
 const EVENT_TYPES: Array<{ value: EventType; fr: string; en: string }> = [
@@ -71,6 +71,26 @@ function quarterHourOptions() {
 
 const QUARTER_HOURS = quarterHourOptions();
 
+function splitLocalDateTime(localDateTime: string) {
+  const [d = "", t = ""] = String(localDateTime ?? "").split("T");
+  return {
+    date: d,
+    time: t.slice(0, 5),
+  };
+}
+
+function withLocalDate(localDateTime: string, nextDate: string) {
+  const { time } = splitLocalDateTime(localDateTime);
+  const safeTime = time || "00:00";
+  return `${nextDate}T${safeTime}`;
+}
+
+function withLocalTime(localDateTime: string, nextTime: string) {
+  const { date } = splitLocalDateTime(localDateTime);
+  const safeDate = date || ymdToday();
+  return `${safeDate}T${nextTime}`;
+}
+
 function SearchablePicker({
   label,
   options,
@@ -94,7 +114,16 @@ function SearchablePicker({
   }, [options, query]);
 
   return (
-    <div className="glass-card" style={{ padding: 12, display: "grid", gap: 8 }}>
+    <div
+      style={{
+        padding: 12,
+        display: "grid",
+        gap: 8,
+        border: "1px solid rgba(0,0,0,0.10)",
+        borderRadius: 12,
+        background: "rgba(255,255,255,0.95)",
+      }}
+    >
       <div style={{ fontSize: 13, fontWeight: 900 }}>{label}</div>
       <label style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #ddd", borderRadius: 10, padding: "8px 10px", background: "#fff" }}>
         <Search size={14} />
@@ -106,7 +135,7 @@ function SearchablePicker({
           style={{ border: 0, outline: "none", width: "100%", background: "transparent", padding: 0 }}
         />
       </label>
-      <div style={{ maxHeight: 180, overflow: "auto", display: "grid", gap: 6 }}>
+      <div style={{ maxHeight: 220, overflow: "auto", display: "grid", gap: 6 }}>
         {filtered.map((o) => (
           <label key={o.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
             <input type="checkbox" checked={selected.has(o.id)} onChange={() => onToggle(o.id)} disabled={disabled} />
@@ -132,7 +161,6 @@ export default function ManagerEventCreatePage() {
   const [groups, setGroups] = useState<GroupLite[]>([]);
   const [players, setPlayers] = useState<UserLite[]>([]);
   const [coaches, setCoaches] = useState<UserLite[]>([]);
-  const [parents, setParents] = useState<UserLite[]>([]);
 
   const [mode, setMode] = useState<CreateMode>("single");
   const [eventType, setEventType] = useState<EventType>("training");
@@ -155,15 +183,17 @@ export default function ManagerEventCreatePage() {
   const [startDate, setStartDate] = useState(ymdToday());
   const [endDate, setEndDate] = useState(toYMD(addDays(new Date(), 60)));
 
-  const [groupMode, setGroupMode] = useState<"all" | "selected">("all");
-  const [playerMode, setPlayerMode] = useState<TargetMode>("none");
-  const [coachMode, setCoachMode] = useState<TargetMode>("none");
-  const [parentMode, setParentMode] = useState<TargetMode>("none");
-
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set());
   const [selectedCoachIds, setSelectedCoachIds] = useState<Set<string>>(new Set());
-  const [selectedParentIds, setSelectedParentIds] = useState<Set<string>>(new Set());
+  const [directSupportGroupId, setDirectSupportGroupId] = useState("");
+  const [groupPlayersLinks, setGroupPlayersLinks] = useState<Array<{ group_id: string; player_id: string }>>([]);
+  const [groupCoachesLinks, setGroupCoachesLinks] = useState<Array<{ group_id: string; coach_id: string }>>([]);
+  const [openTargets, setOpenTargets] = useState<Record<"groups" | "players" | "coaches", boolean>>({
+    groups: false,
+    players: false,
+    coaches: false,
+  });
 
   useEffect(() => {
     (async () => {
@@ -187,8 +217,11 @@ export default function ManagerEventCreatePage() {
         setGroups(g);
         setPlayers(Array.isArray(json.players) ? json.players : []);
         setCoaches(Array.isArray(json.coaches) ? json.coaches : []);
-        setParents(Array.isArray(json.parents) ? json.parents : []);
-        setSelectedGroupIds(new Set(g.map((it) => it.id)));
+        setGroupPlayersLinks(Array.isArray(json.group_players) ? json.group_players : []);
+        setGroupCoachesLinks(Array.isArray(json.group_coaches) ? json.group_coaches : []);
+        setSelectedGroupIds(new Set());
+        setSelectedPlayerIds(new Set());
+        setSelectedCoachIds(new Set());
       } catch (e: any) {
         setError(e?.message ?? tr("Erreur inattendue.", "Unexpected error."));
       } finally {
@@ -210,7 +243,72 @@ export default function ManagerEventCreatePage() {
 
   const playerOptions = useMemo(() => players.map((p) => ({ id: p.id, label: p.name })), [players]);
   const coachOptions = useMemo(() => coaches.map((p) => ({ id: p.id, label: p.name })), [coaches]);
-  const parentOptions = useMemo(() => parents.map((p) => ({ id: p.id, label: p.name })), [parents]);
+  const allGroupIds = useMemo(() => groupOptions.map((g) => g.id), [groupOptions]);
+  const allPlayerIds = useMemo(() => playerOptions.map((p) => p.id), [playerOptions]);
+  const allCoachIds = useMemo(() => coachOptions.map((c) => c.id), [coachOptions]);
+
+  const playerIdsByGroupId = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    groupPlayersLinks.forEach((row) => {
+      const gid = String(row.group_id ?? "").trim();
+      const pid = String(row.player_id ?? "").trim();
+      if (!gid || !pid) return;
+      if (!map.has(gid)) map.set(gid, new Set());
+      map.get(gid)!.add(pid);
+    });
+    return map;
+  }, [groupPlayersLinks]);
+
+  const coachIdsByGroupId = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    groupCoachesLinks.forEach((row) => {
+      const gid = String(row.group_id ?? "").trim();
+      const cid = String(row.coach_id ?? "").trim();
+      if (!gid || !cid) return;
+      if (!map.has(gid)) map.set(gid, new Set());
+      map.get(gid)!.add(cid);
+    });
+    return map;
+  }, [groupCoachesLinks]);
+  const lockPlayerCoachSelection = selectedGroupIds.size > 0;
+  const isDirectSelectionMode = selectedGroupIds.size === 0 && selectedPlayerIds.size > 0 && selectedCoachIds.size > 0;
+
+  const directCompatibleGroupOptions = useMemo(() => {
+    if (!isDirectSelectionMode) return [];
+    return groupOptions.filter((g) => {
+      const groupPlayerIds = playerIdsByGroupId.get(g.id) ?? new Set<string>();
+      const groupCoachIds = coachIdsByGroupId.get(g.id) ?? new Set<string>();
+      const allPlayersInside = Array.from(selectedPlayerIds).every((pid) => groupPlayerIds.has(pid));
+      const allCoachesInside = Array.from(selectedCoachIds).every((cid) => groupCoachIds.has(cid));
+      return allPlayersInside && allCoachesInside;
+    });
+  }, [isDirectSelectionMode, groupOptions, playerIdsByGroupId, coachIdsByGroupId, selectedPlayerIds, selectedCoachIds]);
+
+  useEffect(() => {
+    const nextPlayers = new Set<string>();
+    const nextCoaches = new Set<string>();
+    selectedGroupIds.forEach((gid) => {
+      (playerIdsByGroupId.get(gid) ?? new Set()).forEach((id) => nextPlayers.add(id));
+      (coachIdsByGroupId.get(gid) ?? new Set()).forEach((id) => nextCoaches.add(id));
+    });
+    setSelectedPlayerIds(nextPlayers);
+    setSelectedCoachIds(nextCoaches);
+  }, [selectedGroupIds, playerIdsByGroupId, coachIdsByGroupId]);
+
+  useEffect(() => {
+    if (!lockPlayerCoachSelection) return;
+    setOpenTargets((prev) => ({ ...prev, players: false, coaches: false }));
+  }, [lockPlayerCoachSelection]);
+
+  useEffect(() => {
+    if (!isDirectSelectionMode) {
+      setDirectSupportGroupId("");
+      return;
+    }
+    const exists = directCompatibleGroupOptions.some((g) => g.id === directSupportGroupId);
+    if (exists) return;
+    setDirectSupportGroupId(directCompatibleGroupOptions[0]?.id ?? "");
+  }, [isDirectSelectionMode, directCompatibleGroupOptions, directSupportGroupId]);
 
   function toggle(setter: (v: Set<string>) => void, current: Set<string>, id: string) {
     const next = new Set(current);
@@ -219,12 +317,37 @@ export default function ManagerEventCreatePage() {
     setter(next);
   }
 
+  function selectAll(setter: (v: Set<string>) => void, ids: string[]) {
+    setter(new Set(ids));
+  }
+
+  function clearAll(setter: (v: Set<string>) => void) {
+    setter(new Set());
+  }
+
   async function submit() {
     if (saving) return;
     setError(null);
 
-    if (groupMode === "selected" && selectedGroupIds.size === 0) {
-      setError(tr("Sélectionne au moins un groupe.", "Select at least one group."));
+    const groupSelected = selectedGroupIds.size > 0;
+    const directPlayerCoachSelection = isDirectSelectionMode;
+
+    if (!groupSelected && !directPlayerCoachSelection) {
+      setError(
+        tr(
+          "Sélectionne au moins un groupe, ou bien au moins un joueur et un coach.",
+          "Select at least one group, or at least one player and one coach."
+        )
+      );
+      return;
+    }
+    if (directPlayerCoachSelection && !directSupportGroupId) {
+      setError(
+        tr(
+          "Choisis un groupe support compatible avec les joueurs et coachs sélectionnés.",
+          "Choose a support group compatible with selected players and coaches."
+        )
+      );
       return;
     }
     if ((eventType === "session" || eventType === "event" || eventType === "camp") && !title.trim()) {
@@ -242,6 +365,7 @@ export default function ManagerEventCreatePage() {
       const token = sessionData.session?.access_token ?? "";
       if (!token) throw new Error(tr("Session invalide.", "Invalid session."));
 
+      const targetGroupIds = groupSelected ? Array.from(selectedGroupIds) : [directSupportGroupId];
       const body = {
         mode,
         eventType,
@@ -259,20 +383,20 @@ export default function ManagerEventCreatePage() {
           endDate,
         },
         groupTarget: {
-          mode: groupMode,
-          ids: Array.from(selectedGroupIds),
+          mode: "selected",
+          ids: targetGroupIds,
         },
         playerTarget: {
-          mode: playerMode,
+          mode: "selected",
           ids: Array.from(selectedPlayerIds),
         },
         coachTarget: {
-          mode: coachMode,
+          mode: "selected",
           ids: Array.from(selectedCoachIds),
         },
         parentTarget: {
-          mode: parentMode,
-          ids: Array.from(selectedParentIds),
+          mode: "none",
+          ids: [],
         },
       };
 
@@ -313,7 +437,7 @@ export default function ManagerEventCreatePage() {
                 {tr("Ajouter un événement", "Add event")}
               </div>
               <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.65)" }}>
-                {tr("Manager: création multi-cibles (groupes, joueurs, parents, coaches)", "Manager: multi-target event creation (groups, players, parents, coaches)")}
+                {tr("Manager: création multi-cibles (groupes, joueurs, coachs)", "Manager: multi-target event creation (groups, players, coaches)")}
               </div>
             </div>
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -362,7 +486,25 @@ export default function ManagerEventCreatePage() {
               <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Début", "Start")}</span>
-                  <input type="datetime-local" value={startsAtLocal} onChange={(e) => setStartsAtLocal(e.target.value)} disabled={saving || loading} />
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,170px)", gap: 8 }}>
+                    <input
+                      type="date"
+                      value={splitLocalDateTime(startsAtLocal).date}
+                      onChange={(e) => setStartsAtLocal(withLocalDate(startsAtLocal, e.target.value))}
+                      disabled={saving || loading}
+                    />
+                    <select
+                      value={splitLocalDateTime(startsAtLocal).time}
+                      onChange={(e) => setStartsAtLocal(withLocalTime(startsAtLocal, e.target.value))}
+                      disabled={saving || loading}
+                    >
+                      {QUARTER_HOURS.map((q) => (
+                        <option key={`single-start-${q}`} value={q}>
+                          {q}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </label>
                 {eventType === "training" ? (
                   <label style={{ display: "grid", gap: 6 }}>
@@ -372,7 +514,25 @@ export default function ManagerEventCreatePage() {
                 ) : (
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Fin", "End")}</span>
-                    <input type="datetime-local" value={endsAtLocal} onChange={(e) => setEndsAtLocal(e.target.value)} disabled={saving || loading} />
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,170px)", gap: 8 }}>
+                      <input
+                        type="date"
+                        value={splitLocalDateTime(endsAtLocal).date}
+                        onChange={(e) => setEndsAtLocal(withLocalDate(endsAtLocal, e.target.value))}
+                        disabled={saving || loading}
+                      />
+                      <select
+                        value={splitLocalDateTime(endsAtLocal).time}
+                        onChange={(e) => setEndsAtLocal(withLocalTime(endsAtLocal, e.target.value))}
+                        disabled={saving || loading}
+                      >
+                        {QUARTER_HOURS.map((q) => (
+                          <option key={`single-end-${q}`} value={q}>
+                            {q}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </label>
                 )}
               </div>
@@ -439,75 +599,183 @@ export default function ManagerEventCreatePage() {
         <div className="glass-section" style={{ display: "grid", gap: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 950 }}>{tr("Cibles", "Targets")}</div>
 
-          <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 900 }}>{tr("Groupes", "Groups")}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className={`btn ${groupMode === "all" ? "btn-active-green" : ""}`} onClick={() => setGroupMode("all")}>{tr("Tous les groupes", "All groups")}</button>
-              <button type="button" className={`btn ${groupMode === "selected" ? "btn-active-green" : ""}`} onClick={() => setGroupMode("selected")}>{tr("Groupes sélectionnés", "Selected groups")}</button>
+          <div
+            style={{
+              border: "1px solid rgba(0,0,0,0.10)",
+              borderRadius: 14,
+              background: "rgba(255,255,255,0.96)",
+              padding: 12,
+              display: "grid",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid rgba(0,0,0,0.08)",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.94)",
+                padding: 10,
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 900 }}>
+                  {tr("Groupes", "Groups")} ({selectedGroupIds.size})
+                </div>
+                <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, groups: !prev.groups }))}>
+                  {openTargets.groups ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                </button>
+              </div>
+              {openTargets.groups ? (
+                <>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" className="btn" onClick={() => selectAll(setSelectedGroupIds, allGroupIds)} disabled={loading || saving}>
+                      {tr("Tout sélectionner", "Select all")}
+                    </button>
+                    <button type="button" className="btn" onClick={() => clearAll(setSelectedGroupIds)} disabled={loading || saving}>
+                      {tr("Tout désélectionner", "Deselect all")}
+                    </button>
+                  </div>
+                  <SearchablePicker
+                    label={tr("Sélection des groupes", "Group selection")}
+                    options={groupOptions}
+                    selected={selectedGroupIds}
+                    onToggle={(id) => toggle(setSelectedGroupIds, selectedGroupIds, id)}
+                    placeholder={tr("Rechercher un groupe…", "Search a group…")}
+                  />
+                </>
+              ) : null}
             </div>
-            {groupMode === "selected" ? (
-              <SearchablePicker
-                label={tr("Sélection des groupes", "Group selection")}
-                options={groupOptions}
-                selected={selectedGroupIds}
-                onToggle={(id) => toggle(setSelectedGroupIds, selectedGroupIds, id)}
-                placeholder={tr("Rechercher un groupe…", "Search a group…")}
-              />
-            ) : null}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+              <div
+                style={{
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.94)",
+                  padding: 10,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900 }}>
+                    {tr("Joueurs", "Players")} ({selectedPlayerIds.size})
+                  </div>
+                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, players: !prev.players }))} disabled={lockPlayerCoachSelection}>
+                    {openTargets.players ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                  </button>
+                </div>
+                {lockPlayerCoachSelection ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                    {tr("Sélection automatique depuis les groupes choisis.", "Automatic selection from selected groups.")}
+                  </div>
+                ) : null}
+                {openTargets.players ? (
+                  <>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" className="btn" onClick={() => selectAll(setSelectedPlayerIds, allPlayerIds)} disabled={loading || saving || lockPlayerCoachSelection}>
+                        {tr("Tout sélectionner", "Select all")}
+                      </button>
+                      <button type="button" className="btn" onClick={() => clearAll(setSelectedPlayerIds)} disabled={loading || saving || lockPlayerCoachSelection}>
+                        {tr("Tout désélectionner", "Deselect all")}
+                      </button>
+                    </div>
+                    <SearchablePicker
+                      label={tr("Joueurs", "Players")}
+                      options={playerOptions}
+                      selected={selectedPlayerIds}
+                      onToggle={(id) => toggle(setSelectedPlayerIds, selectedPlayerIds, id)}
+                      disabled={lockPlayerCoachSelection}
+                      placeholder={tr("Rechercher un joueur…", "Search a player…")}
+                    />
+                  </>
+                ) : null}
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.94)",
+                  padding: 10,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900 }}>
+                    {tr("Coachs", "Coaches")} ({selectedCoachIds.size})
+                  </div>
+                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, coaches: !prev.coaches }))} disabled={lockPlayerCoachSelection}>
+                    {openTargets.coaches ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                  </button>
+                </div>
+                {lockPlayerCoachSelection ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                    {tr("Sélection automatique depuis les groupes choisis.", "Automatic selection from selected groups.")}
+                  </div>
+                ) : null}
+                {openTargets.coaches ? (
+                  <>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" className="btn" onClick={() => selectAll(setSelectedCoachIds, allCoachIds)} disabled={loading || saving || lockPlayerCoachSelection}>
+                        {tr("Tout sélectionner", "Select all")}
+                      </button>
+                      <button type="button" className="btn" onClick={() => clearAll(setSelectedCoachIds)} disabled={loading || saving || lockPlayerCoachSelection}>
+                        {tr("Tout désélectionner", "Deselect all")}
+                      </button>
+                    </div>
+                    <SearchablePicker
+                      label={tr("Coachs", "Coaches")}
+                      options={coachOptions}
+                      selected={selectedCoachIds}
+                      onToggle={(id) => toggle(setSelectedCoachIds, selectedCoachIds, id)}
+                      disabled={lockPlayerCoachSelection}
+                      placeholder={tr("Rechercher un coach…", "Search a coach…")}
+                    />
+                  </>
+                ) : null}
+              </div>
+
+            </div>
           </div>
 
-          <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>
-            <div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <button type="button" className={`btn ${playerMode === "none" ? "btn-active-dark" : ""}`} onClick={() => setPlayerMode("none")}>{tr("Joueurs: aucun", "Players: none")}</button>
-                <button type="button" className={`btn ${playerMode === "all" ? "btn-active-green" : ""}`} onClick={() => setPlayerMode("all")}>{tr("Tous", "All")}</button>
-                <button type="button" className={`btn ${playerMode === "selected" ? "btn-active-green" : ""}`} onClick={() => setPlayerMode("selected")}>{tr("Sélection", "Select")}</button>
-              </div>
-              {playerMode === "selected" ? (
-                <SearchablePicker
-                  label={tr("Joueurs", "Players")}
-                  options={playerOptions}
-                  selected={selectedPlayerIds}
-                  onToggle={(id) => toggle(setSelectedPlayerIds, selectedPlayerIds, id)}
-                  placeholder={tr("Rechercher un joueur…", "Search a player…")}
-                />
+          {isDirectSelectionMode ? (
+            <div
+              style={{
+                border: "1px solid rgba(0,0,0,0.10)",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.96)",
+                padding: 10,
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 900 }}>{tr("Groupe support de l’événement", "Event support group")}</div>
+              <select
+                value={directSupportGroupId}
+                onChange={(e) => setDirectSupportGroupId(e.target.value)}
+                disabled={saving || loading || directCompatibleGroupOptions.length === 0}
+              >
+                <option value="">{tr("Veuillez sélectionner", "Please select")}</option>
+                {directCompatibleGroupOptions.map((g) => (
+                  <option key={`direct-group-${g.id}`} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+              {directCompatibleGroupOptions.length === 0 ? (
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(180,20,20,0.88)" }}>
+                  {tr(
+                    "Aucun groupe unique ne contient tous les joueurs et coachs sélectionnés.",
+                    "No single group contains all selected players and coaches."
+                  )}
+                </div>
               ) : null}
             </div>
-
-            <div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <button type="button" className={`btn ${coachMode === "none" ? "btn-active-dark" : ""}`} onClick={() => setCoachMode("none")}>{tr("Coaches: défaut groupe", "Coaches: group default")}</button>
-                <button type="button" className={`btn ${coachMode === "all" ? "btn-active-green" : ""}`} onClick={() => setCoachMode("all")}>{tr("Tous", "All")}</button>
-                <button type="button" className={`btn ${coachMode === "selected" ? "btn-active-green" : ""}`} onClick={() => setCoachMode("selected")}>{tr("Sélection", "Select")}</button>
-              </div>
-              {coachMode === "selected" ? (
-                <SearchablePicker
-                  label={tr("Coaches", "Coaches")}
-                  options={coachOptions}
-                  selected={selectedCoachIds}
-                  onToggle={(id) => toggle(setSelectedCoachIds, selectedCoachIds, id)}
-                  placeholder={tr("Rechercher un coach…", "Search a coach…")}
-                />
-              ) : null}
-            </div>
-
-            <div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <button type="button" className={`btn ${parentMode === "none" ? "btn-active-dark" : ""}`} onClick={() => setParentMode("none")}>{tr("Parents: aucun", "Parents: none")}</button>
-                <button type="button" className={`btn ${parentMode === "all" ? "btn-active-green" : ""}`} onClick={() => setParentMode("all")}>{tr("Tous", "All")}</button>
-                <button type="button" className={`btn ${parentMode === "selected" ? "btn-active-green" : ""}`} onClick={() => setParentMode("selected")}>{tr("Sélection", "Select")}</button>
-              </div>
-              {parentMode === "selected" ? (
-                <SearchablePicker
-                  label={tr("Parents", "Parents")}
-                  options={parentOptions}
-                  selected={selectedParentIds}
-                  onToggle={(id) => toggle(setSelectedParentIds, selectedParentIds, id)}
-                  placeholder={tr("Rechercher un parent…", "Search a parent…")}
-                />
-              ) : null}
-            </div>
-          </div>
+          ) : null}
 
           <div style={{ fontSize: 12, color: "rgba(0,0,0,0.66)", fontWeight: 800 }}>
             {tr(

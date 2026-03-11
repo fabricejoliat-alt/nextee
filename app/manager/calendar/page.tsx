@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 
 type CalendarView = "month" | "week" | "day";
 
@@ -150,6 +150,7 @@ export default function CoachCalendarPage() {
   const [view, setView] = useState<CalendarView>("month");
   const [anchorDate, setAnchorDate] = useState<Date>(new Date());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
 
   const filteredEvents = useMemo(() => {
     let list = events;
@@ -393,6 +394,39 @@ export default function CoachCalendarPage() {
     gap: 8,
   };
 
+  async function deleteEvent(eventId: string) {
+    if (!eventId || deletingEventId) return;
+    const ok = window.confirm(tr("Supprimer cet événement ?", "Delete this event?"));
+    if (!ok) return;
+
+    setDeletingEventId(eventId);
+    setError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error(tr("Session invalide.", "Invalid session"));
+
+      const res = await fetch(`/api/manager/events/${encodeURIComponent(eventId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? tr("Suppression impossible.", "Could not delete event.")));
+
+      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      setSelectedEventId((prev) => (prev === eventId ? null : prev));
+      setAttendeeByEvent((prev) => {
+        const next = { ...prev };
+        delete next[eventId];
+        return next;
+      });
+    } catch (e: any) {
+      setError(e?.message ?? tr("Suppression impossible.", "Could not delete event."));
+    } finally {
+      setDeletingEventId(null);
+    }
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -537,8 +571,18 @@ export default function CoachCalendarPage() {
                                               {e.coach_note}
                                             </div>
                                           ) : null}
-                                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                            <Link className="cta-green cta-green-inline" href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
+                                          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                            <button
+                                              type="button"
+                                              className="cta-green cta-green-inline"
+                                              onClick={() => void deleteEvent(e.id)}
+                                              disabled={deletingEventId === e.id}
+                                              style={{ minWidth: 200, justifyContent: "center" }}
+                                            >
+                                              <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                              {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                            </button>
+                                            <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                               {tr("Accéder à l’événement", "Open event")}
                                             </Link>
                                           </div>
@@ -621,8 +665,18 @@ export default function CoachCalendarPage() {
                                         {e.coach_note}
                                       </div>
                                     ) : null}
-                                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                      <Link className="cta-green cta-green-inline" href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
+                                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                      <button
+                                        type="button"
+                                        className="cta-green cta-green-inline"
+                                        onClick={() => void deleteEvent(e.id)}
+                                        disabled={deletingEventId === e.id}
+                                        style={{ minWidth: 200, justifyContent: "center" }}
+                                      >
+                                        <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                        {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                      </button>
+                                      <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                         {tr("Accéder à l’événement", "Open event")}
                                       </Link>
                                     </div>
@@ -688,8 +742,18 @@ export default function CoachCalendarPage() {
                                   {e.coach_note}
                                 </div>
                               ) : null}
-                              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                <Link className="cta-green cta-green-inline" href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
+                              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  className="cta-green cta-green-inline"
+                                  onClick={() => void deleteEvent(e.id)}
+                                  disabled={deletingEventId === e.id}
+                                  style={{ minWidth: 200, justifyContent: "center" }}
+                                >
+                                  <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                  {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                </button>
+                                <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                   {tr("Accéder à l’événement", "Open event")}
                                 </Link>
                               </div>

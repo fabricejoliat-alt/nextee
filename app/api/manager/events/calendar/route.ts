@@ -36,7 +36,14 @@ export async function GET(req: NextRequest) {
       .in("club_id", clubIds)
       .order("starts_at", { ascending: true });
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
-    const events = eventsRes.data ?? [];
+    const rawEvents = (eventsRes.data ?? []) as Array<Record<string, any>>;
+    const seenEventIds = new Set<string>();
+    const events = rawEvents.filter((e) => {
+      const id = String(e?.id ?? "").trim();
+      if (!id || seenEventIds.has(id)) return false;
+      seenEventIds.add(id);
+      return true;
+    });
 
     const groupIds = Array.from(new Set(events.map((e: any) => String(e?.group_id ?? "")).filter(Boolean)));
     const eventIds = Array.from(new Set(events.map((e: any) => String(e?.id ?? "")).filter(Boolean)));

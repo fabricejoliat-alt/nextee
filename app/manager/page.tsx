@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Building2, CalendarDays, Layers3, Link2Off, MessageCircle, UserCheck, UserCog, UserX, Users } from "lucide-react";
+import { Bell, CalendarDays, Dumbbell, Layers3, Link2Off, MessageCircle, UserCheck, UserCog, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
@@ -37,7 +37,13 @@ type MemberLite = {
   user_id: string;
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
-  profiles?: { first_name: string | null; last_name: string | null; username: string | null } | null;
+  profiles?: {
+    first_name: string | null;
+    last_name: string | null;
+    username: string | null;
+    sex: string | null;
+    birth_date: string | null;
+  } | null;
 };
 type GuardianApiResponse = {
   players: Array<{
@@ -58,6 +64,12 @@ type DashboardStats = {
   parentsCount: number;
   juniorsWithoutParentCount: number;
   usersWithoutUsernameCount: number;
+  messagesCount: number;
+  unreadNotificationsCount: number;
+  trainingsCount: number;
+  girlsCount: number;
+  boysCount: number;
+  juniorsAverageAge: number | null;
   plannedEventsCount: number;
   pastEventsCount: number;
   roleCounts: Record<"manager" | "coach" | "player" | "parent", number>;
@@ -113,6 +125,12 @@ export default function ManagerHomePage() {
     parentsCount: 0,
     juniorsWithoutParentCount: 0,
     usersWithoutUsernameCount: 0,
+    messagesCount: 0,
+    unreadNotificationsCount: 0,
+    trainingsCount: 0,
+    girlsCount: 0,
+    boysCount: 0,
+    juniorsAverageAge: null,
     plannedEventsCount: 0,
     pastEventsCount: 0,
     roleCounts: { manager: 0, coach: 0, player: 0, parent: 0 },
@@ -192,6 +210,12 @@ export default function ManagerHomePage() {
           parentsCount: 0,
           juniorsWithoutParentCount: 0,
           usersWithoutUsernameCount: 0,
+          messagesCount: 0,
+          unreadNotificationsCount: 0,
+          trainingsCount: 0,
+          girlsCount: 0,
+          boysCount: 0,
+          juniorsAverageAge: null,
           plannedEventsCount: 0,
           pastEventsCount: 0,
           roleCounts: { manager: 0, coach: 0, player: 0, parent: 0 },
@@ -266,6 +290,40 @@ export default function ManagerHomePage() {
         return !v || !String(v).trim();
       }).length;
 
+      const activePlayerMembers = activeMembers.filter((m) => m.role === "player");
+      const uniquePlayerById = new Map<string, MemberLite>();
+      activePlayerMembers.forEach((m) => {
+        const uid = String(m.user_id ?? "").trim();
+        if (!uid || uniquePlayerById.has(uid)) return;
+        uniquePlayerById.set(uid, m);
+      });
+      const computeAge = (birthDate: string | null | undefined) => {
+        if (!birthDate) return null;
+        const d = new Date(birthDate);
+        if (Number.isNaN(d.getTime())) return null;
+        const now = new Date();
+        let age = now.getFullYear() - d.getFullYear();
+        const m = now.getMonth() - d.getMonth();
+        if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+        return age >= 0 ? age : null;
+      };
+      const normalizedSex = (raw: string | null | undefined) => String(raw ?? "").trim().toLowerCase();
+      const girlsCount = Array.from(uniquePlayerById.values()).filter((m) => {
+        const v = normalizedSex(m.profiles?.sex);
+        return v === "female" || v === "femme" || v === "f";
+      }).length;
+      const boysCount = Array.from(uniquePlayerById.values()).filter((m) => {
+        const v = normalizedSex(m.profiles?.sex);
+        return v === "male" || v === "homme" || v === "m";
+      }).length;
+      const juniorAges = Array.from(uniquePlayerById.values())
+        .map((m) => computeAge(m.profiles?.birth_date))
+        .filter((v): v is number => v != null);
+      const juniorsAverageAge =
+        juniorAges.length > 0
+          ? Number((juniorAges.reduce((sum, age) => sum + age, 0) / juniorAges.length).toFixed(1))
+          : null;
+
       const playerIds = new Set<string>();
       const playerNameById = new Map<string, { id: string; first_name: string | null; last_name: string | null }>();
       guardianByClubRes.forEach((row) => {
@@ -317,7 +375,10 @@ export default function ManagerHomePage() {
       const nowIso = new Date().toISOString();
       let plannedEventsCount = 0;
       let pastEventsCount = 0;
+      let trainingsCount = 0;
       let topAttendance: Array<{ player_id: string; name: string; present: number; total: number; rate: number }> = [];
+      let messagesCount = 0;
+      let unreadNotificationsCount = 0;
 
       if (planningGroupIds.length > 0) {
         const sinceDate = new Date();
@@ -327,7 +388,7 @@ export default function ManagerHomePage() {
         else sinceDate.setMonth(sinceDate.getMonth() - 6);
         const sinceDateIso = sinceDate.toISOString();
 
-        const [plannedCountRes, pastCountRes, assiduityEventsRes] = await Promise.all([
+        const [plannedCountRes, pastCountRes, trainingsCountRes, assiduityEventsRes] = await Promise.all([
           supabase
             .from("club_events")
             .select("id", { count: "exact", head: true })
@@ -342,6 +403,13 @@ export default function ManagerHomePage() {
             .lt("starts_at", nowIso),
           supabase
             .from("club_events")
+            .select("id", { count: "exact", head: true })
+            .in("group_id", planningGroupIds)
+            .eq("status", "scheduled")
+            .eq("event_type", "training")
+            .gte("starts_at", nowIso),
+          supabase
+            .from("club_events")
             .select("id")
             .in("group_id", planningGroupIds)
             .eq("status", "scheduled")
@@ -353,6 +421,7 @@ export default function ManagerHomePage() {
 
         if (!plannedCountRes.error) plannedEventsCount = plannedCountRes.count ?? 0;
         if (!pastCountRes.error) pastEventsCount = pastCountRes.count ?? 0;
+        if (!trainingsCountRes.error) trainingsCount = trainingsCountRes.count ?? 0;
 
         const assiduityEventIds = ((assiduityEventsRes.data ?? []) as Array<{ id: string | null }>)
           .map((r) => String(r.id ?? "").trim())
@@ -405,6 +474,19 @@ export default function ManagerHomePage() {
         }
       }
 
+      if (clubIds.length > 0) {
+        const orgCountersRes = await fetch("/api/manager/dashboard/org-counters", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const orgCountersJson = await orgCountersRes.json().catch(() => ({}));
+        if (orgCountersRes.ok) {
+          messagesCount = Number(orgCountersJson?.messages_count ?? 0) || 0;
+          unreadNotificationsCount = Number(orgCountersJson?.notifications_count ?? 0) || 0;
+        }
+      }
+
       setStats({
         clubsCount: clubIds.length,
         usersCount: uniqueUsers.size,
@@ -417,6 +499,12 @@ export default function ManagerHomePage() {
         parentsCount: roleSetByUser.parent.size,
         juniorsWithoutParentCount: juniorsWithoutParent.length,
         usersWithoutUsernameCount,
+        messagesCount,
+        unreadNotificationsCount,
+        trainingsCount,
+        girlsCount,
+        boysCount,
+        juniorsAverageAge,
         plannedEventsCount,
         pastEventsCount,
         roleCounts: {
@@ -463,6 +551,12 @@ export default function ManagerHomePage() {
           parentsCount: roleSetByUser.parent.size,
           juniorsWithoutParentCount: juniorsWithoutParent.length,
           usersWithoutUsernameCount,
+          messagesCount,
+          unreadNotificationsCount,
+          trainingsCount,
+          girlsCount,
+          boysCount,
+          juniorsAverageAge,
           plannedEventsCount,
           pastEventsCount,
           roleCounts: {
@@ -619,6 +713,31 @@ export default function ManagerHomePage() {
               { key: "users", label: tr("Utilisateurs", "Users"), value: stats.usersCount, icon: <Users size={16} /> },
               { key: "active", label: tr("Actifs", "Active"), value: stats.activeUsersCount, icon: <UserCheck size={16} /> },
               { key: "groups", label: tr("Groupes", "Groups"), value: stats.activeGroupsCount, icon: <Layers3 size={16} /> },
+              { key: "messages", label: tr("Nombre de messages", "Messages count"), value: stats.messagesCount, icon: <MessageCircle size={16} /> },
+              {
+                key: "notifications",
+                label: tr("Nombre de notifications", "Notifications count"),
+                value: stats.unreadNotificationsCount,
+                icon: <Bell size={16} />,
+              },
+              {
+                key: "trainings",
+                label: tr("Nombre d'entraînements", "Trainings count"),
+                value: stats.trainingsCount,
+                icon: <Dumbbell size={16} />,
+              },
+              {
+                key: "girls-boys",
+                label: tr("Filles / Garçons", "Girls / Boys"),
+                value: `${stats.girlsCount} / ${stats.boysCount}`,
+                icon: <Users size={16} />,
+              },
+              {
+                key: "avg-age",
+                label: tr("Âge moyen des juniors", "Average junior age"),
+                value: stats.juniorsAverageAge == null ? "—" : String(stats.juniorsAverageAge),
+                icon: <CalendarDays size={16} />,
+              },
               {
                 key: "no-parent",
                 label: tr("Juniors sans parent", "Juniors without parent"),
@@ -626,13 +745,6 @@ export default function ManagerHomePage() {
                 icon: <Link2Off size={16} />,
                 danger: stats.juniorsWithoutParentCount > 0,
               },
-              {
-                key: "no-username",
-                label: tr("Sans username", "Without username"),
-                value: stats.usersWithoutUsernameCount,
-                icon: <UserX size={16} />,
-              },
-              { key: "clubs", label: tr("Clubs gérés", "Managed clubs"), value: stats.clubsCount, icon: <Building2 size={16} /> },
             ].map((card) => (
               <div
                 key={card.key}
@@ -683,16 +795,6 @@ export default function ManagerHomePage() {
                   <div style={{ fontSize: 22, fontWeight: 900, marginTop: 4 }}>{loading ? "…" : r.value}</div>
                 </div>
               ))}
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span className="pill-soft">{tr("Groupes actifs", "Active groups")}: {loading ? "…" : stats.activeGroupsCount}</span>
-              <span className="pill-soft">{tr("Groupes archivés", "Archived groups")}: {loading ? "…" : stats.archivedGroupsCount}</span>
-              <span className="pill-soft">{tr("Parents", "Parents")}: {loading ? "…" : stats.parentsCount}</span>
-              <span className="pill-soft">{tr("Juniors", "Players")}: {loading ? "…" : stats.playersCount}</span>
-              <span className="pill-soft">{tr("Événements planifiés", "Planned events")}: {loading ? "…" : stats.plannedEventsCount}</span>
-              <span className="pill-soft">{tr("Événements passés", "Past events")}: {loading ? "…" : stats.pastEventsCount}</span>
-              <span className="pill-soft">{tr("Memberships inactifs", "Inactive memberships")}: {loading ? "…" : stats.inactiveMemberships}</span>
             </div>
 
             {statsError ? (
