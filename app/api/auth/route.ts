@@ -25,24 +25,36 @@ export async function POST(req: NextRequest) {
     let res = NextResponse.next();
     const supabase = createServerClient(supabaseUrl, anonKey, {
       cookies: {
-        get(name) {
-          return req.cookies.get(name)?.value;
+        getAll() {
+          return req.cookies.getAll();
         },
-        set(name, value, options) {
-          res.cookies.set({ name, value, ...options });
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.cookies.set({ name, value, ...options });
+          });
         },
-        remove(name, options) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
-        },
+      },
+      cookieOptions: {
+        path: "/",
+        sameSite: "lax",
       },
     });
 
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "").trim() || "";
+
+    let userId = userData.user?.id ?? "";
+    if (!userId && bearerToken) {
+      const adminAuthClient = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+      });
+      const { data: bearerUserData } = await adminAuthClient.auth.getUser(bearerToken);
+      userId = bearerUserData.user?.id ?? "";
     }
 
-    const userId = userData.user.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
 
     // 2) ✅ Garder ton admin client pour vérifier les rôles (bypass RLS)
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {

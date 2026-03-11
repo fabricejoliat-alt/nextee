@@ -1552,6 +1552,31 @@ export default function PlayerHomePage() {
     }, 0);
     return Math.max(holesPlayedMonth, derived);
   }, [holesPlayedMonth, playedHolesMonthByRoundId, roundsMonth]);
+  const focusTiles = useMemo(
+    () => [
+      {
+        key: "gir",
+        label: t("golfDashboard.gir"),
+        value: focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`,
+      },
+      {
+        key: "putts",
+        label: pickLocaleText(locale, "Putts (18 trous)", "Putts (18 holes)"),
+        value: focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`,
+      },
+      {
+        key: "fw",
+        label: t("golfDashboard.fairwaysHit"),
+        value: focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`,
+      },
+      {
+        key: "scrambling",
+        label: pickLocaleText(locale, "Scrambling", "Scrambling"),
+        value: focusFromRounds.scramblingPct == null ? "—" : `${focusFromRounds.scramblingPct}%`,
+      },
+    ],
+    [focusFromRounds.fwPctAvg, focusFromRounds.girPctAvg, focusFromRounds.puttAvg, focusFromRounds.scramblingPct, locale, t]
+  );
   const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
   const activityCategoryLabel = (cat: string) => {
     const map: Record<string, string> = {
@@ -1571,7 +1596,7 @@ export default function PlayerHomePage() {
   };
 
   return (
-    <div className="player-dashboard-bg">
+    <div className="player-dashboard-bg player-home-page">
       <div className="app-shell">
         <div className="player-hero">
           <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
@@ -2009,7 +2034,7 @@ export default function PlayerHomePage() {
                   borderWidth: 1,
                   borderStyle: "solid",
                   borderColor: "rgba(0,0,0,0.08)",
-                  background: "rgba(255,255,255,0.55)",
+                  background: "rgba(255,255,255,0.72)",
                   borderRadius: 16,
                   padding: "18px 12px",
                   textAlign: "center",
@@ -2043,7 +2068,7 @@ export default function PlayerHomePage() {
                   borderWidth: 1,
                   borderStyle: "solid",
                   borderColor: "rgba(0,0,0,0.08)",
-                  background: "rgba(255,255,255,0.55)",
+                  background: "rgba(255,255,255,0.72)",
                   borderRadius: 16,
                   padding: "18px 12px",
                   textAlign: "center",
@@ -2074,59 +2099,91 @@ export default function PlayerHomePage() {
           </div>
 
           {isPerformanceEnabled ? (
-            <div className="glass-card" style={{ marginTop: 12 }}>
+            <div
+              className="glass-card"
+              style={{
+                marginTop: 12,
+                border: "1px solid rgba(15,23,42,0.08)",
+                background: "rgba(255,255,255,0.82)",
+              }}
+            >
               <div className="card-title">{t("playerHome.focus")}</div>
 
               {loading ? (
-                <div style={{ marginTop: 10, display: "grid", gap: 12 }} aria-hidden="true">
+                <div
+                  style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+                  aria-hidden="true"
+                >
                   {[0, 1, 2, 3].map((idx) => (
-                    <div key={`focus-skeleton-${idx}`} className="sense-row">
+                    <div
+                      key={`focus-skeleton-${idx}`}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.08)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.82)",
+                        padding: 12,
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
                       <div
                         style={{
                           height: 10,
-                          width: "42%",
+                          width: "62%",
                           borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                          backgroundSize: "200% 100%",
-                          animation: "soft-shimmer 1.2s ease-in-out infinite",
+                          background: "rgba(15,23,42,0.10)",
                         }}
                       />
                       <div
                         style={{
-                          height: 10,
-                          width: 44,
+                          height: 16,
+                          width: "48%",
                           borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                          backgroundSize: "200% 100%",
-                          animation: "soft-shimmer 1.2s ease-in-out infinite",
+                          background: "rgba(15,23,42,0.14)",
                         }}
                       />
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                  <div className="sense-row">
-                    <div>{t("golfDashboard.gir")}</div>
-                    <div className="sense-val">{focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`}</div>
-                  </div>
-
-                  <div className="sense-row">
-                    <div>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18-hole rounds)")}</div>
-                    <div className="sense-val">{focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`}</div>
-                  </div>
-
-                  <div className="sense-row">
-                    <div>{t("golfDashboard.fairwaysHit")}</div>
-                    <div className="sense-val">{focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`}</div>
-                  </div>
-
-                  <div className="sense-row">
-                    <div>{pickLocaleText(locale, "Scrambling", "Scrambling")}</div>
-                    <div className="sense-val">{focusFromRounds.scramblingPct == null ? "—" : `${focusFromRounds.scramblingPct}%`}</div>
-                  </div>
+                <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                  {focusTiles.map((tile) => (
+                    <div
+                      key={tile.key}
+                      style={{
+                        border: "1px solid rgba(15,23,42,0.09)",
+                        borderRadius: 12,
+                        padding: "12px 12px 11px",
+                        background: "rgba(255,255,255,0.72)",
+                        display: "grid",
+                        gap: 6,
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        className="truncate"
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 900,
+                          letterSpacing: 1,
+                          color: "rgba(0,0,0,0.72)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {tile.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 28,
+                          lineHeight: 1,
+                          fontWeight: 950,
+                          color: "var(--green-dark)",
+                        }}
+                      >
+                        {tile.value}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -1087,6 +1087,23 @@ input[type="radio"]{
   margin: 0 auto;
 }
 
+/* Home player: cards externes un peu moins transparentes */
+.player-home-page .glass-card{
+  background: rgba(255,255,255,0.86);
+}
+
+.player-home-page .marketplace-item{
+  background: rgba(255,255,255,0.82);
+}
+
+.player-home-page .marketplace-item:hover{
+  background: rgba(255,255,255,0.88);
+}
+
+.player-golf-page .glass-card{
+  background: rgba(255,255,255,0.86);
+}
+
 /* Hero */
 .player-hero{
   display: flex;

@@ -28,8 +28,14 @@ export default function RoleGuard({
     (async () => {
       const allowed = Array.isArray(allow) ? allow : [allow];
 
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
+      let { data } = await supabase.auth.getSession();
+      let token = data.session?.access_token;
+
+      // Avoid false logout on short-lived transient states.
+      if (!token) {
+        const refreshed = await supabase.auth.refreshSession();
+        token = refreshed.data.session?.access_token ?? null;
+      }
 
       if (!token) {
         goLogin();
@@ -89,8 +95,14 @@ export default function RoleGuard({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session || event === "SIGNED_OUT") {
+      if (event === "SIGNED_OUT") {
         goLogin();
+      }
+
+      // Token refreshes can briefly emit intermediate states.
+      // Do not hard-redirect on null session unless it's an explicit sign-out.
+      if (!session && event !== "INITIAL_SESSION") {
+        return;
       }
     });
 

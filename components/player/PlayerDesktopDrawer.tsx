@@ -377,7 +377,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.messages,
       },
       {
-        label: locale === "fr" ? "Activité" : "Activity",
+        label: locale === "fr" ? "Activités" : "Activity",
         icon: ClipboardList,
         href: ROUTES.trainingsList,
       },
@@ -387,10 +387,10 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
               label:
                 locale === "fr"
                   ? pendingEvalCount > 0
-                    ? `Activité à compléter (${pendingEvalCount})`
+                    ? `${pendingEvalCount > 1 ? "Activités" : "Activité"} à compléter (${pendingEvalCount})`
                     : "Activité à compléter"
                   : pendingEvalCount > 0
-                  ? `Activity to complete (${pendingEvalCount})`
+                  ? `${pendingEvalCount > 1 ? "Activities" : "Activity"} to complete (${pendingEvalCount})`
                   : "Activity to complete",
               icon: ListChecks,
               href: ROUTES.trainingsToComplete,
@@ -498,9 +498,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                     <Icon
                       size={18}
                       strokeWidth={2}
-                      color={highlightToComplete ? "#b91c1c" : undefined}
+                      color={highlightToComplete ? "#ef4444" : undefined}
                     />
-                    <span style={highlightToComplete ? { color: "#b91c1c", fontWeight: 900 } : undefined}>
+                    <span style={highlightToComplete ? { color: "#ef4444", fontWeight: 900 } : undefined}>
                       {item.label}
                     </span>
                   </span>

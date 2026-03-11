@@ -120,6 +120,18 @@ function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
 
+function shortNameForList(first: string | null, last: string | null, maxChars = 16) {
+  const full = nameOf(first, last);
+  if (full.length <= maxChars) return full;
+  const f = String(first ?? "").trim();
+  const l = String(last ?? "").trim();
+  if (f) {
+    if (l) return `${f} ${l[0].toUpperCase()}.`;
+    return f;
+  }
+  return full;
+}
+
 function categoryLabel(cat: string) {
   const map: Record<string, string> = {
     warmup_mobility: "Échauffement / mobilité",
@@ -778,7 +790,7 @@ export default function CoachEventDetailPage() {
                     {attendees.map((a) => {
                       const isEventPast = new Date(event.starts_at).getTime() < Date.now();
                       const p = a.profile ?? null;
-                      const playerName = nameOf(p?.first_name ?? null, p?.last_name ?? null);
+                      const playerName = shortNameForList(p?.first_name ?? null, p?.last_name ?? null, 16);
                       const canOpenPlayerDetail =
                         event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
                       const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent" && isEventPast;

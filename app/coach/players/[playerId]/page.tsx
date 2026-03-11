@@ -20,7 +20,24 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Flame, Mountain, Smile, CalendarRange, SlidersHorizontal, X, Upload } from "lucide-react";
+import {
+  Flame,
+  Mountain,
+  Smile,
+  CalendarRange,
+  SlidersHorizontal,
+  X,
+  Upload,
+  FileText,
+  FileImage,
+  FileMusic,
+  FileVideoCamera,
+  FileSpreadsheet,
+  FileArchive,
+  FileCode,
+  FileQuestionMark,
+  FileType,
+} from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -234,14 +251,14 @@ function documentPicto(mimeType: string | null | undefined, fileName: string) {
   const n = String(fileName ?? "").toLowerCase();
   const ext = n.includes(".") ? n.split(".").pop() ?? "" : "";
 
-  if (mime.includes("pdf") || ext === "pdf") return "📕";
-  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"].includes(ext)) return "🖼️";
-  if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext)) return "🎵";
-  if (mime.startsWith("video/") || ["mp4", "mov", "avi", "mkv", "webm"].includes(ext)) return "🎬";
-  if (mime.includes("spreadsheet") || mime.includes("excel") || ["xls", "xlsx", "csv", "ods"].includes(ext)) return "📊";
-  if (mime.includes("word") || ["doc", "docx", "odt", "rtf"].includes(ext)) return "📝";
-  if (mime.includes("presentation") || ["ppt", "pptx", "odp"].includes(ext)) return "📽️";
-  if (mime.includes("zip") || mime.includes("compressed") || ["zip", "rar", "7z", "tar", "gz"].includes(ext)) return "🗜️";
+  if (mime.includes("pdf") || ext === "pdf") return FileType;
+  if (mime.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "webp", "heic", "svg"].includes(ext)) return FileImage;
+  if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext)) return FileMusic;
+  if (mime.startsWith("video/") || ["mp4", "mov", "avi", "mkv", "webm"].includes(ext)) return FileVideoCamera;
+  if (mime.includes("spreadsheet") || mime.includes("excel") || ["xls", "xlsx", "csv", "ods"].includes(ext)) return FileSpreadsheet;
+  if (mime.includes("word") || ["doc", "docx", "odt", "rtf"].includes(ext)) return FileText;
+  if (mime.includes("presentation") || ["ppt", "pptx", "odp"].includes(ext)) return FileSpreadsheet;
+  if (mime.includes("zip") || mime.includes("compressed") || ["zip", "rar", "7z", "tar", "gz"].includes(ext)) return FileArchive;
   if (
     mime.includes("json") ||
     mime.includes("xml") ||
@@ -251,9 +268,9 @@ function documentPicto(mimeType: string | null | undefined, fileName: string) {
     mime.includes("css") ||
     ["json", "xml", "js", "ts", "tsx", "jsx", "html", "css", "md", "txt"].includes(ext)
   ) {
-    return "💻";
+    return FileCode;
   }
-  return "📄";
+  return FileQuestionMark;
 }
 
 function deltaArrow(delta: number | null, title = "Previous period comparison") {
@@ -3062,7 +3079,7 @@ function presetToSelectValue(p: Preset): Preset {
                   const fileName = String(d.file_name ?? "").trim();
                   const dot = fileName.lastIndexOf(".");
                   const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
-                  const picto = documentPicto(d.mime_type, fileName);
+                  const Picto = documentPicto(d.mime_type, fileName);
                   return (
                     <div
                       key={d.id}
@@ -3091,7 +3108,7 @@ function presetToSelectValue(p: Preset): Preset {
                             justifyContent: "center",
                           }}
                         >
-                          <span style={{ fontSize: 16, lineHeight: 1 }}>{picto}</span>
+                          <Picto size={16} strokeWidth={2.2} />
                         </div>
                         <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
                           <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>

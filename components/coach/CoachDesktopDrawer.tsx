@@ -29,7 +29,7 @@ function isActive(pathname: string, href: string) {
 export default function CoachDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
 
@@ -75,13 +75,13 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
 
   const nav = useMemo(
     () => [
-      { label: t("nav.home"), icon: Home, href: ROUTES.home },
-      { label: t("coach.myGroups"), icon: Users, href: ROUTES.groups },
-      { label: t("nav.calendar"), icon: CalendarDays, href: ROUTES.calendar },
-      { label: t("coach.players"), icon: User, href: ROUTES.players },
-      { label: locale === "fr" ? "Messages" : "Messages", icon: MessageCircle, href: ROUTES.messages },
+      { label: "Accueil", icon: Home, href: ROUTES.home },
+      { label: "Messagerie", icon: MessageCircle, href: ROUTES.messages },
+      { label: "Activités", icon: CalendarDays, href: ROUTES.calendar },
+      { label: "Mes groupes", icon: Users, href: ROUTES.groups },
+      { label: "Joueurs", icon: User, href: ROUTES.players },
     ],
-    [t, locale]
+    []
   );
 
   async function handleLogout() {

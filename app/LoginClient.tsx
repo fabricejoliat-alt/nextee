@@ -42,7 +42,11 @@ export default function LoginPage() {
         return;
       }
 
-      const res = await fetch("/api/auth", { method: "POST" });
+      const accessToken = data.session.access_token;
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
