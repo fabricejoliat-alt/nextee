@@ -300,6 +300,8 @@ export default function ScorecardPage() {
 
     let girCount = 0;
     let puttsTotal = 0;
+    let scramblingOpportunities = 0;
+    let scramblingSuccesses = 0;
 
     filled.forEach((h) => {
       const d = (h.score as number) - (h.par as number);
@@ -312,11 +314,20 @@ export default function ScorecardPage() {
       else if (d >= 3) doublesPlus++;
 
       if (isGIR(h.par, h.score, h.putts)) girCount++;
+      else if (typeof h.putts === "number") {
+        // Scrambling: par (or better) after missing GIR.
+        scramblingOpportunities += 1;
+        if ((h.score as number) <= (h.par as number)) scramblingSuccesses += 1;
+      }
       if (typeof h.putts === "number") puttsTotal += h.putts;
     });
 
     const gir = typeof round?.gir === "number" ? round.gir : filled.length ? girCount : null;
     const putts = typeof round?.total_putts === "number" ? round.total_putts : puttsTotal || null;
+    const scramblingPct =
+      scramblingOpportunities > 0
+        ? Math.round((scramblingSuccesses / scramblingOpportunities) * 100)
+        : null;
 
     return {
       parTotal: parTotal || null,
@@ -330,6 +341,9 @@ export default function ScorecardPage() {
       doublesPlus: typeof round?.doubles_plus === "number" ? round.doubles_plus : doublesPlus,
       gir,
       putts,
+      scramblingPct,
+      scramblingSuccesses,
+      scramblingOpportunities,
       holesPlayed: holesWithScore,
     };
   }, [holes, round]);
@@ -570,6 +584,15 @@ export default function ScorecardPage() {
               <div style={statBox}>
                 <div style={statLabel}>Putts</div>
                 <div style={statValue}>{typeof computed.putts === "number" ? computed.putts : "—"}</div>
+              </div>
+            </div>
+
+            <div style={statBox}>
+              <div style={statLabel}>Scrambling</div>
+              <div style={statValue}>
+                {computed.scramblingPct == null
+                  ? "—"
+                  : `${computed.scramblingPct}% (${computed.scramblingSuccesses}/${computed.scramblingOpportunities})`}
               </div>
             </div>
 

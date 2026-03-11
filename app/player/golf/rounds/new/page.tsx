@@ -158,6 +158,8 @@ function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string, playMode: PlayHo
     stroke_index: h?.handicap == null ? null : Number(h.handicap),
   }));
 
+  if (playMode === "9") return base.slice(0, 9);
+
   if (base.length === 9 && playMode === "18") {
     const back9 = base.map((h, i) => ({ ...h, hole_no: i + 10 }));
     return [...base, ...back9];
@@ -220,6 +222,7 @@ export default function NewRoundPage() {
   const [omCompetitionLevelSelect, setOmCompetitionLevelSelect] = useState<OmCompetitionLevelSelect>("club_official");
   const [omCompetitionFormat, setOmCompetitionFormat] = useState<OmCompetitionFormat>("stroke_play_individual");
   const [omRounds18Count, setOmRounds18Count] = useState<1 | 2 | 3 | 4>(1);
+  const [omSingleNine, setOmSingleNine] = useState(false);
   const [omMatchPlayWins, setOmMatchPlayWins] = useState<string>("0");
   const [omMatchResult, setOmMatchResult] = useState<OmMatchResult>("won");
   const [opponentHandicap, setOpponentHandicap] = useState<string>("");
@@ -249,12 +252,16 @@ export default function NewRoundPage() {
   const selectedTeeIsNineHoles = selectedTeeHolesCount === 9;
 
   useEffect(() => {
+    if (roundType === "competition" && omCompetitionFormat !== "match_play_individual" && omSingleNine && omRounds18Count === 1) {
+      setPlayHolesMode("9");
+      return;
+    }
     if (selectedTeeIsNineHoles) {
       setPlayHolesMode("9");
       return;
     }
     setPlayHolesMode("18");
-  }, [selectedTeeIsNineHoles, selectedTeeId]);
+  }, [selectedTeeIsNineHoles, selectedTeeId, roundType, omCompetitionFormat, omSingleNine, omRounds18Count]);
 
   useEffect(() => {
     (async () => {
@@ -295,6 +302,7 @@ export default function NewRoundPage() {
   const canUseExceptional = (handicapValue ?? Infinity) < 10;
   const isMatchPlayCompetition = roundType === "competition" && omCompetitionFormat === "match_play_individual";
   const isMultiRoundStrokePlay = roundType === "competition" && !isMatchPlayCompetition && omRounds18Count > 1;
+  const isSingleNineCompetition = roundType === "competition" && !isMatchPlayCompetition && omSingleNine && omRounds18Count === 1;
 
   useEffect(() => {
     setMultiRoundDates((prev) => {
@@ -330,6 +338,7 @@ export default function NewRoundPage() {
     setOmIsExceptional(false);
     setOmExceptionalTournamentId("");
     setOmCompetitionLevelSelect("club_official");
+    setOmSingleNine(false);
   }, [isMatchPlayCompetition]);
 
   useEffect(() => {
@@ -696,10 +705,11 @@ export default function NewRoundPage() {
       createdRoundIds.push(id);
     }
 
+    const shouldSaveNineHoles = !isMatchPlayCompetition && (isSingleNineCompetition || playHolesMode === "9");
     const holes = isMatchPlayCompetition
       ? null
       : manualCourseOpen
-      ? Array.from({ length: 18 }, (_, i) => ({
+      ? Array.from({ length: shouldSaveNineHoles ? 9 : 18 }, (_, i) => ({
           hole_no: i + 1,
           par: null,
           stroke_index: null,
@@ -851,8 +861,23 @@ export default function NewRoundPage() {
 
                     {!isMatchPlayCompetition && (
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de tours (x18)", "Number of rounds (x18)")}</span>
-                        <select value={String(omRounds18Count)} onChange={(e) => setOmRounds18Count(Number(e.target.value) as 1 | 2 | 3 | 4)} disabled={busy}>
+                        <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de tours joués", "Number of rounds played")}</span>
+                        <select
+                          value={omSingleNine ? "1x9" : String(omRounds18Count)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "1x9") {
+                              setOmSingleNine(true);
+                              setOmRounds18Count(1);
+                              setPlayHolesMode("9");
+                              return;
+                            }
+                            setOmSingleNine(false);
+                            setOmRounds18Count(Number(v) as 1 | 2 | 3 | 4);
+                          }}
+                          disabled={busy}
+                        >
+                          <option value="1x9">1 x 9</option>
                           <option value="1">1 x 18</option>
                           <option value="2">2 x 18</option>
                           <option value="3">3 x 18</option>
@@ -1272,7 +1297,9 @@ const chipRadioStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
-  border: "1px solid rgba(0,0,0,0.12)",
+  borderWidth: 1,
+  borderStyle: "solid",
+  borderColor: "rgba(0,0,0,0.12)",
   borderRadius: 999,
   padding: "8px 12px",
   background: "rgba(255,255,255,0.70)",

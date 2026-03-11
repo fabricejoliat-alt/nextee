@@ -77,9 +77,11 @@ type GolfRoundRow = {
   id: string;
   start_at: string;
   round_type: string; // training | competition | ...
+  competition_name?: string | null;
   course_name: string | null;
   location: string | null;
   tee_name: string | null;
+  handicap_start?: number | null;
   slope_rating: number | null;
   course_rating: number | null;
   total_score: number | null;
@@ -101,6 +103,12 @@ type GolfHoleRow = {
   score: number | null;
   putts: number | null;
   fairway_hit: boolean | null;
+};
+
+type OmTournamentScoreRow = {
+  round_id: string;
+  score_gross: number | null;
+  score_net: number | null;
 };
 
 type Preset = "month" | "last3" | "all" | "custom";
@@ -451,6 +459,28 @@ function scoreBucketFromHole(par: number | null, score: number | null) {
   return "doubleplus";
 }
 
+function isGirOnHole(par: number | null, score: number | null, putts: number | null) {
+  if (typeof par !== "number" || typeof score !== "number" || typeof putts !== "number") return false;
+  return score - putts <= par - 2;
+}
+
+function scoreShapeKind(par: number | null, score: number | null) {
+  if (typeof par !== "number" || typeof score !== "number") return "none" as const;
+  const diff = score - par;
+  if (diff <= -2) return "double-circle" as const; // eagle+
+  if (diff === -1) return "circle" as const; // birdie
+  if (diff === 1) return "square" as const; // bogey
+  if (diff === 2) return "double-square" as const; // double bogey
+  if (diff >= 3) return "double-square-hatched" as const; // double bogey+
+  return "none" as const;
+}
+
+function formatSigned(n: number) {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `${n}`;
+  return "0";
+}
+
 function fullName(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
@@ -515,6 +545,7 @@ export default function GolfDashboardPage() {
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
+  const [omScoresByRoundId, setOmScoresByRoundId] = useState<Record<string, { gross: number | null; net: number | null }>>({});
 
   const [holes, setHoles] = useState<GolfHoleRow[]>([]);
   const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
@@ -554,6 +585,7 @@ export default function GolfDashboardPage() {
   const [teamComposer, setTeamComposer] = useState("");
   const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
   const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [selectedCompetitionRoundId, setSelectedCompetitionRoundId] = useState<string>("");
   const [trainingVolumeLevelFromDb, setTrainingVolumeLevelFromDb] = useState<string | null>(null);
   const [trainingVolumeObjectiveFromDb, setTrainingVolumeObjectiveFromDb] = useState<number | null>(null);
   const [trainingVolumeMotivationFromDb, setTrainingVolumeMotivationFromDb] = useState<string | null>(null);
@@ -1118,7 +1150,7 @@ export default function GolfDashboardPage() {
         let q = supabase
           .from("golf_rounds")
           .select(
-            "id,start_at,round_type,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus"
+            "id,start_at,round_type,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus"
           )
           .eq("user_id", uid)
           .order("start_at", { ascending: true });
@@ -1196,6 +1228,35 @@ export default function GolfDashboardPage() {
         setHoles([]);
       } finally {
         setLoadingHoles(false);
+      }
+    })();
+  }, [canLoadData, rounds]);
+
+  // ===== LOAD OM SCORES (gross/net) FOR CURRENT ROUNDS =====
+  useEffect(() => {
+    (async () => {
+      if (!canLoadData) return;
+      try {
+        const ids = rounds.map((r) => r.id);
+        if (ids.length === 0) {
+          setOmScoresByRoundId({});
+          return;
+        }
+        const res = await supabase.from("om_tournament_scores").select("round_id,score_gross,score_net").in("round_id", ids);
+        if (res.error) {
+          setOmScoresByRoundId({});
+          return;
+        }
+        const map: Record<string, { gross: number | null; net: number | null }> = {};
+        for (const row of (res.data ?? []) as OmTournamentScoreRow[]) {
+          map[row.round_id] = {
+            gross: typeof row.score_gross === "number" ? row.score_gross : null,
+            net: typeof row.score_net === "number" ? row.score_net : null,
+          };
+        }
+        setOmScoresByRoundId(map);
+      } catch {
+        setOmScoresByRoundId({});
       }
     })();
   }, [canLoadData, rounds]);
@@ -1564,6 +1625,17 @@ function presetToSelectValue(p: Preset): Preset {
     const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
     const girAvg = avg(girVals);
     const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
+    const scramblingKnownHoles = holes.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+    );
+    let scramblingOpp = 0;
+    let scramblingSuccess = 0;
+    for (const h of scramblingKnownHoles) {
+      if (isGirOnHole(h.par, h.score, h.putts)) continue;
+      scramblingOpp += 1;
+      if ((h.score as number) <= (h.par as number)) scramblingSuccess += 1;
+    }
+    const scramblingPct = scramblingOpp > 0 ? round1((scramblingSuccess / scramblingOpp) * 100) : null;
 
     // Par scores
     const parBuckets = {
@@ -1622,6 +1694,7 @@ function presetToSelectValue(p: Preset): Preset {
       fwPct,
       girAvg,
       girPct,
+      scramblingPct,
       avgPar3,
       avgPar4,
       avgPar5,
@@ -1675,6 +1748,17 @@ function presetToSelectValue(p: Preset): Preset {
     const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
     const girAvg = avg(girVals);
     const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
+    const scramblingKnownHoles = prevHoles.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+    );
+    let scramblingOpp = 0;
+    let scramblingSuccess = 0;
+    for (const h of scramblingKnownHoles) {
+      if (isGirOnHole(h.par, h.score, h.putts)) continue;
+      scramblingOpp += 1;
+      if ((h.score as number) <= (h.par as number)) scramblingSuccess += 1;
+    }
+    const scramblingPct = scramblingOpp > 0 ? round1((scramblingSuccess / scramblingOpp) * 100) : null;
 
     const parBuckets = {
       par3: { sum: 0, n: 0 },
@@ -1720,7 +1804,21 @@ function presetToSelectValue(p: Preset): Preset {
     const avgFront = side.front.n ? round1(side.front.sum / side.front.n) : null;
     const avgBack = side.back.n ? round1(side.back.sum / side.back.n) : null;
 
-    return { avgScore18, dist, distDen, avgPuttsPerHole, fwPct, girAvg, girPct, avgPar3, avgPar4, avgPar5, avgFront, avgBack };
+    return {
+      avgScore18,
+      dist,
+      distDen,
+      avgPuttsPerHole,
+      fwPct,
+      girAvg,
+      girPct,
+      scramblingPct,
+      avgPar3,
+      avgPar4,
+      avgPar5,
+      avgFront,
+      avgBack,
+    };
   }, [prevHoles, prevRounds]);
 
   // Volume / type split
@@ -1747,6 +1845,94 @@ function presetToSelectValue(p: Preset): Preset {
     }
     return { training, competition, other };
   }, [prevRounds]);
+
+  const competitionRounds = useMemo(
+    () =>
+      rounds
+        .filter((r) => r.round_type === "competition")
+        .slice()
+        .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime()),
+    [rounds]
+  );
+
+  const holesByRoundId = useMemo(() => {
+    const map: Record<string, GolfHoleRow[]> = {};
+    for (const h of holes) (map[h.round_id] ??= []).push(h);
+    for (const rid of Object.keys(map)) {
+      map[rid].sort((a, b) => (a.hole_no ?? 0) - (b.hole_no ?? 0));
+    }
+    return map;
+  }, [holes]);
+
+  const selectedCompetitionRound = useMemo(
+    () => competitionRounds.find((r) => r.id === selectedCompetitionRoundId) ?? null,
+    [competitionRounds, selectedCompetitionRoundId]
+  );
+
+  const selectedCompetitionHoles = useMemo(
+    () => (selectedCompetitionRound ? holesByRoundId[selectedCompetitionRound.id] ?? [] : []),
+    [holesByRoundId, selectedCompetitionRound]
+  );
+
+  const selectedCompetitionStats = useMemo(() => {
+    if (!selectedCompetitionRound) return null;
+    const hs = selectedCompetitionHoles.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number"
+    );
+    const totalGrossFromHoles =
+      hs.length > 0 ? hs.reduce((sum, h) => sum + (h.score as number), 0) : null;
+    const totalGross = totalGrossFromHoles ?? selectedCompetitionRound.total_score ?? null;
+    const netFromOm = omScoresByRoundId[selectedCompetitionRound.id]?.net ?? null;
+    const totalNet =
+      netFromOm ??
+      (typeof totalGross === "number" ? totalGross - Number(selectedCompetitionRound.handicap_start ?? 0) : null);
+
+    const puttsTotal = selectedCompetitionHoles.reduce(
+      (sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0),
+      0
+    );
+    const fwKnown = selectedCompetitionHoles.filter(
+      (h) => typeof h.par === "number" && h.par >= 4 && typeof h.fairway_hit === "boolean"
+    );
+    const fwHit = fwKnown.filter((h) => h.fairway_hit === true).length;
+    const fwPct = fwKnown.length > 0 ? round1((fwHit / fwKnown.length) * 100) : null;
+
+    const girKnown = selectedCompetitionHoles.filter(
+      (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+    );
+    const girHits = girKnown.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
+    const girPct = girKnown.length > 0 ? round1((girHits / girKnown.length) * 100) : null;
+
+    let scramblingOpp = 0;
+    let scramblingSuccess = 0;
+    for (const h of girKnown) {
+      if (isGirOnHole(h.par, h.score, h.putts)) continue;
+      scramblingOpp += 1;
+      if ((h.score as number) <= (h.par as number)) scramblingSuccess += 1;
+    }
+    const scramblingPct = scramblingOpp > 0 ? round1((scramblingSuccess / scramblingOpp) * 100) : null;
+
+    return { totalGross, totalNet, puttsTotal, fwPct, girPct, scramblingPct };
+  }, [omScoresByRoundId, selectedCompetitionHoles, selectedCompetitionRound]);
+
+  const selectedCompetitionTotals = useMemo(() => {
+    if (!selectedCompetitionRound) return null;
+    const totalPar = selectedCompetitionHoles.reduce(
+      (sum, h) => sum + (typeof h.par === "number" ? h.par : 0),
+      0
+    );
+    const totalScoreFromHoles = selectedCompetitionHoles.reduce(
+      (sum, h) => sum + (typeof h.score === "number" ? h.score : 0),
+      0
+    );
+    const totalPutts = selectedCompetitionHoles.reduce(
+      (sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0),
+      0
+    );
+    const hasScoreFromHoles = selectedCompetitionHoles.some((h) => typeof h.score === "number");
+    const totalScore = hasScoreFromHoles ? totalScoreFromHoles : selectedCompetitionRound.total_score ?? null;
+    return { totalPar, totalScore, totalPutts };
+  }, [selectedCompetitionHoles, selectedCompetitionRound]);
 
   // Score distribution current with % + trend arrows
   const scoreDistUI = useMemo(() => {
@@ -1807,6 +1993,9 @@ function presetToSelectValue(p: Preset): Preset {
 
       fwPct: holeAgg.fwPct,
       fwArrow: delta(holeAgg.fwPct, prevHoleAgg.fwPct),
+
+      scramblingPct: holeAgg.scramblingPct,
+      scramblingArrow: delta(holeAgg.scramblingPct, prevHoleAgg.scramblingPct),
     };
   }, [holeAgg, prevHoleAgg, prevRange]);
 
@@ -3557,6 +3746,46 @@ function presetToSelectValue(p: Preset): Preset {
         {/* ===== MES PARCOURS — Cards ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
+            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
+              <div className="card-title">{pickLocaleText(locale, "Résultats en compétition", "Competition results")}</div>
+
+              {loadingRounds ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              ) : competitionRounds.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+                  {pickLocaleText(locale, "Aucun parcours en compétition sur la période.", "No competition rounds in this period.")}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {competitionRounds.map((r) => {
+                    const gross = omScoresByRoundId[r.id]?.gross ?? r.total_score ?? null;
+                    const netFromOm = omScoresByRoundId[r.id]?.net ?? null;
+                    const net = netFromOm ?? (typeof gross === "number" ? gross - Number(r.handicap_start ?? 0) : null);
+                    const name = String(r.competition_name ?? "").trim() || pickLocaleText(locale, "Compétition", "Competition");
+                    return (
+                      <div key={r.id} style={{ ...miniRow, alignItems: "flex-start", gap: 10 }}>
+                        <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.9)" }}>{name}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>{shortDate(r.start_at, dateLocale)}</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>
+                            {pickLocaleText(locale, "Brut", "Gross")}: {gross ?? "—"} · {pickLocaleText(locale, "Net", "Net")}: {net ?? "—"}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => setSelectedCompetitionRoundId(r.id)}
+                          style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
+                        >
+                          Stats
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Card 1: Volume + trous + split training/competition */}
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.playVolume")}</div>
@@ -3699,6 +3928,14 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
                   </div>
 
+                  <div style={miniRow}>
+                    <div style={miniLeft}>Scrambling</div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <div style={miniRight}>{keyKpisUI.scramblingPct == null ? "—" : `${keyKpisUI.scramblingPct}%`}</div>
+                      {prevRange ? deltaArrow(keyKpisUI.scramblingArrow ?? null) : null}
+                    </div>
+                  </div>
+
                   <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)", lineHeight: 1.35 }}>
                     {t("golfDashboard.girHint1")}
                     <br />
@@ -3792,6 +4029,199 @@ function presetToSelectValue(p: Preset): Preset {
 
         <div style={{ height: 12 }} />
       </div>
+
+      {selectedCompetitionRound ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1190,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setSelectedCompetitionRoundId("")}
+        >
+          <div
+            style={{
+              width: "min(980px, 100%)",
+              maxHeight: "min(86vh, 860px)",
+              background: "#fff",
+              borderRadius: 14,
+              border: "1px solid rgba(0,0,0,0.1)",
+              boxShadow: "0 20px 48px rgba(0,0,0,0.25)",
+              display: "grid",
+              gridTemplateRows: "auto 1fr",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "10px 12px",
+                borderBottom: "1px solid rgba(0,0,0,0.1)",
+                background: "rgba(248,250,248,0.95)",
+              }}
+            >
+              <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                <div className="truncate" style={{ fontWeight: 900 }}>
+                  {String(selectedCompetitionRound.competition_name ?? "").trim() ||
+                    pickLocaleText(locale, "Compétition", "Competition")}
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>
+                  {shortDate(selectedCompetitionRound.start_at, dateLocale)}
+                </div>
+              </div>
+              <button className="btn" type="button" onClick={() => setSelectedCompetitionRoundId("")} aria-label="Fermer">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ background: "rgba(245,246,248,0.9)", overflow: "auto", padding: 12, display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ display: "grid", gap: 8 }}>
+                <div className="card-title">{pickLocaleText(locale, "Statistiques", "Statistics")}</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{pickLocaleText(locale, "Score brut", "Gross score")}</div>
+                    <div style={{ ...miniRight, whiteSpace: "normal", textAlign: "right" }}>
+                      {selectedCompetitionStats?.totalGross ?? "—"}
+                      {selectedCompetitionTotals &&
+                      typeof selectedCompetitionTotals.totalScore === "number" &&
+                      typeof selectedCompetitionTotals.totalPar === "number"
+                        ? ` (${formatSigned(selectedCompetitionTotals.totalScore - selectedCompetitionTotals.totalPar)})`
+                        : ""}
+                    </div>
+                  </div>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{pickLocaleText(locale, "Score net", "Net score")}</div>
+                    <div style={miniRight}>{selectedCompetitionStats?.totalNet ?? "—"}</div>
+                  </div>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{t("golfDashboard.avgPutts")}</div>
+                    <div style={miniRight}>{selectedCompetitionStats?.puttsTotal ?? "—"}</div>
+                  </div>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{t("golfDashboard.gir")}</div>
+                    <div style={miniRight}>{selectedCompetitionStats?.girPct == null ? "—" : `${selectedCompetitionStats.girPct}%`}</div>
+                  </div>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>{t("golfDashboard.fairwaysHit")}</div>
+                    <div style={miniRight}>{selectedCompetitionStats?.fwPct == null ? "—" : `${selectedCompetitionStats.fwPct}%`}</div>
+                  </div>
+                  <div style={miniRow}>
+                    <div style={miniLeft}>Scrambling</div>
+                    <div style={miniRight}>{selectedCompetitionStats?.scramblingPct == null ? "—" : `${selectedCompetitionStats.scramblingPct}%`}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-card" style={{ display: "grid", gap: 8 }}>
+                <div className="card-title">{pickLocaleText(locale, "Carte des scores", "Scorecard")}</div>
+                {selectedCompetitionHoles.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={scoreThStyle}>#</th>
+                          <th style={scoreThStyle}>Par</th>
+                          <th style={scoreThStyle}>{pickLocaleText(locale, "Score", "Score")}</th>
+                          <th style={scoreThStyle}>{pickLocaleText(locale, "Putts", "Putts")}</th>
+                          <th style={scoreThStyle}>FW</th>
+                          <th style={scoreThStyle}>GIR</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedCompetitionHoles.map((h) => {
+                          const gir =
+                            typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
+                              ? isGirOnHole(h.par, h.score, h.putts)
+                              : null;
+                          const shape = scoreShapeKind(h.par, h.score);
+                          const isNumericScore = typeof h.score === "number";
+                          return (
+                            <tr key={`${h.round_id}-${h.hole_no}`}>
+                              <td style={scoreTdStyle}>{h.hole_no}</td>
+                              <td style={scoreTdStyle}>{h.par ?? "—"}</td>
+                              <td style={scoreTdStyle}>
+                                {!isNumericScore ? (
+                                  "—"
+                                ) : (
+                                  <span
+                                    style={{
+                                      position: "relative",
+                                      width: 30,
+                                      height: 30,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontWeight: 900,
+                                      color: "rgba(0,0,0,0.92)",
+                                      border:
+                                        shape === "circle" ||
+                                        shape === "double-circle" ||
+                                        shape === "square" ||
+                                        shape === "double-square" ||
+                                        shape === "double-square-hatched"
+                                          ? "2px solid rgba(17,24,39,0.92)"
+                                          : "none",
+                                      borderRadius: shape === "circle" || shape === "double-circle" ? "999px" : 4,
+                                      background:
+                                        shape === "double-square-hatched"
+                                          ? "repeating-linear-gradient(135deg, rgba(17,24,39,0.14) 0 3px, transparent 3px 6px)"
+                                          : "transparent",
+                                    }}
+                                  >
+                                    {(shape === "double-circle" || shape === "double-square" || shape === "double-square-hatched") && (
+                                      <span
+                                        style={{
+                                          position: "absolute",
+                                          inset: 4,
+                                          border: "1px solid rgba(17,24,39,0.92)",
+                                          borderRadius: shape === "double-circle" ? "999px" : 2,
+                                          background:
+                                            shape === "double-square-hatched"
+                                              ? "repeating-linear-gradient(135deg, rgba(17,24,39,0.14) 0 3px, transparent 3px 6px)"
+                                              : "transparent",
+                                        }}
+                                      />
+                                    )}
+                                    <span style={{ position: "relative", zIndex: 1 }}>{h.score}</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td style={scoreTdStyle}>{h.putts ?? "—"}</td>
+                              <td style={scoreTdStyle}>{typeof h.fairway_hit === "boolean" ? (h.fairway_hit ? "✓" : "✕") : "—"}</td>
+                              <td style={scoreTdStyle}>{gir == null ? "—" : gir ? "✓" : "✕"}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr>
+                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{pickLocaleText(locale, "Total", "Total")}</td>
+                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalPar ?? "—"}</td>
+                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalScore ?? "—"}</td>
+                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalPutts ?? "—"}</td>
+                          <td style={scoreTdStyle}>—</td>
+                          <td style={scoreTdStyle}>—</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {viewerDocument ? (
         <div
@@ -3942,5 +4372,24 @@ const miniRight: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 950,
   color: "rgba(0,0,0,0.78)",
+  whiteSpace: "nowrap",
+};
+
+const scoreThStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "8px 10px",
+  borderBottom: "1px solid rgba(0,0,0,0.12)",
+  color: "rgba(0,0,0,0.68)",
+  fontWeight: 900,
+  background: "rgba(0,0,0,0.03)",
+  whiteSpace: "nowrap",
+};
+
+const scoreTdStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "8px 10px",
+  borderBottom: "1px solid rgba(0,0,0,0.08)",
+  color: "rgba(0,0,0,0.82)",
+  fontWeight: 700,
   whiteSpace: "nowrap",
 };

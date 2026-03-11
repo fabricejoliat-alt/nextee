@@ -226,6 +226,10 @@ function attendanceBadgeConfig(
   };
 }
 
+function isClubAttendanceEventType(eventType: PlannedEventRow["event_type"]) {
+  return eventType === "training" || eventType === "interclub" || eventType === "camp" || eventType === "event" || eventType === "session";
+}
+
 function isArchiveGroupName(name: string | null | undefined) {
   const v = String(name ?? "").trim().toUpperCase();
   return v.startsWith("__ARCHIVE");
@@ -1481,7 +1485,7 @@ export default function TrainingsListPage() {
                     const isMultiDay = !sameDay(e.starts_at, eventEnd);
                     const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
                     const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
-                    const isAttendanceEvent = e.event_type === "training" || e.event_type === "camp";
+                    const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
                     const isTraining = e.event_type === "training";
                     const isArchivedTraining = isAttendanceEvent && isArchiveGroupName(groupName);
                     const isUpcomingEvent = new Date(e.starts_at).getTime() >= nowTs;
@@ -1725,7 +1729,7 @@ export default function TrainingsListPage() {
                   const linkedAttendanceStatus = linkedEvent ? attendeeStatusByEventId[linkedEvent.id] ?? null : null;
                   const isLinkedAttendanceEvent =
                     linkedEvent != null &&
-                    (linkedEvent.event_type === "training" || linkedEvent.event_type === "camp");
+                    isClubAttendanceEventType(linkedEvent.event_type);
                   const canToggleLinkedAttendance =
                     linkedEvent != null &&
                     isLinkedAttendanceEvent &&

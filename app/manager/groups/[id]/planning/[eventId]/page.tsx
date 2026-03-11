@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle } from "lucide-react";
 
@@ -326,6 +327,12 @@ export default function CoachEventDetailPage() {
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: false }));
   }
 
+  function handleAttendanceToggle(playerId: string, status: "expected" | "present" | "absent" | "excused") {
+    const current: "present" | "absent" = status === "absent" ? "absent" : "present";
+    const next: "present" | "absent" = current === "present" ? "absent" : "present";
+    setAttendanceStatus(playerId, next);
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -503,53 +510,14 @@ export default function CoachEventDetailPage() {
                             </div>
 
                             <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
-                              <div
-                                style={{
-                                  display: "inline-flex",
-                                  border: "1px solid rgba(0,0,0,0.12)",
-                                  borderRadius: 10,
-                                  overflow: "hidden",
-                                  background: "rgba(255,255,255,0.78)",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceStatus(a.player_id, "present")}
-                                  disabled={Boolean(attendanceBusyIds[a.player_id])}
-                                  style={{
-                                    borderRadius: 0,
-                                    border: "none",
-                                    borderRight: "1px solid rgba(0,0,0,0.10)",
-                                    background: a.status === "present" ? "#22c55e" : "transparent",
-                                    color: a.status === "present" ? "#ffffff" : "rgba(0,0,0,0.82)",
-                                    fontWeight: 900,
-                                    fontSize: 11,
-                                    lineHeight: 1.1,
-                                    padding: "5px 8px",
-                                    cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
-                                  }}
-                                >
-                                  {tr("Présent", "Present")}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceStatus(a.player_id, "absent")}
-                                  disabled={Boolean(attendanceBusyIds[a.player_id])}
-                                  style={{
-                                    borderRadius: 0,
-                                    border: "none",
-                                    background: a.status === "absent" ? "#ef4444" : "transparent",
-                                    color: a.status === "absent" ? "#ffffff" : "rgba(0,0,0,0.82)",
-                                    fontWeight: 900,
-                                    fontSize: 11,
-                                    lineHeight: 1.1,
-                                    padding: "5px 8px",
-                                    cursor: attendanceBusyIds[a.player_id] ? "not-allowed" : "pointer",
-                                  }}
-                                >
-                                  {tr("Absent", "Absent")}
-                                </button>
-                              </div>
+                              <AttendanceToggle
+                                checked={a.status === "present"}
+                                onToggle={() => handleAttendanceToggle(a.player_id, a.status)}
+                                disabled={Boolean(attendanceBusyIds[a.player_id])}
+                                ariaLabel={tr("Basculer présence", "Toggle attendance")}
+                                leftLabel={tr("Absent", "Absent")}
+                                rightLabel={tr("Présent", "Present")}
+                              />
                             </div>
                           </div>
 

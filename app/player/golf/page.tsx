@@ -1713,6 +1713,14 @@ function presetToSelectValue(p: Preset): Preset {
     );
     const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
     const girPct = girKnownHoles.length ? round1((girHits / girKnownHoles.length) * 100) : null;
+    let scramblingOpp = 0;
+    let scramblingSuccess = 0;
+    for (const h of girKnownHoles) {
+      if (isGirOnHole(h.par, h.score, h.putts)) continue;
+      scramblingOpp += 1;
+      if ((h.score as number) <= (h.par as number)) scramblingSuccess += 1;
+    }
+    const scramblingPct = scramblingOpp > 0 ? round1((scramblingSuccess / scramblingOpp) * 100) : null;
 
     // Par scores
     const parBuckets = {
@@ -1769,6 +1777,7 @@ function presetToSelectValue(p: Preset): Preset {
       avgPutts18,
       fwPct,
       girPct,
+      scramblingPct,
       avgPar3,
       avgPar4,
       avgPar5,
@@ -1834,6 +1843,14 @@ function presetToSelectValue(p: Preset): Preset {
     );
     const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
     const girPct = girKnownHoles.length ? round1((girHits / girKnownHoles.length) * 100) : null;
+    let scramblingOpp = 0;
+    let scramblingSuccess = 0;
+    for (const h of girKnownHoles) {
+      if (isGirOnHole(h.par, h.score, h.putts)) continue;
+      scramblingOpp += 1;
+      if ((h.score as number) <= (h.par as number)) scramblingSuccess += 1;
+    }
+    const scramblingPct = scramblingOpp > 0 ? round1((scramblingSuccess / scramblingOpp) * 100) : null;
 
     const parBuckets = {
       par3: { sum: 0, n: 0 },
@@ -1879,7 +1896,21 @@ function presetToSelectValue(p: Preset): Preset {
     const avgFront = side.front.n ? round1(side.front.sum / side.front.n) : null;
     const avgBack = side.back.n ? round1(side.back.sum / side.back.n) : null;
 
-    return { holesPlayed, avgScore18, dist, distDen, avgPutts18, fwPct, girPct, avgPar3, avgPar4, avgPar5, avgFront, avgBack };
+    return {
+      holesPlayed,
+      avgScore18,
+      dist,
+      distDen,
+      avgPutts18,
+      fwPct,
+      girPct,
+      scramblingPct,
+      avgPar3,
+      avgPar4,
+      avgPar5,
+      avgFront,
+      avgBack,
+    };
   }, [prevHoles, prevRounds]);
 
   // Score distribution current with % + trend arrows
@@ -1941,6 +1972,9 @@ function presetToSelectValue(p: Preset): Preset {
 
       fwPct: holeAgg.fwPct,
       fwArrow: delta(holeAgg.fwPct, prevHoleAgg.fwPct),
+
+      scramblingPct: holeAgg.scramblingPct,
+      scramblingArrow: delta(holeAgg.scramblingPct, prevHoleAgg.scramblingPct),
     };
   }, [holeAgg, prevHoleAgg, prevRange]);
 
@@ -2898,6 +2932,14 @@ function presetToSelectValue(p: Preset): Preset {
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                       <div style={miniRight}>{keyKpisUI.fwPct == null ? "—" : `${keyKpisUI.fwPct}%`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.fwArrow ?? null) : null}
+                    </div>
+                  </div>
+
+                  <div style={miniRow}>
+                    <div style={miniLeft}>Scrambling</div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <div style={miniRight}>{keyKpisUI.scramblingPct == null ? "—" : `${keyKpisUI.scramblingPct}%`}</div>
+                      {prevRange ? deltaArrow(keyKpisUI.scramblingArrow ?? null) : null}
                     </div>
                   </div>
 

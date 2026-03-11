@@ -837,7 +837,26 @@ export default function MessagesCenter({
 
         <div className="glass-section" style={{ marginTop: 12, minHeight: 560 }}>
           {loading ? (
-            <ListLoadingBlock label={tr("Chargement des fils…", "Loading threads...")} />
+            <div style={{ display: "grid", gap: 12 }}>
+              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+                <ListLoadingBlock label={tr("Chargement des fils…", "Loading threads...")} />
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ height: 58, borderRadius: 12, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  <div style={{ height: 58, borderRadius: 12, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                </div>
+              </div>
+              <div className="glass-card" style={{ display: "grid", gap: 10, minHeight: 360 }}>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ height: 12, width: "42%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  <div style={{ height: 12, width: "28%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                </div>
+                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12, background: "rgba(255,255,255,0.94)", padding: 10, display: "grid", gap: 10, minHeight: 280 }}>
+                  <div style={{ justifySelf: "start", height: 44, width: "58%", borderRadius: 12, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  <div style={{ justifySelf: "end", height: 44, width: "52%", borderRadius: 12, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  <div style={{ justifySelf: "start", height: 44, width: "62%", borderRadius: 12, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                </div>
+              </div>
+            </div>
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
