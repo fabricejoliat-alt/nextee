@@ -381,6 +381,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }, [busy, loading, event, player]);
   const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
   const plannedLabel = playerPlannedStructureItems.length > 0 ? "Planifiée pour ce joueur" : "Planifiée commune au groupe";
+  const canShowStructure = event?.event_type === "training" || event?.event_type === "camp";
 
   const nextPlayerId = useMemo(() => {
     const idx = orderedPlayerIds.indexOf(playerId);
@@ -579,49 +580,51 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               </div>
 
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
+              {canShowStructure ? (
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
 
-                {displayedPlannedItems.length === 0 && sessionItems.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {displayedPlannedItems.length > 0 ? (
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{plannedLabel}</div>
-                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                          {displayedPlannedItems.map((it, idx) => {
-                            const extra = String(it.note ?? "").trim();
-                            return (
-                              <li key={`coach-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                {categoryLabel(it.category)} — {it.minutes} min
-                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ) : null}
+                  {displayedPlannedItems.length === 0 && sessionItems.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {displayedPlannedItems.length > 0 ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{plannedLabel}</div>
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {displayedPlannedItems.map((it, idx) => {
+                              const extra = String(it.note ?? "").trim();
+                              return (
+                                <li key={`coach-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {categoryLabel(it.category)} — {it.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
 
-                    {sessionItems.length > 0 ? (
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Version joueur</div>
-                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                          {sessionItems.map((it) => {
-                            const extra = String(it.note ?? it.other_detail ?? "").trim();
-                            return (
-                              <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                {categoryLabel(it.category)} — {it.minutes} min
-                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
+                      {sessionItems.length > 0 ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Version joueur</div>
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {sessionItems.map((it) => {
+                              const extra = String(it.note ?? it.other_detail ?? "").trim();
+                              return (
+                                <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {categoryLabel(it.category)} — {it.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              ) : null}
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>

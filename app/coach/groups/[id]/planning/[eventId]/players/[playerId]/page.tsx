@@ -11,6 +11,7 @@ type EventRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   starts_at: string;
   duration_minutes: number;
   location_text: string | null;
@@ -234,7 +235,7 @@ export default function CoachEventPlayerDetailPage() {
       // event
       const eRes = await supabase
         .from("club_events")
-        .select("id,group_id,club_id,starts_at,duration_minutes,location_text,series_id,status")
+        .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,series_id,status")
         .eq("id", eventId)
         .maybeSingle();
 
@@ -398,6 +399,7 @@ export default function CoachEventPlayerDetailPage() {
     };
   }, [eventId, playerFb, playerId, session]);
   const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
+  const canShowStructure = event?.event_type === "training" || event?.event_type === "camp";
 
   return (
     <div className="player-dashboard-bg">
@@ -485,70 +487,72 @@ export default function CoachEventPlayerDetailPage() {
                   alignItems: "start",
                 }}
               >
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l'entrainement</div>
-                  {displayedPlannedItems.length === 0 && items.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 12,
-                          background: "rgba(255,255,255,0.88)",
-                          padding: 10,
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Planifiée par le coach</div>
-                        {displayedPlannedItems.length > 0 ? (
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                            {displayedPlannedItems.map((it, idx) => {
-                              const extra = String(it.note ?? "").trim();
-                              return (
-                                <li key={`event-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                  {categoryLabel(it.category)} — {it.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
-                        )}
-                      </div>
+                {canShowStructure ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>Structure de l'entrainement</div>
+                    {displayedPlannedItems.length === 0 && items.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.88)",
+                            padding: 10,
+                            display: "grid",
+                            gap: 6,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Planifiée par le coach</div>
+                          {displayedPlannedItems.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                              {displayedPlannedItems.map((it, idx) => {
+                                const extra = String(it.note ?? "").trim();
+                                return (
+                                  <li key={`event-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                    {categoryLabel(it.category)} — {it.minutes} min
+                                    {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                          )}
+                        </div>
 
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 12,
-                          background: "rgba(255,255,255,0.88)",
-                          padding: 10,
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Réalisée par le joueur</div>
-                        {items.length > 0 ? (
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                            {items.map((it) => {
-                              const extra = String(it.note ?? it.other_detail ?? "").trim();
-                              return (
-                                <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                  {categoryLabel(it.category)} — {it.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
-                        )}
+                        <div
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.88)",
+                            padding: 10,
+                            display: "grid",
+                            gap: 6,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Réalisée par le joueur</div>
+                          {items.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                              {items.map((it) => {
+                                const extra = String(it.note ?? it.other_detail ?? "").trim();
+                                return (
+                                  <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                    {categoryLabel(it.category)} — {it.minutes} min
+                                    {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                ) : null}
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>

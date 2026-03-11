@@ -315,6 +315,8 @@ export default function CoachEventEditPage() {
   const [selectedGuests, setSelectedGuests] = useState<Record<string, ClubMemberLite>>({});
   const [initialSelectedAttendeeIds, setInitialSelectedAttendeeIds] = useState<string[]>([]);
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
+  const isTrainingLikeEventType = (v: "training" | "interclub" | "camp" | "session" | "event") =>
+    v === "training" || v === "camp";
 
   const occDate = useMemo(() => {
     if (!startsAtLocal.includes("T")) return ymdToday();
@@ -814,7 +816,7 @@ export default function CoachEventEditPage() {
       if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
       let endDt = new Date(endsAtLocal);
       let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-      if (eventType === "training") {
+      if (isTrainingLikeEventType(eventType)) {
         computedDuration = Math.max(30, Number(durationMinutes) || 60);
         endDt = new Date(startDt);
         endDt.setMinutes(endDt.getMinutes() + computedDuration);
@@ -823,7 +825,9 @@ export default function CoachEventEditPage() {
         if (endDt <= startDt) throw new Error("La fin doit être après le début.");
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
-      const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
+      const durationForDb = isTrainingLikeEventType(eventType)
+        ? computedDuration
+        : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
       const nextStartIso = startDt.toISOString();
       const nextEndIso = endDt.toISOString();
       const hadScheduleChange =
@@ -1301,7 +1305,7 @@ export default function CoachEventEditPage() {
                         </label>
                       </div>
 
-                      {eventType === "training" ? (
+                      {isTrainingLikeEventType(eventType) ? (
                         <label style={{ display: "grid", gap: 6 }}>
                           <span style={fieldLabelStyle}>Durée</span>
                           <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
@@ -1499,7 +1503,7 @@ export default function CoachEventEditPage() {
                   ) : null}
                 </div>
 
-                {eventType === "training" ? (
+                {isTrainingLikeEventType(eventType) ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
                     Structure de l’entraînement (postes)

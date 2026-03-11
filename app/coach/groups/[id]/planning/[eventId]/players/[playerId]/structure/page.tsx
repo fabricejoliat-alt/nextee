@@ -10,6 +10,7 @@ type EventRow = {
   id: string;
   group_id: string;
   club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
   starts_at: string;
   duration_minutes: number;
   location_text: string | null;
@@ -123,13 +124,16 @@ export default function CoachPlayerStructurePage() {
 
         const eRes = await supabase
           .from("club_events")
-          .select("id,group_id,club_id,starts_at,duration_minutes,location_text,status")
+          .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status")
           .eq("id", eventId)
           .eq("group_id", groupId)
           .maybeSingle();
         if (eRes.error) throw new Error(eRes.error.message);
         if (!eRes.data) throw new Error("Événement introuvable.");
         const ev = eRes.data as EventRow;
+        if (ev.event_type !== "training" && ev.event_type !== "camp") {
+          throw new Error("La structure individuelle n'est disponible que pour les entraînements et stages/camps.");
+        }
         setEvent(ev);
 
         const pRes = await supabase

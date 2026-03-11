@@ -364,6 +364,8 @@ export default function CoachGroupPlanningPage() {
     if (v === "session") return tr("Séance", "Session");
     return tr("Événement", "Event");
   };
+  const isTrainingLikeEventType = (v: "training" | "interclub" | "camp" | "session" | "event") =>
+    v === "training" || v === "camp";
 
   const selectedPlayersList = useMemo(
     () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
@@ -766,7 +768,7 @@ export default function CoachGroupPlanningPage() {
       let endDt = new Date(endsAtLocal);
       let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
 
-      if (eventType === "training") {
+      if (isTrainingLikeEventType(eventType)) {
         computedDuration = Math.max(30, Number(durationMinutes) || 60);
         endDt = new Date(startDt);
         endDt.setMinutes(endDt.getMinutes() + computedDuration);
@@ -775,7 +777,9 @@ export default function CoachGroupPlanningPage() {
         if (endDt <= startDt) throw new Error("La fin doit être après le début.");
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
-      const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
+      const durationForDb = isTrainingLikeEventType(eventType)
+        ? computedDuration
+        : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
 
       const { data: insData, error: insErr } = await supabase
         .from("club_events")
@@ -1163,7 +1167,7 @@ export default function CoachGroupPlanningPage() {
                     </label>
                   </div>
 
-                  {eventType === "training" ? (
+                  {isTrainingLikeEventType(eventType) ? (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
                       <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
@@ -1308,7 +1312,7 @@ export default function CoachGroupPlanningPage() {
               </label>
             </div>
 
-            {eventType === "training" ? (
+            {isTrainingLikeEventType(eventType) ? (
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {tr("Structure de l’entraînement (postes)", "Training structure (stations)")}

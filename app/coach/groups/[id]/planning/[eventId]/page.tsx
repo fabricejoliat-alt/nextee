@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle, Send } from "lucide-react";
+import { Users, ArrowRight, Pencil, PlusCircle, Trash2, MessageCircle, Send, Check } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -200,6 +200,7 @@ export default function CoachEventDetailPage() {
   const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
+  const [evaluatedPlayerIds, setEvaluatedPlayerIds] = useState<Set<string>>(new Set());
 
   async function load() {
     setLoading(true);
@@ -304,6 +305,16 @@ export default function CoachEventDetailPage() {
       if (structRes.error) throw new Error(structRes.error.message);
       setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
 
+      const feedbackRes = await supabase
+        .from("club_event_coach_feedback")
+        .select("player_id")
+        .eq("event_id", ev.id)
+        .eq("coach_id", String(userRes.user.id ?? ""));
+      if (feedbackRes.error) throw new Error(feedbackRes.error.message);
+      setEvaluatedPlayerIds(
+        new Set((feedbackRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean))
+      );
+
       // Thread preview
       setLoadingEventThread(true);
       try {
@@ -363,6 +374,7 @@ export default function CoachEventDetailPage() {
       setCoaches([]);
       setSelectedCoachIds([]);
       setStructureItems([]);
+      setEvaluatedPlayerIds(new Set());
       setMeId("");
       setEventThreadId("");
       setEventThreadMessages([]);
@@ -706,50 +718,52 @@ export default function CoachEventDetailPage() {
                 ) : null}
                 </div>
 
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                      {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.10)",
-                      borderRadius: 12,
-                      background: "rgba(255,255,255,0.88)",
-                      padding: 10,
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    {structureItems.length === 0 ? (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          {tr("Non saisi.", "Not entered.")}
-                        </div>
+                {event.event_type === "training" || event.event_type === "camp" ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
                       </div>
-                    ) : (
-                      <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                        {structureItems.map((it, idx) => {
-                          const extra = String(it.note ?? "").trim();
-                          return (
-                            <li key={`proposed-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                              {categoryLabel(it.category)} — {it.minutes} min
-                              {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
+                    </div>
 
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
-                        {tr("Éditer", "Edit")}
-                      </Link>
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.88)",
+                        padding: 10,
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
+                      {structureItems.length === 0 ? (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                            {tr("Non saisi.", "Not entered.")}
+                          </div>
+                        </div>
+                      ) : (
+                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                          {structureItems.map((it, idx) => {
+                            const extra = String(it.note ?? "").trim();
+                            return (
+                              <li key={`proposed-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                {categoryLabel(it.category)} — {it.minutes} min
+                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
+                          {tr("Éditer", "Edit")}
+                        </Link>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : null}
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -765,8 +779,11 @@ export default function CoachEventDetailPage() {
                       const isEventPast = new Date(event.starts_at).getTime() < Date.now();
                       const p = a.profile ?? null;
                       const playerName = nameOf(p?.first_name ?? null, p?.last_name ?? null);
-                      const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp";
+                      const canOpenPlayerDetail =
+                        event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
                       const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent" && isEventPast;
+                      const canStructurePlayer = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
+                      const alreadyEvaluated = evaluatedPlayerIds.has(a.player_id);
 
                       return (
                         <div
@@ -786,8 +803,11 @@ export default function CoachEventDetailPage() {
                                 {avatarNode(p)}
                               </div>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }} className="truncate">
+                                <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">
                                   {playerName}
+                                </div>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
+                                  {tr("Hcp", "Hcp")} {typeof p?.handicap === "number" ? Number(p.handicap).toFixed(1) : "—"}
                                 </div>
                               </div>
                             </div>
@@ -816,6 +836,15 @@ export default function CoachEventDetailPage() {
                                   <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/edit`}>
                                     <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                     {tr("Évaluer", "Evaluate")}
+                                    {alreadyEvaluated ? (
+                                      <span
+                                        style={{ marginLeft: 8, display: "inline-flex", alignItems: "center", color: "#16a34a" }}
+                                        title={tr("Déjà évalué", "Already evaluated")}
+                                        aria-label={tr("Déjà évalué", "Already evaluated")}
+                                      >
+                                        <Check size={14} />
+                                      </span>
+                                    ) : null}
                                   </Link>
                                 ) : (
                                   <button type="button" className="btn" disabled title={tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")}>
@@ -823,12 +852,12 @@ export default function CoachEventDetailPage() {
                                     {tr("Évaluer", "Evaluate")}
                                   </button>
                                 )
-                              ) : (
+                              ) : canStructurePlayer ? (
                                 <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}/structure`}>
                                   <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                   {tr("Structurer", "Structure")}
                                 </Link>
-                              )}
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
