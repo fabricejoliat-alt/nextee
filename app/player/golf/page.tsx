@@ -132,6 +132,7 @@ type PlayerDashboardDocument = {
 };
 
 type Preset = "month" | "last3" | "all" | "custom";
+type DashboardSection = "trainings" | "stats" | "thread" | "documents";
 
 const LOOKBACK_DAYS = 14;
 
@@ -511,6 +512,7 @@ export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("trainings");
   const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [loadingPrevRounds, setLoadingPrevRounds] = useState(false);
@@ -2201,6 +2203,50 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
 
         <div className="glass-section">
+          <div className="glass-card coach-player-tabs-card">
+            <div
+              className="coach-player-tabs"
+              style={{
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              {[
+                { id: "trainings" as DashboardSection, label: "Entrainements" },
+                { id: "stats" as DashboardSection, label: "Statistiques" },
+                { id: "thread" as DashboardSection, label: "Fil de discussion" },
+                { id: "documents" as DashboardSection, label: "Documents" },
+              ].map((tab) => {
+                const isActive = activeSection === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className="btn"
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setActiveSection(tab.id)}
+                    style={{
+                      flexShrink: 0,
+                      minHeight: 36,
+                      borderRadius: 10,
+                      fontWeight: 850,
+                      transition: "all 150ms ease",
+                      boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
+                      background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
+                      borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
+                      color: isActive ? "white" : "rgba(0,0,0,0.78)",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {activeSection === "thread" ? (
+        <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 4 }}>
               <div className="card-title" style={{ marginBottom: 0 }}>Fil équipe coachs + joueur + parent(s)</div>
@@ -2368,7 +2414,9 @@ function presetToSelectValue(p: Preset): Preset {
             )}
           </div>
         </div>
+        ) : null}
 
+        {activeSection === "documents" ? (
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
@@ -2517,13 +2565,16 @@ function presetToSelectValue(p: Preset): Preset {
             )}
           </div>
         </div>
+        ) : null}
 
         {/* ===== Title Trainings ===== */}
+        {activeSection === "trainings" ? (
         <div className="glass-section" style={{ paddingTop: 0 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
             {t("golfDashboard.trainingsTitle")}
           </div>
         </div>
+        ) : null}
 
        {/* ===== Filters ===== */}
 <div className="glass-section">
@@ -2670,6 +2721,7 @@ function presetToSelectValue(p: Preset): Preset {
 </div>
 
         {/* ===== Trainings KPIs ===== */}
+        {activeSection === "trainings" ? (
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
@@ -2762,8 +2814,10 @@ function presetToSelectValue(p: Preset): Preset {
             ) : null}
           </div>
         </div>
+        ) : null}
 
         {/* ===== Graphes trainings ===== */}
+        {activeSection === "trainings" ? (
         <div className="glass-section">
           <div className="glass-card">
             <div className="card-title">{t("golfDashboard.weeklyVolume")}</div>
@@ -2786,8 +2840,9 @@ function presetToSelectValue(p: Preset): Preset {
             )}
           </div>
         </div>
+        ) : null}
 
-        {isPerformanceEnabled ? (
+        {activeSection === "trainings" && isPerformanceEnabled ? (
           <div className="glass-section">
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
@@ -2815,7 +2870,7 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {isPerformanceEnabled ? (
+        {activeSection === "trainings" && isPerformanceEnabled ? (
           <div className="glass-section">
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
@@ -2845,13 +2900,16 @@ function presetToSelectValue(p: Preset): Preset {
         ) : null}
 
         {/* ===== Title Rounds ===== */}
+        {activeSection === "stats" ? (
         <div className="glass-section" style={{ paddingTop: 0 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>
             {t("golfDashboard.roundsTitle")}
           </div>
         </div>
+        ) : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
+        {activeSection === "stats" ? (
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             {/* Card 1: Volume de jeu */}
@@ -3036,9 +3094,10 @@ function presetToSelectValue(p: Preset): Preset {
             </div>
           </div>
         </div>
+        ) : null}
 
         {/* ===== Training → Course analysis ===== */}
-        {isPerformanceEnabled ? (
+        {activeSection === "stats" && isPerformanceEnabled ? (
           <div className="glass-section">
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.trainingToRoundAnalysis")}</div>
