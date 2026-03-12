@@ -257,6 +257,24 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
   return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
 }
 
+function fmtTrainingMoment(iso: string, locale: string) {
+  const d = new Date(iso);
+  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  const datePart = new Intl.DateTimeFormat(localeTag, {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat(localeTag, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(d)
+    .replace(":", "h");
+  return `${datePart} à ${timePart}`;
+}
+
 function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
   if (v === "training") return pickLocaleText(locale, "Entraînement", "Training");
   if (v === "interclub") return pickLocaleText(locale, "Interclub", "Interclub");
@@ -874,43 +892,74 @@ export default function CoachEventEditPage() {
       if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
         const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
         if (recipientIds.length > 0) {
-        const oldStart = new Date(event.starts_at);
-        const oldEnd = event.ends_at
-          ? new Date(event.ends_at)
-          : new Date(new Date(event.starts_at).getTime() + Math.max(0, event.duration_minutes || 0) * 60_000);
-        const oldRange = fmtDateTimeRange(oldStart.toISOString(), oldEnd.toISOString(), locale);
-        const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
-        const oldDuration = Math.max(0, Number(event.duration_minutes ?? 0));
-        const newDuration = Math.max(0, Number(durationForDb ?? 0));
-        const oldLoc = (event.location_text ?? "").trim() || "—";
-        const newLoc = locationText.trim() || "—";
-        const pieces =
-          locale === "fr"
-            ? [
-                `Date/heure: ${oldRange} -> ${newRange}`,
-                `Durée: ${oldDuration} min -> ${newDuration} min`,
-                `Lieu: ${oldLoc} -> ${newLoc}`,
-              ]
-            : [
-                `Date/time: ${oldRange} -> ${newRange}`,
-                `Duration: ${oldDuration} min -> ${newDuration} min`,
-                `Location: ${oldLoc} -> ${newLoc}`,
-              ];
-        const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
-          changesSummary: pieces.join(" · "),
-        });
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_updated",
-          title: msg.title,
-          body: msg.body,
-          data: {
-            event_id: eventId,
-            group_id: groupId,
-            url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-          },
-          recipientUserIds: recipientIds,
-        });
+          const oldStart = new Date(event.starts_at);
+          const oldEnd = event.ends_at
+            ? new Date(event.ends_at)
+            : new Date(new Date(event.starts_at).getTime() + Math.max(0, event.duration_minutes || 0) * 60_000);
+          const oldRange = fmtDateTimeRange(oldStart.toISOString(), oldEnd.toISOString(), locale);
+          const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
+          const oldDuration = Math.max(0, Number(event.duration_minutes ?? 0));
+          const newDuration = Math.max(0, Number(durationForDb ?? 0));
+          const oldLocRaw = (event.location_text ?? "").trim();
+          const newLocRaw = locationText.trim();
+          const oldLoc = oldLocRaw || "Lieu à définir";
+          const newLoc = newLocRaw || "Lieu à définir";
+
+          if (eventType === "training") {
+            const changePieces: string[] = [];
+            if (event.starts_at !== nextStartIso) {
+              changePieces.push(`Horaire: ${fmtTrainingMoment(event.starts_at, locale)} -> ${fmtTrainingMoment(nextStartIso, locale)}`);
+            }
+            if (oldDuration !== newDuration) {
+              changePieces.push(`Durée: ${oldDuration} min -> ${newDuration} min`);
+            }
+            if (oldLocRaw !== newLocRaw) {
+              changePieces.push(`Lieu: ${oldLoc} -> ${newLoc}`);
+            }
+
+            const title = `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
+            const body = changePieces.length > 0 ? changePieces.join(" • ") : undefined;
+            await createAppNotification({
+              actorUserId: meId,
+              kind: "coach_event_updated",
+              title,
+              body,
+              data: {
+                event_id: eventId,
+                group_id: groupId,
+                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+              },
+              recipientUserIds: recipientIds,
+            });
+          } else {
+            const pieces =
+              locale === "fr"
+                ? [
+                    `Date/heure: ${oldRange} -> ${newRange}`,
+                    `Durée: ${oldDuration} min -> ${newDuration} min`,
+                    `Lieu: ${oldLoc} -> ${newLoc}`,
+                  ]
+                : [
+                    `Date/time: ${oldRange} -> ${newRange}`,
+                    `Duration: ${oldDuration} min -> ${newDuration} min`,
+                    `Location: ${oldLoc} -> ${newLoc}`,
+                  ];
+            const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
+              changesSummary: pieces.join(" · "),
+            });
+            await createAppNotification({
+              actorUserId: meId,
+              kind: "coach_event_updated",
+              title: msg.title,
+              body: msg.body,
+              data: {
+                event_id: eventId,
+                group_id: groupId,
+                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+              },
+              recipientUserIds: recipientIds,
+            });
+          }
         }
       }
 
@@ -1105,11 +1154,17 @@ export default function CoachEventEditPage() {
       const eventEnd =
         event?.ends_at ??
         new Date(new Date(eventStart).getTime() + Math.max(0, Number(event?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const msg = await getNotificationMessage("notif.coachEventDeleted", locale, {
-        eventType: eventTypeLabelLocalized(event?.event_type ?? "training", locale),
-        dateTime: fmtDateTimeRange(eventStart, eventEnd, locale),
-        locationPart: event?.location_text ? ` · ${event.location_text}` : "",
-      });
+      const isTraining = (event?.event_type ?? "training") === "training";
+      const msg = isTraining
+        ? {
+            title: `L'entrainement du ${fmtTrainingMoment(eventStart, locale)} a été annulé`,
+            body: "",
+          }
+        : await getNotificationMessage("notif.coachEventDeleted", locale, {
+            eventType: eventTypeLabelLocalized(event?.event_type ?? "training", locale),
+            dateTime: fmtDateTimeRange(eventStart, eventEnd, locale),
+            locationPart: event?.location_text ? ` · ${event.location_text}` : "",
+          });
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",

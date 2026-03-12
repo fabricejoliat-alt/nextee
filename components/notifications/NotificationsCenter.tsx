@@ -49,9 +49,12 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     return fallback;
   }
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  async function load(options?: { silent?: boolean }) {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const uRes = await supabase.auth.getUser();
       if (uRes.error || !uRes.data.user) {
@@ -70,12 +73,33 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.", "Ladefehler.", "Errore di caricamento.")));
       setRows([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    void load();
+
+    // Handle race conditions when app is opened from system push:
+    // recipient row can arrive a bit after initial paint.
+    const t1 = window.setTimeout(() => void load({ silent: true }), 900);
+    const t2 = window.setTimeout(() => void load({ silent: true }), 2200);
+    const t3 = window.setTimeout(() => void load({ silent: true }), 4500);
+
+    const onFocus = () => void load({ silent: true });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load({ silent: true });
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
