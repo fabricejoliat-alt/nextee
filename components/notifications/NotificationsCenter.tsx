@@ -352,7 +352,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
             ) : rows.length === 0 ? (
               <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
             ) : (
-              <div className="marketplace-list marketplace-list-top">
+              <div className="marketplace-list marketplace-list-top" style={{ minWidth: 0, overflowX: "hidden" }}>
                 {rows.map((r) => {
                   const n = r.notification;
                   const href = resolveNotificationHref(n);
@@ -384,11 +384,32 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                     >
                       <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                          <div style={{ fontWeight: 900, fontSize: 14, minWidth: 0 }} className="truncate">{n?.title ?? tr("Notification", "Notification")}</div>
+                          <div
+                            style={{
+                              fontWeight: 900,
+                              fontSize: 14,
+                              minWidth: 0,
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {n?.title ?? tr("Notification", "Notification")}
+                          </div>
                           {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
                         {n?.kind === "thread_message" && threadTitle ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.7)", minWidth: 0 }} className="truncate">
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 850,
+                              color: "rgba(0,0,0,0.7)",
+                              minWidth: 0,
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                            }}
+                          >
                             {threadTitle}
                           </div>
                         ) : null}
@@ -453,7 +474,11 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                       </div>
                     </div>
                   );
-                  return <div key={r.recipient.id}>{card}</div>;
+                  return (
+                    <div key={r.recipient.id} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
+                      {card}
+                    </div>
+                  );
                 })}
               </div>
             )}
