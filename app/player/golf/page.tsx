@@ -16,6 +16,7 @@ import {
   Bar,
   XAxis,
   YAxis,
+  ReferenceLine,
   CartesianGrid,
   Tooltip,
   Legend,
@@ -1560,6 +1561,10 @@ function presetToSelectValue(p: Preset): Preset {
   );
   const trainingVolumeGoalReached = trainingVolumeObjective > 0 && totalMinutes >= trainingVolumeObjective;
   const showMonthlyObjective = preset !== "all" && trainingVolumeObjective > 0;
+  const weeklyObjectiveMinutes = useMemo(
+    () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
+    [trainingVolumeObjective]
+  );
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
@@ -2824,11 +2829,32 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
+                    {weeklyObjectiveMinutes > 0 ? (
+                      <ReferenceLine
+                        y={weeklyObjectiveMinutes}
+                        stroke="rgba(185,28,28,0.9)"
+                        strokeDasharray="6 4"
+                        strokeWidth={2}
+                        ifOverflow="extendDomain"
+                        label={{
+                          value: pickLocaleText(locale, "Objectif", "Goal"),
+                          position: "right",
+                          fill: "rgba(185,28,28,0.9)",
+                          fontSize: 11,
+                          fontWeight: 900,
+                        }}
+                      />
+                    ) : null}
                     <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
+            {weeklyObjectiveMinutes > 0 ? (
+              <div style={{ marginTop: 6, fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
+                {pickLocaleText(locale, "Objectif hebdomadaire", "Weekly goal")}: {weeklyObjectiveMinutes} min
+              </div>
+            ) : null}
           </div>
         </div>
         ) : null}

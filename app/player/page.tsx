@@ -1102,134 +1102,146 @@ export default function PlayerHomePage() {
     }
 
     // Upcoming activities (same family as /player/golf/trainings planned list)
-    const nowIso = new Date().toISOString();
-    const futureSessionsRes = await supabase
-      .from("training_sessions")
-      .select("id,start_at,location_text,session_type,club_id,club_event_id")
-      .eq("user_id", effectiveUid)
-      .gte("start_at", nowIso)
-      .order("start_at", { ascending: true });
-    const futureSessions = !futureSessionsRes.error ? (futureSessionsRes.data ?? []) as HomeSessionRow[] : [];
+    try {
+      const nowIso = new Date().toISOString();
+      const futureSessionsRes = await supabase
+        .from("training_sessions")
+        .select("id,start_at,location_text,session_type,club_id,club_event_id")
+        .eq("user_id", effectiveUid)
+        .gte("start_at", nowIso)
+        .order("start_at", { ascending: true })
+        .limit(60);
+      const futureSessions = !futureSessionsRes.error ? (futureSessionsRes.data ?? []) as HomeSessionRow[] : [];
 
-    const attendeeRes = await supabase
-      .from("club_event_attendees")
-      .select("event_id,status")
-      .eq("player_id", effectiveUid);
-    const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-    const attendeeEventIds = new Set<string>();
-    if (!attendeeRes.error) {
-      (attendeeRes.data ?? []).forEach((r: AttendeeStatusRow) => {
-        const eid = String(r.event_id ?? "");
-        if (!eid) return;
-        attendeeEventIds.add(eid);
-        statusMap[eid] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
-      });
-    }
-    setAttendeeStatusByEventId(statusMap);
-
-    let plannedEvents: HomePlannedEventRow[] = [];
-    if (attendeeEventIds.size > 0) {
-      const plannedRes = await supabase
-        .from("club_events")
-        .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
-        .in("id", Array.from(attendeeEventIds))
-        .eq("status", "scheduled")
-        .gte("starts_at", nowIso)
-        .order("starts_at", { ascending: true });
-      if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
-    }
-
-    const plannedCompetitionsRes = await supabase
-      .from("player_activity_events")
-      .select("id,event_type,title,starts_at,ends_at,location_text,status")
-      .eq("user_id", effectiveUid)
-      .eq("status", "scheduled")
-      .gte("starts_at", nowIso)
-      .order("starts_at", { ascending: true });
-    const plannedCompetitions = !plannedCompetitionsRes.error
-      ? (plannedCompetitionsRes.data ?? []) as HomePlayerActivityRow[]
-      : [];
-
-    const clubIdSet = new Set<string>();
-    plannedEvents.forEach((e) => clubIdSet.add(e.club_id));
-    futureSessions.forEach((s) => {
-      if (s.club_id) clubIdSet.add(s.club_id);
-    });
-    if (clubIdSet.size > 0) {
-      const clubRes = await supabase.from("clubs").select("id,name").in("id", Array.from(clubIdSet));
-      const map: Record<string, string> = {};
-      if (!clubRes.error) {
-        (clubRes.data ?? []).forEach((c: Club) => {
-          map[String(c.id)] = c.name ?? t("common.club");
+      const attendeeRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id,status")
+        .eq("player_id", effectiveUid)
+        .in("status", ["expected", "present", "excused"])
+        .limit(2000);
+      const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+      const attendeeEventIds = new Set<string>();
+      if (!attendeeRes.error) {
+        (attendeeRes.data ?? []).forEach((r: AttendeeStatusRow) => {
+          const eid = String(r.event_id ?? "");
+          if (!eid) return;
+          attendeeEventIds.add(eid);
+          statusMap[eid] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
         });
       }
-      setClubNameById(map);
-    } else {
-      setClubNameById({});
-    }
+      setAttendeeStatusByEventId(statusMap);
 
-    const groupIds = Array.from(new Set(plannedEvents.map((e) => e.group_id).filter((x): x is string => Boolean(x))));
-    if (groupIds.length > 0) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (token) {
-        const query = new URLSearchParams({
-          ids: groupIds.join(","),
-          child_id: effectiveUid,
-        });
-        const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const gJson = await gRes.json().catch(() => ({}));
-        const gMap: Record<string, string> = {};
-        ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
-          gMap[g.id] = g.name ?? "Groupe";
-        });
-        setGroupNameById(gMap);
+      let plannedEvents: HomePlannedEventRow[] = [];
+      if (attendeeEventIds.size > 0) {
+        const plannedRes = await supabase
+          .from("club_events")
+          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
+          .in("id", Array.from(attendeeEventIds))
+          .eq("status", "scheduled")
+          .gte("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+          .limit(80);
+        if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
+      }
+
+      const plannedCompetitionsRes = await supabase
+        .from("player_activity_events")
+        .select("id,event_type,title,starts_at,ends_at,location_text,status")
+        .eq("user_id", effectiveUid)
+        .eq("status", "scheduled")
+        .gte("starts_at", nowIso)
+        .order("starts_at", { ascending: true })
+        .limit(60);
+      const plannedCompetitions = !plannedCompetitionsRes.error
+        ? (plannedCompetitionsRes.data ?? []) as HomePlayerActivityRow[]
+        : [];
+
+      const clubIdSet = new Set<string>();
+      plannedEvents.forEach((e) => clubIdSet.add(e.club_id));
+      futureSessions.forEach((s) => {
+        if (s.club_id) clubIdSet.add(s.club_id);
+      });
+      if (clubIdSet.size > 0) {
+        const clubRes = await supabase.from("clubs").select("id,name").in("id", Array.from(clubIdSet));
+        const map: Record<string, string> = {};
+        if (!clubRes.error) {
+          (clubRes.data ?? []).forEach((c: Club) => {
+            map[String(c.id)] = c.name ?? t("common.club");
+          });
+        }
+        setClubNameById(map);
+      } else {
+        setClubNameById({});
+      }
+
+      const groupIds = Array.from(new Set(plannedEvents.map((e) => e.group_id).filter((x): x is string => Boolean(x))));
+      if (groupIds.length > 0) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (token) {
+          const query = new URLSearchParams({
+            ids: groupIds.join(","),
+            child_id: effectiveUid,
+          });
+          const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const gJson = await gRes.json().catch(() => ({}));
+          const gMap: Record<string, string> = {};
+          ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
+            gMap[g.id] = g.name ?? "Groupe";
+          });
+          setGroupNameById(gMap);
+        } else {
+          setGroupNameById({});
+        }
       } else {
         setGroupNameById({});
       }
-    } else {
-      setGroupNameById({});
-    }
 
-    if (plannedEvents.length > 0) {
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("event_id,category,minutes,note")
-        .in("event_id", plannedEvents.map((e) => e.id));
-      const map: Record<string, HomeEventStructureItem[]> = {};
-      if (!structRes.error) {
-        (structRes.data ?? []).forEach((r: HomeEventStructureItem) => {
-          const eid = String(r.event_id ?? "");
-          if (!eid) return;
-          if (!map[eid]) map[eid] = [];
-          map[eid].push(r);
-        });
+      if (plannedEvents.length > 0) {
+        const structRes = await supabase
+          .from("club_event_structure_items")
+          .select("event_id,category,minutes,note")
+          .in("event_id", plannedEvents.map((e) => e.id));
+        const map: Record<string, HomeEventStructureItem[]> = {};
+        if (!structRes.error) {
+          (structRes.data ?? []).forEach((r: HomeEventStructureItem) => {
+            const eid = String(r.event_id ?? "");
+            if (!eid) return;
+            if (!map[eid]) map[eid] = [];
+            map[eid].push(r);
+          });
+        }
+        setEventStructureByEventId(map);
+      } else {
+        setEventStructureByEventId({});
       }
-      setEventStructureByEventId(map);
-    } else {
-      setEventStructureByEventId({});
-    }
 
-    const upcoming: HomeUpcomingItem[] = [
-      ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
-      ...futureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
-      ...plannedCompetitions.map((competition) => ({
-        kind: "competition" as const,
-        key: `competition-${competition.id}`,
-        dateIso: competition.starts_at,
-        competition,
-      })),
-    ].sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
-    setUpcomingActivities(upcoming);
-    setUpcomingIndex((i) => {
-      if (upcoming.length === 0) return 0;
-      return Math.min(i, upcoming.length - 1);
-    });
-    setUpcomingLoading(false);
+      const upcoming: HomeUpcomingItem[] = [
+        ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
+        ...futureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
+        ...plannedCompetitions.map((competition) => ({
+          kind: "competition" as const,
+          key: `competition-${competition.id}`,
+          dateIso: competition.starts_at,
+          competition,
+        })),
+      ].sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
+      setUpcomingActivities(upcoming);
+      setUpcomingIndex((i) => {
+        if (upcoming.length === 0) return 0;
+        return Math.min(i, upcoming.length - 1);
+      });
+      setUpcomingLoading(false);
+    } catch (e) {
+      // Non-blocking: keep dashboard visible even if upcoming widgets timeout.
+      console.warn("player home upcoming load failed:", e);
+      setUpcomingActivities([]);
+      setUpcomingLoading(false);
+    }
 
     // Rounds rolling 12 months + previous 12 months (GIR/fairways/putts)
     try {
