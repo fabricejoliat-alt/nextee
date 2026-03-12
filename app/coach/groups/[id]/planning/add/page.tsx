@@ -151,6 +151,23 @@ function fmtDateTimeRange(startIso: string, endIso: string | null) {
   return `${fmtDateTime(startIso)} → ${fmtDateTime(endIso)}`;
 }
 
+function fmtTrainingMoment(iso: string) {
+  const d = new Date(iso);
+  const datePart = new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat("fr-CH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(d)
+    .replace(":", "h");
+  return `${datePart} à ${timePart}`;
+}
+
 function isoToLocalInput(iso: string) {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -819,11 +836,20 @@ export default function CoachGroupPlanningPage() {
       await saveStructureForEvents([eventId]);
 
       if (attendeeIds.length > 0 && meId) {
-        const msg = await getNotificationMessage("notif.coachEventCreated", locale, {
-          eventType: eventTypeLabelLocalized(eventType),
-          dateTime: fmtDateTimeRange(startDt.toISOString(), endDt.toISOString()),
-          locationPart: locationText.trim() ? ` · ${locationText.trim()}` : "",
-        });
+        const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
+        const msg = isTrainingOrInterclub
+          ? {
+              title:
+                eventType === "interclub"
+                  ? "Nouvel interclub prévu"
+                  : "Nouvel entrainement prévu",
+              body: `Le ${fmtTrainingMoment(startDt.toISOString())} • ${locationText.trim() || "Lieu à définir"}`,
+            }
+          : await getNotificationMessage("notif.coachEventCreated", locale, {
+              eventType: eventTypeLabelLocalized(eventType),
+              dateTime: fmtDateTimeRange(startDt.toISOString(), endDt.toISOString()),
+              locationPart: locationText.trim() ? ` · ${locationText.trim()}` : "",
+            });
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_created",
@@ -1007,11 +1033,21 @@ export default function CoachGroupPlanningPage() {
       const eventEnd =
         deleted?.ends_at ??
         new Date(new Date(eventStart).getTime() + Math.max(0, Number(deleted?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const msg = await getNotificationMessage("notif.coachEventDeleted", locale, {
-        eventType: eventTypeLabelLocalized(deleted?.event_type ?? "training"),
-        dateTime: fmtDateTimeRange(eventStart, eventEnd),
-        locationPart: deleted?.location_text ? ` · ${deleted.location_text}` : "",
-      });
+      const eventTypeDeleted = String(deleted?.event_type ?? "training");
+      const isTraining = eventTypeDeleted === "training";
+      const isInterclub = eventTypeDeleted === "interclub";
+      const msg = isTraining || isInterclub
+        ? {
+            title: isInterclub
+              ? `L'interclub du ${fmtTrainingMoment(eventStart)} a été annulé`
+              : `L'entrainement du ${fmtTrainingMoment(eventStart)} a été annulé`,
+            body: "",
+          }
+        : await getNotificationMessage("notif.coachEventDeleted", locale, {
+            eventType: eventTypeLabelLocalized(deleted?.event_type ?? "training"),
+            dateTime: fmtDateTimeRange(eventStart, eventEnd),
+            locationPart: deleted?.location_text ? ` · ${deleted.location_text}` : "",
+          });
       await createAppNotification({
         actorUserId: meId,
         kind: "coach_event_deleted",

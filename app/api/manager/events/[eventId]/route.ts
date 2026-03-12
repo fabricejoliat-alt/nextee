@@ -91,11 +91,18 @@ async function notifyEventDeletion(
   const recipients = uniq(recipientUserIds).filter((id) => id !== actorUserId);
   if (recipients.length === 0) return;
 
-  const isTraining = String(event.event_type ?? "training") === "training";
+  const type = String(event.event_type ?? "training");
+  const isTraining = type === "training";
+  const isInterclub = type === "interclub";
+  const isTrainingOrInterclub = isTraining || isInterclub;
   const moment = formatTrainingMoment(event.starts_at);
   const location = String(event.location_text ?? "").trim() || "Lieu à définir";
-  const title = isTraining ? `L'entrainement du ${moment} a été annulé` : "Une activité prévue a été annulée";
-  const body = isTraining ? "" : `Le ${moment} • ${location}`;
+  const title = isInterclub
+    ? `L'interclub du ${moment} a été annulé`
+    : isTraining
+    ? `L'entrainement du ${moment} a été annulé`
+    : "Une activité prévue a été annulée";
+  const body = isTrainingOrInterclub ? "" : `Le ${moment} • ${location}`;
   const url = "/player/golf/trainings";
 
   const ins = await supabaseAdmin

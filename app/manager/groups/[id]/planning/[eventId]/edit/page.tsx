@@ -921,7 +921,8 @@ export default function CoachEventEditPage() {
           const oldLoc = oldLocRaw || "Lieu à définir";
           const newLoc = newLocRaw || "Lieu à définir";
 
-          if (eventType === "training") {
+          const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
+          if (isTrainingOrInterclub) {
             const changePieces: string[] = [];
             if (prevTitle !== nextTitle) {
               changePieces.push(`Nom: ${prevTitle || "Sans titre"} -> ${nextTitle || "Sans titre"}`);
@@ -939,7 +940,10 @@ export default function CoachEventEditPage() {
               changePieces.push(`Note coach: ${prevNote || "Aucune"} -> ${nextNote || "Aucune"}`);
             }
 
-            const title = `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
+            const title =
+              eventType === "interclub"
+                ? `L'interclub du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`
+                : `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
             const body = changePieces.length > 0 ? changePieces.join(" • ") : undefined;
             await createAppNotification({
               actorUserId: meId,

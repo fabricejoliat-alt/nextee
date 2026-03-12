@@ -372,15 +372,23 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   const card = (
                     <div
                       className="marketplace-item"
-                      style={!r.recipient.is_read ? { borderColor: "rgba(53,72,59,0.35)", background: "rgba(240,248,242,0.86)" } : undefined}
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                        overflow: "hidden",
+                        ...(!r.recipient.is_read
+                          ? { borderColor: "rgba(53,72,59,0.35)", background: "rgba(240,248,242,0.86)" }
+                          : {}),
+                      }}
                     >
-                      <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                          <div style={{ fontWeight: 900, fontSize: 14 }} className="truncate">{n?.title ?? tr("Notification", "Notification")}</div>
+                          <div style={{ fontWeight: 900, fontSize: 14, minWidth: 0 }} className="truncate">{n?.title ?? tr("Notification", "Notification")}</div>
                           {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
                         {n?.kind === "thread_message" && threadTitle ? (
-                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.7)" }} className="truncate">
+                          <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.7)", minWidth: 0 }} className="truncate">
                             {threadTitle}
                           </div>
                         ) : null}
@@ -392,6 +400,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                               fontStyle: "italic",
                               lineHeight: 1.35,
                               color: "rgba(0,0,0,0.68)",
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
                             }}
                           >
                             {n.body}

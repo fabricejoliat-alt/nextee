@@ -153,11 +153,14 @@ async function createEventNotification(
   const dateTime = formatDateTimeLabel(startsAtIso, endsAtIso);
   const location = String(locationText ?? "").trim() || "Lieu à définir";
 
+  const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
   const title =
-    eventType === "training"
+    eventType === "interclub"
+      ? "Nouvel interclub prévu"
+      : isTrainingOrInterclub
       ? "Nouvel entrainement prévu"
       : "Nouvelle activité prévue";
-  const body = eventType === "training" ? `Le ${dateTime} • ${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
+  const body = isTrainingOrInterclub ? `Le ${dateTime} • ${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
   const url = `/player/golf/trainings/new?club_event_id=${eventId}`;
 
   const ins = await supabaseAdmin

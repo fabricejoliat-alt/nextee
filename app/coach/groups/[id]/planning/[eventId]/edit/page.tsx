@@ -924,7 +924,8 @@ export default function CoachEventEditPage() {
           const oldLoc = oldLocRaw || "Lieu à définir";
           const newLoc = newLocRaw || "Lieu à définir";
 
-          if (isTrainingLikeEventType(eventType)) {
+          const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
+          if (isTrainingOrInterclub) {
             const changePieces: string[] = [];
             if (prevTitle !== nextTitle) {
               changePieces.push(`Nom: ${prevTitle || "Sans titre"} -> ${nextTitle || "Sans titre"}`);
@@ -941,7 +942,10 @@ export default function CoachEventEditPage() {
             if (prevNote !== nextNote) {
               changePieces.push(`Note coach: ${prevNote || "Aucune"} -> ${nextNote || "Aucune"}`);
             }
-            const title = `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
+            const title =
+              eventType === "interclub"
+                ? `L'interclub du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`
+                : `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
             const body = changePieces.length > 0 ? changePieces.join(" • ") : undefined;
             await createAppNotification({
               actorUserId: meId,
@@ -1168,10 +1172,14 @@ export default function CoachEventEditPage() {
       const eventEnd =
         event?.ends_at ??
         new Date(new Date(eventStart).getTime() + Math.max(0, Number(event?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const isTraining = (event?.event_type ?? "training") === "training";
-      const msg = isTraining
+      const kind = String(event?.event_type ?? "training");
+      const isTraining = kind === "training";
+      const isInterclub = kind === "interclub";
+      const msg = isTraining || isInterclub
         ? {
-            title: `L'entrainement du ${fmtTrainingMoment(eventStart, locale)} a été annulé`,
+            title: isInterclub
+              ? `L'interclub du ${fmtTrainingMoment(eventStart, locale)} a été annulé`
+              : `L'entrainement du ${fmtTrainingMoment(eventStart, locale)} a été annulé`,
             body: "",
           }
         : await getNotificationMessage("notif.coachEventDeleted", locale, {
