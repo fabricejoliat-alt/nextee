@@ -80,6 +80,30 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`notifications-center-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notification_recipients",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import webpush from "web-push";
 
 type EventType = "training" | "interclub" | "camp" | "session" | "event";
 type TargetMode = "none" | "all" | "selected";
@@ -85,6 +86,57 @@ function formatDateTimeLabel(startsAtIso: string, endsAtIso: string | null) {
   return `${d} à ${s}`;
 }
 
+async function dispatchPushForRecipients(
+  supabaseAdmin: any,
+  opts: { title: string; body: string; url: string; recipientUserIds: string[] }
+) {
+  const recipients = uniq(opts.recipientUserIds);
+  if (recipients.length === 0) return;
+
+  const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
+  if (!vapidPublic || !vapidPrivate) return;
+  const vapidSubject = process.env.VAPID_SUBJECT || "mailto:contact@activitee.app";
+  webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
+
+  const subsRes = await supabaseAdmin
+    .from("push_subscriptions")
+    .select("id,user_id,endpoint,p256dh,auth")
+    .in("user_id", recipients);
+  if (subsRes.error) return;
+
+  const payload = JSON.stringify({
+    title: opts.title,
+    body: opts.body,
+    url: opts.url,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    timestamp: Date.now(),
+  });
+
+  const staleIds: number[] = [];
+  await Promise.all(
+    (subsRes.data ?? []).map(async (sub: any) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          payload
+        );
+      } catch (err: unknown) {
+        const statusCode = Number((err as { statusCode?: number } | null)?.statusCode ?? 0);
+        if (statusCode === 404 || statusCode === 410) staleIds.push(Number(sub.id));
+      }
+    })
+  );
+
+  if (staleIds.length > 0) {
+    await supabaseAdmin.from("push_subscriptions").delete().in("id", staleIds);
+  }
+}
+
 async function createEventNotification(
   supabaseAdmin: any,
   actorUserId: string,
@@ -105,7 +157,8 @@ async function createEventNotification(
     eventType === "training"
       ? "Nouvel entrainement prévu"
       : "Nouvelle activité prévue";
-  const body = eventType === "training" ? `${dateTime}\n${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
+  const body = eventType === "training" ? `Le ${dateTime} • ${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
+  const url = `/player/golf/trainings/new?club_event_id=${eventId}`;
 
   const ins = await supabaseAdmin
     .from("notifications")
@@ -117,7 +170,7 @@ async function createEventNotification(
       body,
       data: {
         event_id: eventId,
-        url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+        url,
       },
     })
     .select("id")
@@ -133,6 +186,14 @@ async function createEventNotification(
       { onConflict: "notification_id,user_id" }
     );
   if (recIns.error) throw new Error(recIns.error.message);
+
+  // Best-effort web push dispatch.
+  await dispatchPushForRecipients(supabaseAdmin, {
+    title,
+    body,
+    url,
+    recipientUserIds: recipients,
+  });
 }
 
 async function getManagerContext(req: NextRequest, supabaseAdmin: any) {
