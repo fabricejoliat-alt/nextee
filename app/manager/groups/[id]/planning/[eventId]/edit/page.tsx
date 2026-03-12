@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
-import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
+import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -845,10 +845,25 @@ export default function CoachEventEditPage() {
       const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
       const nextStartIso = startDt.toISOString();
       const nextEndIso = endDt.toISOString();
-      const hadScheduleChange =
+      const prevType = String(event.event_type ?? "training");
+      const nextType = String(eventType);
+      const prevTitle = String(event.title ?? "").trim();
+      const nextTitle = eventTitle.trim();
+      const prevNote = String(event.coach_note ?? "").trim();
+      const nextNote = coachNote.trim();
+      const prevLocRaw = String(event.location_text ?? "").trim();
+      const nextLocRaw = locationText.trim();
+      const oldDuration = Math.max(0, Number(event.duration_minutes ?? 0));
+      const newDuration = Math.max(0, Number(durationForDb ?? 0));
+
+      const hasPlayerVisibleChange =
+        prevType !== nextType ||
+        prevTitle !== nextTitle ||
         event.starts_at !== nextStartIso ||
         (event.ends_at ?? null) !== (nextEndIso ?? null) ||
-        (event.location_text ?? null) !== (locationText.trim() || null);
+        oldDuration !== newDuration ||
+        prevLocRaw !== nextLocRaw ||
+        prevNote !== nextNote;
 
       const upd = await supabase
         .from("club_events")
@@ -881,7 +896,10 @@ export default function CoachEventEditPage() {
       if (attendeeIdsSelected.length > 0) {
         const insA = await supabase
           .from("club_event_attendees")
-          .insert(attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })));
+          .upsert(
+            attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })),
+            { onConflict: "event_id,player_id", ignoreDuplicates: true }
+          );
         if (insA.error) throw new Error(insA.error.message);
       }
 
@@ -889,7 +907,7 @@ export default function CoachEventEditPage() {
 
       await syncPlayerChangesOnFuturePlannedEvents();
 
-      if (hadScheduleChange && attendeeIdsSelected.length > 0 && meId) {
+      if (hasPlayerVisibleChange && attendeeIdsSelected.length > 0 && meId) {
         const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
         if (recipientIds.length > 0) {
           const oldStart = new Date(event.starts_at);
@@ -898,15 +916,16 @@ export default function CoachEventEditPage() {
             : new Date(new Date(event.starts_at).getTime() + Math.max(0, event.duration_minutes || 0) * 60_000);
           const oldRange = fmtDateTimeRange(oldStart.toISOString(), oldEnd.toISOString(), locale);
           const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
-          const oldDuration = Math.max(0, Number(event.duration_minutes ?? 0));
-          const newDuration = Math.max(0, Number(durationForDb ?? 0));
-          const oldLocRaw = (event.location_text ?? "").trim();
-          const newLocRaw = locationText.trim();
+          const oldLocRaw = prevLocRaw;
+          const newLocRaw = nextLocRaw;
           const oldLoc = oldLocRaw || "Lieu à définir";
           const newLoc = newLocRaw || "Lieu à définir";
 
           if (eventType === "training") {
             const changePieces: string[] = [];
+            if (prevTitle !== nextTitle) {
+              changePieces.push(`Nom: ${prevTitle || "Sans titre"} -> ${nextTitle || "Sans titre"}`);
+            }
             if (event.starts_at !== nextStartIso) {
               changePieces.push(`Horaire: ${fmtTrainingMoment(event.starts_at, locale)} -> ${fmtTrainingMoment(nextStartIso, locale)}`);
             }
@@ -915,6 +934,9 @@ export default function CoachEventEditPage() {
             }
             if (oldLocRaw !== newLocRaw) {
               changePieces.push(`Lieu: ${oldLoc} -> ${newLoc}`);
+            }
+            if (prevNote !== nextNote) {
+              changePieces.push(`Note coach: ${prevNote || "Aucune"} -> ${nextNote || "Aucune"}`);
             }
 
             const title = `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
@@ -1085,7 +1107,9 @@ export default function CoachEventEditPage() {
           const attRows = createdEventIds.flatMap((eid) =>
             attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
           );
-          const aIns = await supabase.from("club_event_attendees").insert(attRows);
+          const aIns = await supabase
+            .from("club_event_attendees")
+            .upsert(attRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
           if (aIns.error) throw new Error(aIns.error.message);
         }
 
@@ -1128,13 +1152,6 @@ export default function CoachEventEditPage() {
     setBusy(true);
     setError(null);
 
-    let recipients: string[] = [];
-    try {
-      recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
-    } catch {
-      recipients = [];
-    }
-
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token ?? "";
     if (!token) {
@@ -1149,31 +1166,6 @@ export default function CoachEventEditPage() {
     });
     const delJson = await delRes.json().catch(() => ({}));
     if (!delRes.ok) setError(String(delJson?.error ?? "Suppression impossible."));
-    if (delRes.ok && recipients.length > 0 && meId) {
-      const eventStart = event?.starts_at ?? new Date().toISOString();
-      const eventEnd =
-        event?.ends_at ??
-        new Date(new Date(eventStart).getTime() + Math.max(0, Number(event?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const isTraining = (event?.event_type ?? "training") === "training";
-      const msg = isTraining
-        ? {
-            title: `L'entrainement du ${fmtTrainingMoment(eventStart, locale)} a été annulé`,
-            body: "",
-          }
-        : await getNotificationMessage("notif.coachEventDeleted", locale, {
-            eventType: eventTypeLabelLocalized(event?.event_type ?? "training", locale),
-            dateTime: fmtDateTimeRange(eventStart, eventEnd, locale),
-            locationPart: event?.location_text ? ` · ${event.location_text}` : "",
-          });
-      await createAppNotification({
-        actorUserId: meId,
-        kind: "coach_event_deleted",
-        title: msg.title,
-        body: msg.body,
-        data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
-        recipientUserIds: recipients,
-      });
-    }
 
     setBusy(false);
     if (delRes.ok) router.push(`/manager/groups/${groupId}/planning`);
