@@ -1104,6 +1104,18 @@ input[type="radio"]{
   background: rgba(255,255,255,0.86);
 }
 
+.player-marketplace-page .glass-card{
+  background: rgba(255,255,255,0.86);
+}
+
+.player-marketplace-page .marketplace-item{
+  background: rgba(255,255,255,0.82);
+}
+
+.player-marketplace-page .marketplace-item:hover{
+  background: rgba(255,255,255,0.88);
+}
+
 /* Hero */
 .player-hero{
   display: flex;
@@ -1985,5 +1997,32 @@ input[type="radio"]{
 
   .app-shell{
     padding-bottom: calc(var(--footer-h) + env(safe-area-inset-bottom) + 8px);
+  }
+}
+
+/* Coach player dashboard tabs:
+   - desktop: show all tabs
+   - mobile/PWA: single row, horizontal swipe, hidden scrollbar */
+.coach-player-tabs{
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.coach-player-tabs::-webkit-scrollbar{
+  display: none;
+}
+
+@media (min-width: 900px){
+  .coach-player-tabs{
+    flex-wrap: wrap;
+    overflow: visible;
   }
 }

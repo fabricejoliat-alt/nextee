@@ -394,6 +394,8 @@ export default function CoachCalendarPage() {
     gap: 8,
   };
 
+  const canDeleteEvent = (e: EventRow) => !e.series_id;
+
   async function deleteEvent(eventId: string) {
     if (!eventId || deletingEventId) return;
     const ok = window.confirm(tr("Supprimer cet événement ?", "Delete this event?"));
@@ -572,16 +574,18 @@ export default function CoachCalendarPage() {
                                             </div>
                                           ) : null}
                                           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                            <button
-                                              type="button"
-                                              className="cta-green cta-green-inline"
-                                              onClick={() => void deleteEvent(e.id)}
-                                              disabled={deletingEventId === e.id}
-                                              style={{ minWidth: 200, justifyContent: "center" }}
-                                            >
-                                              <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                              {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                            </button>
+                                            {canDeleteEvent(e) ? (
+                                              <button
+                                                type="button"
+                                                className="cta-green cta-green-inline"
+                                                onClick={() => void deleteEvent(e.id)}
+                                                disabled={deletingEventId === e.id}
+                                                style={{ minWidth: 200, justifyContent: "center" }}
+                                              >
+                                                <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                                {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                              </button>
+                                            ) : null}
                                             <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                               {tr("Accéder à l’événement", "Open event")}
                                             </Link>
@@ -666,16 +670,18 @@ export default function CoachCalendarPage() {
                                       </div>
                                     ) : null}
                                     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                      <button
-                                        type="button"
-                                        className="cta-green cta-green-inline"
-                                        onClick={() => void deleteEvent(e.id)}
-                                        disabled={deletingEventId === e.id}
-                                        style={{ minWidth: 200, justifyContent: "center" }}
-                                      >
-                                        <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                        {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                      </button>
+                                      {canDeleteEvent(e) ? (
+                                        <button
+                                          type="button"
+                                          className="cta-green cta-green-inline"
+                                          onClick={() => void deleteEvent(e.id)}
+                                          disabled={deletingEventId === e.id}
+                                          style={{ minWidth: 200, justifyContent: "center" }}
+                                        >
+                                          <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                          {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                        </button>
+                                      ) : null}
                                       <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                         {tr("Accéder à l’événement", "Open event")}
                                       </Link>
@@ -743,16 +749,18 @@ export default function CoachCalendarPage() {
                                 </div>
                               ) : null}
                               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                  type="button"
-                                  className="cta-green cta-green-inline"
-                                  onClick={() => void deleteEvent(e.id)}
-                                  disabled={deletingEventId === e.id}
-                                  style={{ minWidth: 200, justifyContent: "center" }}
-                                >
-                                  <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                  {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                </button>
+                                {canDeleteEvent(e) ? (
+                                  <button
+                                    type="button"
+                                    className="cta-green cta-green-inline"
+                                    onClick={() => void deleteEvent(e.id)}
+                                    disabled={deletingEventId === e.id}
+                                    style={{ minWidth: 200, justifyContent: "center" }}
+                                  >
+                                    <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                    {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
+                                  </button>
+                                ) : null}
                                 <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
                                   {tr("Accéder à l’événement", "Open event")}
                                 </Link>

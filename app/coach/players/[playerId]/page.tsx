@@ -131,6 +131,7 @@ type OmTournamentScoreRow = {
 type Preset = "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
+type DashboardSection = "trainings" | "competition" | "stats" | "planning" | "evaluations" | "thread" | "documents";
 type Role = "coach" | "manager" | "player";
 type ClubMemberRow = { club_id: string; role: Role; is_active: boolean | null };
 type ProfileLite = {
@@ -601,6 +602,7 @@ export default function GolfDashboardPage() {
   const [deletingTeamMessageId, setDeletingTeamMessageId] = useState<string>("");
   const [teamComposer, setTeamComposer] = useState("");
   const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("trainings");
   const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const [selectedCompetitionRoundId, setSelectedCompetitionRoundId] = useState<string>("");
   const [trainingVolumeLevelFromDb, setTrainingVolumeLevelFromDb] = useState<string | null>(null);
@@ -2928,6 +2930,147 @@ function presetToSelectValue(p: Preset): Preset {
     );
   }
 
+  function renderFilterCard() {
+    return (
+      <div className="glass-card" style={{ padding: 14 }}>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <SlidersHorizontal size={16} />
+            <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
+              {t("common.period")}
+            </div>
+          </div>
+
+          <select
+            value={preset}
+            onChange={(e) => {
+              const v = e.target.value as Preset;
+
+              if (v === "custom") {
+                setPreset("custom");
+
+                if (!fromDate && !toDate) {
+                  const now = new Date();
+                  const { start, end } = monthRangeLocal(now);
+                  const endInclusive = new Date(end);
+                  endInclusive.setDate(endInclusive.getDate() - 1);
+
+                  setFromDate(isoToYMD(start));
+                  setToDate(isoToYMD(endInclusive));
+                }
+
+                setCustomOpen(true);
+                return;
+              }
+
+              setPreset(v);
+              setCustomOpen(false);
+            }}
+            disabled={loading}
+            style={{
+              width: "100%",
+              height: 44,
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: "rgba(0,0,0,0.10)",
+              borderRadius: 12,
+              padding: "0 12px",
+              background: "rgba(255,255,255,0.75)",
+              fontWeight: 950,
+              color: "rgba(0,0,0,0.80)",
+              outline: "none",
+              appearance: "none",
+            }}
+            aria-label={t("common.filterByPeriod")}
+          >
+            <option value="month">Ce mois</option>
+            <option value="last3">3 derniers mois</option>
+            <option value="all">{t("common.allActivity")}</option>
+            <option value="custom">{t("common.custom")}</option>
+          </select>
+
+          {customOpen && preset === "custom" ? (
+            <>
+              <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                  overflow: "hidden",
+                }}
+              >
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 900,
+                      color: "rgba(0,0,0,0.65)",
+                    }}
+                  >
+                    Du
+                  </span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      setPreset("custom");
+                      setCustomOpen(true);
+                    }}
+                    disabled={loading}
+                    style={dateInputStyle}
+                  />
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 900,
+                      color: "rgba(0,0,0,0.65)",
+                    }}
+                  >
+                    Au
+                  </span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setPreset("custom");
+                      setCustomOpen(true);
+                    }}
+                    disabled={loading}
+                    style={dateInputStyle}
+                  />
+                </label>
+
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    setFromDate("");
+                    setToDate("");
+                    setPreset("all");
+                    setCustomOpen(false);
+                  }}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    height: 44,
+                  }}
+                >
+                  {t("common.clearDates")}
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -3001,11 +3144,59 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
 
         <div className="glass-section">
-          {renderTeamThreadCard()}
+          <div
+            className="coach-player-tabs"
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "nowrap",
+            }}
+          >
+            {[
+              { id: "trainings" as DashboardSection, label: "Entrainements" },
+              { id: "competition" as DashboardSection, label: "Compétition" },
+              { id: "stats" as DashboardSection, label: "Statistiques" },
+              { id: "planning" as DashboardSection, label: "Planification" },
+              { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
+              { id: "thread" as DashboardSection, label: "Fil de discussion" },
+              { id: "documents" as DashboardSection, label: "Documents" },
+            ].map((tab) => {
+              const isActive = activeSection === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className="btn"
+                  aria-current={isActive ? "page" : undefined}
+                  onClick={() => setActiveSection(tab.id)}
+                  style={{
+                    flexShrink: 0,
+                    minHeight: 36,
+                    borderRadius: 10,
+                    fontWeight: 850,
+                    transition: "all 150ms ease",
+                    boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
+                    background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
+                    borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
+                    color: isActive ? "white" : "rgba(0,0,0,0.78)",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+        {activeSection === "thread" ? (
+          <div className="glass-section">
+            {renderTeamThreadCard()}
+          </div>
+        ) : null}
+
+        {activeSection === "documents" ? (
+          <div className="glass-section">
+            <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
             <div style={{ display: "grid", gap: 8 }}>
               <input
@@ -3152,10 +3343,12 @@ function presetToSelectValue(p: Preset): Preset {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        ) : null}
 
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+        {activeSection === "planning" ? (
+          <div className="glass-section">
+            <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div className="card-title" style={{ marginBottom: 0 }}>Planification du joueur</div>
             {loadingPlannedEvents ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -3203,10 +3396,12 @@ function presetToSelectValue(p: Preset): Preset {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        ) : null}
 
-        <div className="glass-section">
-          <div className="glass-card">
+        {activeSection === "evaluations" ? (
+          <div className="glass-section">
+            <div className="glass-card">
             <div className="card-title" style={{ marginBottom: 10 }}>Suivi des évaluations</div>
 
             {loadingCoachEvaluations ? (
@@ -3367,199 +3562,11 @@ function presetToSelectValue(p: Preset): Preset {
               </div>
             )}
           </div>
-        </div>
-
-       {/* ===== Title Trainings ===== */}
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-          <div className="section-title" style={{ marginBottom: 0 }}>
-            Volume d'entrainement
           </div>
-        </div>
+        ) : null}
 
-       {/* ===== Filters ===== */}
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14 }}>
-            <div style={{ display: "grid", gap: 12 }}>
-      {/* Label */}
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-        <SlidersHorizontal size={16} />
-        <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
-          {t("common.period")}
-        </div>
-      </div>
-
-      {/* Select full width */}
-      <select
-        value={preset}
-        onChange={(e) => {
-          const v = e.target.value as Preset;
-
-          if (v === "custom") {
-            setPreset("custom");
-
-            // Si aucune date définie, on initialise avec le mois courant
-            if (!fromDate && !toDate) {
-              const now = new Date();
-              const { start, end } = monthRangeLocal(now);
-              const endInclusive = new Date(end);
-              endInclusive.setDate(endInclusive.getDate() - 1);
-
-              setFromDate(isoToYMD(start));
-              setToDate(isoToYMD(endInclusive));
-            }
-
-            setCustomOpen(true);
-            return;
-          }
-
-          setPreset(v);
-          setCustomOpen(false);
-        }}
-        disabled={loading}
-        style={{
-          width: "100%",
-          height: 44,
-          borderWidth: 1,
-          borderStyle: "solid",
-          borderColor: "rgba(0,0,0,0.10)",
-          borderRadius: 12,
-          padding: "0 12px",
-          background: "rgba(255,255,255,0.75)",
-          fontWeight: 950,
-          color: "rgba(0,0,0,0.80)",
-          outline: "none",
-          appearance: "none",
-        }}
-        aria-label={t("common.filterByPeriod")}
-      >
-        <option value="month">Ce mois</option>
-        <option value="last3">3 derniers mois</option>
-        <option value="all">{t("common.allActivity")}</option>
-        <option value="custom">{t("common.custom")}</option>
-      </select>
-
-      <div className="hr-soft" style={{ margin: "2px 0" }} />
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
-          Entraînements affichés
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setTrainingScope("mine_club")}
-          disabled={loading}
-          style={
-            trainingScope === "mine_club"
-              ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-              : {}
-          }
-        >
-          {t("coachPlayerDashboard.scopeMineClub")}
-        </button>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setTrainingScope("all")}
-          disabled={loading}
-          style={
-            trainingScope === "all"
-              ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-              : {}
-          }
-        >
-          {t("coachPlayerDashboard.scopeAll")}
-        </button>
-      </div>
-      <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
-        {trainingScope === "mine_club"
-          ? t("coachPlayerDashboard.scopeMineClubHint")
-          : t("coachPlayerDashboard.scopeAllHint")}
-      </div>
-
-      {/* Custom dates */}
-      {customOpen && preset === "custom" && (
-        <>
-          <div className="hr-soft" style={{ margin: "2px 0" }} />
-
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-              overflow: "hidden",
-            }}
-          >
-            <label style={{ display: "grid", gap: 6 }}>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: "rgba(0,0,0,0.65)",
-                }}
-              >
-                Du
-              </span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
-                  setPreset("custom");
-                  setCustomOpen(true);
-                }}
-                disabled={loading}
-                style={dateInputStyle}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: "rgba(0,0,0,0.65)",
-                }}
-              >
-                Au
-              </span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value);
-                  setPreset("custom");
-                  setCustomOpen(true);
-                }}
-                disabled={loading}
-                style={dateInputStyle}
-              />
-            </label>
-
-            <button
-              className="btn"
-              type="button"
-              onClick={() => {
-                setFromDate("");
-                setToDate("");
-                setPreset("all");
-                setCustomOpen(false);
-              }}
-              disabled={loading}
-              style={{
-                width: "100%",
-                height: 44,
-              }}
-            >
-              {t("common.clearDates")}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  </div>
-        </div>
-
+        {activeSection === "trainings" ? (
+          <>
         {/* ===== Trainings KPIs ===== */}
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
@@ -3752,17 +3759,14 @@ function presetToSelectValue(p: Preset): Preset {
             )}
           </div>
         </div>
-
-        {/* ===== Title Rounds ===== */}
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-          <div className="section-title" style={{ marginBottom: 0 }}>
-            {t("coachPlayerDashboard.roundsOf").replace("{name}", playerFirstName)}
-          </div>
-        </div>
+          </>
+        ) : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
+        {activeSection === "competition" || activeSection === "stats" ? (
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
+            {activeSection === "competition" ? (
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
               <div className="card-title">{pickLocaleText(locale, "Résultats en compétition", "Competition results")}</div>
 
@@ -3802,8 +3806,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
 
             {/* Card 1: Volume + trous + split training/competition */}
+            {activeSection === "stats" ? (
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.playVolume")}</div>
 
@@ -3877,8 +3883,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
 
             {/* Card 2: Répartition des scores (n + % + trend arrow) */}
+            {activeSection === "stats" ? (
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.scoreDistribution")}</div>
 
@@ -3910,8 +3918,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
 
             {/* Card 3: GIR / Putts / Fairways */}
+            {activeSection === "stats" ? (
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.consistency")}</div>
 
@@ -3963,8 +3973,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
 
             {/* Card 4: Par3/Par4/Par5 averages */}
+            {activeSection === "stats" ? (
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.scoresByPar")}</div>
 
@@ -4006,8 +4018,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
 
             {/* Card 5: 1-9 / 10-18 averages */}
+            {activeSection === "stats" ? (
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.frontBackTitle")}</div>
 
@@ -4041,8 +4055,10 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               )}
             </div>
+            ) : null}
           </div>
         </div>
+        ) : null}
 
         <div style={{ height: 12 }} />
       </div>

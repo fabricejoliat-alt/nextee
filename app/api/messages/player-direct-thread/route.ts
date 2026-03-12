@@ -58,21 +58,53 @@ export async function POST(req: NextRequest) {
     if (!playerMembershipRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (!staffMembershipRes.data) return NextResponse.json({ error: "Invalid staff member" }, { status: 400 });
 
-    const existingRes = await supabaseAdmin
-      .from("message_threads")
-      .select("id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at")
-      .eq("organization_id", organizationId)
-      .eq("thread_type", "player")
-      .eq("player_id", effectivePlayerId)
-      .eq("created_by", staffUserId)
-      .eq("player_thread_scope", "direct")
-      .eq("is_active", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existingRes.error) return NextResponse.json({ error: existingRes.error.message }, { status: 400 });
+    const threadSelect =
+      "id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at";
 
-    let thread = existingRes.data as any;
+    const findExistingThreadForPair = async () => {
+      const threadsRes = await supabaseAdmin
+        .from("message_threads")
+        .select(threadSelect)
+        .eq("organization_id", organizationId)
+        .eq("thread_type", "player")
+        .eq("player_id", effectivePlayerId)
+        .eq("player_thread_scope", "direct")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false });
+      if (threadsRes.error) throw new Error(threadsRes.error.message);
+      const threads = (threadsRes.data ?? []) as any[];
+      if (threads.length === 0) return null;
+
+      const threadIds = threads.map((t) => String((t as any).id ?? "").trim()).filter(Boolean);
+      if (threadIds.length === 0) return null;
+
+      const participantsRes = await supabaseAdmin
+        .from("thread_participants")
+        .select("thread_id,user_id")
+        .in("thread_id", threadIds)
+        .in("user_id", [effectivePlayerId, staffUserId]);
+      if (participantsRes.error) throw new Error(participantsRes.error.message);
+
+      const usersByThread = new Map<string, Set<string>>();
+      for (const row of participantsRes.data ?? []) {
+        const tid = String((row as any).thread_id ?? "").trim();
+        const uid = String((row as any).user_id ?? "").trim();
+        if (!tid || !uid) continue;
+        if (!usersByThread.has(tid)) usersByThread.set(tid, new Set<string>());
+        usersByThread.get(tid)!.add(uid);
+      }
+
+      for (const t of threads) {
+        const tid = String((t as any).id ?? "").trim();
+        const users = usersByThread.get(tid);
+        if (!users) continue;
+        if (users.has(effectivePlayerId) && users.has(staffUserId)) return t;
+      }
+
+      return null;
+    };
+
+    let thread = await findExistingThreadForPair();
     if (!thread) {
       const insertRes = await supabaseAdmin
         .from("message_threads")
@@ -86,26 +118,35 @@ export async function POST(req: NextRequest) {
           is_locked: false,
           is_active: true,
         })
-        .select("id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at")
+        .select(threadSelect)
         .single();
       if (insertRes.error) {
-        // Retry fetch on unique race condition.
-        const retryRes = await supabaseAdmin
-          .from("message_threads")
-          .select("id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at")
-          .eq("organization_id", organizationId)
-          .eq("thread_type", "player")
-          .eq("player_id", effectivePlayerId)
-          .eq("created_by", staffUserId)
-          .eq("player_thread_scope", "direct")
-          .eq("is_active", true)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (retryRes.error || !retryRes.data) {
-          return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
+        // Retry on unique race / legacy uniqueness by re-resolving via participants pair.
+        const retryThread = await findExistingThreadForPair();
+        if (!retryThread) {
+          const fallbackRes = await supabaseAdmin
+            .from("message_threads")
+            .select(threadSelect)
+            .eq("organization_id", organizationId)
+            .eq("thread_type", "player")
+            .eq("player_id", effectivePlayerId)
+            .eq("player_thread_scope", "direct")
+            .eq("is_active", true)
+            .order("updated_at", { ascending: false })
+            .limit(50);
+          if (fallbackRes.error) {
+            return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
+          }
+          const fallbackRows = (fallbackRes.data ?? []) as any[];
+          if (fallbackRows.length === 1) {
+            // Legacy uniqueness mode: one direct thread per player/org.
+            thread = fallbackRows[0] as any;
+          } else {
+            return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
+          }
+        } else {
+          thread = retryThread as any;
         }
-        thread = retryRes.data as any;
       } else {
         thread = insertRes.data as any;
       }

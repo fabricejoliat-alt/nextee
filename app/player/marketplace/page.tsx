@@ -234,7 +234,7 @@ export default function PlayerMarketplaceHome() {
   }
 
   return (
-    <div className="player-dashboard-bg">
+    <div className="player-dashboard-bg player-marketplace-page">
       <div className="app-shell marketplace-page">
         {/* Header */}
         <div className="glass-section">

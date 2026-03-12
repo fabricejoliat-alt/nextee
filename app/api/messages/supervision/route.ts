@@ -62,13 +62,12 @@ export async function GET(req: NextRequest) {
       staffUserIds.length
         ? supabaseAdmin
             .from("message_threads")
-            .select("id,organization_id,created_by,updated_at")
+            .select("id,organization_id,updated_at")
             .eq("thread_type", "player")
             .eq("player_id", effectivePlayerId)
             .eq("is_active", true)
             .eq("player_thread_scope", "direct")
             .in("organization_id", orgIds)
-            .in("created_by", staffUserIds)
             .order("updated_at", { ascending: false })
         : Promise.resolve({ data: [], error: null } as any),
     ]);
@@ -98,13 +97,39 @@ export async function GET(req: NextRequest) {
     }
 
     const threadByOrgAndStaff = new Map<string, string>();
-    for (const t of threadsRes.data ?? []) {
-      const orgId = String((t as any).organization_id ?? "").trim();
-      const staffId = String((t as any).created_by ?? "").trim();
-      const threadId = String((t as any).id ?? "").trim();
-      if (!orgId || !staffId || !threadId) continue;
-      const key = `${orgId}::${staffId}`;
-      if (!threadByOrgAndStaff.has(key)) threadByOrgAndStaff.set(key, threadId);
+    const threads = (threadsRes.data ?? []) as Array<{ id: string | null; organization_id: string | null }>;
+    const threadIds = threads.map((t) => String(t.id ?? "").trim()).filter(Boolean);
+    if (threadIds.length > 0 && staffUserIds.length > 0) {
+      const participantsRes = await supabaseAdmin
+        .from("thread_participants")
+        .select("thread_id,user_id")
+        .in("thread_id", threadIds)
+        .in("user_id", [effectivePlayerId, ...staffUserIds]);
+      if (participantsRes.error) return NextResponse.json({ error: participantsRes.error.message }, { status: 400 });
+
+      const usersByThread = new Map<string, Set<string>>();
+      for (const row of participantsRes.data ?? []) {
+        const tid = String((row as any).thread_id ?? "").trim();
+        const uid = String((row as any).user_id ?? "").trim();
+        if (!tid || !uid) continue;
+        if (!usersByThread.has(tid)) usersByThread.set(tid, new Set<string>());
+        usersByThread.get(tid)!.add(uid);
+      }
+
+      const staffIdSet = new Set(staffUserIds);
+      for (const t of threads) {
+        const threadId = String(t.id ?? "").trim();
+        const orgId = String(t.organization_id ?? "").trim();
+        if (!threadId || !orgId) continue;
+        const users = usersByThread.get(threadId);
+        if (!users || !users.has(effectivePlayerId)) continue;
+        for (const uid of users) {
+          if (uid === effectivePlayerId) continue;
+          if (!staffIdSet.has(uid)) continue;
+          const key = `${orgId}::${uid}`;
+          if (!threadByOrgAndStaff.has(key)) threadByOrgAndStaff.set(key, threadId);
+        }
+      }
     }
 
     const staff = staffRows

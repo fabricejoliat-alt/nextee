@@ -120,6 +120,7 @@ export default function MessagesCenter({
   const [archivedFilter, setArchivedFilter] = useState<"active" | "archived">("active");
   const [threadCounts, setThreadCounts] = useState<{ active: number; archived: number }>({ active: 0, archived: 0 });
   const threadIdsRef = useRef<Set<string>>(new Set());
+  const hasBootstrappedRef = useRef(false);
 
   function upsertIncomingMessage(msg: ThreadMessage, markAsMine = false) {
     setMessages((prev) => {
@@ -297,6 +298,7 @@ export default function MessagesCenter({
     (async () => {
       setLoading(true);
       setError(null);
+      hasBootstrappedRef.current = false;
       try {
         const [authRes, meRes] = await Promise.all([supabase.auth.getUser(), authHeader().then((h) => fetch("/api/auth/me", { method: "GET", headers: h, cache: "no-store" }))]);
         const uid = authRes.data.user?.id ?? "";
@@ -326,6 +328,7 @@ export default function MessagesCenter({
           if (threadRes.ok) targetThreadId = String(threadJson?.thread_id ?? "");
         }
         await loadThreads(orgId, targetThreadId || undefined, targetEventId || undefined, membershipRole);
+        hasBootstrappedRef.current = true;
       } catch (e: any) {
         setError(e?.message ?? tr("Erreur de chargement.", "Loading error."));
       } finally {
@@ -449,6 +452,7 @@ export default function MessagesCenter({
 
   useEffect(() => {
     if (!organizationId) return;
+    if (!hasBootstrappedRef.current) return;
     void loadThreads(organizationId, activeThreadId || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId, archivedFilter]);

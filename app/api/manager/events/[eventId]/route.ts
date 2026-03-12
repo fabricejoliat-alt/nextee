@@ -21,12 +21,16 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
     if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
     const callerId = String(callerData.user.id ?? "").trim();
-    const eventRes = await supabaseAdmin.from("club_events").select("id,club_id").eq("id", eventId).maybeSingle();
+    const eventRes = await supabaseAdmin.from("club_events").select("id,club_id,series_id").eq("id", eventId).maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data?.id) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
     const clubId = String((eventRes.data as { club_id?: string | null }).club_id ?? "").trim();
+    const seriesId = String((eventRes.data as { series_id?: string | null }).series_id ?? "").trim();
     if (!clubId) return NextResponse.json({ error: "Event club missing" }, { status: 400 });
+    if (seriesId) {
+      return NextResponse.json({ error: "Recurring event: delete from recurrence editor only." }, { status: 400 });
+    }
 
     const managerRes = await supabaseAdmin
       .from("club_members")
@@ -57,6 +61,26 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
     ]) {
       const err = await deleteByEventId(table);
       if (err) return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
+    const trainingSessionIdsRes = await supabaseAdmin
+      .from("training_sessions")
+      .select("id")
+      .eq("club_event_id", eventId);
+    if (trainingSessionIdsRes.error && !ignoreMissingTable(trainingSessionIdsRes.error)) {
+      return NextResponse.json({ error: trainingSessionIdsRes.error.message }, { status: 400 });
+    }
+    const trainingSessionIds = (trainingSessionIdsRes.data ?? [])
+      .map((r: any) => String(r.id ?? "").trim())
+      .filter(Boolean);
+    if (trainingSessionIds.length > 0) {
+      const delSessionItemsRes = await supabaseAdmin
+        .from("training_session_items")
+        .delete()
+        .in("session_id", trainingSessionIds);
+      if (delSessionItemsRes.error && !ignoreMissingTable(delSessionItemsRes.error)) {
+        return NextResponse.json({ error: delSessionItemsRes.error.message }, { status: 400 });
+      }
     }
 
     const trainingSessionsRes = await supabaseAdmin.from("training_sessions").delete().eq("club_event_id", eventId);

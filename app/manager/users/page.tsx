@@ -300,16 +300,27 @@ export default function ManagerUsersPage() {
       return;
     }
 
-    if ((form.role ?? "player") === "player" && form.user_id) {
+    const shouldSyncPerformance =
+      (form.role ?? "player") === "player" &&
+      Boolean(form.user_id) &&
+      form.is_active !== false;
+
+    if (shouldSyncPerformance && form.user_id) {
       const { error: perfError } = await supabase.rpc("set_player_performance_mode", {
         p_org_id: clubId,
         p_player_id: form.user_id,
         p_enabled: Boolean(form.is_performance),
       });
       if (perfError) {
-        setError(perfError.message || "Erreur sauvegarde mode performance");
-        setSavingId(null);
-        return;
+        // If membership just became inactive, the RPC can report not found while the update itself is successful.
+        const perfMsg = String(perfError.message ?? "");
+        if (perfMsg.includes("player_membership_not_found") && form.is_active === false) {
+          // ignore
+        } else {
+          setError(perfError.message || "Erreur sauvegarde mode performance");
+          setSavingId(null);
+          return;
+        }
       }
     }
 
