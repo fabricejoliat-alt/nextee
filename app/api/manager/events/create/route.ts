@@ -66,6 +66,75 @@ function nextWeekdayOnOrAfter(start: Date, targetWeekday: number) {
   return d;
 }
 
+function formatDateTimeLabel(startsAtIso: string, endsAtIso: string | null) {
+  const start = new Date(startsAtIso);
+  const d = new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Zurich",
+  }).format(start);
+  const s = new Intl.DateTimeFormat("fr-CH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Zurich",
+  })
+    .format(start)
+    .replace(":", "h");
+  return `${d} à ${s}`;
+}
+
+async function createEventNotification(
+  supabaseAdmin: any,
+  actorUserId: string,
+  eventId: string,
+  eventType: EventType,
+  startsAtIso: string,
+  endsAtIso: string | null,
+  locationText: string | null,
+  recipientUserIds: string[]
+) {
+  const recipients = uniq(recipientUserIds).filter((id) => id && id !== actorUserId);
+  if (recipients.length === 0) return;
+
+  const dateTime = formatDateTimeLabel(startsAtIso, endsAtIso);
+  const location = String(locationText ?? "").trim() || "Lieu à définir";
+
+  const title =
+    eventType === "training"
+      ? "Nouvel entrainement prévu"
+      : "Nouvelle activité prévue";
+  const body = eventType === "training" ? `${dateTime}\n${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
+
+  const ins = await supabaseAdmin
+    .from("notifications")
+    .insert({
+      actor_user_id: actorUserId,
+      type: "coach_event_created",
+      kind: "coach_event_created",
+      title,
+      body,
+      data: {
+        event_id: eventId,
+        url: `/player/golf/trainings/new?club_event_id=${eventId}`,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (ins.error || !ins.data?.id) throw new Error(ins.error?.message ?? "Notification insert failed");
+
+  const notificationId = String(ins.data.id);
+  const recIns = await supabaseAdmin
+    .from("notification_recipients")
+    .upsert(
+      recipients.map((userId) => ({ notification_id: notificationId, user_id: userId })),
+      { onConflict: "notification_id,user_id" }
+    );
+  if (recIns.error) throw new Error(recIns.error.message);
+}
+
 async function getManagerContext(req: NextRequest, supabaseAdmin: any) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
@@ -432,6 +501,23 @@ export async function POST(req: NextRequest) {
       coachTargetIds.forEach((id) => coachRows.push({ event_id: eventId, coach_id: id }));
 
       parentTargetIds.forEach((id) => attendeeRows.push({ event_id: eventId, player_id: id, status: "present" }));
+
+      // Best-effort notifications for attendees (players + targeted parents).
+      // Do not fail event creation if notification delivery fails.
+      try {
+        await createEventNotification(
+          supabaseAdmin,
+          ctx.callerId,
+          eventId,
+          payload.eventType,
+          startsAtIso,
+          endsAtIso,
+          String(payload.locationText ?? "").trim() || null,
+          [...playerTargetIds, ...parentTargetIds]
+        );
+      } catch {
+        // silent: activity creation must remain successful even if notifications fail
+      }
     };
 
     if (payload.mode === "single") {

@@ -111,7 +111,7 @@ function eventTypeLabel(v: EventRow["event_type"], locale: string) {
   if (v === "interclub") return pickLocaleText(l, "Interclub", "Interclub");
   if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
   if (v === "session") return pickLocaleText(l, "Séance", "Session");
-  return pickLocaleText(l, "Événement", "Event");
+  return pickLocaleText(l, "Activité", "Activity");
 }
 
 function eventTypeColor(v: EventRow["event_type"]) {
@@ -398,7 +398,7 @@ export default function CoachCalendarPage() {
 
   async function deleteEvent(eventId: string) {
     if (!eventId || deletingEventId) return;
-    const ok = window.confirm(tr("Supprimer cet événement ?", "Delete this event?"));
+    const ok = window.confirm(tr("Supprimer cette activité ?", "Delete this activity?"));
     if (!ok) return;
 
     setDeletingEventId(eventId);
@@ -413,7 +413,7 @@ export default function CoachCalendarPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? tr("Suppression impossible.", "Could not delete event.")));
+      if (!res.ok) throw new Error(String(json?.error ?? tr("Suppression impossible.", "Could not delete activity.")));
 
       setEvents((prev) => prev.filter((e) => e.id !== eventId));
       setSelectedEventId((prev) => (prev === eventId ? null : prev));
@@ -423,7 +423,7 @@ export default function CoachCalendarPage() {
         return next;
       });
     } catch (e: any) {
-      setError(e?.message ?? tr("Suppression impossible.", "Could not delete event."));
+      setError(e?.message ?? tr("Suppression impossible.", "Could not delete activity."));
     } finally {
       setDeletingEventId(null);
     }
@@ -436,11 +436,11 @@ export default function CoachCalendarPage() {
           <div className="marketplace-header">
             <div className="section-title" style={{ marginBottom: 0 }}>
               <CalendarDays size={18} style={{ verticalAlign: "middle", marginRight: 8 }} />
-              {tr("Gestion des événements", "Event management")}
+              {tr("Gestion des activités", "Activity management")}
             </div>
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/manager/events/new">
-                {tr("Ajouter un événement", "Add event")}
+                {tr("Ajouter une activité", "Add activity")}
               </Link>
             </div>
           </div>
@@ -587,7 +587,7 @@ export default function CoachCalendarPage() {
                                               </button>
                                             ) : null}
                                             <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                              {tr("Accéder à l’événement", "Open event")}
+                                              {tr("Accéder à l’activité", "Open activity")}
                                             </Link>
                                           </div>
                                         </div>
@@ -683,7 +683,7 @@ export default function CoachCalendarPage() {
                                         </button>
                                       ) : null}
                                       <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                        {tr("Accéder à l’événement", "Open event")}
+                                        {tr("Accéder à l’activité", "Open activity")}
                                       </Link>
                                     </div>
                                   </div>
@@ -701,7 +701,7 @@ export default function CoachCalendarPage() {
               {view === "day" ? (
                 <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
                   {dayEvents.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun événement ce jour.", "No event this day.")}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucune activité ce jour.", "No activity this day.")}</div>
                   ) : (
                     dayEvents.map((e) => {
                       const tone = eventTypeColor(e.event_type);
@@ -762,7 +762,7 @@ export default function CoachCalendarPage() {
                                   </button>
                                 ) : null}
                                 <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                  {tr("Accéder à l’événement", "Open event")}
+                                  {tr("Accéder à l’activité", "Open activity")}
                                 </Link>
                               </div>
                             </div>

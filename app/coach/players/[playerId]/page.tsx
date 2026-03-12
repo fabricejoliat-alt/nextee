@@ -3726,9 +3726,9 @@ function presetToSelectValue(p: Preset): Preset {
                     <Tooltip />
                     <Legend />
 
-                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
-                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#EA580C" strokeWidth={3} strokeDasharray="4 6" dot={false} />
+                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
