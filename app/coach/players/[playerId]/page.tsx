@@ -3144,49 +3144,52 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
 
         <div className="glass-section">
-          <div
-            className="coach-player-tabs"
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "nowrap",
-            }}
-          >
-            {[
-              { id: "trainings" as DashboardSection, label: "Entrainements" },
-              { id: "competition" as DashboardSection, label: "Compétition" },
-              { id: "stats" as DashboardSection, label: "Statistiques" },
-              { id: "planning" as DashboardSection, label: "Planification" },
-              { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
-              { id: "thread" as DashboardSection, label: "Fil de discussion" },
-              { id: "documents" as DashboardSection, label: "Documents" },
-            ].map((tab) => {
-              const isActive = activeSection === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className="btn"
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => setActiveSection(tab.id)}
-                  style={{
-                    flexShrink: 0,
-                    minHeight: 36,
-                    borderRadius: 10,
-                    fontWeight: 850,
-                    transition: "all 150ms ease",
-                    boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
-                    background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
-                    borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
-                    color: isActive ? "white" : "rgba(0,0,0,0.78)",
-                  }}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+          <div className="glass-card coach-player-tabs-card">
+            <div
+              className="coach-player-tabs"
+              style={{
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              {[
+                { id: "trainings" as DashboardSection, label: "Entrainements" },
+                { id: "competition" as DashboardSection, label: "Compétitions" },
+                { id: "stats" as DashboardSection, label: "Statistiques" },
+                { id: "planning" as DashboardSection, label: "Planification" },
+                { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
+                { id: "thread" as DashboardSection, label: "Fil de discussion" },
+                { id: "documents" as DashboardSection, label: "Documents" },
+              ].map((tab) => {
+                const isActive = activeSection === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className="btn"
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setActiveSection(tab.id)}
+                    style={{
+                      flexShrink: 0,
+                      minHeight: 36,
+                      borderRadius: 10,
+                      fontWeight: 850,
+                      transition: "all 150ms ease",
+                      boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
+                      background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
+                      borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
+                      color: isActive ? "white" : "rgba(0,0,0,0.78)",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
+
+        <div className="glass-section">{renderFilterCard()}</div>
 
         {activeSection === "thread" ? (
           <div className="glass-section">

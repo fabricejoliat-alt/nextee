@@ -2020,8 +2020,19 @@ input[type="radio"]{
   display: none;
 }
 
+.coach-player-tabs-card{
+  padding: 10px;
+}
+
 @media (min-width: 900px){
+  .coach-player-tabs-card{
+    width: min(100%, 780px);
+    margin-inline: auto;
+  }
+
   .coach-player-tabs{
+    width: 100%;
+    margin-inline: 0;
     flex-wrap: wrap;
     overflow: visible;
   }
