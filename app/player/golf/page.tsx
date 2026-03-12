@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -132,7 +133,7 @@ type PlayerDashboardDocument = {
 };
 
 type Preset = "month" | "last3" | "all" | "custom";
-type DashboardSection = "trainings" | "stats" | "thread" | "documents";
+type DashboardSection = "trainings" | "rounds" | "stats" | "thread" | "documents";
 
 const LOOKBACK_DAYS = 14;
 
@@ -2188,7 +2189,7 @@ function presetToSelectValue(p: Preset): Preset {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {t("golfDashboard.title")}
+                MON GOLF
               </div>
               <div className="marketplace-filter-label" style={{ margin: 0 }}>
                 <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
@@ -2202,46 +2203,45 @@ function presetToSelectValue(p: Preset): Preset {
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card coach-player-tabs-card">
-            <div
-              className="coach-player-tabs"
-              style={{
-                display: "flex",
-                gap: 8,
-              }}
-            >
-              {[
-                { id: "trainings" as DashboardSection, label: "Entrainements" },
-                { id: "stats" as DashboardSection, label: "Statistiques" },
-                { id: "thread" as DashboardSection, label: "Fil de discussion" },
-                { id: "documents" as DashboardSection, label: "Documents" },
-              ].map((tab) => {
-                const isActive = activeSection === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className="btn"
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => setActiveSection(tab.id)}
-                    style={{
-                      flexShrink: 0,
-                      minHeight: 36,
-                      borderRadius: 10,
-                      fontWeight: 850,
-                      transition: "all 150ms ease",
-                      boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
-                      background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
-                      borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
-                      color: isActive ? "white" : "rgba(0,0,0,0.78)",
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="glass-section coach-player-tabs-card">
+          <div
+            className="coach-player-tabs"
+            style={{
+              display: "flex",
+              gap: 8,
+            }}
+          >
+            {[
+              { id: "trainings" as DashboardSection, label: "Entrainements" },
+              { id: "rounds" as DashboardSection, label: "Parcours" },
+              { id: "stats" as DashboardSection, label: "Statistiques" },
+              { id: "thread" as DashboardSection, label: "Fil de discussion" },
+              { id: "documents" as DashboardSection, label: "Documents" },
+            ].map((tab) => {
+              const isActive = activeSection === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className="btn"
+                  aria-current={isActive ? "page" : undefined}
+                  onClick={() => setActiveSection(tab.id)}
+                  style={{
+                    flexShrink: 0,
+                    minHeight: 36,
+                    borderRadius: 10,
+                    fontWeight: 850,
+                    transition: "all 150ms ease",
+                    boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
+                    background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
+                    borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
+                    color: isActive ? "white" : "rgba(0,0,0,0.78)",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -2563,15 +2563,6 @@ function presetToSelectValue(p: Preset): Preset {
                 })}
               </div>
             )}
-          </div>
-        </div>
-        ) : null}
-
-        {/* ===== Title Trainings ===== */}
-        {activeSection === "trainings" ? (
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-            <div className="section-title" style={{ marginBottom: 0 }}>
-            {t("golfDashboard.trainingsTitle")}
           </div>
         </div>
         ) : null}
@@ -2899,13 +2890,73 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {/* ===== Title Rounds ===== */}
-        {activeSection === "stats" ? (
-        <div className="glass-section" style={{ paddingTop: 0 }}>
-            <div className="section-title" style={{ marginBottom: 0 }}>
-            {t("golfDashboard.roundsTitle")}
+        {activeSection === "rounds" ? (
+          <div className="glass-section">
+            <div className="glass-card">
+              {loadingRounds ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              ) : rounds.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
+              ) : (
+                <div className="marketplace-list marketplace-list-top">
+                  {rounds.map((r) => {
+                    const date = new Intl.DateTimeFormat(dateLocale, {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    }).format(new Date(r.start_at));
+                    const roundTypeLabel =
+                      r.round_type === "competition"
+                        ? pickLocaleText(locale, "Compétition", "Competition")
+                        : pickLocaleText(locale, "Entraînement", "Training");
+                    const cfg = [String(r.course_name ?? "").trim(), String(r.tee_name ?? "").trim()].filter(Boolean).join(" • ");
+                    const fwPct =
+                      typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
+                        ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
+                        : "—";
+                    return (
+                      <Link key={r.id} href={`/player/golf/rounds/${r.id}/scorecard`} className="marketplace-link">
+                        <div className="marketplace-item">
+                          <div style={{ display: "grid", gap: 10 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                              <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                                <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                                  {date}
+                                </div>
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <span className="pill-soft">{roundTypeLabel}</span>
+                                  {cfg ? (
+                                    <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
+                                      ⛳ {cfg}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
+                                <div style={{ fontWeight: 1200, fontSize: 36, lineHeight: 1 }}>{r.total_score ?? "—"}</div>
+                              </div>
+                            </div>
+                            <div className="hr-soft" style={{ margin: "2px 0" }} />
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              {pickLocaleText(locale, "Putts", "Putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                              {" • "}
+                              GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                              {" • "}
+                              {t("golfDashboard.fairwaysHit")}: <span style={{ fontWeight: 900 }}>{fwPct}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <span className="btn">{t("rounds.scorecard")}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         ) : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
