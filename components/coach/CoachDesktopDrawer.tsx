@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle } from "lucide-react";
+import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle, Trophy } from "lucide-react";
 
 const ROUTES = {
   home: "/coach",
   groups: "/coach/groups",
   calendar: "/coach/calendar",
   players: "/coach/players",
+  om: "/coach/om",
   messages: "/coach/messages",
   profileEdit: "/coach/profile",
 } as const;
@@ -29,7 +30,7 @@ function isActive(pathname: string, href: string) {
 export default function CoachDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
 
@@ -80,8 +81,20 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
       { label: "Activités", icon: CalendarDays, href: ROUTES.calendar },
       { label: "Mes groupes", icon: Users, href: ROUTES.groups },
       { label: "Joueurs", icon: User, href: ROUTES.players },
+      {
+        label:
+          locale === "fr"
+            ? "Ordre du mérite"
+            : locale === "de"
+            ? "Order of Merit"
+            : locale === "it"
+            ? "Ordine di merito"
+            : "Order of Merit",
+        icon: Trophy,
+        href: ROUTES.om,
+      },
     ],
-    []
+    [locale]
   );
 
   async function handleLogout() {

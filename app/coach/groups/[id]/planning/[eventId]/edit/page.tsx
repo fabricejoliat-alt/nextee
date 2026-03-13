@@ -435,6 +435,81 @@ export default function CoachEventEditPage() {
     }
   }
 
+  async function syncAssignmentsForEvents(eventIds: string[]) {
+    if (eventIds.length === 0) return;
+
+    const delCoaches = await supabase.from("club_event_coaches").delete().in("event_id", eventIds);
+    if (delCoaches.error) throw new Error(delCoaches.error.message);
+
+    const delAttendees = await supabase.from("club_event_attendees").delete().in("event_id", eventIds);
+    if (delAttendees.error) throw new Error(delAttendees.error.message);
+
+    if (coachIdsSelected.length > 0) {
+      const coachRows = eventIds.flatMap((eid) =>
+        coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid }))
+      );
+      const insCoaches = await supabase
+        .from("club_event_coaches")
+        .upsert(coachRows, { onConflict: "event_id,coach_id", ignoreDuplicates: true });
+      if (insCoaches.error) throw new Error(insCoaches.error.message);
+    }
+
+    if (attendeeIdsSelected.length > 0) {
+      const attendeeRows = eventIds.flatMap((eid) =>
+        attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
+      );
+      const insAttendees = await supabase
+        .from("club_event_attendees")
+        .upsert(attendeeRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
+      if (insAttendees.error) throw new Error(insAttendees.error.message);
+    }
+  }
+
+  async function updateFutureSeriesOccurrencesInPlace() {
+    if (!event?.series_id) return [] as string[];
+
+    const nowIso = new Date().toISOString();
+    const futureRes = await supabase
+      .from("club_events")
+      .select("id,starts_at")
+      .eq("series_id", event.series_id)
+      .gte("starts_at", nowIso)
+      .order("starts_at", { ascending: true });
+    if (futureRes.error) throw new Error(futureRes.error.message);
+
+    const futureEvents = (futureRes.data ?? []) as Array<{ id: string; starts_at: string }>;
+    const updatedIds: string[] = [];
+
+    for (const futureEvent of futureEvents) {
+      const localDate = toYMD(new Date(futureEvent.starts_at));
+      const startDt = combineDateAndTime(localDate, timeOfDay);
+      const endDt = new Date(startDt);
+      endDt.setMinutes(endDt.getMinutes() + durationMinutes);
+
+      const upd = await supabase
+        .from("club_events")
+        .update({
+          event_type: eventType,
+          title: eventTitle.trim() || null,
+          starts_at: startDt.toISOString(),
+          ends_at: endDt.toISOString(),
+          duration_minutes: durationMinutes,
+          location_text: locationText.trim() || null,
+          coach_note: coachNote.trim() || null,
+        })
+        .eq("id", futureEvent.id);
+      if (upd.error) throw new Error(upd.error.message);
+      updatedIds.push(futureEvent.id);
+    }
+
+    if (updatedIds.length > 0) {
+      await syncAssignmentsForEvents(updatedIds);
+      await applyStructureForEvents(updatedIds);
+    }
+
+    return updatedIds;
+  }
+
   const selectedPlayersList = useMemo(
     () =>
       Object.values(selectedPlayers).sort((a, b) =>
@@ -1002,8 +1077,17 @@ export default function CoachEventEditPage() {
   async function saveSeriesAndRegenerateFuture() {
     if (!event?.series_id || !series || !group) return;
 
+    const structureChanged =
+      series.weekday !== weekday ||
+      (series.start_date ?? "") !== startDate ||
+      (series.end_date ?? "") !== endDate ||
+      Number(series.interval_weeks ?? 1) !== Number(intervalWeeks) ||
+      Boolean(series.is_active) !== Boolean(seriesActive);
+
     const ok = window.confirm(
-      "Update recurrence?\n\n⚠️ This will delete all FUTURE occurrences of this recurrence (from today), then recreate them with the new settings."
+      structureChanged
+        ? "Mettre à jour la récurrence ?\n\n⚠️ Comme la structure de la récurrence change, toutes les occurrences FUTURES (à partir d’aujourd’hui) seront supprimées puis recréées avec les nouveaux paramètres."
+        : "Mettre à jour la récurrence ?\n\nLes occurrences futures existantes seront mises à jour avec les nouveaux paramètres, sans être supprimées."
     );
     if (!ok) return;
 
@@ -1020,8 +1104,8 @@ export default function CoachEventEditPage() {
             : "Nom de l’événement requis."
         );
       }
-      if (!startDate || !endDate) throw new Error("Missing recurrence dates.");
-      if (endDate < startDate) throw new Error("End date must be after start date.");
+      if (!startDate || !endDate) throw new Error("Dates de récurrence manquantes.");
+      if (endDate < startDate) throw new Error("La date de fin doit être postérieure à la date de début.");
 
       // 1) update series template
       const updS = await supabase
@@ -1043,83 +1127,79 @@ export default function CoachEventEditPage() {
 
       if (updS.error) throw new Error(updS.error.message);
 
-      // 2) delete future occurrences for this series
-      const nowIso = new Date().toISOString();
-      const delFuture = await supabase
-        .from("club_events")
-        .delete()
-        .eq("series_id", event.series_id)
-        .gte("starts_at", nowIso);
+      let affectedEventIds: string[] = [];
+      if (!structureChanged && seriesActive) {
+        affectedEventIds = await updateFutureSeriesOccurrencesInPlace();
+      } else {
+        // delete + regenerate occurrences only when recurrence structure changes
+        const nowIso = new Date().toISOString();
+        const futureEventsRes = await supabase
+          .from("club_events")
+          .select("id")
+          .eq("series_id", event.series_id)
+          .gte("starts_at", nowIso);
+        if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
+        const futureEventIds = (futureEventsRes.data ?? [])
+          .map((r: any) => String(r.id ?? "").trim())
+          .filter(Boolean);
 
-      if (delFuture.error) throw new Error(delFuture.error.message);
-
-      // 3) regenerate occurrences (cap 80)
-      const startLocal = new Date(`${startDate}T00:00:00`);
-      const endLocal = new Date(`${endDate}T23:59:59`);
-
-      let cursor = nextWeekdayOnOrAfter(startLocal, weekday);
-      let count = 0;
-
-      const occurrences: any[] = [];
-      while (cursor <= endLocal) {
-        const dt = combineDateAndTime(toYMD(cursor), timeOfDay);
-        const startsIso = dt.toISOString();
-
-        if (startsIso >= nowIso) {
-          const endDt = new Date(dt);
-          endDt.setMinutes(endDt.getMinutes() + durationMinutes);
-          occurrences.push({
-            group_id: group.id,
-            club_id: group.club_id,
-            event_type: eventType,
-            starts_at: startsIso,
-            ends_at: endDt.toISOString(),
-            duration_minutes: durationMinutes,
-            location_text: locationText.trim() || null,
-            coach_note: coachNote.trim() || null,
-            series_id: event.series_id,
-            created_by: meId || series.created_by,
-          });
-
-          count += 1;
-          if (count >= 80) break;
+        if (futureEventIds.length > 0) {
+          const delThreads = await supabase.from("message_threads").delete().in("event_id", futureEventIds);
+          if (delThreads.error) throw new Error(delThreads.error.message);
         }
 
-        cursor = addDays(cursor, intervalWeeks * 7);
-      }
+        const delFuture = await supabase
+          .from("club_events")
+          .delete()
+          .eq("series_id", event.series_id)
+          .gte("starts_at", nowIso);
+        if (delFuture.error) throw new Error(delFuture.error.message);
 
-      if (seriesActive && occurrences.length === 0) {
-        throw new Error("No future occurrence generated (check date/day/time).");
-      }
+        const startLocal = new Date(`${startDate}T00:00:00`);
+        const endLocal = new Date(`${endDate}T23:59:59`);
+        let cursor = nextWeekdayOnOrAfter(startLocal, weekday);
+        let count = 0;
+        const occurrences: any[] = [];
 
-      let createdEventIds: string[] = [];
-      if (seriesActive && occurrences.length > 0) {
-        const eIns = await supabase.from("club_events").insert(occurrences).select("id");
-        if (eIns.error) throw new Error(eIns.error.message);
-        createdEventIds = (eIns.data ?? []).map((r: any) => r.id as string);
-      }
+        while (cursor <= endLocal) {
+          const dt = combineDateAndTime(toYMD(cursor), timeOfDay);
+          const startsIso = dt.toISOString();
 
-      // 4) apply coaches/attendees to regenerated events
-      if (seriesActive && createdEventIds.length > 0) {
-        if (coachIdsSelected.length > 0) {
-          const coachRows = createdEventIds.flatMap((eid) =>
-            coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid }))
-          );
-          const cIns = await supabase.from("club_event_coaches").insert(coachRows);
-          if (cIns.error) throw new Error(cIns.error.message);
+          if (startsIso >= nowIso) {
+            const endDt = new Date(dt);
+            endDt.setMinutes(endDt.getMinutes() + durationMinutes);
+            occurrences.push({
+              group_id: group.id,
+              club_id: group.club_id,
+              event_type: eventType,
+              title: eventTitle.trim() || null,
+              starts_at: startsIso,
+              ends_at: endDt.toISOString(),
+              duration_minutes: durationMinutes,
+              location_text: locationText.trim() || null,
+              coach_note: coachNote.trim() || null,
+              series_id: event.series_id,
+              created_by: meId || series.created_by,
+            });
+
+            count += 1;
+            if (count >= 80) break;
+          }
+
+          cursor = addDays(cursor, intervalWeeks * 7);
         }
 
-        if (attendeeIdsSelected.length > 0) {
-          const attRows = createdEventIds.flatMap((eid) =>
-            attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-          );
-          const aIns = await supabase
-            .from("club_event_attendees")
-            .upsert(attRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-          if (aIns.error) throw new Error(aIns.error.message);
+        if (seriesActive && occurrences.length === 0) {
+          throw new Error("Aucune occurrence future n’a été générée. Vérifie les dates, le jour et l’heure.");
         }
 
-        await applyStructureForEvents(createdEventIds);
+        if (seriesActive && occurrences.length > 0) {
+          const eIns = await supabase.from("club_events").insert(occurrences).select("id");
+          if (eIns.error) throw new Error(eIns.error.message);
+          affectedEventIds = (eIns.data ?? []).map((r: any) => r.id as string);
+          await syncAssignmentsForEvents(affectedEventIds);
+          await applyStructureForEvents(affectedEventIds);
+        }
       }
 
       await syncPlayerChangesOnFuturePlannedEvents();
@@ -1128,8 +1208,8 @@ export default function CoachEventEditPage() {
         const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
         const summary =
           locale === "fr"
-            ? `Nouvelle récurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "sans lieu"}`
-            : `New recurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "no location"}`;
+            ? `${structureChanged ? "Récurrence reconstruite" : "Récurrence mise à jour"}: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "sans lieu"}`
+            : `${structureChanged ? "Recurrence rebuilt" : "Recurrence updated"}: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "no location"}`;
         const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale, {
           changesSummary: summary,
         });
@@ -1146,7 +1226,7 @@ export default function CoachEventEditPage() {
       setBusy(false);
       router.push(`/coach/groups/${groupId}/planning`);
     } catch (e: any) {
-      setError(e?.message ?? "Recurrence update error.");
+      setError(e?.message ?? "Erreur lors de la mise à jour de la récurrence.");
       setBusy(false);
     }
   }
@@ -1163,6 +1243,13 @@ export default function CoachEventEditPage() {
       recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
     } catch {
       recipients = [];
+    }
+
+    const delThreads = await supabase.from("message_threads").delete().eq("event_id", eventId);
+    if (delThreads.error) {
+      setError(delThreads.error.message);
+      setBusy(false);
+      return;
     }
 
     const del = await supabase.from("club_events").delete().eq("id", eventId);
@@ -1205,7 +1292,7 @@ export default function CoachEventEditPage() {
     if (!event?.series_id) return;
 
     const ok = window.confirm(
-      "Delete full RECURRENCE?\n\n⚠️ This deletes the series and all its occurrences (past and future)."
+      "Supprimer toute la récurrence ?\n\n⚠️ La série et toutes ses occurrences, passées et futures, seront supprimées."
     );
     if (!ok) return;
 
@@ -1218,6 +1305,11 @@ export default function CoachEventEditPage() {
       const seriesEventIds = (seriesEventsRes.data ?? [])
         .map((r) => String(r.id ?? "").trim())
         .filter(Boolean);
+
+      if (seriesEventIds.length > 0) {
+        const delThreads = await supabase.from("message_threads").delete().in("event_id", seriesEventIds);
+        if (delThreads.error) throw new Error(delThreads.error.message);
+      }
 
       let recipients: string[] = [];
       if (seriesEventIds.length > 0) {
@@ -2023,7 +2115,7 @@ export default function CoachEventEditPage() {
                     onClick={saveSeriesAndRegenerateFuture}
                     style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
                   >
-                    {busy ? "Saving…" : "Save recurrence (future)"}
+                    {busy ? "Enregistrement…" : "Enregistrer la récurrence"}
                   </button>
                 )}
 

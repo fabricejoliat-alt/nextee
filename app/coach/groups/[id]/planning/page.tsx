@@ -1106,17 +1106,66 @@ export default function CoachGroupPlanningPage() {
     }
   }
 
-  async function deleteEvent(eventId: string) {
-    const ok = window.confirm(tr("Supprimer cet événement planifié ? (irréversible)", "Delete this planned event? (irreversible)"));
-    if (!ok) return;
-
+  async function deleteEvent(event: EventRow) {
     setBusy(true);
     setError(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
 
-    const del = await supabase.from("club_events").delete().eq("id", eventId);
-    if (del.error) setError(del.error.message);
-    setBusy(false);
-    await load();
+      if (event.series_id) {
+        const deleteOccurrence = window.confirm(
+          tr(
+            "Cet événement appartient à une récurrence.\n\nOK : supprimer seulement cette occurrence\nAnnuler : choisir la suppression de toute la récurrence",
+            "This event belongs to a recurrence.\n\nOK: delete only this occurrence\nCancel: choose deletion of the full recurrence"
+          )
+        );
+
+        if (deleteOccurrence) {
+          const res = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}?scope=occurrence`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+          await load();
+          return;
+        }
+
+        const deleteSeries = window.confirm(
+          tr(
+            "Supprimer toute la récurrence ?\n\nToutes les occurrences passées et futures seront supprimées.",
+            "Delete the whole recurrence?\n\nAll past and future occurrences will be deleted."
+          )
+        );
+        if (!deleteSeries) return;
+
+        const res = await fetch(`/api/coach/events/series/${encodeURIComponent(event.series_id)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+        await load();
+        return;
+      }
+
+      const ok = window.confirm(tr("Supprimer cet événement planifié ? (irréversible)", "Delete this planned event? (irreversible)"));
+      if (!ok) return;
+
+      const res = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? tr("Suppression impossible.", "Delete failed."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function addCoachToEvent(eventId: string, coachId: string) {
@@ -1442,7 +1491,7 @@ export default function CoachGroupPlanningPage() {
                           type="button"
                           className="btn btn-danger soft"
                           disabled={busy}
-                          onClick={() => deleteEvent(e.id)}
+                          onClick={() => deleteEvent(e)}
                           title="Supprimer"
                         >
                           <Trash2 size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />

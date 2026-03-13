@@ -129,7 +129,7 @@ type OmTournamentScoreRow = {
   score_net: number | null;
 };
 
-type Preset = "month" | "last3" | "all" | "custom";
+type Preset = "week" | "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
 type DashboardSection = "trainings" | "competition" | "stats" | "planning" | "evaluations" | "thread" | "documents";
@@ -212,6 +212,13 @@ function monthRangeLocal(now = new Date()) {
 function last3MonthsRangeLocal(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function thisWeekRangeLocal(now = new Date()) {
+  const start = weekStartMonday(now);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
   return { start, end };
 }
 
@@ -735,6 +742,15 @@ export default function GolfDashboardPage() {
   useEffect(() => {
     const now = new Date();
 
+    if (preset === "week") {
+      const { start, end } = thisWeekRangeLocal(now);
+      const endInclusive = new Date(end);
+      endInclusive.setDate(endInclusive.getDate() - 1);
+      setFromDate(isoToYMD(start));
+      setToDate(isoToYMD(endInclusive));
+      return;
+    }
+
     if (preset === "month") {
       const { start, end } = monthRangeLocal(now);
       const endInclusive = new Date(end);
@@ -780,6 +796,16 @@ export default function GolfDashboardPage() {
   const prevRange = useMemo(() => {
     if (preset === "all") return null;
 
+    if (preset === "week") {
+      const now = new Date();
+      const cur = thisWeekRangeLocal(now);
+      const prevStart = new Date(cur.start);
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevEndInclusive = new Date(cur.start);
+      prevEndInclusive.setDate(prevEndInclusive.getDate() - 1);
+      return { from: isoToYMD(prevStart), to: isoToYMD(prevEndInclusive) };
+    }
+
     if (preset === "month") {
       const now = new Date();
       const cur = monthRangeLocal(now);
@@ -813,6 +839,7 @@ export default function GolfDashboardPage() {
 
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
+    if (preset === "week") return t("golfDashboard.vsPrevPeriod");
     if (preset === "month") return t("golfDashboard.vsPrevMonth");
     if (preset === "last3") return t("golfDashboard.vsPrev3Months");
     return t("golfDashboard.vsPrevPeriod");
@@ -1364,6 +1391,7 @@ export default function GolfDashboardPage() {
   }, [canLoadData, fromDate, playerId, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
+    week: t("common.thisWeek"),
     month: t("common.thisMonth"),
     last3: t("common.last3Months"),
     all: t("common.allActivity"),
@@ -1374,6 +1402,13 @@ function presetToSelectValue(p: Preset): Preset {
   // Le select doit rester cohérent : si customOpen est ouvert ou preset=custom -> custom
   return p;
 }
+  const volumeCardTitle = useMemo(() => {
+    if (preset === "week") return pickLocaleText(locale, "Volume de la semaine", "Weekly training volume");
+    if (preset === "month") return pickLocaleText(locale, "Volume du mois", "Monthly training volume");
+    if (preset === "last3") return pickLocaleText(locale, "Volume des 3 derniers mois", "Last 3 months volume");
+    if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
+    return t("golfDashboard.volume");
+  }, [locale, preset, t]);
   const filteredSessions = useMemo(() => {
     if (trainingScope === "all") return sessions;
     return sessions.filter(
@@ -1419,9 +1454,19 @@ function presetToSelectValue(p: Preset): Preset {
   );
   const trainingLevel = trainingVolumeLevelFromDb ?? "—";
   const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
-  const trainingVolumePercent = trainingVolumeObjective > 0 ? Math.max(0, Math.round((totalMinutes / trainingVolumeObjective) * 100)) : 0;
-  const hasVolumeData = filteredSessions.length > 0 || (!isPerformanceEnabled && plannedClubMinutes > 0);
-
+  const displayedTrainingVolumeObjective = useMemo(() => {
+    if (trainingVolumeObjective <= 0) return 0;
+    if (preset === "month") return trainingVolumeObjective * 4;
+    return trainingVolumeObjective;
+  }, [preset, trainingVolumeObjective]);
+  const weeklyObjectiveMinutes = useMemo(
+    () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
+    [trainingVolumeObjective]
+  );
+  const trainingVolumePercent =
+    displayedTrainingVolumeObjective > 0
+      ? Math.max(0, Math.round((totalMinutes / displayedTrainingVolumeObjective) * 100))
+      : 0;
   useEffect(() => {
     (async () => {
       if (!canLoadData || !playerId) {
@@ -3006,6 +3051,7 @@ function presetToSelectValue(p: Preset): Preset {
             }}
             aria-label={t("common.filterByPeriod")}
           >
+            <option value="week">{t("common.thisWeek")}</option>
             <option value="month">Ce mois</option>
             <option value="last3">3 derniers mois</option>
             <option value="all">{t("common.allActivity")}</option>
@@ -3624,12 +3670,10 @@ function presetToSelectValue(p: Preset): Preset {
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{t("golfDashboard.volume")}</div>
+              <div className="card-title">{volumeCardTitle}</div>
 
               {loading ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : !hasVolumeData ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
@@ -3639,46 +3683,16 @@ function presetToSelectValue(p: Preset): Preset {
                           <CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" />
                           <span className="unit">MIN</span>
                         </div>
-
-                        {deltaMinutes != null && (
-                          <span
-                            className="pill-soft"
-                            style={{
-                              background: "rgba(0,0,0,0.06)",
-                              fontSize: 12,
-                              fontWeight: 950,
-                              color: deltaMinutes >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                            }}
-                            title={t("golfDashboard.previousPeriodComparison")}
-                          >
-                            {deltaMinutes >= 0 ? "▲" : "▼"} {Math.abs(deltaMinutes)} min
-                          </span>
-                        )}
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                         <span className="pill-soft">⛳ {filteredSessions.length} {t("golfDashboard.sessions")}</span>
-
-                        {deltaCount != null && (
-                          <span
-                            className="pill-soft"
-                            style={{
-                              background: "rgba(0,0,0,0.06)",
-                              fontSize: 12,
-                              fontWeight: 950,
-                              color: deltaCount >= 0 ? "rgba(47,125,79,1)" : "rgba(185,28,28,1)",
-                            }}
-                            title={t("golfDashboard.previousPeriodComparison")}
-                          >
-                            {deltaCount >= 0 ? "▲" : "▼"} {Math.abs(deltaCount)} {t("golfDashboard.sessions")}
-                          </span>
-                        )}
                       </div>
 
                       {trainingVolumeObjective > 0 ? (
                         <div style={{ display: "grid", gap: 6 }}>
                           <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.72)" }}>
-                            {t("playerHome.goal")}: {trainingVolumeObjective} {t("common.min")}
+                            {t("playerHome.goal")}: {displayedTrainingVolumeObjective} {t("common.min")}
                           </div>
                         </div>
                       ) : null}
@@ -3752,9 +3766,9 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    {trainingVolumeObjective > 0 ? (
+                    {weeklyObjectiveMinutes > 0 ? (
                       <ReferenceLine
-                        y={trainingVolumeObjective}
+                        y={weeklyObjectiveMinutes}
                         stroke="rgba(185,28,28,0.9)"
                         strokeDasharray="6 4"
                         strokeWidth={2}
@@ -3793,7 +3807,7 @@ function presetToSelectValue(p: Preset): Preset {
                     <Legend />
 
                     <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#EA580C" strokeWidth={3} strokeDasharray="4 6" dot={false} />
+                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
                     <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -3846,29 +3860,66 @@ function presetToSelectValue(p: Preset): Preset {
                   {pickLocaleText(locale, "Aucun parcours en compétition sur la période.", "No competition rounds in this period.")}
                 </div>
               ) : (
-                <div style={{ display: "grid", gap: 8 }}>
+                <div className="marketplace-list marketplace-list-top">
                   {competitionRounds.map((r) => {
                     const gross = omScoresByRoundId[r.id]?.gross ?? r.total_score ?? null;
                     const netFromOm = omScoresByRoundId[r.id]?.net ?? null;
                     const net = netFromOm ?? (typeof gross === "number" ? gross - Number(r.handicap_start ?? 0) : null);
                     const name = String(r.competition_name ?? "").trim() || pickLocaleText(locale, "Compétition", "Competition");
+                    const date = new Intl.DateTimeFormat(dateLocale, {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    }).format(new Date(r.start_at));
+                    const cfg = [String(r.course_name ?? "").trim(), String(r.tee_name ?? "").trim()].filter(Boolean).join(" • ");
+                    const fwPct =
+                      typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
+                        ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
+                        : "—";
                     return (
-                      <div key={r.id} style={{ ...miniRow, alignItems: "flex-start", gap: 10 }}>
-                        <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.9)" }}>{name}</div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>{shortDate(r.start_at, dateLocale)}</div>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>
-                            {pickLocaleText(locale, "Brut", "Gross")}: {gross ?? "—"} · {pickLocaleText(locale, "Net", "Net")}: {net ?? "—"}
+                      <div key={r.id} className="marketplace-item">
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                            <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                              <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                                {name}
+                              </div>
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span className="pill-soft">{date}</span>
+                                {cfg ? (
+                                  <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
+                                    ⛳ {cfg}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>
+                                {pickLocaleText(locale, "Score brut", "Gross score")}
+                              </div>
+                              <div style={{ fontWeight: 1200, fontSize: 36, lineHeight: 1 }}>{gross ?? "—"}</div>
+                            </div>
+                          </div>
+                          <div className="hr-soft" style={{ margin: "2px 0" }} />
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {pickLocaleText(locale, "Net", "Net")}: <span style={{ fontWeight: 900 }}>{net ?? "—"}</span>
+                            {" • "}
+                            {pickLocaleText(locale, "Putts", "Putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                            {" • "}
+                            GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                            {" • "}
+                            {t("golfDashboard.fairwaysHit")}: <span style={{ fontWeight: 900 }}>{fwPct}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={() => setSelectedCompetitionRoundId(r.id)}
+                            >
+                              {t("rounds.scorecard")}
+                            </button>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => setSelectedCompetitionRoundId(r.id)}
-                          style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
-                        >
-                          Stats
-                        </button>
                       </div>
                     );
                   })}

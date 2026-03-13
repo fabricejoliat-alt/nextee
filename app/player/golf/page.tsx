@@ -133,7 +133,7 @@ type PlayerDashboardDocument = {
   public_url: string;
 };
 
-type Preset = "month" | "last3" | "all" | "custom";
+type Preset = "week" | "month" | "last3" | "all" | "custom";
 type DashboardSection = "trainings" | "rounds" | "stats" | "thread" | "documents";
 
 const LOOKBACK_DAYS = 14;
@@ -167,6 +167,13 @@ function monthRangeLocal(now = new Date()) {
 function last3MonthsRangeLocal(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function thisWeekRangeLocal(now = new Date()) {
+  const start = weekStartMonday(now);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
   return { start, end };
 }
 
@@ -1078,6 +1085,15 @@ export default function GolfDashboardPage() {
   useEffect(() => {
     const now = new Date();
 
+    if (preset === "week") {
+      const { start, end } = thisWeekRangeLocal(now);
+      const endInclusive = new Date(end);
+      endInclusive.setDate(endInclusive.getDate() - 1);
+      setFromDate(isoToYMD(start));
+      setToDate(isoToYMD(endInclusive));
+      return;
+    }
+
     if (preset === "month") {
       const { start, end } = monthRangeLocal(now);
       const endInclusive = new Date(end);
@@ -1123,6 +1139,16 @@ export default function GolfDashboardPage() {
   const prevRange = useMemo(() => {
     if (preset === "all") return null;
 
+    if (preset === "week") {
+      const now = new Date();
+      const cur = thisWeekRangeLocal(now);
+      const prevStart = new Date(cur.start);
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevEndInclusive = new Date(cur.start);
+      prevEndInclusive.setDate(prevEndInclusive.getDate() - 1);
+      return { from: isoToYMD(prevStart), to: isoToYMD(prevEndInclusive) };
+    }
+
     if (preset === "month") {
       const now = new Date();
       const cur = monthRangeLocal(now);
@@ -1157,6 +1183,7 @@ export default function GolfDashboardPage() {
   const compareMonths = useMemo(() => {
     if (preset === "last3") return 3;
     if (preset === "month") return 1;
+    if (preset === "week") return 0;
     if (preset === "custom" && fromDate && toDate) {
       const d = diffDaysInclusive(fromDate, toDate);
       if (!d) return 1;
@@ -1167,6 +1194,10 @@ export default function GolfDashboardPage() {
 
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
+    if (preset === "week") {
+      if (locale === "fr") return "vs semaine précédente";
+      return "vs previous week";
+    }
     if (locale === "fr") return `vs ${compareMonths} mois précédent${compareMonths > 1 ? "s" : ""}`;
     return `vs previous ${compareMonths} month${compareMonths > 1 ? "s" : ""}`;
   }, [prevRange, locale, compareMonths]);
@@ -1558,6 +1589,7 @@ export default function GolfDashboardPage() {
   }, [fromDate, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
+    week: t("common.thisWeek"),
     month: t("common.thisMonth"),
     last3: t("common.last3Months"),
     all: t("common.allActivity"),
@@ -1568,6 +1600,13 @@ function presetToSelectValue(p: Preset): Preset {
   // Le select doit rester cohérent : si customOpen est ouvert ou preset=custom -> custom
   return p;
 }
+  const volumeCardTitle = useMemo(() => {
+    if (preset === "week") return pickLocaleText(locale, "Volume de la semaine", "Weekly training volume");
+    if (preset === "month") return pickLocaleText(locale, "Volume du mois", "Monthly training volume");
+    if (preset === "last3") return pickLocaleText(locale, "Volume des 3 derniers mois", "Last 3 months volume");
+    if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
+    return pickLocaleText(locale, "Mon volume d'entraînement", "Training volume");
+  }, [locale, preset]);
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(() => {
     if (isPerformanceEnabled) return sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
@@ -1588,16 +1627,21 @@ function presetToSelectValue(p: Preset): Preset {
     if (!trainingVolumeTarget) return 0;
     return inSeason ? trainingVolumeTarget.minutes_inseason : trainingVolumeTarget.minutes_offseason;
   }, [trainingSeasonMonths, trainingOffseasonMonths, trainingVolumeTarget]);
+  const displayedTrainingVolumeObjective = useMemo(() => {
+    if (trainingVolumeObjective <= 0) return 0;
+    if (preset === "month") return trainingVolumeObjective * 4;
+    return trainingVolumeObjective;
+  }, [preset, trainingVolumeObjective]);
   const trainingVolumeMotivation = useMemo(() => {
     const text = String(trainingVolumeTarget?.motivation_text ?? "").trim();
     return text || null;
   }, [trainingVolumeTarget]);
   const trainingVolumePercent = useMemo(
-    () => (trainingVolumeObjective > 0 ? (totalMinutes / trainingVolumeObjective) * 100 : 0),
-    [totalMinutes, trainingVolumeObjective]
+    () => (displayedTrainingVolumeObjective > 0 ? (totalMinutes / displayedTrainingVolumeObjective) * 100 : 0),
+    [displayedTrainingVolumeObjective, totalMinutes]
   );
-  const trainingVolumeGoalReached = trainingVolumeObjective > 0 && totalMinutes >= trainingVolumeObjective;
-  const showMonthlyObjective = preset !== "all" && trainingVolumeObjective > 0;
+  const trainingVolumeGoalReached = displayedTrainingVolumeObjective > 0 && totalMinutes >= displayedTrainingVolumeObjective;
+  const showMonthlyObjective = preset !== "all" && displayedTrainingVolumeObjective > 0;
   const weeklyObjectiveMinutes = useMemo(
     () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
     [trainingVolumeObjective]
@@ -2665,6 +2709,7 @@ function presetToSelectValue(p: Preset): Preset {
         }}
         aria-label={t("common.filterByPeriod")}
       >
+        <option value="week">{t("common.thisWeek")}</option>
         <option value="month">{t("common.thisMonth")}</option>
         <option value="last3">{t("common.last3Months")}</option>
         <option value="all">{t("common.allActivity")}</option>
@@ -2758,7 +2803,7 @@ function presetToSelectValue(p: Preset): Preset {
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{locale === "fr" ? "Mon volume d'entraînement" : t("golfDashboard.volume")}</div>
+              <div className="card-title">{volumeCardTitle}</div>
 
               {loading ? (
                 <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
@@ -2781,7 +2826,7 @@ function presetToSelectValue(p: Preset): Preset {
                       </div>
                       {showMonthlyObjective ? (
                         <div style={{ marginTop: 8, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
-                          {t("playerHome.goal")}: {trainingVolumeObjective} {t("common.min")}
+                          {t("playerHome.goal")}: {displayedTrainingVolumeObjective} {t("common.min")}
                         </div>
                       ) : null}
                       {trainingVolumeMotivation ? (
@@ -2913,9 +2958,9 @@ function presetToSelectValue(p: Preset): Preset {
                       <Tooltip />
                       <Legend />
 
-                      <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
-                      <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
-                      <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                      <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
+                      <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
+                      <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

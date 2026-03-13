@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { isOrgStaffMember, requireCaller } from "@/app/api/messages/_lib";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -100,8 +101,8 @@ async function notifyEventDeletion(
   const title = isInterclub
     ? `L'interclub du ${moment} a été annulé`
     : isTraining
-    ? `L'entrainement du ${moment} a été annulé`
-    : "Une activité prévue a été annulée";
+      ? `L'entrainement du ${moment} a été annulé`
+      : "Une activité prévue a été annulée";
   const body = isTrainingOrInterclub ? "" : `Le ${moment} • ${location}`;
   const url = "/player/golf/trainings";
 
@@ -120,10 +121,9 @@ async function notifyEventDeletion(
     })
     .select("id")
     .single();
-
   if (ins.error || !ins.data?.id) throw new Error(ins.error?.message ?? "Notification insert failed");
-  const notificationId = String(ins.data.id);
 
+  const notificationId = String(ins.data.id);
   const recIns = await supabaseAdmin
     .from("notification_recipients")
     .upsert(
@@ -150,10 +150,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
     if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    const { callerId } = await requireCaller(accessToken);
 
-    const callerId = String(callerData.user.id ?? "").trim();
     const eventRes = await supabaseAdmin
       .from("club_events")
       .select("id,club_id,series_id,event_type,starts_at,location_text")
@@ -164,21 +162,14 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
 
     const clubId = String((eventRes.data as { club_id?: string | null }).club_id ?? "").trim();
     const seriesId = String((eventRes.data as { series_id?: string | null }).series_id ?? "").trim();
+    const scope = String(new URL(req.url).searchParams.get("scope") ?? "").trim();
     if (!clubId) return NextResponse.json({ error: "Event club missing" }, { status: 400 });
-    if (seriesId) {
+    if (seriesId && scope !== "occurrence") {
       return NextResponse.json({ error: "Événement récurrent : suppression uniquement depuis l’éditeur de récurrence." }, { status: 400 });
     }
 
-    const managerRes = await supabaseAdmin
-      .from("club_members")
-      .select("id")
-      .eq("club_id", clubId)
-      .eq("user_id", callerId)
-      .eq("role", "manager")
-      .eq("is_active", true)
-      .maybeSingle();
-    if (managerRes.error) return NextResponse.json({ error: managerRes.error.message }, { status: 400 });
-    if (!managerRes.data?.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const staffAllowed = await isOrgStaffMember(supabaseAdmin, clubId, callerId);
+    if (!staffAllowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const eventType = String((eventRes.data as { event_type?: string | null }).event_type ?? "training").trim();
     const startsAt = String((eventRes.data as { starts_at?: string | null }).starts_at ?? "").trim();
@@ -202,7 +193,6 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
       return null;
     };
 
-    // Remove known dependent rows first to avoid FK blocks on club_events delete.
     for (const table of [
       "club_event_attendees",
       "club_event_coaches",
@@ -262,7 +252,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
           recipientUserIds
         );
       } catch {
-        // Ignore notification failures: activity deletion must remain successful.
+        // keep deletion successful even if notifications fail
       }
     }
 
