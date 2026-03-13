@@ -14,6 +14,7 @@ import {
   Line,
   BarChart,
   Bar,
+  ReferenceLine,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -151,6 +152,9 @@ type PlannedEventRow = {
   group_id: string | null;
   location_text: string | null;
   club_id: string | null;
+  group_name?: string | null;
+  organization_name?: string | null;
+  can_open_detail?: boolean;
 };
 
 type PlayerDashboardDocument = {
@@ -582,7 +586,6 @@ export default function GolfDashboardPage() {
   const [coachEvalPage, setCoachEvalPage] = useState(0);
   const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
   const [plannedEvents, setPlannedEvents] = useState<PlannedEventRow[]>([]);
-  const [plannedGroupNameById, setPlannedGroupNameById] = useState<Record<string, string>>({});
   const [loadingPlannedEvents, setLoadingPlannedEvents] = useState(false);
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
@@ -2265,61 +2268,30 @@ function presetToSelectValue(p: Preset): Preset {
 
   useEffect(() => {
     (async () => {
-      if (!canLoadData || !playerId || sharedClubIds.length === 0) {
+      if (!canLoadData || !playerId) {
         setPlannedEvents([]);
-        setPlannedGroupNameById({});
         return;
       }
       setLoadingPlannedEvents(true);
       try {
-        const attendeeRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id")
-          .eq("player_id", playerId)
-          .limit(2000);
-        if (attendeeRes.error) throw new Error(attendeeRes.error.message);
-
-        const eventIds = Array.from(
-          new Set((attendeeRes.data ?? []).map((r: any) => String(r.event_id ?? "")).filter(Boolean))
-        );
-        if (eventIds.length === 0) {
-          setPlannedEvents([]);
-          setPlannedGroupNameById({});
-          return;
-        }
-
-        const evRes = await supabase
-          .from("club_events")
-          .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status")
-          .in("id", eventIds)
-          .in("club_id", sharedClubIds)
-          .eq("status", "scheduled")
-          .gte("starts_at", new Date().toISOString())
-          .order("starts_at", { ascending: true })
-          .limit(100);
-        if (evRes.error) throw new Error(evRes.error.message);
-
-        const nextEvents = (evRes.data ?? []) as PlannedEventRow[];
-        setPlannedEvents(nextEvents);
-
-        const groupIds = Array.from(new Set(nextEvents.map((e) => String(e.group_id ?? "")).filter(Boolean)));
-        if (groupIds.length === 0) {
-          setPlannedGroupNameById({});
-          return;
-        }
-        const gRes = await supabase.from("coach_groups").select("id,name").in("id", groupIds);
-        if (gRes.error) throw new Error(gRes.error.message);
-        const byId: Record<string, string> = {};
-        for (const g of gRes.data ?? []) byId[String((g as any).id)] = String((g as any).name ?? "");
-        setPlannedGroupNameById(byId);
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (!token) throw new Error("Missing token");
+        const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/planning`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Load planning error"));
+        setPlannedEvents((json?.events ?? []) as PlannedEventRow[]);
       } catch {
         setPlannedEvents([]);
-        setPlannedGroupNameById({});
       } finally {
         setLoadingPlannedEvents(false);
       }
     })();
-  }, [canLoadData, playerId, sharedClubIds]);
+  }, [canLoadData, playerId]);
 
   async function loadDocuments() {
     if (!canLoadData || !playerId) return;
@@ -3382,17 +3354,21 @@ function presetToSelectValue(p: Preset): Preset {
                           : e.event_type === "interclub"
                             ? "Interclub"
                             : e.event_type === "session"
-                              ? "Séance"
+                            ? "Séance"
                               : "Événement"}
-                      {` • ${String(e.title ?? "").trim() || String(plannedGroupNameById[String(e.group_id ?? "")] ?? "").trim() || "Sans titre"}`}
+                      {` • ${String(e.title ?? "").trim() || String(e.group_name ?? "").trim() || "Sans titre"}`}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
+                      {pickLocaleText(locale, "Organisé par", "Organized by")}{" "}
+                      {String(e.organization_name ?? "").trim() || "—"}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                        {String(plannedGroupNameById[String(e.group_id ?? "")] ?? "").trim() || "—"}
-                      </div>
-                      <Link className="btn" href={`/coach/groups/${e.group_id}/planning/${e.id}`}>
-                        Détails
-                      </Link>
+                      <div />
+                      {e.can_open_detail && e.group_id ? (
+                        <Link className="btn" href={`/coach/groups/${e.group_id}/planning/${e.id}`}>
+                          Détails
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -3702,6 +3678,22 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
+                    {trainingVolumeObjective > 0 ? (
+                      <ReferenceLine
+                        y={trainingVolumeObjective}
+                        stroke="rgba(185,28,28,0.9)"
+                        strokeDasharray="6 4"
+                        strokeWidth={2}
+                        ifOverflow="extendDomain"
+                        label={{
+                          value: "Objectif",
+                          position: "right",
+                          fill: "rgba(185,28,28,0.9)",
+                          fontSize: 11,
+                          fontWeight: 900,
+                        }}
+                      />
+                    ) : null}
                     <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
                   </BarChart>
                 </ResponsiveContainer>
