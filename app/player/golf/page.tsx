@@ -829,18 +829,55 @@ export default function GolfDashboardPage() {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token || !playerId) throw new Error("Missing context");
-
-      const fd = new FormData();
-      fd.append("file", docFile);
-      fd.append("file_name", finalDocName);
-
-      const res = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
+      const prepareRes = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "prepare",
+          original_name: docFile.name,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
       });
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(String(json?.error ?? "Upload failed"));
+      const prepareJson = await prepareRes.json().catch(() => ({} as any));
+      if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
+
+      const uploadPath = String(prepareJson?.path ?? "").trim();
+      const uploadToken = String(prepareJson?.token ?? "").trim();
+      if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
+
+      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(
+        uploadPath,
+        uploadToken,
+        docFile,
+        {
+          upsert: false,
+          contentType: docFile.type || "application/octet-stream",
+        }
+      );
+      if (uploadRes.error) throw new Error(uploadRes.error.message);
+
+      const finalizeRes = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "finalize",
+          storage_path: uploadPath,
+          original_name: docFile.name,
+          file_name: finalDocName,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
+      });
+      const json = await finalizeRes.json().catch(() => ({} as any));
+      if (!finalizeRes.ok) throw new Error(String(json?.error ?? "Upload failed"));
+
       const created = json?.document as PlayerDashboardDocument | undefined;
       if (created?.id) {
         setDocuments((prev) => [created, ...prev]);

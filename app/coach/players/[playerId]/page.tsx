@@ -587,6 +587,7 @@ export default function GolfDashboardPage() {
   const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
   const [plannedEvents, setPlannedEvents] = useState<PlannedEventRow[]>([]);
   const [loadingPlannedEvents, setLoadingPlannedEvents] = useState(false);
+  const [plannedEventsPage, setPlannedEventsPage] = useState(0);
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
@@ -2260,11 +2261,21 @@ function presetToSelectValue(p: Preset): Preset {
     [coachEvaluations]
   );
   const coachEvalPageSize = 5;
+  const plannedEventsPageSize = 12;
   const coachEvalVisibleNotes = useMemo(() => {
     const start = coachEvalPage * coachEvalPageSize;
     return coachEvalNotes.slice(start, start + coachEvalPageSize);
   }, [coachEvalNotes, coachEvalPage]);
   const coachEvalHasMore = (coachEvalPage + 1) * coachEvalPageSize < coachEvalNotes.length;
+  const plannedEventsVisible = useMemo(() => {
+    const start = plannedEventsPage * plannedEventsPageSize;
+    return plannedEvents.slice(start, start + plannedEventsPageSize);
+  }, [plannedEvents, plannedEventsPage]);
+  const plannedEventsHasMore = (plannedEventsPage + 1) * plannedEventsPageSize < plannedEvents.length;
+
+  useEffect(() => {
+    setPlannedEventsPage(0);
+  }, [plannedEvents.length]);
 
   useEffect(() => {
     (async () => {
@@ -2345,19 +2356,59 @@ function presetToSelectValue(p: Preset): Preset {
       const token = sess.session?.access_token ?? "";
       if (!token) throw new Error("Missing token");
 
-      const fd = new FormData();
-      fd.append("organization_id", sharedClubIds[0]);
-      fd.append("coach_only", "false");
-      fd.append("file", docFile);
-      fd.append("file_name", finalDocName);
-
-      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+      const prepareRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "prepare",
+          organization_id: sharedClubIds[0],
+          coach_only: false,
+          original_name: docFile.name,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Upload failed"));
+      const prepareJson = await prepareRes.json().catch(() => ({}));
+      if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
+
+      const uploadPath = String(prepareJson?.path ?? "").trim();
+      const uploadToken = String(prepareJson?.token ?? "").trim();
+      if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
+
+      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(
+        uploadPath,
+        uploadToken,
+        docFile,
+        {
+          upsert: false,
+          contentType: docFile.type || "application/octet-stream",
+        }
+      );
+      if (uploadRes.error) throw new Error(uploadRes.error.message);
+
+      const finalizeRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "finalize",
+          organization_id: sharedClubIds[0],
+          coach_only: false,
+          storage_path: uploadPath,
+          original_name: docFile.name,
+          file_name: finalDocName,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
+      });
+      const json = await finalizeRes.json().catch(() => ({}));
+      if (!finalizeRes.ok) throw new Error(String(json?.error ?? "Upload failed"));
+
       const created = json?.document as PlayerDashboardDocument | undefined;
       if (created?.id) {
         setDocuments((prev) => [created, ...prev]);
@@ -3331,7 +3382,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun événement planifié.</div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
-                {plannedEvents.slice(0, 12).map((e) => (
+                {plannedEventsVisible.map((e) => (
                   <div
                     key={e.id}
                     style={{
@@ -3372,6 +3423,29 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
                   </div>
                 ))}
+                {plannedEvents.length > plannedEventsPageSize ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setPlannedEventsPage((prev) => Math.max(0, prev - 1))}
+                      disabled={plannedEventsPage === 0}
+                    >
+                      Précédent
+                    </button>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)", alignSelf: "center" }}>
+                      Page {plannedEventsPage + 1} / {Math.max(1, Math.ceil(plannedEvents.length / plannedEventsPageSize))}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setPlannedEventsPage((prev) => (plannedEventsHasMore ? prev + 1 : prev))}
+                      disabled={!plannedEventsHasMore}
+                    >
+                      Suivant
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

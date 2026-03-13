@@ -111,15 +111,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
     if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const form = await req.formData();
-    const organizationId = String(form.get("organization_id") ?? "").trim();
-    const coachOnly = String(form.get("coach_only") ?? "false").trim() === "true";
-    const providedName = String(form.get("file_name") ?? "").trim();
-    const file = form.get("file");
-    if (!organizationId || !sharedOrgIds.includes(organizationId)) {
-      return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
-    }
-
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const body = (await req.json().catch(() => ({}))) as {
@@ -194,6 +185,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
+    const form = await req.formData();
+    const organizationId = String(form.get("organization_id") ?? "").trim();
+    const coachOnly = String(form.get("coach_only") ?? "false").trim() === "true";
+    const providedName = String(form.get("file_name") ?? "").trim();
+    const file = form.get("file");
+    if (!organizationId || !sharedOrgIds.includes(organizationId)) {
+      return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
+    }
     if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
     if ((file.size ?? 0) > MAX_DOCUMENT_SIZE_BYTES) {
       return NextResponse.json(
