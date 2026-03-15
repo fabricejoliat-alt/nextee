@@ -218,7 +218,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
 
     const playerCourseTrackRaw = has("player_course_track") ? String(body.player_course_track ?? "").trim().toLowerCase() : "";
     const playerCourseTrack =
-      playerCourseTrackRaw === "" ? null : playerCourseTrackRaw === "junior" || playerCourseTrackRaw === "competition" ? playerCourseTrackRaw : "__invalid__";
+      playerCourseTrackRaw === ""
+        ? null
+        : playerCourseTrackRaw === "junior" || playerCourseTrackRaw === "competition" || playerCourseTrackRaw === "no_course"
+        ? playerCourseTrackRaw
+        : "__invalid__";
     if (playerCourseTrack === "__invalid__") {
       return NextResponse.json({ error: "Invalid player course track" }, { status: 400 });
     }

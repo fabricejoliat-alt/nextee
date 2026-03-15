@@ -11,7 +11,7 @@ type MemberRow = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
   is_performance: boolean | null;
-  player_course_track?: "junior" | "competition" | null;
+  player_course_track?: "junior" | "competition" | "no_course" | null;
   player_membership_paid?: boolean | null;
   player_playing_right_paid?: boolean | null;
   player_consent_status?: "granted" | "pending" | "adult" | null;
@@ -41,7 +41,7 @@ type EditForm = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean;
   is_performance: boolean;
-  player_course_track: "" | "junior" | "competition";
+  player_course_track: "" | "junior" | "competition" | "no_course";
   player_membership_paid: "" | "yes" | "no";
   player_playing_right_paid: "" | "yes" | "no";
   player_consent_status: "granted" | "pending" | "adult";
@@ -245,7 +245,7 @@ export default function ManagerUsersPage() {
       role: m.role,
       is_active: m.is_active ?? true,
       is_performance: m.is_performance ?? false,
-      player_course_track: (m.player_course_track ?? "") as "" | "junior" | "competition",
+      player_course_track: (m.player_course_track ?? "") as "" | "junior" | "competition" | "no_course",
       player_membership_paid:
         m.player_membership_paid == null ? "" : m.player_membership_paid ? "yes" : "no",
       player_playing_right_paid:
@@ -585,7 +585,7 @@ export default function ManagerUsersPage() {
                         {m.role === "player" ? (
                           <>
                             <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                              cursus: {m.player_course_track === "junior" ? "Junior" : m.player_course_track === "competition" ? "Compétition" : "—"}
+                              cursus: {m.player_course_track === "junior" ? "Junior" : m.player_course_track === "competition" ? "Compétition" : m.player_course_track === "no_course" ? "Pas de cours" : "—"}
                             </div>
                             <div style={{ color: "var(--muted)", fontSize: 13 }}>
                               cotisation: {m.player_membership_paid == null ? "—" : m.player_membership_paid ? "Oui" : "Non"}
@@ -737,6 +737,7 @@ export default function ManagerUsersPage() {
                                 <option value="">Non défini</option>
                                 <option value="junior">Junior</option>
                                 <option value="competition">Compétition</option>
+                                <option value="no_course">Pas de cours</option>
                               </select>
                             </label>
                             <label style={{ display: "grid", gap: 6 }}>

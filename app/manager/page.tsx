@@ -442,17 +442,12 @@ export default function ManagerHomePage() {
                     gap: 6,
                   }}
                 >
-                  {stats.juniorsWithoutParent.slice(0, 8).map((p) => (
+                  {stats.juniorsWithoutParent.map((p) => (
                     <div key={p.id} className="pill-soft" style={{ justifyContent: "space-between" }}>
                       <span className="truncate">{fullName(p.first_name, p.last_name)}</span>
                     </div>
                   ))}
                 </div>
-                {stats.juniorsWithoutParent.length > 8 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75 }}>
-                    +{stats.juniorsWithoutParent.length - 8} {tr("autres", "others")}
-                  </div>
-                ) : null}
               </div>
             ) : (
               <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(21,128,61,1)" }}>

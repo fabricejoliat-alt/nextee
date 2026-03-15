@@ -27,6 +27,13 @@ type EventLite = {
   location_text: string | null;
   status: "scheduled" | "cancelled";
 };
+type MemberRow = {
+  club_id: string | null;
+  user_id: string | null;
+  role: "manager" | "coach" | "player" | "parent";
+  is_active: boolean | null;
+  player_course_track: string | null;
+};
 
 function fullName(first: string | null | undefined, last: string | null | undefined) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
@@ -95,7 +102,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("clubs").select("id,name").in("id", clubIds),
       supabaseAdmin
         .from("club_members")
-        .select("club_id,user_id,role,is_active")
+        .select("club_id,user_id,role,is_active,player_course_track")
         .in("club_id", clubIds),
       supabaseAdmin.from("coach_groups").select("id,name,club_id,is_active").in("club_id", clubIds),
     ]);
@@ -104,12 +111,7 @@ export async function GET(req: NextRequest) {
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
 
     const clubs = (clubsRes.data ?? []) as ManagedClub[];
-    const allMembers = (membersRes.data ?? []) as Array<{
-      club_id: string | null;
-      user_id: string | null;
-      role: "manager" | "coach" | "player" | "parent";
-      is_active: boolean | null;
-    }>;
+    const allMembers = (membersRes.data ?? []) as MemberRow[];
     const groups = (groupsRes.data ?? []) as GroupRow[];
 
     const uniqueUsers = new Set(allMembers.map((m) => String(m.user_id ?? "").trim()).filter(Boolean));
@@ -146,7 +148,8 @@ export async function GET(req: NextRequest) {
       return !v;
     }).length;
 
-    const activePlayerIds = uniq(activeMembers.filter((m) => m.role === "player").map((m) => m.user_id));
+    const activePlayerMemberships = activeMembers.filter((m) => m.role === "player");
+    const activePlayerIds = uniq(activePlayerMemberships.map((m) => m.user_id));
     const normalizeSex = (raw: string | null | undefined) => String(raw ?? "").trim().toLowerCase();
     const computeAge = (birthDate: string | null | undefined) => {
       if (!birthDate) return null;
@@ -187,7 +190,17 @@ export async function GET(req: NextRequest) {
       const pid = String((row as any).player_id ?? "").trim();
       if (pid) linkedPlayers.add(pid);
     }
-    const juniorsWithoutParent = activePlayerIds
+    const eligibleJuniorIds = activePlayerIds.filter((pid) => {
+      const hasCourse = activePlayerMemberships.some((m) => {
+        const track = String(m.player_course_track ?? "").trim().toLowerCase();
+        return String(m.user_id ?? "").trim() === pid && track !== "" && track !== "no_course";
+      });
+      if (!hasCourse) return false;
+      const age = computeAge(profileById.get(pid)?.birth_date);
+      if (age != null && age >= 18) return false;
+      return true;
+    });
+    const juniorsWithoutParent = eligibleJuniorIds
       .filter((pid) => !linkedPlayers.has(pid))
       .map((pid) => ({
         id: pid,

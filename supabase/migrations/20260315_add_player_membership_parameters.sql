@@ -11,7 +11,7 @@ alter table if exists public.club_members
   add constraint club_members_player_course_track_check
   check (
     player_course_track is null
-    or player_course_track in ('junior', 'competition')
+    or player_course_track in ('junior', 'competition', 'no_course')
   );
 
 alter table if exists public.club_members
