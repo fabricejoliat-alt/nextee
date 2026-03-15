@@ -12,6 +12,21 @@ function uniq(values: string[]) {
   return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
 }
 
+function formatEventNotificationLabel(title: string, startsAt?: string | null) {
+  const safeTitle = String(title ?? "").trim() || "Événement";
+  const safeStartsAt = String(startsAt ?? "").trim();
+  if (!safeStartsAt) return safeTitle;
+  const date = new Date(safeStartsAt);
+  if (Number.isNaN(date.getTime())) return safeTitle;
+  const formatted = new Intl.DateTimeFormat("fr-CH", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+  return `${safeTitle} du ${formatted}`;
+}
+
 async function dispatchPushForRecipients(
   supabaseAdmin: any,
   opts: { title: string; body: string; url: string; recipientUserIds: string[] }
@@ -75,14 +90,42 @@ async function dispatchPushPerUser(
   });
 }
 
-async function enrichAndDispatchEventThreadNotification(
+function buildThreadSummary(
+  thread: {
+    title: string | null;
+    starts_at?: string | null;
+    thread_type: string | null;
+    player_thread_scope?: string | null;
+  }
+) {
+  const threadType = String(thread.thread_type ?? "").trim();
+  if (threadType === "event") {
+    return formatEventNotificationLabel(String(thread.title ?? "").trim() || "Événement", thread.starts_at);
+  }
+  if (threadType === "group") {
+    return String(thread.title ?? "").trim() || "Groupe";
+  }
+  if (threadType === "organization") {
+    return String(thread.title ?? "").trim() || "Organisation";
+  }
+  if (threadType === "player") {
+    return String(thread.player_thread_scope ?? "direct") === "team"
+      ? "Fil équipe coachs + joueur + parent(s)"
+      : String(thread.title ?? "").trim() || "Discussion";
+  }
+  return String(thread.title ?? "").trim() || "Discussion";
+}
+
+async function enrichAndDispatchThreadMessageNotification(
   supabaseAdmin: any,
   opts: {
     actorUserId: string;
     threadId: string;
     thread: {
       title: string | null;
+      starts_at: string | null;
       thread_type: string | null;
+      player_thread_scope: string | null;
       event_id: string | null;
       group_id: string | null;
       organization_id: string | null;
@@ -92,7 +135,6 @@ async function enrichAndDispatchEventThreadNotification(
 ) {
   const threadType = String(opts.thread.thread_type ?? "").trim();
   const eventId = String(opts.thread.event_id ?? "").trim();
-  if (threadType !== "event" || !eventId) return;
 
   const notificationRes = await supabaseAdmin
     .from("notifications")
@@ -107,13 +149,17 @@ async function enrichAndDispatchEventThreadNotification(
   const groupId = String(opts.thread.group_id ?? "").trim();
   const organizationId = String(opts.thread.organization_id ?? "").trim();
   const eventTitle = String(opts.thread.title ?? "").trim() || "Événement";
+  const threadSummary = buildThreadSummary(opts.thread);
 
   const existingData = (notificationRes.data.data ?? {}) as Record<string, unknown>;
   const nextData = {
     ...existingData,
     thread_id: opts.threadId,
-    thread_type: "event",
-    event_id: eventId,
+    thread_type: threadType || null,
+    event_id: eventId || null,
+    event_title: threadType === "event" ? eventTitle : null,
+    event_starts_at: threadType === "event" ? (String(opts.thread.starts_at ?? "").trim() || null) : null,
+    player_thread_scope: String(opts.thread.player_thread_scope ?? "").trim() || null,
     group_id: groupId || null,
     organization_id: organizationId || null,
   };
@@ -201,20 +247,33 @@ async function enrichAndDispatchEventThreadNotification(
       recipientUserIds.map(async (recipientUserId) => {
         const unreadCount = unreadCountByUserId.get(recipientUserId) ?? 1;
         const title = unreadCount > 1 ? "Nouveaux messages" : "Nouveau message";
-        const body = unreadCount > 1 ? eventTitle : `${eventTitle}\n${String(opts.body ?? "").trim()}`.trim();
+        const body = unreadCount > 1 ? threadSummary : `${threadSummary}\n${String(opts.body ?? "").trim()}`.trim();
         await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId });
       })
     );
   }
 
-  if (playerIds.length > 0) {
-    await dispatchGroup(playerIds, `/player/golf/trainings/new?club_event_id=${encodeURIComponent(eventId)}`);
+  if (threadType === "event" && eventId) {
+    if (playerIds.length > 0) {
+      await dispatchGroup(playerIds, `/player/golf/trainings/new?club_event_id=${encodeURIComponent(eventId)}`);
+    }
+    if (coachIds.length > 0 && groupId) {
+      await dispatchGroup(coachIds, `/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`);
+    }
+    if (managerIds.length > 0) {
+      await dispatchGroup(managerIds, `/manager/calendar?event=${encodeURIComponent(eventId)}`);
+    }
+    return;
   }
-  if (coachIds.length > 0 && groupId) {
-    await dispatchGroup(coachIds, `/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`);
+
+  if (playerIds.length > 0) {
+    await dispatchGroup(playerIds, `/player/messages?thread_id=${encodeURIComponent(opts.threadId)}`);
+  }
+  if (coachIds.length > 0) {
+    await dispatchGroup(coachIds, `/coach/messages?thread_id=${encodeURIComponent(opts.threadId)}`);
   }
   if (managerIds.length > 0) {
-    await dispatchGroup(managerIds, `/manager/calendar?event=${encodeURIComponent(eventId)}`);
+    await dispatchGroup(managerIds, `/manager/messages?thread_id=${encodeURIComponent(opts.threadId)}`);
   }
 }
 
@@ -297,10 +356,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
 
     const threadRes = await supabaseAdmin
       .from("message_threads")
-      .select("title,thread_type,event_id,group_id,organization_id")
+      .select("title,thread_type,player_thread_scope,event_id,group_id,organization_id")
       .eq("id", threadId)
       .maybeSingle();
     if (threadRes.error) return NextResponse.json({ error: threadRes.error.message }, { status: 400 });
+
+    let eventStartsAt: string | null = null;
+    if (threadRes.data?.thread_type === "event" && threadRes.data?.event_id) {
+      const eventRes = await supabaseAdmin
+        .from("club_events")
+        .select("starts_at")
+        .eq("id", String(threadRes.data.event_id))
+        .maybeSingle();
+      if (!eventRes.error) eventStartsAt = String((eventRes.data as any)?.starts_at ?? "").trim() || null;
+    }
 
     if (threadRes.data?.thread_type === "event" && threadRes.data?.event_id) {
       await supabaseAdmin.rpc("sync_event_thread_participants", {
@@ -329,12 +398,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
     const senderName = senderProfileRes.error ? "" : buildSenderName(senderProfileRes.data ?? {});
 
     if (threadRes.data) {
-      await enrichAndDispatchEventThreadNotification(supabaseAdmin, {
+      await enrichAndDispatchThreadMessageNotification(supabaseAdmin, {
         actorUserId: callerId,
         threadId,
         thread: {
           title: (threadRes.data as any).title ?? null,
+          starts_at: eventStartsAt,
           thread_type: threadRes.data.thread_type ?? null,
+          player_thread_scope: (threadRes.data as any).player_thread_scope ?? null,
           event_id: threadRes.data.event_id ?? null,
           group_id: (threadRes.data as any).group_id ?? null,
           organization_id: (threadRes.data as any).organization_id ?? null,

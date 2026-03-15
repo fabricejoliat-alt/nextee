@@ -50,6 +50,23 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     return fallback;
   }
 
+  function formatEventNotificationLabel(title?: string | null, startsAt?: string | null) {
+    const safeTitle = String(title ?? "").trim() || tr("Événement", "Event", "Ereignis", "Evento");
+    const safeStartsAt = String(startsAt ?? "").trim();
+    if (!safeStartsAt) return safeTitle;
+    const date = new Date(safeStartsAt);
+    if (Number.isNaN(date.getTime())) return safeTitle;
+    const localeCode =
+      locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+    const formatted = new Intl.DateTimeFormat(localeCode, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(date);
+    return `${safeTitle} ${tr("du", "on", "vom", "del")}`.trim() + ` ${formatted}`;
+  }
+
   async function load(options?: { silent?: boolean }) {
     const silent = options?.silent === true;
     if (!silent) {
@@ -421,6 +438,12 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   const threadMeta = threadId ? threadMetaById[threadId] : null;
                   const threadUnreadCount = threadId ? Number(threadUnreadById[threadId] ?? 0) : 0;
                   const isEventThread = n?.kind === "thread_message" && threadMeta?.thread_type === "event";
+                  const eventLine = isEventThread
+                    ? formatEventNotificationLabel(
+                        String(((n?.data ?? {}).event_title ?? threadTitleFromData) || "").trim(),
+                        String((n?.data ?? {}).event_starts_at ?? "").trim()
+                      )
+                    : "";
                   const counterpartName =
                     threadMeta?.thread_type === "player"
                       ? ((viewerRole === "player" || viewerRole === "parent")
@@ -468,7 +491,22 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                           </div>
                           {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
-                        {n?.kind === "thread_message" && threadTitle ? (
+                        {isEventThread && eventLine ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 850,
+                              color: "rgba(0,0,0,0.7)",
+                              minWidth: 0,
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {eventLine}
+                          </div>
+                        ) : null}
+                        {n?.kind === "thread_message" && !isEventThread && threadTitle ? (
                           <div
                             style={{
                               fontSize: 12,
