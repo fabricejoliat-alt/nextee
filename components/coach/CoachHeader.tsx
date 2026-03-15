@@ -7,6 +7,7 @@ import CoachDesktopDrawer from "@/components/coach/CoachDesktopDrawer";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
+import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
 import { supabase } from "@/lib/supabaseClient";
 
 function BurgerIcon() {
@@ -97,6 +98,21 @@ export default function CoachHeader() {
     return () => {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!supportsWebPush()) return;
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      const result = await ensurePushSubscription({ prompt: false }).catch(() => null);
+      if (cancelled || !result?.ok) return;
+    })();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 

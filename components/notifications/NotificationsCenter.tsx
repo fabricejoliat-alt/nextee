@@ -67,6 +67,30 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     return `${safeTitle} ${tr("du", "on", "vom", "del")}`.trim() + ` ${formatted}`;
   }
 
+  function formatThreadLabel(
+    threadType?: string | null,
+    threadTitle?: string | null,
+    playerThreadScope?: string | null
+  ) {
+    const type = String(threadType ?? "").trim();
+    const title = String(threadTitle ?? "").trim();
+    const scope = String(playerThreadScope ?? "direct").trim();
+    if (type === "event") return formatEventNotificationLabel(title);
+    if (type === "group") return `${tr("Groupe", "Group", "Gruppe", "Gruppo")} ${title}`.trim();
+    if (type === "organization") return `${tr("Organisation", "Organization", "Organisation", "Organizzazione")} ${title}`.trim();
+    if (type === "player") {
+      return scope === "team"
+        ? tr(
+            "Discussion équipe coachs + joueur + parent(s)",
+            "Coaches + player + parent(s) thread",
+            "Team-Thread Coaches + Spieler + Eltern",
+            "Discussione coach + giocatore + genitori"
+          )
+        : tr("Discussion coach / joueur", "Coach / player discussion", "Coach / Spieler Diskussion", "Discussione coach / giocatore");
+    }
+    return title;
+  }
+
   async function load(options?: { silent?: boolean }) {
     const silent = options?.silent === true;
     if (!silent) {
@@ -453,7 +477,11 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   const threadTitle =
                     counterpartName
                       ? `${tr("Discussion avec", "Discussion with", "Diskussion mit", "Discussione con")} ${counterpartName}`
-                      : threadTitleFromData || (threadId ? threadTitlesById[threadId] ?? "" : "");
+                      : formatThreadLabel(
+                          threadMeta?.thread_type,
+                          threadTitleFromData || (threadId ? threadTitlesById[threadId] ?? "" : ""),
+                          threadMeta?.player_thread_scope
+                        );
                   const notificationTitle =
                     isEventThread
                       ? (threadUnreadCount > 1

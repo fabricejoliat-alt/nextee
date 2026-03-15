@@ -29,7 +29,7 @@ function formatEventNotificationLabel(title: string, startsAt?: string | null) {
 
 async function dispatchPushForRecipients(
   supabaseAdmin: any,
-  opts: { title: string; body: string; url: string; recipientUserIds: string[] }
+  opts: { title: string; body: string; url: string; recipientUserIds: string[]; badgeCount?: number }
 ) {
   const recipients = uniq(opts.recipientUserIds);
   if (recipients.length === 0) return;
@@ -52,6 +52,7 @@ async function dispatchPushForRecipients(
     url: opts.url,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
+    badgeCount: Math.max(0, Number(opts.badgeCount ?? 0)),
     timestamp: Date.now(),
   });
 
@@ -80,12 +81,13 @@ async function dispatchPushForRecipients(
 
 async function dispatchPushPerUser(
   supabaseAdmin: any,
-  opts: { title: string; body: string; url: string; recipientUserId: string }
+  opts: { title: string; body: string; url: string; recipientUserId: string; badgeCount?: number }
 ) {
   await dispatchPushForRecipients(supabaseAdmin, {
     title: opts.title,
     body: opts.body,
     url: opts.url,
+    badgeCount: opts.badgeCount,
     recipientUserIds: [opts.recipientUserId],
   });
 }
@@ -103,15 +105,15 @@ function buildThreadSummary(
     return formatEventNotificationLabel(String(thread.title ?? "").trim() || "Événement", thread.starts_at);
   }
   if (threadType === "group") {
-    return String(thread.title ?? "").trim() || "Groupe";
+    return `Groupe ${String(thread.title ?? "").trim() || ""}`.trim();
   }
   if (threadType === "organization") {
-    return String(thread.title ?? "").trim() || "Organisation";
+    return `Organisation ${String(thread.title ?? "").trim() || ""}`.trim();
   }
   if (threadType === "player") {
     return String(thread.player_thread_scope ?? "direct") === "team"
-      ? "Fil équipe coachs + joueur + parent(s)"
-      : String(thread.title ?? "").trim() || "Discussion";
+      ? "Discussion équipe coachs + joueur + parent(s)"
+      : "Discussion coach / joueur";
   }
   return String(thread.title ?? "").trim() || "Discussion";
 }
@@ -248,7 +250,7 @@ async function enrichAndDispatchThreadMessageNotification(
         const unreadCount = unreadCountByUserId.get(recipientUserId) ?? 1;
         const title = unreadCount > 1 ? "Nouveaux messages" : "Nouveau message";
         const body = unreadCount > 1 ? threadSummary : `${threadSummary}\n${String(opts.body ?? "").trim()}`.trim();
-        await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId });
+        await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId, badgeCount: unreadCount });
       })
     );
   }

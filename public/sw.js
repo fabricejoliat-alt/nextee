@@ -31,13 +31,14 @@ self.addEventListener('push', (event) => {
       self.registration.showNotification(title, options),
       (async () => {
         try {
+          const badgeCount = Math.max(0, Number(data.badgeCount || 0)) || 1;
           // Some platforms (incl. installed PWAs) support app icon badging from SW.
           if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
-            await self.navigator.setAppBadge(1);
+            await self.navigator.setAppBadge(badgeCount);
             return;
           }
           if (self.registration && typeof self.registration.setAppBadge === 'function') {
-            await self.registration.setAppBadge(1);
+            await self.registration.setAppBadge(badgeCount);
           }
         } catch {
           // Ignore unsupported badge API.
@@ -52,30 +53,15 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = event.notification?.data?.url || '/';
 
   event.waitUntil(
-    Promise.all([
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
-        for (const client of clientsArr) {
-          if ('focus' in client) {
-            client.navigate(targetUrl);
-            return client.focus();
-          }
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
+      for (const client of clientsArr) {
+        if ('focus' in client) {
+          client.navigate(targetUrl);
+          return client.focus();
         }
-        if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
-        return null;
-      }),
-      (async () => {
-        try {
-          if (self.navigator && typeof self.navigator.clearAppBadge === 'function') {
-            await self.navigator.clearAppBadge();
-            return;
-          }
-          if (self.registration && typeof self.registration.clearAppBadge === 'function') {
-            await self.registration.clearAppBadge();
-          }
-        } catch {
-          // Ignore unsupported badge API.
-        }
-      })(),
-    ])
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      return null;
+    })
   );
 });

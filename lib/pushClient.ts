@@ -92,6 +92,7 @@ export async function dispatchPush(payload: {
   title: string;
   body?: string | null;
   url?: string;
+  badgeCount?: number;
   recipientUserIds: string[];
 }) {
   const headers = await authHeader();
