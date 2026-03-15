@@ -256,12 +256,15 @@ export default function NewRoundPage() {
       setPlayHolesMode("9");
       return;
     }
-    if (selectedTeeIsNineHoles) {
-      setPlayHolesMode("9");
+    if (roundType === "competition") {
+      if (selectedTeeIsNineHoles) {
+        setPlayHolesMode("9");
+        return;
+      }
+      setPlayHolesMode("18");
       return;
     }
-    setPlayHolesMode("18");
-  }, [selectedTeeIsNineHoles, selectedTeeId, roundType, omCompetitionFormat, omSingleNine, omRounds18Count]);
+  }, [selectedTeeIsNineHoles, roundType, omCompetitionFormat, omSingleNine, omRounds18Count]);
 
   useEffect(() => {
     (async () => {
@@ -1126,6 +1129,16 @@ export default function NewRoundPage() {
                           </select>
                         </label>
 
+                        {roundType === "training" && (
+                          <label style={{ display: "grid", gap: 6 }}>
+                            <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de trous", "Number of holes")}</span>
+                            <select value={playHolesMode} onChange={(e) => setPlayHolesMode(e.target.value as PlayHolesMode)} disabled={busy}>
+                              <option value="9">{pickLocaleText(locale, "9 trous", "9 holes")}</option>
+                              <option value="18">{pickLocaleText(locale, "18 trous", "18 holes")}</option>
+                            </select>
+                          </label>
+                        )}
+
                         <div className="grid-2">
                           <label style={{ display: "grid", gap: 6 }}>
                             <span style={fieldLabelStyle}>Slope (optionnel)</span>
@@ -1204,31 +1217,19 @@ export default function NewRoundPage() {
                       )}
                     </label>
 
-                    {selectedTeeIsNineHoles && (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <span style={fieldLabelStyle}>{t("roundsNew.playMode")}</span>
-                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                          <label style={{ ...chipRadioStyle, ...(playHolesMode === "9" ? chipRadioActive : {}) }}>
-                            <input
-                              type="radio"
-                              checked={playHolesMode === "9"}
-                              onChange={() => setPlayHolesMode("9")}
-                              disabled={busy}
-                            />
-                            <span>{t("roundsNew.play9")}</span>
-                          </label>
-
-                          <label style={{ ...chipRadioStyle, ...(playHolesMode === "18" ? chipRadioActive : {}) }}>
-                            <input
-                              type="radio"
-                              checked={playHolesMode === "18"}
-                              onChange={() => setPlayHolesMode("18")}
-                              disabled={busy}
-                            />
-                            <span>{t("roundsNew.play2x9")}</span>
-                          </label>
-                        </div>
-                      </div>
+                    {roundType === "training" && selectedTeeId && (
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de trous", "Number of holes")}</span>
+                        <select value={playHolesMode} onChange={(e) => setPlayHolesMode(e.target.value as PlayHolesMode)} disabled={busy}>
+                          <option value="9">{pickLocaleText(locale, "9 trous", "9 holes")}</option>
+                          <option value="18">{pickLocaleText(locale, "18 trous", "18 holes")}</option>
+                        </select>
+                        {selectedTeeIsNineHoles ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                            {pickLocaleText(locale, "Sur un parcours 9 trous, 18 trous joue 2 x 9.", "On a 9-hole course, 18 holes plays 2 x 9.")}
+                          </div>
+                        ) : null}
+                      </label>
                     )}
 
                     <div className="grid-2">

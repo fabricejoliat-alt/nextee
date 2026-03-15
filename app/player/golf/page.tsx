@@ -279,6 +279,13 @@ function documentPicto(mimeType: string | null | undefined, fileName: string) {
   return FileQuestionMark;
 }
 
+function isPdfDocument(mimeType: string | null | undefined, fileName: string) {
+  const mime = String(mimeType ?? "").toLowerCase();
+  const n = String(fileName ?? "").toLowerCase();
+  const ext = n.includes(".") ? n.split(".").pop() ?? "" : "";
+  return mime.includes("pdf") || ext === "pdf";
+}
+
 function deltaArrow(delta: number | null, title = "Previous period comparison") {
   if (delta == null || !Number.isFinite(delta)) return null;
   const up = delta > 0;
@@ -3428,8 +3435,8 @@ function presetToSelectValue(p: Preset): Preset {
         >
           <div
             style={{
-              width: "min(980px, 100%)",
-              maxHeight: "92vh",
+              width: "min(1200px, 100%)",
+              height: "min(94vh, 1100px)",
               borderRadius: 14,
               background: "white",
               border: "1px solid rgba(0,0,0,0.12)",
@@ -3444,9 +3451,14 @@ function presetToSelectValue(p: Preset): Preset {
               <div style={{ fontWeight: 900, minWidth: 0 }} className="truncate">
                 {viewerDocument.file_name}
               </div>
-              <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
-                Fermer
-              </button>
+              <div style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <a className="btn" href={viewerDocument.public_url} target="_blank" rel="noreferrer">
+                  Ouvrir
+                </a>
+                <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
+                  Fermer
+                </button>
+              </div>
             </div>
             <div style={{ padding: 10, overflow: "auto", background: "rgba(248,250,252,1)" }}>
               {(viewerDocument.mime_type ?? "").startsWith("image/") ? (
@@ -3457,13 +3469,25 @@ function presetToSelectValue(p: Preset): Preset {
                 />
               ) : (viewerDocument.mime_type ?? "").startsWith("video/") ? (
                 <div style={{ display: "grid", placeItems: "center" }}>
-                  <video src={viewerDocument.public_url} controls style={{ width: "100%", maxHeight: "74vh", borderRadius: 10 }} />
+                  <video src={viewerDocument.public_url} controls style={{ width: "100%", maxHeight: "calc(94vh - 120px)", borderRadius: 10 }} />
                 </div>
+              ) : isPdfDocument(viewerDocument.mime_type, viewerDocument.file_name) ? (
+                <object
+                  data={`${viewerDocument.public_url}#view=FitH`}
+                  type="application/pdf"
+                  style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                >
+                  <iframe
+                    title={viewerDocument.file_name}
+                    src={`${viewerDocument.public_url}#view=FitH`}
+                    style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                  />
+                </object>
               ) : (
                 <iframe
                   title={viewerDocument.file_name}
                   src={viewerDocument.public_url}
-                  style={{ width: "100%", minHeight: "72vh", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                  style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
                 />
               )}
             </div>
