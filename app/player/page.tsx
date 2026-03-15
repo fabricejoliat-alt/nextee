@@ -1531,14 +1531,60 @@ export default function PlayerHomePage() {
       return;
     }
     let cancelled = false;
-    (async () => {
+    const loadBadges = async () => {
       const badges = await fetchEventMessageBadges(ids);
       if (!cancelled) setMessageBadgesByEventId(badges);
-    })();
+    };
+
+    void loadBadges();
+
+    const onFocus = () => void loadBadges();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadBadges();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    if (viewerUserId) {
+      channel = supabase
+        .channel(`player-home-event-badges-${viewerUserId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "thread_messages" },
+          () => {
+            void loadBadges();
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "thread_participants",
+            filter: `user_id=eq.${viewerUserId}`,
+          },
+          () => {
+            void loadBadges();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "message_threads" },
+          () => {
+            void loadBadges();
+          }
+        )
+        .subscribe();
+    }
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [upcomingActivities]);
+  }, [upcomingActivities, viewerUserId]);
 
   const avatarUrl = useMemo(() => {
     const base = profile?.avatar_url?.trim() || "";
