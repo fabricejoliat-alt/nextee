@@ -41,7 +41,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   const [rows, setRows] = useState<Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>>([]);
   const [viewerRole, setViewerRole] = useState<string>("player");
   const [threadTitlesById, setThreadTitlesById] = useState<Record<string, string>>({});
-  const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string; player_thread_scope: string }>>({});
+  const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string; player_thread_scope: string; event_id: string; group_id: string }>>({});
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
 
   function toErrorMessage(e: unknown, fallback: string) {
@@ -168,7 +168,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
 
       const metaRes = await supabase
         .from("message_threads")
-        .select("id,thread_type,player_id,created_by,player_thread_scope")
+        .select("id,thread_type,player_id,created_by,player_thread_scope,event_id,group_id")
         .in("id", missing);
       if (!metaRes.error) {
         const nextMeta = { ...threadMetaById };
@@ -179,7 +179,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
           const player_id = String((row as any).player_id ?? "");
           const created_by = String((row as any).created_by ?? "");
           const player_thread_scope = String((row as any).player_thread_scope ?? "direct");
-          nextMeta[id] = { thread_type, player_id, created_by, player_thread_scope };
+          const event_id = String((row as any).event_id ?? "");
+          const group_id = String((row as any).group_id ?? "");
+          nextMeta[id] = { thread_type, player_id, created_by, player_thread_scope, event_id, group_id };
           if (player_id) profileIds.add(player_id);
           if (created_by) profileIds.add(created_by);
         }
@@ -295,8 +297,24 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
 
     if (String(notification?.kind ?? "") === "thread_message") {
       const threadId = String(data.thread_id ?? "").trim();
+      const eventId = String(data.event_id ?? "").trim();
+      const groupId = String(data.group_id ?? "").trim();
       if (threadId) {
         const meta = threadMetaById[threadId];
+        const targetEventId = eventId || String(meta?.event_id ?? "").trim();
+        const targetGroupId = groupId || String(meta?.group_id ?? "").trim();
+        if (targetEventId && (String(data.thread_type ?? "").trim() === "event" || meta?.thread_type === "event")) {
+          if (homeHref.startsWith("/coach") && targetGroupId) {
+            return `/coach/groups/${encodeURIComponent(targetGroupId)}/planning/${encodeURIComponent(targetEventId)}`;
+          }
+          if (homeHref.startsWith("/manager")) {
+            return `/manager/calendar?event=${encodeURIComponent(targetEventId)}`;
+          }
+          let href = `/player/golf/trainings/new?club_event_id=${encodeURIComponent(targetEventId)}`;
+          const childId = String(data.child_id ?? "").trim();
+          if (childId) href += `&child_id=${encodeURIComponent(childId)}`;
+          return href;
+        }
         if (
           homeHref.startsWith("/coach") &&
           meta?.thread_type === "player" &&

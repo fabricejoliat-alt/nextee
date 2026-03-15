@@ -1,10 +1,188 @@
 import { NextResponse, type NextRequest } from "next/server";
+import webpush from "web-push";
 import { requireCaller } from "@/app/api/messages/_lib";
 
 function buildSenderName(row: any) {
   const full = `${String(row?.first_name ?? "").trim()} ${String(row?.last_name ?? "").trim()}`.trim();
   const fallback = String(row?.username ?? "").trim();
   return full || fallback || "";
+}
+
+function uniq(values: string[]) {
+  return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
+}
+
+async function dispatchPushForRecipients(
+  supabaseAdmin: any,
+  opts: { title: string; body: string; url: string; recipientUserIds: string[] }
+) {
+  const recipients = uniq(opts.recipientUserIds);
+  if (recipients.length === 0) return;
+
+  const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
+  if (!vapidPublic || !vapidPrivate) return;
+  const vapidSubject = process.env.VAPID_SUBJECT || "mailto:contact@activitee.app";
+  webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
+
+  const subsRes = await supabaseAdmin
+    .from("push_subscriptions")
+    .select("id,user_id,endpoint,p256dh,auth")
+    .in("user_id", recipients);
+  if (subsRes.error) return;
+
+  const payload = JSON.stringify({
+    title: opts.title,
+    body: opts.body,
+    url: opts.url,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    timestamp: Date.now(),
+  });
+
+  const staleIds: number[] = [];
+  await Promise.all(
+    (subsRes.data ?? []).map(async (sub: any) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          payload
+        );
+      } catch (err: unknown) {
+        const statusCode = Number((err as { statusCode?: number } | null)?.statusCode ?? 0);
+        if (statusCode === 404 || statusCode === 410) staleIds.push(Number(sub.id));
+      }
+    })
+  );
+
+  if (staleIds.length > 0) {
+    await supabaseAdmin.from("push_subscriptions").delete().in("id", staleIds);
+  }
+}
+
+async function enrichAndDispatchEventThreadNotification(
+  supabaseAdmin: any,
+  opts: {
+    actorUserId: string;
+    threadId: string;
+    thread: {
+      thread_type: string | null;
+      event_id: string | null;
+      group_id: string | null;
+      organization_id: string | null;
+    };
+    body: string;
+  }
+) {
+  const threadType = String(opts.thread.thread_type ?? "").trim();
+  const eventId = String(opts.thread.event_id ?? "").trim();
+  if (threadType !== "event" || !eventId) return;
+
+  const notificationRes = await supabaseAdmin
+    .from("notifications")
+    .select("id,title,body,data")
+    .eq("kind", "thread_message")
+    .filter("data->>thread_id", "eq", opts.threadId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (notificationRes.error || !notificationRes.data?.id) return;
+
+  const groupId = String(opts.thread.group_id ?? "").trim();
+  const organizationId = String(opts.thread.organization_id ?? "").trim();
+
+  const existingData = (notificationRes.data.data ?? {}) as Record<string, unknown>;
+  const nextData = {
+    ...existingData,
+    thread_id: opts.threadId,
+    thread_type: "event",
+    event_id: eventId,
+    group_id: groupId || null,
+    organization_id: organizationId || null,
+  };
+
+  await supabaseAdmin
+    .from("notifications")
+    .update({ data: nextData })
+    .eq("id", notificationRes.data.id);
+
+  const participantsRes = await supabaseAdmin
+    .from("thread_participants")
+    .select("user_id")
+    .eq("thread_id", opts.threadId);
+  if (participantsRes.error) return;
+
+  const recipientIds = uniq(
+    (participantsRes.data ?? [])
+      .map((row: any) => String(row?.user_id ?? "").trim())
+      .filter((id) => id && id !== opts.actorUserId)
+  );
+  if (recipientIds.length === 0) return;
+
+  const membershipsRes = organizationId
+    ? await supabaseAdmin
+        .from("club_members")
+        .select("user_id,role")
+        .eq("club_id", organizationId)
+        .eq("is_active", true)
+        .in("user_id", recipientIds)
+    : ({ data: [], error: null } as any);
+  if (membershipsRes.error) return;
+
+  const rolesByUserId = new Map<string, Set<string>>();
+  for (const row of membershipsRes.data ?? []) {
+    const userId = String((row as any).user_id ?? "").trim();
+    const role = String((row as any).role ?? "").trim();
+    if (!userId || !role) continue;
+    if (!rolesByUserId.has(userId)) rolesByUserId.set(userId, new Set<string>());
+    rolesByUserId.get(userId)!.add(role);
+  }
+
+  const playerIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("player"));
+  const coachIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("coach"));
+  const managerIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("manager"));
+  const otherIds = recipientIds.filter(
+    (id) => !playerIds.includes(id) && !coachIds.includes(id) && !managerIds.includes(id)
+  );
+
+  const title = String(notificationRes.data.title ?? "Nouveau message (événement)");
+  const body = String(opts.body ?? notificationRes.data.body ?? "").trim();
+
+  if (playerIds.length > 0) {
+    await dispatchPushForRecipients(supabaseAdmin, {
+      title,
+      body,
+      url: `/player/golf/trainings/new?club_event_id=${encodeURIComponent(eventId)}`,
+      recipientUserIds: playerIds,
+    });
+  }
+  if (coachIds.length > 0 && groupId) {
+    await dispatchPushForRecipients(supabaseAdmin, {
+      title,
+      body,
+      url: `/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`,
+      recipientUserIds: coachIds,
+    });
+  }
+  if (managerIds.length > 0) {
+    await dispatchPushForRecipients(supabaseAdmin, {
+      title,
+      body,
+      url: `/manager/calendar?event=${encodeURIComponent(eventId)}`,
+      recipientUserIds: managerIds,
+    });
+  }
+  if (otherIds.length > 0) {
+    await dispatchPushForRecipients(supabaseAdmin, {
+      title,
+      body,
+      url: `/player/messages?thread_id=${encodeURIComponent(opts.threadId)}`,
+      recipientUserIds: otherIds,
+    });
+  }
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ threadId: string }> }) {
@@ -106,12 +284,26 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
 
     const threadRes = await supabaseAdmin
       .from("message_threads")
-      .select("thread_type,event_id")
+      .select("thread_type,event_id,group_id,organization_id")
       .eq("id", threadId)
       .maybeSingle();
     if (!threadRes.error && threadRes.data?.thread_type === "event" && threadRes.data?.event_id) {
       await supabaseAdmin.rpc("sync_event_thread_participants", {
         p_event_id: String(threadRes.data.event_id),
+      });
+    }
+
+    if (!threadRes.error && threadRes.data) {
+      await enrichAndDispatchEventThreadNotification(supabaseAdmin, {
+        actorUserId: callerId,
+        threadId,
+        thread: {
+          thread_type: threadRes.data.thread_type ?? null,
+          event_id: threadRes.data.event_id ?? null,
+          group_id: (threadRes.data as any).group_id ?? null,
+          organization_id: (threadRes.data as any).organization_id ?? null,
+        },
+        body: content,
       });
     }
 
