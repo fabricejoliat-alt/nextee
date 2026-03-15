@@ -88,7 +88,8 @@ type CoachEvaluationRow = {
   engagement: number | null;
   attitude: number | null;
   application: number | null;
-  note: string | null;
+  player_note: string | null;
+  private_note: string | null;
 };
 
 type GolfRoundRow = {
@@ -964,7 +965,8 @@ export default function GolfDashboardPage() {
               engagement: fb.engagement,
               attitude: fb.attitude,
               application: fb.performance,
-              note: notePlayer || notePrivate || null,
+              player_note: notePlayer || null,
+              private_note: notePrivate || null,
             } as CoachEvaluationRow;
           })
           .filter((x): x is CoachEvaluationRow => Boolean(x))
@@ -2309,7 +2311,10 @@ function presetToSelectValue(p: Preset): Preset {
   }, [coachEvaluations]);
 
   const coachEvalNotes = useMemo(
-    () => coachEvaluations.filter((x) => String(x.note ?? "").trim().length > 0),
+    () =>
+      coachEvaluations.filter(
+        (x) => String(x.player_note ?? "").trim().length > 0 || String(x.private_note ?? "").trim().length > 0
+      ),
     [coachEvaluations]
   );
   const coachEvalPageSize = 5;
@@ -3547,9 +3552,9 @@ function presetToSelectValue(p: Preset): Preset {
                         <YAxis domain={[0, 6]} />
                         <Tooltip />
                         <Legend />
-                        <Line type="monotone" dataKey="engagement" name="Engagement" stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot={false} />
-                        <Line type="monotone" dataKey="attitude" name="Attitude" stroke="rgba(55,65,81,0.9)" strokeWidth={2} strokeDasharray="2 6" dot={false} />
-                        <Line type="monotone" dataKey="application" name="Application" stroke="rgba(34,197,94,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                        <Line type="monotone" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot={false} />
+                        <Line type="monotone" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} strokeDasharray="2 6" dot={false} />
+                        <Line type="monotone" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
@@ -3560,9 +3565,9 @@ function presetToSelectValue(p: Preset): Preset {
                         <YAxis domain={[0, 6]} />
                         <Tooltip />
                         <Legend />
-                        <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(16,94,51,0.95)" strokeWidth={3} dot />
-                        <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(55,65,81,0.9)" strokeWidth={3} dot />
-                        <Line type="linear" dataKey="application" name="Application" stroke="rgba(34,197,94,0.95)" strokeWidth={3} dot />
+                        <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot />
+                        <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} dot />
+                        <Line type="linear" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} dot />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
@@ -3647,7 +3652,16 @@ function presetToSelectValue(p: Preset): Preset {
                             Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
                           </div>
                         </div>
-                        <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.note}</div>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Note pour le joueur</div>
+                            <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.player_note || "—"}</div>
+                          </div>
+                          <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Note privée</div>
+                            <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.private_note || "—"}</div>
+                          </div>
+                        </div>
                       </div>
                     ))
                   )}

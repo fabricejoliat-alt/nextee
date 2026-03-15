@@ -11,6 +11,10 @@ type MemberRow = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
   is_performance: boolean | null;
+  player_course_track?: "junior" | "competition" | null;
+  player_membership_paid?: boolean | null;
+  player_playing_right_paid?: boolean | null;
+  player_consent_status?: "granted" | "pending" | "adult" | null;
   auth_email?: string | null;
   profiles?: {
     id: string;
@@ -37,6 +41,10 @@ type EditForm = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean;
   is_performance: boolean;
+  player_course_track: "" | "junior" | "competition";
+  player_membership_paid: "" | "yes" | "no";
+  player_playing_right_paid: "" | "yes" | "no";
+  player_consent_status: "granted" | "pending" | "adult";
   first_name: string;
   last_name: string;
   username: string;
@@ -53,6 +61,25 @@ type EditForm = {
   avs_no: string;
   staff_function: string;
 };
+
+function computeAge(birthDate: string | null | undefined) {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function defaultConsentStatus(m: MemberRow) {
+  if (m.player_consent_status === "granted" || m.player_consent_status === "pending" || m.player_consent_status === "adult") {
+    return m.player_consent_status;
+  }
+  const age = computeAge(m.profiles?.birth_date);
+  return age != null && age >= 18 ? "adult" : "pending";
+}
 
 function labelName(m: MemberRow) {
   const n = `${m.profiles?.first_name ?? ""} ${m.profiles?.last_name ?? ""}`.trim();
@@ -218,6 +245,12 @@ export default function ManagerUsersPage() {
       role: m.role,
       is_active: m.is_active ?? true,
       is_performance: m.is_performance ?? false,
+      player_course_track: (m.player_course_track ?? "") as "" | "junior" | "competition",
+      player_membership_paid:
+        m.player_membership_paid == null ? "" : m.player_membership_paid ? "yes" : "no",
+      player_playing_right_paid:
+        m.player_playing_right_paid == null ? "" : m.player_playing_right_paid ? "yes" : "no",
+      player_consent_status: defaultConsentStatus(m),
       first_name: m.profiles?.first_name ?? "",
       last_name: m.profiles?.last_name ?? "",
       username: m.profiles?.username ?? "",
@@ -269,6 +302,12 @@ export default function ManagerUsersPage() {
       payload.postal_code = (form.postal_code ?? "").toString().trim();
       payload.city = (form.city ?? "").toString().trim();
       payload.avs_no = (form.avs_no ?? "").toString().trim();
+      payload.player_course_track = (form.player_course_track ?? "").toString().trim() || null;
+      payload.player_membership_paid =
+        form.player_membership_paid === "" ? null : form.player_membership_paid === "yes";
+      payload.player_playing_right_paid =
+        form.player_playing_right_paid === "" ? null : form.player_playing_right_paid === "yes";
+      payload.player_consent_status = (form.player_consent_status ?? "pending").toString().trim();
     }
     if ((form.role ?? "player") === "parent") {
       payload.auth_email = normalizeAuthEmailInput(form.auth_email as string);
@@ -543,6 +582,22 @@ export default function ManagerUsersPage() {
                             mode performance: {m.is_performance ? "oui" : "non"}
                           </div>
                         )}
+                        {m.role === "player" ? (
+                          <>
+                            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                              cursus: {m.player_course_track === "junior" ? "Junior" : m.player_course_track === "competition" ? "Compétition" : "—"}
+                            </div>
+                            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                              cotisation: {m.player_membership_paid == null ? "—" : m.player_membership_paid ? "Oui" : "Non"}
+                            </div>
+                            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                              droit de jeu: {m.player_playing_right_paid == null ? "—" : m.player_playing_right_paid ? "Oui" : "Non"}
+                            </div>
+                            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                              consentement: {defaultConsentStatus(m) === "granted" ? "Accordé" : defaultConsentStatus(m) === "adult" ? "Majeur" : "En attente"}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
 
                       <button className="btn" onClick={() => startEdit(m)}>
@@ -670,6 +725,57 @@ export default function ManagerUsersPage() {
                       {isPlayerProfileEdit && (
                         <>
                           <div style={{ fontWeight: 800, fontSize: 13, marginTop: 4 }}>Profil joueur</div>
+
+                          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800 }}>Cours</span>
+                              <select
+                                value={(form.player_course_track ?? "") as string}
+                                onChange={(e) => setForm((f) => ({ ...f, player_course_track: e.target.value as EditForm["player_course_track"] }))}
+                                style={inputStyle}
+                              >
+                                <option value="">Non défini</option>
+                                <option value="junior">Junior</option>
+                                <option value="competition">Compétition</option>
+                              </select>
+                            </label>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800 }}>Cotisation</span>
+                              <select
+                                value={(form.player_membership_paid ?? "") as string}
+                                onChange={(e) => setForm((f) => ({ ...f, player_membership_paid: e.target.value as EditForm["player_membership_paid"] }))}
+                                style={inputStyle}
+                              >
+                                <option value="">Non défini</option>
+                                <option value="yes">Oui</option>
+                                <option value="no">Non</option>
+                              </select>
+                            </label>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800 }}>Droit de jeu</span>
+                              <select
+                                value={(form.player_playing_right_paid ?? "") as string}
+                                onChange={(e) => setForm((f) => ({ ...f, player_playing_right_paid: e.target.value as EditForm["player_playing_right_paid"] }))}
+                                style={inputStyle}
+                              >
+                                <option value="">Non défini</option>
+                                <option value="yes">Oui</option>
+                                <option value="no">Non</option>
+                              </select>
+                            </label>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800 }}>Consentement</span>
+                              <select
+                                value={(form.player_consent_status ?? "pending") as string}
+                                onChange={(e) => setForm((f) => ({ ...f, player_consent_status: e.target.value as EditForm["player_consent_status"] }))}
+                                style={inputStyle}
+                              >
+                                <option value="granted">Accordé</option>
+                                <option value="pending">En attente</option>
+                                <option value="adult">Majeur</option>
+                              </select>
+                            </label>
+                          </div>
 
                           <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
                             <input

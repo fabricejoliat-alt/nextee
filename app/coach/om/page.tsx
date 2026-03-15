@@ -599,7 +599,7 @@ export default function CoachOrderOfMeritPage() {
   }, [organizationId, selectedPlayerId, rankingFrom, rankingTo]);
 
   return (
-    <div className="player-dashboard-bg">
+    <div className="player-dashboard-bg" style={{ color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
       <div className="app-shell marketplace-page">
         <div className="glass-section">
           <div className="section-title" style={{ marginBottom: 0, display: "inline-flex", gap: 8, alignItems: "center" }}>
@@ -617,9 +617,14 @@ export default function CoachOrderOfMeritPage() {
         ) : (
           <>
             <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
                 <div style={{ fontWeight: 800 }}>{txt.organization}</div>
-                <select className="search-input" value={organizationId} onChange={(e) => setOrganizationId(e.target.value)} style={{ width: "100%" }}>
+                <select
+                  className="search-input"
+                  value={organizationId}
+                  onChange={(e) => setOrganizationId(e.target.value)}
+                  style={{ width: "100%", color: "#111827", WebkitTextFillColor: "#111827" }}
+                >
                   {orgs.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
@@ -631,7 +636,7 @@ export default function CoachOrderOfMeritPage() {
             </div>
 
             <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
                 <div style={{ fontWeight: 800 }}>{txt.summary}</div>
                 {!selectedRow ? (
                   <div style={{ opacity: 0.72 }}>{txt.notRanked}</div>
@@ -668,15 +673,27 @@ export default function CoachOrderOfMeritPage() {
             </div>
 
             <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateFrom}</span>
-                    <input className="search-input" type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} />
+                    <input
+                      className="search-input"
+                      type="date"
+                      value={rankingFrom}
+                      onChange={(e) => setRankingFrom(e.target.value)}
+                      style={{ color: "#111827", WebkitTextFillColor: "#111827" }}
+                    />
                   </label>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateTo}</span>
-                    <input className="search-input" type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} />
+                    <input
+                      className="search-input"
+                      type="date"
+                      value={rankingTo}
+                      onChange={(e) => setRankingTo(e.target.value)}
+                      style={{ color: "#111827", WebkitTextFillColor: "#111827" }}
+                    />
                   </label>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -798,6 +815,15 @@ export default function CoachOrderOfMeritPage() {
           </div>
         ) : null}
       </div>
+      <style>{`
+        .marketplace-page a,
+        .marketplace-page a[x-apple-data-detectors],
+        .marketplace-page [x-apple-data-detectors] {
+          color: inherit !important;
+          -webkit-text-fill-color: currentColor !important;
+          text-decoration: none !important;
+        }
+      `}</style>
     </div>
   );
 }

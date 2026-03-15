@@ -15,6 +15,7 @@ import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter, MessageCircle, Tra
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
+import MessageCountBadge from "@/components/messages/MessageCountBadge";
 
 type SessionRow = {
   id: string;
@@ -246,52 +247,6 @@ function clamp(n: number, a: number, b: number) {
 }
 
 const MAX_SCORE = 6;
-
-function MessageBadgePills({
-  messageCount,
-  unreadCount,
-}: {
-  messageCount: number;
-  unreadCount: number;
-}) {
-  return (
-    <>
-      <span
-        style={{
-          marginLeft: 6,
-          minWidth: 18,
-          height: 18,
-          padding: "0 6px",
-          borderRadius: 999,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
-          fontWeight: 900,
-          color: "white",
-          background: "rgba(107,114,128,0.95)",
-        }}
-      >
-        {messageCount}
-      </span>
-      {unreadCount > 0 ? (
-        <span
-          aria-label="messages non lus"
-          title={`${unreadCount} non lus`}
-          style={{
-            marginLeft: 5,
-            width: 10,
-            height: 10,
-            borderRadius: 999,
-            display: "inline-block",
-            background: "rgba(220,38,38,0.95)",
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.9)",
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
 
 function RatingBar({
   icon,
@@ -1621,9 +1576,10 @@ export default function TrainingsListPage() {
                               <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}>
                                 <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Messagerie", "Messages")}
-                                <MessageBadgePills
+                                <MessageCountBadge
                                   messageCount={messageBadge.message_count ?? 0}
                                   unreadCount={messageBadge.unread_count ?? 0}
+                                  style={{ marginLeft: 0 }}
                                 />
                               </Link>
                               {performanceEnabled && !isUpcomingEvent ? (
@@ -1882,9 +1838,10 @@ export default function TrainingsListPage() {
                                 {(() => {
                                   const badge = messageBadgesByEventId[String(linkedEvent.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
                                   return (
-                                    <MessageBadgePills
+                                    <MessageCountBadge
                                       messageCount={badge.message_count ?? 0}
                                       unreadCount={badge.unread_count ?? 0}
+                                      style={{ marginLeft: 0 }}
                                     />
                                   );
                                 })()}

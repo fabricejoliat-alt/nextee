@@ -1,6 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+function computeAge(birthDate: string | null | undefined) {
+  if (!birthDate) return null;
+  const d = new Date(birthDate);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+async function resolvePlayerConsentPending(supabaseAdmin: any, userId: string) {
+  const [profileRes, membershipsRes] = await Promise.all([
+    supabaseAdmin.from("profiles").select("birth_date").eq("id", userId).maybeSingle(),
+    supabaseAdmin
+      .from("club_members")
+      .select("player_consent_status")
+      .eq("user_id", userId)
+      .eq("role", "player")
+      .eq("is_active", true),
+  ]);
+
+  if (profileRes.error) throw new Error(profileRes.error.message);
+  if (membershipsRes.error) throw new Error(membershipsRes.error.message);
+
+  const statuses = (membershipsRes.data ?? []).map((row: any) => String(row?.player_consent_status ?? ""));
+  if (statuses.includes("pending")) return true;
+  if (statuses.includes("granted") || statuses.includes("adult")) return false;
+  const age = computeAge((profileRes.data?.birth_date ?? null) as string | null);
+  return !(age != null && age >= 18);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -84,6 +116,10 @@ export async function POST(req: NextRequest) {
       }
       if (!linkRow?.player_id) return NextResponse.json({ redirectTo: "/no-access" }, { headers: resHeaders });
       return NextResponse.json({ redirectTo: "/player" }, { headers: resHeaders });
+    }
+    if (role === "player") {
+      const pendingConsent = await resolvePlayerConsentPending(supabaseAdmin, userId);
+      if (pendingConsent) return NextResponse.json({ redirectTo: "/player/consent-required" }, { headers: resHeaders });
     }
     return NextResponse.json({ redirectTo: "/player" }, { headers: resHeaders });
   } catch (e: any) {

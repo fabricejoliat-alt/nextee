@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -414,7 +414,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         engagement: attendanceStatus === "absent" ? null : draft.engagement,
         attitude: attendanceStatus === "absent" ? null : draft.attitude,
         performance: attendanceStatus === "absent" ? null : draft.performance,
-        visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
+        visible_to_player: attendanceStatus === "absent" ? false : true,
         private_note: draft.private_note?.trim() || null,
         player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
       },
@@ -431,7 +431,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
       engagement: attendanceStatus === "absent" ? null : draft.engagement,
       attitude: attendanceStatus === "absent" ? null : draft.attitude,
       performance: attendanceStatus === "absent" ? null : draft.performance,
-      visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
+      visible_to_player: attendanceStatus === "absent" ? false : true,
       private_note: draft.private_note,
       player_note: attendanceStatus === "absent" ? null : draft.player_note,
     });
@@ -746,27 +746,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               {attendanceStatus !== "absent" ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Visibilité et retour joueur</div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy}
-                      onClick={() => setDraft((p) => ({ ...p, visible_to_player: !p.visible_to_player }))}
-                      style={
-                        draft.visible_to_player
-                          ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                          : {}
-                      }
-                    >
-                      {draft.visible_to_player ? <Eye size={16} style={{ marginRight: 6 }} /> : <EyeOff size={16} style={{ marginRight: 6 }} />}
-                      {draft.visible_to_player ? "Visible pour le joueur" : "Invisible pour le joueur"}
-                    </button>
-                  </div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Commentaire pour le joueur</span>
+                    <span style={fieldLabelStyle}>Note pour le joueur</span>
                     <textarea
                       value={draft.player_note ?? ""}
                       onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
@@ -779,7 +762,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
               ) : null}
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Note privée coach</div>
+                <div className="card-title" style={{ marginBottom: 0 }}>Note privée</div>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Visible uniquement par les coachs</span>
                   <textarea

@@ -14,6 +14,41 @@ function normalizeAuthEmailInput(raw: string) {
   return email;
 }
 
+async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
+  const authEmailById = new Map<string, string | null>();
+  if (userIds.length === 0) return authEmailById;
+
+  const wanted = new Set(userIds);
+  const perPage = Math.min(1000, Math.max(200, userIds.length));
+  let page = 1;
+
+  while (wanted.size > 0) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (error) throw error;
+
+    const users = data?.users ?? [];
+    if (users.length === 0) break;
+
+    for (const user of users) {
+      if (!wanted.has(user.id)) continue;
+      authEmailById.set(user.id, user.email ?? null);
+      wanted.delete(user.id);
+    }
+
+    if (users.length < perPage) break;
+    page += 1;
+  }
+
+  for (const userId of wanted) {
+    authEmailById.set(userId, null);
+  }
+
+  return authEmailById;
+}
+
 async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
@@ -57,7 +92,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const { data: membersRows, error: membersError } = await supabaseAdmin
       .from("club_members")
-      .select("id,club_id,user_id,role,is_active,is_performance,created_at")
+      .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,created_at")
       .eq("club_id", clubId)
       .order("created_at", { ascending: false });
 
@@ -134,17 +169,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       );
     }
 
-    const authEmailById = new Map<string, string | null>();
-    if (userIds.length > 0) {
-      const authUsers = await Promise.all(
-        userIds.map(async (id) => {
-          const { data, error } = await supabaseAdmin.auth.admin.getUserById(id);
-          if (error || !data?.user) return { id, email: null as string | null };
-          return { id, email: data.user.email ?? null };
-        })
-      );
-      for (const u of authUsers) authEmailById.set(u.id, u.email);
-    }
+    const authEmailById = await fetchAuthEmailsByIds(supabaseAdmin, userIds);
 
     const hydratedMembers = members.map((m: any) => ({
       id: String(m.id),
@@ -153,6 +178,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       role: m.role,
       is_active: m.is_active,
       is_performance: m.is_performance,
+      player_course_track: m.player_course_track ?? null,
+      player_membership_paid: m.player_membership_paid ?? null,
+      player_playing_right_paid: m.player_playing_right_paid ?? null,
+      player_consent_status: m.player_consent_status ?? null,
       auth_email: authEmailById.get(String(m.user_id)) ?? null,
       profiles: profileById.get(String(m.user_id)) ?? null,
     }));
@@ -187,9 +216,32 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
+    const playerCourseTrackRaw = has("player_course_track") ? String(body.player_course_track ?? "").trim().toLowerCase() : "";
+    const playerCourseTrack =
+      playerCourseTrackRaw === "" ? null : playerCourseTrackRaw === "junior" || playerCourseTrackRaw === "competition" ? playerCourseTrackRaw : "__invalid__";
+    if (playerCourseTrack === "__invalid__") {
+      return NextResponse.json({ error: "Invalid player course track" }, { status: 400 });
+    }
+
+    const playerConsentStatusRaw = has("player_consent_status") ? String(body.player_consent_status ?? "").trim().toLowerCase() : "";
+    const playerConsentStatus =
+      playerConsentStatusRaw === ""
+        ? null
+        : playerConsentStatusRaw === "granted" || playerConsentStatusRaw === "pending" || playerConsentStatusRaw === "adult"
+        ? playerConsentStatusRaw
+        : "__invalid__";
+    if (playerConsentStatus === "__invalid__") {
+      return NextResponse.json({ error: "Invalid player consent status" }, { status: 400 });
+    }
+
+    const playerMembershipPaid =
+      has("player_membership_paid") ? (body.player_membership_paid == null ? null : Boolean(body.player_membership_paid)) : undefined;
+    const playerPlayingRightPaid =
+      has("player_playing_right_paid") ? (body.player_playing_right_paid == null ? null : Boolean(body.player_playing_right_paid)) : undefined;
+
     const { data: memberRow, error: memberErr } = await supabaseAdmin
       .from("club_members")
-      .select("id,user_id,club_id")
+      .select("id,user_id,club_id,role")
       .eq("id", memberId)
       .eq("club_id", clubId)
       .maybeSingle();
@@ -199,6 +251,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const memberPatch: Record<string, any> = {};
     if (role) memberPatch.role = role;
     if (typeof isActive === "boolean") memberPatch.is_active = isActive;
+    const effectiveRole = role || (memberRow as any).role || "";
+    if (effectiveRole === "player") {
+      if (has("player_course_track")) memberPatch.player_course_track = playerCourseTrack;
+      if (has("player_membership_paid")) memberPatch.player_membership_paid = playerMembershipPaid;
+      if (has("player_playing_right_paid")) memberPatch.player_playing_right_paid = playerPlayingRightPaid;
+      if (has("player_consent_status")) memberPatch.player_consent_status = playerConsentStatus;
+    } else if (role && role !== "player") {
+      memberPatch.player_course_track = null;
+      memberPatch.player_membership_paid = null;
+      memberPatch.player_playing_right_paid = null;
+      memberPatch.player_consent_status = null;
+    }
 
     if (Object.keys(memberPatch).length > 0) {
       const { error } = await supabaseAdmin.from("club_members").update(memberPatch).eq("id", memberId);

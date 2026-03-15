@@ -291,8 +291,7 @@ export default function PlayerTrainingDetailPage() {
             .from("club_event_coach_feedback")
             .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
             .eq("event_id", s.club_event_id)
-            .eq("player_id", uid)
-            .eq("visible_to_player", true);
+            .eq("player_id", uid);
 
           if (cfRes.error) throw new Error(cfRes.error.message);
 

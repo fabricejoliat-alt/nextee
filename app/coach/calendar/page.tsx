@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { CalendarDays, Filter } from "lucide-react";
+import MessageCountBadge from "@/components/messages/MessageCountBadge";
+import { CalendarDays, Filter, MessageCircle } from "lucide-react";
 
 type FilterMode = "upcoming" | "past";
 
@@ -23,6 +24,12 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: string;
+};
+
+type EventMessageBadge = {
+  thread_id: string | null;
+  message_count: number;
+  unread_count: number;
 };
 
 function timeLabel(iso: string, locale: string) {
@@ -70,6 +77,21 @@ function isArchiveGroupLabel(label: string) {
   return l.includes("archive") || l.includes("historique");
 }
 
+async function fetchEventMessageBadges(eventIds: string[]) {
+  if (eventIds.length === 0) return {} as Record<string, EventMessageBadge>;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token ?? "";
+  if (!token) return {} as Record<string, EventMessageBadge>;
+
+  const res = await fetch(`/api/messages/event-badges?event_ids=${encodeURIComponent(eventIds.join(","))}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return {} as Record<string, EventMessageBadge>;
+  return (json?.badges ?? {}) as Record<string, EventMessageBadge>;
+}
+
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
@@ -79,6 +101,7 @@ export default function CoachCalendarPage() {
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
+  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
   const [groupFilter, setGroupFilter] = useState<string>("all");
@@ -113,6 +136,42 @@ export default function CoachCalendarPage() {
       }
     })();
   }, [locale]);
+
+  useEffect(() => {
+    const ids = Array.from(new Set(events.map((e) => String(e.id ?? "")).filter(Boolean)));
+    if (ids.length === 0) {
+      setMessageBadgesByEventId({});
+      return;
+    }
+    let cancelled = false;
+    const loadBadges = async () => {
+      const badges = await fetchEventMessageBadges(ids);
+      if (!cancelled) setMessageBadgesByEventId(badges);
+    };
+    void loadBadges();
+
+    const onFocus = () => void loadBadges();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadBadges();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    channel = supabase
+      .channel("coach-calendar-event-badges")
+      .on("postgres_changes", { event: "*", schema: "public", table: "thread_messages" }, () => void loadBadges())
+      .on("postgres_changes", { event: "*", schema: "public", table: "thread_participants" }, () => void loadBadges())
+      .on("postgres_changes", { event: "*", schema: "public", table: "message_threads" }, () => void loadBadges())
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [events]);
 
   const nowTs = Date.now();
 
@@ -168,6 +227,23 @@ export default function CoachCalendarPage() {
   useEffect(() => {
     setListPage(1);
   }, [filterMode, groupFilter]);
+
+  function renderMessagePill(eventId: string, groupId: string) {
+    const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+    return (
+      <Link
+        href={`/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`}
+        className="pill-soft"
+        title={tr("Messagerie", "Messages")}
+        aria-label={tr("Ouvrir la page de l'événement", "Open event page")}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
+      >
+        <MessageCircle size={14} />
+        {tr("Messagerie", "Messages")}
+        <MessageCountBadge messageCount={badge.message_count ?? 0} unreadCount={badge.unread_count ?? 0} />
+      </Link>
+    );
+  }
 
   return (
     <div className="player-dashboard-bg">
@@ -298,6 +374,9 @@ export default function CoachCalendarPage() {
                               📍 {e.location_text}
                             </div>
                           ) : null}
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <span onClick={(ev) => ev.stopPropagation()}>{renderMessagePill(e.id, e.group_id)}</span>
+                          </div>
                           {e.coach_note?.trim() ? (
                             <div style={{ color: "rgba(0,0,0,0.72)", fontWeight: 700, fontSize: 12, whiteSpace: "pre-wrap" }}>
                               {e.coach_note}

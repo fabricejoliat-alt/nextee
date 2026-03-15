@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock, ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import MessageCountBadge from "@/components/messages/MessageCountBadge";
 import { MessageCircle, Plus, Send } from "lucide-react";
 
 type Props = {
@@ -123,27 +124,6 @@ export default function MessagesCenter({
   const threadIdsRef = useRef<Set<string>>(new Set());
   const hasBootstrappedRef = useRef(false);
 
-  function threadBadgeStyle(messageCount: number, unreadCount: number) {
-    return {
-      minWidth: 20,
-      height: 20,
-      padding: "0 7px",
-      borderRadius: 999,
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 11,
-      fontWeight: 900,
-      color: "white",
-      background:
-        messageCount <= 0
-          ? "rgba(107,114,128,0.95)"
-          : unreadCount > 0
-            ? "rgba(220,38,38,0.95)"
-            : "rgba(22,163,74,0.95)",
-    } as const;
-  }
-
   function upsertIncomingMessage(msg: ThreadMessage, markAsMine = false) {
     setMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev;
@@ -204,14 +184,6 @@ export default function MessagesCenter({
       if (hideTeamCoachThreadInList) {
         const scope = String(t.player_thread_scope ?? "direct");
         if (t.thread_type === "player" && scope === "team") return false;
-      }
-
-      // Player inbox should not show support-team direct threads by default.
-      // Keep the explicitly opened thread visible when coming from Encadrement.
-      if (effectiveRole === "player" && t.thread_type === "player") {
-        if (preselectId && t.id === preselectId) return true;
-        if (activeThreadId && t.id === activeThreadId) return true;
-        return false;
       }
       return true;
     });
@@ -1003,9 +975,11 @@ export default function MessagesCenter({
                                 {t.thread_type === "group" ? groupHeader || (t.display_title || t.title) : (t.display_title || t.title)}
                               </div>
                               <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                <span style={threadBadgeStyle(messageCount, Number(t.unread_count ?? 0))}>
-                                  {messageCount}
-                                </span>
+                                <MessageCountBadge
+                                  messageCount={messageCount}
+                                  unreadCount={Number(t.unread_count ?? 0)}
+                                  showZero
+                                />
                                 {canArchiveForMe ? (
                                   <button
                                     type="button"

@@ -649,8 +649,7 @@ export default function PlayerTrainingNewPage() {
             .from("club_event_coach_feedback")
             .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,player_note")
             .eq("event_id", ev.id)
-            .eq("player_id", uid)
-            .eq("visible_to_player", true);
+            .eq("player_id", uid);
 
           if (!coachFeedbackRes.error) {
             const fb = (coachFeedbackRes.data ?? []) as CoachFeedbackRow[];

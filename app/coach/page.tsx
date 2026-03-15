@@ -9,6 +9,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
+import MessageCountBadge from "@/components/messages/MessageCountBadge";
 
 type EventLite = {
   id: string;
@@ -62,40 +63,6 @@ function isSameDay(aIso: string, bIso: string | null) {
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
-  );
-}
-
-function MessageBadgePills({
-  messageCount,
-  unreadCount,
-}: {
-  messageCount: number;
-  unreadCount: number;
-}) {
-  return (
-    <span
-      style={{
-        marginLeft: 6,
-        minWidth: 18,
-        height: 18,
-        padding: "0 6px",
-        borderRadius: 999,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 11,
-        fontWeight: 900,
-        color: "white",
-        background:
-          messageCount <= 0
-            ? "rgba(107,114,128,0.95)"
-            : unreadCount > 0
-              ? "rgba(220,38,38,0.95)"
-              : "rgba(22,163,74,0.95)",
-      }}
-    >
-      {messageCount}
-    </span>
   );
 }
 
@@ -268,9 +235,10 @@ export default function CoachHomePage() {
       >
         <MessageCircle size={14} />
         {tr("Messagerie", "Messages")}
-        <MessageBadgePills
+        <MessageCountBadge
           messageCount={badge.message_count ?? 0}
           unreadCount={badge.unread_count ?? 0}
+          style={{ marginLeft: 0 }}
         />
       </Link>
     );

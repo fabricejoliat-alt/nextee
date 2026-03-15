@@ -74,10 +74,38 @@ export default function RoleGuard({
       }
 
       const role = membership.role as "player" | "coach" | "manager" | "parent";
+      const currentPath =
+        typeof window !== "undefined" ? window.location.pathname : "";
+      const consentPage = "/player/consent-required";
 
       if (role === "parent" && json.parentHasChildren === false) {
         router.replace("/no-access");
         return;
+      }
+
+      if (role === "player") {
+        const consentRes = await fetch("/api/player/consent", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+        const consentJson = await consentRes.json().catch(() => ({}));
+        const consentPending =
+          consentRes.ok &&
+          consentJson?.viewerRole === "player" &&
+          Boolean(consentJson?.player?.pending);
+
+        if (consentPending && currentPath !== consentPage) {
+          router.replace(consentPage);
+          return;
+        }
+
+        if (!consentPending && currentPath === consentPage) {
+          router.replace("/player");
+          return;
+        }
       }
 
       if (allowed.includes(role)) {
