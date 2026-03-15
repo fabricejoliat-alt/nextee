@@ -43,6 +43,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   const [threadTitlesById, setThreadTitlesById] = useState<Record<string, string>>({});
   const [threadMetaById, setThreadMetaById] = useState<Record<string, { thread_type: string; player_id: string; created_by: string; player_thread_scope: string; event_id: string; group_id: string }>>({});
   const [profileNamesById, setProfileNamesById] = useState<Record<string, string>>({});
+  const [threadUnreadById, setThreadUnreadById] = useState<Record<string, number>>({});
 
   function toErrorMessage(e: unknown, fallback: string) {
     if (e instanceof Error && e.message) return e.message;
@@ -206,6 +207,47 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  useEffect(() => {
+    (async () => {
+      const threadIds = Array.from(
+        new Set(
+          rows
+            .map((r) => {
+              const n = r.notification;
+              if (!n || n.kind !== "thread_message") return "";
+              return String((n.data ?? {}).thread_id ?? "").trim();
+            })
+            .filter(Boolean)
+        )
+      );
+      if (threadIds.length === 0) {
+        setThreadUnreadById({});
+        return;
+      }
+
+      const sessionRes = await supabase.auth.getSession();
+      const token = sessionRes.data.session?.access_token;
+      if (!token) return;
+
+      const qs = new URLSearchParams();
+      qs.set("thread_ids", threadIds.join(","));
+      const res = await fetch(`/api/messages/thread-badges?${qs.toString()}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+
+      const next: Record<string, number> = {};
+      const badges = (json?.badges ?? {}) as Record<string, { unread_count?: number }>;
+      for (const [threadId, badge] of Object.entries(badges)) {
+        next[threadId] = Number(badge?.unread_count ?? 0);
+      }
+      setThreadUnreadById(next);
+    })();
   }, [rows]);
 
   const unreadCount = useMemo(() => rows.filter((r) => !r.recipient.is_read).length, [rows]);
@@ -377,6 +419,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   const threadId = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_id ?? "").trim() : "";
                   const threadTitleFromData = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_title ?? "").trim() : "";
                   const threadMeta = threadId ? threadMetaById[threadId] : null;
+                  const threadUnreadCount = threadId ? Number(threadUnreadById[threadId] ?? 0) : 0;
+                  const isEventThread = n?.kind === "thread_message" && threadMeta?.thread_type === "event";
                   const counterpartName =
                     threadMeta?.thread_type === "player"
                       ? ((viewerRole === "player" || viewerRole === "parent")
@@ -387,6 +431,14 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                     counterpartName
                       ? `${tr("Discussion avec", "Discussion with", "Diskussion mit", "Discussione con")} ${counterpartName}`
                       : threadTitleFromData || (threadId ? threadTitlesById[threadId] ?? "" : "");
+                  const notificationTitle =
+                    isEventThread
+                      ? (threadUnreadCount > 1
+                          ? tr("Nouveaux messages", "New messages", "Neue Nachrichten", "Nuovi messaggi")
+                          : tr("Nouveau message", "New message", "Neue Nachricht", "Nuovo messaggio"))
+                      : (n?.title ?? tr("Notification", "Notification"));
+                  const notificationBody =
+                    isEventThread && threadUnreadCount > 1 ? "" : (n?.body ?? "");
                   const card = (
                     <div
                       className="marketplace-item"
@@ -412,7 +464,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                               wordBreak: "break-word",
                             }}
                           >
-                            {n?.title ?? tr("Notification", "Notification")}
+                            {notificationTitle}
                           </div>
                           {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
@@ -431,7 +483,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                             {threadTitle}
                           </div>
                         ) : null}
-                        {n?.body ? (
+                        {notificationBody ? (
                           <div
                             style={{
                               fontSize: 11,
@@ -443,7 +495,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                               wordBreak: "break-word",
                             }}
                           >
-                            {n.body}
+                            {notificationBody}
                           </div>
                         ) : null}
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>

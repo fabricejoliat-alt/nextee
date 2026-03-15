@@ -63,12 +63,25 @@ async function dispatchPushForRecipients(
   }
 }
 
+async function dispatchPushPerUser(
+  supabaseAdmin: any,
+  opts: { title: string; body: string; url: string; recipientUserId: string }
+) {
+  await dispatchPushForRecipients(supabaseAdmin, {
+    title: opts.title,
+    body: opts.body,
+    url: opts.url,
+    recipientUserIds: [opts.recipientUserId],
+  });
+}
+
 async function enrichAndDispatchEventThreadNotification(
   supabaseAdmin: any,
   opts: {
     actorUserId: string;
     threadId: string;
     thread: {
+      title: string | null;
       thread_type: string | null;
       event_id: string | null;
       group_id: string | null;
@@ -93,6 +106,7 @@ async function enrichAndDispatchEventThreadNotification(
 
   const groupId = String(opts.thread.group_id ?? "").trim();
   const organizationId = String(opts.thread.organization_id ?? "").trim();
+  const eventTitle = String(opts.thread.title ?? "").trim() || "Événement";
 
   const existingData = (notificationRes.data.data ?? {}) as Record<string, unknown>;
   const nextData = {
@@ -141,47 +155,66 @@ async function enrichAndDispatchEventThreadNotification(
     rolesByUserId.get(userId)!.add(role);
   }
 
-  const playerIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("player"));
+  const playerIds = recipientIds.filter(
+    (id) =>
+      rolesByUserId.get(id)?.has("player") ||
+      (!rolesByUserId.get(id)?.has("coach") && !rolesByUserId.get(id)?.has("manager"))
+  );
   const coachIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("coach"));
   const managerIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("manager"));
-  const otherIds = recipientIds.filter(
-    (id) => !playerIds.includes(id) && !coachIds.includes(id) && !managerIds.includes(id)
-  );
 
-  const title = String(notificationRes.data.title ?? "Nouveau message (événement)");
-  const body = String(opts.body ?? notificationRes.data.body ?? "").trim();
+  const threadMessagesRes = await supabaseAdmin
+    .from("thread_messages")
+    .select("created_at,sender_user_id")
+    .eq("thread_id", opts.threadId);
+  if (threadMessagesRes.error) return;
+
+  const participantsReadRes = await supabaseAdmin
+    .from("thread_participants")
+    .select("user_id,last_read_at")
+    .eq("thread_id", opts.threadId)
+    .in("user_id", recipientIds);
+  if (participantsReadRes.error) return;
+
+  const lastReadByUserId = new Map<string, number>();
+  for (const row of participantsReadRes.data ?? []) {
+    lastReadByUserId.set(
+      String((row as any).user_id ?? "").trim(),
+      (row as any).last_read_at ? new Date(String((row as any).last_read_at)).getTime() : 0
+    );
+  }
+
+  const unreadCountByUserId = new Map<string, number>();
+  for (const userId of recipientIds) unreadCountByUserId.set(userId, 0);
+  for (const row of threadMessagesRes.data ?? []) {
+    const senderUserId = String((row as any).sender_user_id ?? "").trim();
+    const createdAt = new Date(String((row as any).created_at ?? "")).getTime();
+    for (const userId of recipientIds) {
+      if (userId === senderUserId) continue;
+      const lastReadAt = lastReadByUserId.get(userId) ?? 0;
+      if (createdAt > lastReadAt) unreadCountByUserId.set(userId, (unreadCountByUserId.get(userId) ?? 0) + 1);
+    }
+  }
+
+  async function dispatchGroup(recipientUserIds: string[], url: string) {
+    await Promise.all(
+      recipientUserIds.map(async (recipientUserId) => {
+        const unreadCount = unreadCountByUserId.get(recipientUserId) ?? 1;
+        const title = unreadCount > 1 ? "Nouveaux messages" : "Nouveau message";
+        const body = unreadCount > 1 ? eventTitle : `${eventTitle}\n${String(opts.body ?? "").trim()}`.trim();
+        await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId });
+      })
+    );
+  }
 
   if (playerIds.length > 0) {
-    await dispatchPushForRecipients(supabaseAdmin, {
-      title,
-      body,
-      url: `/player/golf/trainings/new?club_event_id=${encodeURIComponent(eventId)}`,
-      recipientUserIds: playerIds,
-    });
+    await dispatchGroup(playerIds, `/player/golf/trainings/new?club_event_id=${encodeURIComponent(eventId)}`);
   }
   if (coachIds.length > 0 && groupId) {
-    await dispatchPushForRecipients(supabaseAdmin, {
-      title,
-      body,
-      url: `/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`,
-      recipientUserIds: coachIds,
-    });
+    await dispatchGroup(coachIds, `/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`);
   }
   if (managerIds.length > 0) {
-    await dispatchPushForRecipients(supabaseAdmin, {
-      title,
-      body,
-      url: `/manager/calendar?event=${encodeURIComponent(eventId)}`,
-      recipientUserIds: managerIds,
-    });
-  }
-  if (otherIds.length > 0) {
-    await dispatchPushForRecipients(supabaseAdmin, {
-      title,
-      body,
-      url: `/player/messages?thread_id=${encodeURIComponent(opts.threadId)}`,
-      recipientUserIds: otherIds,
-    });
+    await dispatchGroup(managerIds, `/manager/calendar?event=${encodeURIComponent(eventId)}`);
   }
 }
 
@@ -262,6 +295,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
     if (canPostRes.error) return NextResponse.json({ error: canPostRes.error.message }, { status: 400 });
     if (!canPostRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    const threadRes = await supabaseAdmin
+      .from("message_threads")
+      .select("title,thread_type,event_id,group_id,organization_id")
+      .eq("id", threadId)
+      .maybeSingle();
+    if (threadRes.error) return NextResponse.json({ error: threadRes.error.message }, { status: 400 });
+
+    if (threadRes.data?.thread_type === "event" && threadRes.data?.event_id) {
+      await supabaseAdmin.rpc("sync_event_thread_participants", {
+        p_event_id: String(threadRes.data.event_id),
+      });
+    }
+
     const insRes = await supabaseAdmin
       .from("thread_messages")
       .insert({
@@ -282,22 +328,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ threadId: 
       .maybeSingle();
     const senderName = senderProfileRes.error ? "" : buildSenderName(senderProfileRes.data ?? {});
 
-    const threadRes = await supabaseAdmin
-      .from("message_threads")
-      .select("thread_type,event_id,group_id,organization_id")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (!threadRes.error && threadRes.data?.thread_type === "event" && threadRes.data?.event_id) {
-      await supabaseAdmin.rpc("sync_event_thread_participants", {
-        p_event_id: String(threadRes.data.event_id),
-      });
-    }
-
-    if (!threadRes.error && threadRes.data) {
+    if (threadRes.data) {
       await enrichAndDispatchEventThreadNotification(supabaseAdmin, {
         actorUserId: callerId,
         threadId,
         thread: {
+          title: (threadRes.data as any).title ?? null,
           thread_type: threadRes.data.thread_type ?? null,
           event_id: threadRes.data.event_id ?? null,
           group_id: (threadRes.data as any).group_id ?? null,

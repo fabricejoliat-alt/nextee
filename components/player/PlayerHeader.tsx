@@ -65,6 +65,42 @@ export default function PlayerHeader() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    (async () => {
+      const authRes = await supabase.auth.getUser();
+      const userId = authRes.data.user?.id;
+      if (!userId || cancelled) return;
+
+      channel = supabase
+        .channel(`player-header-notifications-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notification_recipients",
+            filter: `user_id=eq.${userId}`,
+          },
+          async () => {
+            const count = await getUnreadNotificationsCount(userId).catch(() => 0);
+            if (cancelled) return;
+            setUnreadCount(count);
+            applyPwaBadge(count);
+            window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: count } }));
+          }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const isStandalone =
       window.matchMedia?.("(display-mode: standalone)").matches ||
