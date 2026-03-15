@@ -31,6 +31,7 @@ type Thread = {
   participant_names?: string[];
   event_id?: string | null;
   is_locked: boolean;
+  message_count?: number;
   unread_count: number;
   updated_at: string;
   me?: { can_post?: boolean; last_read_at?: string | null; is_archived?: boolean } | null;
@@ -122,6 +123,27 @@ export default function MessagesCenter({
   const threadIdsRef = useRef<Set<string>>(new Set());
   const hasBootstrappedRef = useRef(false);
 
+  function threadBadgeStyle(messageCount: number, unreadCount: number) {
+    return {
+      minWidth: 20,
+      height: 20,
+      padding: "0 7px",
+      borderRadius: 999,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 11,
+      fontWeight: 900,
+      color: "white",
+      background:
+        messageCount <= 0
+          ? "rgba(107,114,128,0.95)"
+          : unreadCount > 0
+            ? "rgba(220,38,38,0.95)"
+            : "rgba(22,163,74,0.95)",
+    } as const;
+  }
+
   function upsertIncomingMessage(msg: ThreadMessage, markAsMine = false) {
     setMessages((prev) => {
       if (prev.some((m) => m.id === msg.id)) return prev;
@@ -136,6 +158,7 @@ export default function MessagesCenter({
         const unread = isActive || markAsMine || msg.sender_user_id === meId ? 0 : (t.unread_count ?? 0) + 1;
         return {
           ...t,
+          message_count: (t.message_count ?? 0) + 1,
           last_message: {
             body: msg.body,
             created_at: msg.created_at,
@@ -924,9 +947,10 @@ export default function MessagesCenter({
                 {filteredThreads.length === 0 ? (
                   <div style={{ padding: 14, fontWeight: 800, opacity: 0.7 }}>{tr("Aucun fil de discussion.", "No discussion thread.")}</div>
                 ) : (
-                  <div style={{ display: "grid", maxHeight: "min(56svh, 460px)", overflowY: "auto" }}>
+                  <div style={{ display: "grid", gap: 10, maxHeight: "min(56svh, 460px)", overflowY: "auto", padding: 10 }}>
                     {filteredThreads.map((t) => {
                       const active = t.id === activeThreadId;
+                      const messageCount = Number(t.message_count ?? 0);
                       const groupHeader =
                         t.thread_type === "group"
                           ? [
@@ -943,13 +967,15 @@ export default function MessagesCenter({
                           key={t.id}
                           style={{
                             display: "grid",
-                            gap: 5,
+                            gap: 8,
                             textAlign: "left",
                             width: "100%",
                             minWidth: 0,
-                            borderBottom: "1px solid rgba(0,0,0,0.14)",
-                            background: active ? "rgba(27,94,32,0.1)" : "white",
+                            border: active ? "3px solid rgba(27,94,32,0.55)" : "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 14,
+                            background: "rgba(255,255,255,0.92)",
                             padding: "12px 12px",
+                            boxShadow: active ? "0 10px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)" : "none",
                           }}
                         >
                           <div
@@ -973,23 +999,13 @@ export default function MessagesCenter({
                             }}
                           >
                             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", minWidth: 0 }}>
-                              <div style={{ fontWeight: 850, fontSize: 12, minWidth: 0 }} className="truncate">
+                              <div style={{ fontWeight: 900, fontSize: 12, minWidth: 0 }} className="truncate">
                                 {t.thread_type === "group" ? groupHeader || (t.display_title || t.title) : (t.display_title || t.title)}
                               </div>
                               <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                {t.unread_count > 0 ? (
-                                  <span
-                                    className="pill-soft"
-                                    style={{
-                                      background: "rgba(220,38,38,0.16)",
-                                      borderColor: "rgba(220,38,38,0.35)",
-                                      color: "rgba(153,27,27,1)",
-                                      fontWeight: 900,
-                                    }}
-                                  >
-                                    {t.unread_count}
-                                  </span>
-                                ) : null}
+                                <span style={threadBadgeStyle(messageCount, Number(t.unread_count ?? 0))}>
+                                  {messageCount}
+                                </span>
                                 {canArchiveForMe ? (
                                   <button
                                     type="button"

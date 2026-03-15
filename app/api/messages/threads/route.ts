@@ -532,8 +532,10 @@ export async function GET(req: NextRequest) {
     }
 
     const unreadByThread = new Map<string, number>();
+    const messageCountByThread = new Map<string, number>();
     for (const row of unreadRes.data ?? []) {
       const tid = String(row.thread_id);
+      messageCountByThread.set(tid, (messageCountByThread.get(tid) ?? 0) + 1);
       const part = myParticipantByThread.get(tid);
       const lastReadAt = part?.last_read_at ? new Date(part.last_read_at).getTime() : 0;
       const createdAt = new Date(row.created_at).getTime();
@@ -647,6 +649,7 @@ export async function GET(req: NextRequest) {
           (t.thread_type === "player" && String((t as any).player_thread_scope ?? "direct") === "team")
             ? (participantFullNamesByThread.get(String(t.id)) ?? [])
             : [],
+        message_count: messageCountByThread.get(String(t.id)) ?? 0,
         last_message: lastByThread.get(String(t.id)) ?? null,
         unread_count: unreadByThread.get(String(t.id)) ?? 0,
         me: myParticipantByThread.get(String(t.id)) ?? {

@@ -199,6 +199,16 @@ function fmtMessageTime(iso: string) {
   }).format(d);
 }
 
+async function markThreadRead(threadId: string) {
+  const { data: sessRes } = await supabase.auth.getSession();
+  const token = sessRes.session?.access_token ?? "";
+  if (!token || !threadId) return;
+  await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {});
+}
+
 export default function PlayerTrainingNewPage() {
   const { t, locale } = useI18n();
   const router = useRouter();
@@ -861,6 +871,7 @@ export default function PlayerTrainingNewPage() {
         if (!partRes.ok) throw new Error(String(partJson?.error ?? "Participants load failed"));
         setEventThreadMessages(((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse());
         setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
+        await markThreadRead(threadId);
       } catch {
         setEventThreadId("");
         setEventThreadMessages([]);
@@ -870,6 +881,11 @@ export default function PlayerTrainingNewPage() {
       }
     })();
   }, [linkedEvent?.id, userId]);
+
+  useEffect(() => {
+    if (!eventThreadId) return;
+    void markThreadRead(eventThreadId);
+  }, [eventThreadId, eventThreadMessages.length]);
 
   // ✅ when NOT planned: load coaches ONLY if user is creating a "club" training
   useEffect(() => {

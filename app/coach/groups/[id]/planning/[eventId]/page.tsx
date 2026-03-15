@@ -116,6 +116,16 @@ function fmtMessageTime(iso: string) {
   }).format(d);
 }
 
+async function markThreadRead(threadId: string) {
+  const { data: sessRes } = await supabase.auth.getSession();
+  const token = sessRes.session?.access_token ?? "";
+  if (!token || !threadId) return;
+  await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {});
+}
+
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
@@ -363,6 +373,7 @@ export default function CoachEventDetailPage() {
             const msgs = ((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse();
             setEventThreadMessages(msgs);
             setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
+            await markThreadRead(threadId);
           } else {
             setEventThreadMessages([]);
             setEventThreadParticipants([]);
@@ -400,6 +411,11 @@ export default function CoachEventDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
+
+  useEffect(() => {
+    if (!eventThreadId) return;
+    void markThreadRead(eventThreadId);
+  }, [eventThreadId, eventThreadMessages.length]);
 
   const selectedCoaches = useMemo(
     () => coaches.filter((c) => selectedCoachIds.includes(c.id)),

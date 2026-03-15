@@ -529,6 +529,7 @@ export default function GolfDashboardPage() {
   const [loadingPrevHoles, setLoadingPrevHoles] = useState(false);
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [effectivePlayerId, setEffectivePlayerId] = useState("");
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
   const [playerHandicap, setPlayerHandicap] = useState<number | null>(null);
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
@@ -547,7 +548,6 @@ export default function GolfDashboardPage() {
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
   const [clubEventDurationById, setClubEventDurationById] = useState<Record<string, number>>({});
   const [clubEventDurationByStartKey, setClubEventDurationByStartKey] = useState<Record<string, number>>({});
-  const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
@@ -594,6 +594,7 @@ export default function GolfDashboardPage() {
     (async () => {
       try {
         const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        setEffectivePlayerId(uid);
         const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
         setIsPerformanceEnabled(perfEnabled);
 
@@ -1209,12 +1210,17 @@ export default function GolfDashboardPage() {
       setError(null);
 
       try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setSessions([]);
+          setItems([]);
+          setLoading(false);
+          return;
+        }
 
         let q = supabase
           .from("training_sessions")
           .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
-          .eq("user_id", uid)
+          .eq("user_id", effectivePlayerId)
           .order("start_at", { ascending: true });
 
         if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
@@ -1246,7 +1252,7 @@ export default function GolfDashboardPage() {
         setLoading(false);
       }
     })();
-  }, [fromDate, toDate]);
+  }, [effectivePlayerId, fromDate, toDate]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {
@@ -1258,12 +1264,15 @@ export default function GolfDashboardPage() {
 
       setLoadingPrev(true);
       try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setPrevSessions([]);
+          return;
+        }
 
         let q = supabase
           .from("training_sessions")
           .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
-          .eq("user_id", uid)
+          .eq("user_id", effectivePlayerId)
           .order("start_at", { ascending: true });
 
         q = q.gte("start_at", startOfDayISO(prevRange.from)).lt("start_at", nextDayStartISO(prevRange.to)).limit(2000);
@@ -1278,7 +1287,7 @@ export default function GolfDashboardPage() {
         setLoadingPrev(false);
       }
     })();
-  }, [prevRange?.from, prevRange?.to]);
+  }, [effectivePlayerId, prevRange?.from, prevRange?.to]);
 
   useEffect(() => {
     (async () => {
@@ -1330,11 +1339,15 @@ export default function GolfDashboardPage() {
       );
       const missingClubSessions = [...sessions, ...prevSessions].filter((s) => s.session_type === "club" && !s.club_event_id);
       if (missingClubSessions.length > 0) {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setClubEventDurationById(map);
+          setClubEventDurationByStartKey(byStartKey);
+          return;
+        }
         const attendeeRes = await supabase
           .from("club_event_attendees")
           .select("event_id")
-          .eq("player_id", uid)
+          .eq("player_id", effectivePlayerId)
           .eq("status", "present");
         const attendeeEventIds = Array.from(
           new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
@@ -1373,71 +1386,37 @@ export default function GolfDashboardPage() {
       setClubEventDurationById(map);
       setClubEventDurationByStartKey(byStartKey);
     })();
-  }, [sessions, prevSessions]);
+  }, [effectivePlayerId, sessions, prevSessions]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
-        const attendeeRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id")
-          .eq("player_id", uid)
-          .eq("status", "present");
-        const attendeeEventIds = Array.from(
-          new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-        );
-        if (attendeeEventIds.length === 0) {
-          setPlannedClubMinutes(0);
-          return;
-        }
-        let q = supabase
-          .from("club_events")
-          .select("id,starts_at,ends_at,duration_minutes,status")
-          .in("id", attendeeEventIds)
-          .neq("status", "cancelled")
-          .lt("starts_at", new Date().toISOString());
-        if (fromDate) q = q.gte("starts_at", startOfDayISO(fromDate));
-        if (toDate) q = q.lt("starts_at", nextDayStartISO(toDate));
-        const res = await q;
-        if (res.error) {
-          setPlannedClubMinutes(0);
-          return;
-        }
-        const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-          const mins = Number(row.duration_minutes ?? 0);
-          if (Number.isFinite(mins) && mins > 0) return sum + mins;
-          if (row.starts_at && row.ends_at) {
-            const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-            return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
-          }
-          return sum;
-        }, 0);
-        setPlannedClubMinutes(total);
-      } catch {
-        setPlannedClubMinutes(0);
-      }
-    })();
-  }, [fromDate, toDate]);
+  const shouldLoadRoundStats = activeSection === "stats" || activeSection === "rounds";
+  const shouldLoadTrainLookback = activeSection === "stats" && isPerformanceEnabled;
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
     (async () => {
+      if (!shouldLoadRoundStats) {
+        setRounds([]);
+        setLoadingRounds(false);
+        return;
+      }
       setLoadingRounds(true);
       try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setRounds([]);
+          return;
+        }
 
         let q = supabase
           .from("golf_rounds")
           .select(
             "id,start_at,round_type,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus"
           )
-          .eq("user_id", uid)
+          .eq("user_id", effectivePlayerId)
           .order("start_at", { ascending: true });
 
         if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
         if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
-        q = q.limit(2000);
+        q = q.limit(1000);
 
         const rRes = await q;
         if (rRes.error) throw new Error(rRes.error.message);
@@ -1449,7 +1428,7 @@ export default function GolfDashboardPage() {
         setLoadingRounds(false);
       }
     })();
-  }, [fromDate, toDate]);
+  }, [effectivePlayerId, fromDate, toDate, shouldLoadRoundStats]);
 
   // ===== LOAD ROUNDS (prev, for trends) =====
   useEffect(() => {
@@ -1458,19 +1437,27 @@ export default function GolfDashboardPage() {
         setPrevRounds([]);
         return;
       }
+      if (!shouldLoadRoundStats) {
+        setPrevRounds([]);
+        setLoadingPrevRounds(false);
+        return;
+      }
 
       setLoadingPrevRounds(true);
       try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setPrevRounds([]);
+          return;
+        }
 
         let q = supabase
           .from("golf_rounds")
           .select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus")
-          .eq("user_id", uid)
+          .eq("user_id", effectivePlayerId)
           .gte("start_at", startOfDayISO(prevRange.from))
           .lt("start_at", nextDayStartISO(prevRange.to))
           .order("start_at", { ascending: true })
-          .limit(2000);
+          .limit(1000);
 
         const rRes = await q;
         if (rRes.error) throw new Error(rRes.error.message);
@@ -1482,11 +1469,16 @@ export default function GolfDashboardPage() {
         setLoadingPrevRounds(false);
       }
     })();
-  }, [prevRange?.from, prevRange?.to]);
+  }, [effectivePlayerId, prevRange?.from, prevRange?.to, shouldLoadRoundStats]);
 
   // ===== LOAD HOLES (current) =====
   useEffect(() => {
     (async () => {
+      if (!shouldLoadRoundStats) {
+        setHoles([]);
+        setLoadingHoles(false);
+        return;
+      }
       setLoadingHoles(true);
       try {
         const ids = rounds.map((r) => r.id);
@@ -1508,11 +1500,16 @@ export default function GolfDashboardPage() {
         setLoadingHoles(false);
       }
     })();
-  }, [rounds]);
+  }, [rounds, shouldLoadRoundStats]);
 
   // ===== LOAD HOLES (prev) =====
   useEffect(() => {
     (async () => {
+      if (!shouldLoadRoundStats) {
+        setPrevHoles([]);
+        setLoadingPrevHoles(false);
+        return;
+      }
       setLoadingPrevHoles(true);
       try {
         if (!prevRange) {
@@ -1538,14 +1535,24 @@ export default function GolfDashboardPage() {
         setLoadingPrevHoles(false);
       }
     })();
-  }, [prevRange, prevRounds]);
+  }, [prevRange, prevRounds, shouldLoadRoundStats]);
 
   // ===== LOAD TRAININGS LOOKBACK (for correlation) =====
   useEffect(() => {
     (async () => {
+      if (!shouldLoadTrainLookback) {
+        setSessionsLookback([]);
+        setItemsLookback([]);
+        setLoadingTrainLookback(false);
+        return;
+      }
       setLoadingTrainLookback(true);
       try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+        if (!effectivePlayerId) {
+          setSessionsLookback([]);
+          setItemsLookback([]);
+          return;
+        }
 
         const now = new Date();
         const fallbackFrom = isoToYMD(new Date(now.getFullYear(), now.getMonth() - 2, 1));
@@ -1558,11 +1565,11 @@ export default function GolfDashboardPage() {
         const sRes = await supabase
           .from("training_sessions")
           .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
-          .eq("user_id", uid)
+          .eq("user_id", effectivePlayerId)
           .gte("start_at", fromISO)
           .lt("start_at", toISO)
           .order("start_at", { ascending: true })
-          .limit(4000);
+          .limit(1500);
 
         if (sRes.error) throw new Error(sRes.error.message);
 
@@ -1586,7 +1593,7 @@ export default function GolfDashboardPage() {
         setLoadingTrainLookback(false);
       }
     })();
-  }, [fromDate, toDate]);
+  }, [effectivePlayerId, fromDate, toDate, shouldLoadTrainLookback]);
       
   const PRESET_LABEL: Record<Preset, string> = {
     week: t("common.thisWeek"),
@@ -1607,6 +1614,16 @@ function presetToSelectValue(p: Preset): Preset {
     if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
     return pickLocaleText(locale, "Mon volume d'entraînement", "Training volume");
   }, [locale, preset]);
+  const plannedClubMinutes = useMemo(() => {
+    return sessions
+      .filter((s) => s.session_type === "club")
+      .reduce((sum, s) => {
+        const byEventId = s.club_event_id ? Number(clubEventDurationById[s.club_event_id] ?? 0) : 0;
+        if (Number.isFinite(byEventId) && byEventId > 0) return sum + byEventId;
+        const byStart = Number(clubEventDurationByStartKey[eventStartKey(s.start_at)] ?? 0);
+        return sum + (Number.isFinite(byStart) && byStart > 0 ? byStart : 0);
+      }, 0);
+  }, [sessions, clubEventDurationById, clubEventDurationByStartKey]);
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(() => {
     if (isPerformanceEnabled) return sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
@@ -3071,30 +3088,83 @@ function presetToSelectValue(p: Preset): Preset {
         {activeSection === "stats" ? (
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
-            {/* Card 1: Volume de jeu */}
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.playVolume")}</div>
-
-              {loadingRounds || loadingHoles ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : holeAgg.holesPlayed === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={miniRow}>
-                    <div style={miniLeft}>{t("golfDashboard.holesPlayed")}</div>
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <div style={miniRight}>{holeAgg.holesPlayed}</div>
-                      {prevRange ? deltaArrow(holeAgg.holesPlayed - prevHoleAgg.holesPlayed) : null}
-                    </div>
-                  </div>
-
-                  {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              }}
+            >
+              <div
+                style={{
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: "rgba(0,0,0,0.08)",
+                  background: "rgba(255,255,255,0.72)",
+                  borderRadius: 16,
+                  padding: "18px 12px",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 950,
+                    lineHeight: 1,
+                    color: "#111111",
+                  }}
+                >
+                  <CountUpNumber value={rounds.length} durationMs={900} style={{ color: "#111111" }} />
                 </div>
-              )}
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 14,
+                    fontWeight: 900,
+                    letterSpacing: 1,
+                    color: "#111111",
+                  }}
+                >
+                  {t("playerHome.rounds").toUpperCase()}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: "rgba(0,0,0,0.08)",
+                  background: "rgba(255,255,255,0.72)",
+                  borderRadius: 16,
+                  padding: "18px 12px",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 950,
+                    lineHeight: 1,
+                    color: "#111111",
+                  }}
+                >
+                  <CountUpNumber value={holeAgg.holesPlayed} durationMs={1200} style={{ color: "#111111" }} />
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 14,
+                    fontWeight: 900,
+                    letterSpacing: 1,
+                    color: "#111111",
+                  }}
+                >
+                  {t("playerHome.holes").toUpperCase()}
+                </div>
+              </div>
             </div>
 
-            {/* Card 2: Répartition des scores (n + % + trend arrow) */}
+            {/* Card 1: Répartition des scores (n + % + trend arrow) */}
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.scoreDistribution")}</div>
 

@@ -73,40 +73,29 @@ function MessageBadgePills({
   unreadCount: number;
 }) {
   return (
-    <>
-      <span
-        style={{
-          marginLeft: 6,
-          minWidth: 18,
-          height: 18,
-          padding: "0 6px",
-          borderRadius: 999,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
-          fontWeight: 900,
-          color: "white",
-          background: "rgba(107,114,128,0.95)",
-        }}
-      >
-        {messageCount}
-      </span>
-      {unreadCount > 0 ? (
-        <span
-          aria-label="messages non lus"
-          style={{
-            marginLeft: 5,
-            width: 10,
-            height: 10,
-            borderRadius: 999,
-            display: "inline-block",
-            background: "rgba(220,38,38,0.95)",
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.9)",
-          }}
-        />
-      ) : null}
-    </>
+    <span
+      style={{
+        marginLeft: 6,
+        minWidth: 18,
+        height: 18,
+        padding: "0 6px",
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 11,
+        fontWeight: 900,
+        color: "white",
+        background:
+          messageCount <= 0
+            ? "rgba(107,114,128,0.95)"
+            : unreadCount > 0
+              ? "rgba(220,38,38,0.95)"
+              : "rgba(22,163,74,0.95)",
+      }}
+    >
+      {messageCount}
+    </span>
   );
 }
 
@@ -194,12 +183,50 @@ export default function CoachHomePage() {
       return;
     }
     let cancelled = false;
-    (async () => {
+    const loadBadges = async () => {
       const badges = await fetchEventMessageBadges(ids);
       if (!cancelled) setMessageBadgesByEventId(badges);
-    })();
+    };
+    void loadBadges();
+
+    const onFocus = () => void loadBadges();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadBadges();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    channel = supabase
+      .channel("coach-home-event-badges")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "thread_messages" },
+        () => {
+          void loadBadges();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "thread_participants" },
+        () => {
+          void loadBadges();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_threads" },
+        () => {
+          void loadBadges();
+        }
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [pendingEvalEvents, upcomingEvents]);
 
@@ -229,14 +256,14 @@ export default function CoachHomePage() {
     return names.join(" • ");
   }, [organizationNames]);
 
-  function renderMessagePill(eventId: string) {
+  function renderMessagePill(eventId: string, groupId: string) {
     const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
     return (
       <Link
-        href={`/coach/messages?event_id=${encodeURIComponent(eventId)}`}
+        href={`/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`}
         className="pill-soft"
         title={tr("Messagerie", "Messages")}
-        aria-label={tr("Ouvrir la messagerie de l'événement", "Open event messages")}
+        aria-label={tr("Ouvrir la page de l'événement", "Open event page")}
         style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
       >
         <MessageCircle size={14} />
@@ -331,7 +358,7 @@ export default function CoachHomePage() {
                             </div>
                           )}
                           <div style={{ flexShrink: 0 }}>
-                            {renderMessagePill(e.id)}
+                            {renderMessagePill(e.id, e.group_id)}
                           </div>
                         </div>
                         <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -419,7 +446,7 @@ export default function CoachHomePage() {
                             </div>
                           )}
                           <div style={{ flexShrink: 0 }}>
-                            {renderMessagePill(e.id)}
+                            {renderMessagePill(e.id, e.group_id)}
                           </div>
                         </div>
                       </div>
