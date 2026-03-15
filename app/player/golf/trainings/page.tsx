@@ -1618,7 +1618,7 @@ export default function TrainingsListPage() {
                               >
                                 {pickLocaleText(locale, "Détails", "Details")}
                               </Link>
-                              <Link className="btn" href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}>
+                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}>
                                 <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Messagerie", "Messages")}
                                 <MessageBadgePills
@@ -1876,7 +1876,7 @@ export default function TrainingsListPage() {
                               {pickLocaleText(locale, "Détails", "Details")}
                             </Link>
                             {linkedEvent ? (
-                              <Link className="btn" href={`/player/messages?event_id=${encodeURIComponent(linkedEvent.id)}`} onClick={(e) => e.stopPropagation()}>
+                              <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(linkedEvent.id)}`} onClick={(e) => e.stopPropagation()}>
                                 <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Messagerie", "Messages")}
                                 {(() => {

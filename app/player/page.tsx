@@ -1779,9 +1779,9 @@ export default function PlayerHomePage() {
                                 return (
                                   <Link
                                     className="btn"
-                                    href={`/player/messages?event_id=${encodeURIComponent(e.id)}`}
+                                    href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
                                     title={pickLocaleText(locale, "Messagerie", "Messages")}
-                                    aria-label={pickLocaleText(locale, "Ouvrir la messagerie de l'événement", "Open event messages")}
+                                    aria-label={pickLocaleText(locale, "Ouvrir la page de l'activité", "Open activity page")}
                                   >
                                     <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                     {pickLocaleText(locale, "Messagerie", "Messages")}
