@@ -92,7 +92,7 @@ export default function PlayerConsentRequiredPage() {
   return (
     <div className="auth-bg">
       <div className="auth-shell">
-        <div className="auth-card" style={{ maxWidth: 720, display: "grid", gap: 22 }}>
+        <div className="auth-card consent-card" style={{ maxWidth: 640, display: "grid", gap: 16 }}>
           <div className="auth-brand-wrapper">
             <div className="auth-brand auth-brand--dark">
               <span className="auth-brand-nex">Activi</span>
@@ -101,13 +101,13 @@ export default function PlayerConsentRequiredPage() {
             <div className="auth-tagline">Consentement requis</div>
           </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 24, fontWeight: 900, color: "#2b2517" }}>Accès momentanément bloqué</div>
-            <div style={{ color: "#5f5647", fontSize: 15, lineHeight: 1.7 }}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "#2b2517" }}>Accès momentanément bloqué</div>
+            <div style={{ color: "#5f5647", fontSize: 14, lineHeight: 1.5 }}>
               Ton accès à ActiviTee est momentanément bloqué tant que ton consentement est en attente. Pour utiliser l'application, l'un
               de tes parents doit se connecter avec son propre compte et valider le consentement.
             </div>
-            <div style={{ color: "#5f5647", fontSize: 15, lineHeight: 1.7 }}>
+            <div style={{ color: "#5f5647", fontSize: 14, lineHeight: 1.5 }}>
               Dès que ce consentement est accordé, ton accès sera rétabli automatiquement.
             </div>
           </div>
@@ -115,15 +115,15 @@ export default function PlayerConsentRequiredPage() {
           <div
             style={{
               display: "grid",
-              gap: 12,
-              padding: 18,
-              borderRadius: 18,
+              gap: 10,
+              padding: 14,
+              borderRadius: 16,
               border: "1px solid rgba(53,72,59,0.10)",
               background: "rgba(53,72,59,0.05)",
             }}
           >
-            <div style={{ fontSize: 18, fontWeight: 800, color: "#2f4335" }}>Alternative si tu es majeur</div>
-            <div style={{ color: "#536356", fontSize: 14, lineHeight: 1.65 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#2f4335" }}>Alternative si tu es majeur</div>
+            <div style={{ color: "#536356", fontSize: 13, lineHeight: 1.5 }}>
               Si tu es majeur, tu peux confirmer ta date de naissance ci-dessous. Si tu as 18 ans ou plus, ton statut passera à
               <b> Majeur</b> et tu pourras accéder immédiatement à l'application.
             </div>
@@ -141,6 +141,18 @@ export default function PlayerConsentRequiredPage() {
           {error ? <div className="auth-error">{error}</div> : null}
         </div>
       </div>
+      <style>{`
+        .consent-card {
+          padding: 20px;
+        }
+        @media (max-width: 640px) {
+          .consent-card {
+            padding: 16px;
+            gap: 14px !important;
+            border-radius: 20px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
