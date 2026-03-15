@@ -48,6 +48,9 @@ export default function CoachHeader() {
 
     loadUnread();
     const onFocus = () => loadUnread();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadUnread();
+    };
     const onNotificationsChanged = (event: Event) => {
       const custom = event as CustomEvent<{ unreadCount?: number }>;
       const next = custom.detail?.unreadCount;
@@ -57,10 +60,12 @@ export default function CoachHeader() {
       }
     };
     window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("notifications:changed", onNotificationsChanged);
     return () => {
       mounted = false;
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("notifications:changed", onNotificationsChanged);
     };
   }, []);
@@ -104,15 +109,22 @@ export default function CoachHeader() {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    const ensureSubscription = async () => {
       if (!supportsWebPush()) return;
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       const result = await ensurePushSubscription({ prompt: false }).catch(() => null);
       if (cancelled || !result?.ok) return;
-    })();
+    };
+
+    void ensureSubscription();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void ensureSubscription();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 

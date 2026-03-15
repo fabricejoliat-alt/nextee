@@ -191,7 +191,11 @@ async function enrichAndDispatchThreadMessageNotification(
         .eq("club_id", organizationId)
         .eq("is_active", true)
         .in("user_id", recipientIds)
-    : ({ data: [], error: null } as any);
+    : await supabaseAdmin
+        .from("club_members")
+        .select("user_id,role")
+        .eq("is_active", true)
+        .in("user_id", recipientIds);
   if (membershipsRes.error) return;
 
   const rolesByUserId = new Map<string, Set<string>>();
@@ -203,13 +207,14 @@ async function enrichAndDispatchThreadMessageNotification(
     rolesByUserId.get(userId)!.add(role);
   }
 
-  const playerIds = recipientIds.filter(
-    (id) =>
-      rolesByUserId.get(id)?.has("player") ||
-      (!rolesByUserId.get(id)?.has("coach") && !rolesByUserId.get(id)?.has("manager"))
-  );
   const coachIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("coach"));
   const managerIds = recipientIds.filter((id) => rolesByUserId.get(id)?.has("manager"));
+  const playerIds = recipientIds.filter((id) => {
+    const roles = rolesByUserId.get(id);
+    if (!roles || roles.size === 0) return true;
+    if (roles.has("coach") || roles.has("manager")) return false;
+    return roles.has("player");
+  });
 
   const threadMessagesRes = await supabaseAdmin
     .from("thread_messages")
