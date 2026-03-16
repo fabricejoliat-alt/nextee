@@ -20,6 +20,7 @@ export default function PlayerMobileMenu() {
     { href: "/player/encadrement", label: locale === "fr" ? "Encadrement" : "Support team" },
     { href: "/player/marketplace", label: t("nav.marketplace") },
     { href: "/player/profile", label: t("common.profile") },
+    { href: "/player/help", label: locale === "fr" ? "Aide" : "Help" },
   ];
 
   useEffect(() => {

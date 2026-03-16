@@ -15,6 +15,7 @@ import {
   Store,
   Tags,
   User,
+  CircleHelp,
   LogOut,
   X,
   Trophy,
@@ -45,6 +46,7 @@ const ROUTES = {
   marketplaceNew: "/player/marketplace/new",
 
   profileEdit: "/player/profile",
+  help: "/player/help",
 } as const;
 
 type Props = {
@@ -581,6 +583,13 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             <span className="drawer-item-left">
               <User size={16} strokeWidth={2} />
               <span>{t("common.profile")}</span>
+            </span>
+          </Link>
+
+          <Link href={ROUTES.help} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.help) ? "active" : ""}`} onClick={onClose}>
+            <span className="drawer-item-left">
+              <CircleHelp size={16} strokeWidth={2} />
+              <span>Aide</span>
             </span>
           </Link>
 

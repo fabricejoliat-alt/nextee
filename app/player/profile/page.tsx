@@ -58,6 +58,13 @@ function isAllowedImage(file: File) {
   return okTypes.includes(file.type);
 }
 
+function translateAuthMessage(message: string) {
+  if (message === "New password should be different from the old password.") {
+    return "Le nouveau mot de passe doit être différent de l’ancien.";
+  }
+  return message;
+}
+
 /** Categorys juniors (SwissGolf-style):
  *  - enfants nés en 2016 et + : U10
  *  - 2014 et + : U12
@@ -97,6 +104,8 @@ export default function PlayerProfilePage() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -325,6 +334,30 @@ export default function PlayerProfilePage() {
       setError(error.message);
       setBusy(false);
       return;
+    }
+
+    if (viewerRole === "player" && newPassword.trim()) {
+      if (newPassword.trim().length < 8) {
+        setError("Le mot de passe doit contenir au moins 8 caractères.");
+        setBusy(false);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError("Les mots de passe ne correspondent pas.");
+        setBusy(false);
+        return;
+      }
+
+      const { error: authError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (authError) {
+        setError(translateAuthMessage(authError.message));
+        setBusy(false);
+        return;
+      }
+      setNewPassword("");
+      setConfirmPassword("");
     }
 
     setInfo(t("playerProfile.saved"));
@@ -670,6 +703,33 @@ export default function PlayerProfilePage() {
 
                 {viewerRole === "player" && (
                   <>
+                    <div className="hr-soft" />
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        Mot de passe
+                      </div>
+
+                      <Field label="Nouveau mot de passe">
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          autoComplete="new-password"
+                          minLength={8}
+                        />
+                      </Field>
+
+                      <Field label="Confirmer le mot de passe">
+                        <input
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          autoComplete="new-password"
+                          minLength={8}
+                        />
+                      </Field>
+                    </div>
+
                     <div className="hr-soft" />
                     <div style={{ display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
