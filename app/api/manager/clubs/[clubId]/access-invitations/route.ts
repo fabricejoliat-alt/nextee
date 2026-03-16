@@ -554,10 +554,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
         email: parent.parent_email,
         options: { redirectTo: resetPasswordUrl },
       });
-      const resetUrl =
-        resetLinkRes?.data?.properties?.action_link ??
-        resetLinkRes?.data?.action_link ??
+      const tokenHash =
+        resetLinkRes?.data?.properties?.hashed_token ??
+        resetLinkRes?.data?.hashed_token ??
         null;
+      const verificationType =
+        resetLinkRes?.data?.properties?.verification_type ??
+        resetLinkRes?.data?.verification_type ??
+        "recovery";
+      const resetUrl = tokenHash
+        ? `${resetPasswordUrl}?token_hash=${encodeURIComponent(String(tokenHash))}&type=${encodeURIComponent(
+            String(verificationType || "recovery")
+          )}`
+        : null;
       if (resetLinkRes?.error || !resetUrl) {
         throw new Error(resetLinkRes?.error?.message ?? "Impossible de générer le lien de connexion parent");
       }
