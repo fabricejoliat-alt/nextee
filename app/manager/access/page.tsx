@@ -148,7 +148,37 @@ export default function ManagerAccessPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? "Envoi impossible");
-      await loadPage(clubId);
+      const sentAt = new Date().toISOString();
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          parents: prev.parents.map((parent) => {
+            if (parent.parent_user_id !== parentUserId) return parent;
+            if (kind === "parent_access") {
+              return {
+                ...parent,
+                parent_status: "sent",
+                parent_last_sent_at: sentAt,
+                parent_send_count: Number(parent.parent_send_count ?? 0) + 1,
+              };
+            }
+            return {
+              ...parent,
+              linked_juniors: parent.linked_juniors.map((junior) =>
+                junior.junior_user_id !== juniorUserId
+                  ? junior
+                  : {
+                      ...junior,
+                      junior_status: "sent",
+                      junior_last_sent_at: sentAt,
+                      junior_send_count: Number(junior.junior_send_count ?? 0) + 1,
+                    }
+              ),
+            };
+          }),
+        };
+      });
     } catch (e: any) {
       setError(e?.message ?? "Envoi impossible");
     } finally {
@@ -258,7 +288,11 @@ export default function ManagerAccessPage() {
                               onClick={() => void sendInvitation("parent_access", row.parent_user_id)}
                             >
                               {busyKey === `parent_access:${row.parent_user_id}:${row.parent_user_id}` ? <RefreshCw size={14} className="spin" /> : <Mail size={14} />}
-                              {row.parent_send_count > 0 ? "Renvoyer accès parent" : "Envoyer accès parent"}
+                              {row.parent_status === "sent"
+                                ? "Envoyé"
+                                : row.parent_send_count > 0
+                                ? "Renvoyer accès parent"
+                                : "Envoyer accès parent"}
                             </button>
                           </div>
                         </div>
@@ -319,7 +353,11 @@ export default function ManagerAccessPage() {
                                       onClick={() => void sendInvitation("junior_access", row.parent_user_id, junior.junior_user_id)}
                                     >
                                       {busyKey === key ? <RefreshCw size={14} className="spin" /> : <Mail size={14} />}
-                                      {junior.junior_send_count > 0 ? "Renvoyer accès junior" : "Envoyer accès junior"}
+                                      {junior.junior_status === "sent"
+                                        ? "Envoyé"
+                                        : junior.junior_send_count > 0
+                                        ? "Renvoyer accès junior"
+                                        : "Envoyer accès junior"}
                                     </button>
                                   </div>
                                 </div>
