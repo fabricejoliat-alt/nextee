@@ -68,6 +68,13 @@ function sanitizeEditableEmail(rawEmail?: string | null) {
   return v;
 }
 
+function translateAuthMessage(message: string) {
+  if (message === "New password should be different from the old password.") {
+    return "Le nouveau mot de passe doit être différent de l’ancien.";
+  }
+  return message;
+}
+
 export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -343,7 +350,7 @@ export default function PlayerProfilePage() {
         password: newPassword,
       });
       if (authError) {
-        setError(authError.message);
+        setError(translateAuthMessage(authError.message));
         setBusy(false);
         return;
       }

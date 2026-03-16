@@ -53,6 +53,13 @@ function isAllowedImage(file: File) {
   return okTypes.includes(file.type);
 }
 
+function translateAuthMessage(message: string) {
+  if (message === "New password should be different from the old password.") {
+    return "Le nouveau mot de passe doit être différent de l’ancien.";
+  }
+  return message;
+}
+
 export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -269,7 +276,7 @@ export default function PlayerProfilePage() {
     if (nextPassword) {
       const { error: passwordError } = await supabase.auth.updateUser({ password: nextPassword });
       if (passwordError) {
-        setError(passwordError.message);
+        setError(translateAuthMessage(passwordError.message));
         setBusy(false);
         return;
       }

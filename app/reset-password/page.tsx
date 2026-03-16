@@ -7,6 +7,13 @@ import { supabase } from "@/lib/supabaseClient";
 
 type Status = "loading" | "ready" | "invalid" | "success";
 
+function translateAuthMessage(message: string) {
+  if (message === "New password should be different from the old password.") {
+    return "Le nouveau mot de passe doit être différent de l’ancien.";
+  }
+  return message;
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -132,7 +139,7 @@ export default function ResetPasswordPage() {
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message);
+        setError(translateAuthMessage(updateError.message));
         return;
       }
 
