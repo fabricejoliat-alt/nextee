@@ -546,12 +546,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
 
     const appBaseUrl = resolveAppBaseUrl(req);
     const appUrl = `${appBaseUrl}/`;
+    const resetPasswordUrl = `${appBaseUrl}/reset-password`;
 
     if (kind === "parent_access") {
       const resetLinkRes = await (supabaseAdmin.auth.admin as any).generateLink({
         type: "recovery",
         email: parent.parent_email,
-        options: { redirectTo: `${appBaseUrl}/` },
+        options: { redirectTo: resetPasswordUrl },
       });
       const resetUrl =
         resetLinkRes?.data?.properties?.action_link ??
