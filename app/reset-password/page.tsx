@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type Status = "loading" | "ready" | "invalid" | "success";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState<Status>("loading");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -22,6 +23,31 @@ export default function ResetPasswordPage() {
     let timeoutId: number | null = null;
 
     async function checkSession() {
+      const code = searchParams.get("code");
+      const tokenHash = searchParams.get("token_hash");
+      const type = searchParams.get("type");
+
+      if (code) {
+        const exchange = await supabase.auth.exchangeCodeForSession(code);
+        if (!active) return;
+        if (!exchange.error && exchange.data.session) {
+          setStatus("ready");
+          return;
+        }
+      }
+
+      if (tokenHash && type) {
+        const verify = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: type as any,
+        });
+        if (!active) return;
+        if (!verify.error && verify.data.session) {
+          setStatus("ready");
+          return;
+        }
+      }
+
       const { data } = await supabase.auth.getSession();
       if (!active) return;
       if (data.session) {
@@ -50,7 +76,7 @@ export default function ResetPasswordPage() {
       if (timeoutId != null) window.clearTimeout(timeoutId);
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
