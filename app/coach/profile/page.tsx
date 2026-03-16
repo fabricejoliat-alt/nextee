@@ -89,6 +89,8 @@ export default function PlayerProfilePage() {
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
   const [staffFunction, setStaffFunction] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
 
@@ -221,6 +223,21 @@ export default function PlayerProfilePage() {
     setError(null);
     setInfo(null);
 
+    const nextPassword = newPassword.trim();
+    const nextPasswordConfirm = confirmPassword.trim();
+    if (nextPassword || nextPasswordConfirm) {
+      if (nextPassword.length < 8) {
+        setError("Le mot de passe doit contenir au moins 8 caractères.");
+        setBusy(false);
+        return;
+      }
+      if (nextPassword !== nextPasswordConfirm) {
+        setError("Les mots de passe ne correspondent pas.");
+        setBusy(false);
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("profiles")
       .upsert(
@@ -249,7 +266,18 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    setInfo("Profile saved ✅");
+    if (nextPassword) {
+      const { error: passwordError } = await supabase.auth.updateUser({ password: nextPassword });
+      if (passwordError) {
+        setError(passwordError.message);
+        setBusy(false);
+        return;
+      }
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+
+    setInfo("Profil enregistré ✅");
     setBusy(false);
   }
 
@@ -269,7 +297,7 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     if (!isAllowedImage(file)) {
-      setError("Unsupported format. Use JPG, PNG or WEBP.");
+      setError("Format non pris en charge. Utilise JPG, PNG ou WEBP.");
       return;
     }
 
@@ -463,7 +491,7 @@ export default function PlayerProfilePage() {
                   </div>
 
                   <div className="grid-2">
-                    <Field label="First name">
+                    <Field label="Prénom">
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                     </Field>
 
@@ -492,7 +520,7 @@ export default function PlayerProfilePage() {
                     </Field>
 
                     {/* ✅ NEW */}
-                    <Field label="Handedness">
+                    <Field label="Latéralité">
                       <select
                         value={handedness}
                         onChange={(e) => setHandedness(e.target.value as any)}
@@ -530,7 +558,7 @@ export default function PlayerProfilePage() {
                   </div>
 
                   <div className="grid-2">
-                    <Field label="Phone">
+                    <Field label="Téléphone">
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
@@ -564,8 +592,39 @@ export default function PlayerProfilePage() {
                       <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
-                    <Field label="City">
+                    <Field label="Ville">
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="hr-soft" />
+
+                {/* Sécurité */}
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    Sécurité
+                  </div>
+
+                  <div className="grid-2">
+                    <Field label="Nouveau mot de passe">
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        placeholder="Minimum 8 caractères"
+                      />
+                    </Field>
+
+                    <Field label="Confirmer le mot de passe">
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        placeholder="Confirme le mot de passe"
+                      />
                     </Field>
                   </div>
                 </div>

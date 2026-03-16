@@ -285,14 +285,14 @@ export default function CoachHomePage() {
         <div className="glass-section" style={{ display: "grid", gap: 14, marginTop: 14 }}>
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div className="card-title" style={{ marginBottom: 0, fontSize: 16 }}>{tr("Évaluations en attente", "Pending evaluations")}</div>
+              <div className="card-title" style={{ marginBottom: 0, fontSize: 16 }}>{tr("Activité(s) à évaluer", "Activities to evaluate")}</div>
               <span className="pill-soft">{pendingEvalEvents.length}</span>
             </div>
 
             {loading ? (
               <ListLoadingBlock label={t("common.loading")} />
             ) : pendingEvalEvents.length === 0 ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune évaluation en attente.", "No pending evaluation.")}</div>
+              <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune activité à évaluer.", "No activity to evaluate.")}</div>
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pendingEvalEvents.slice(0, 12).map((e) => (

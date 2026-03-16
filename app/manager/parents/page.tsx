@@ -34,6 +34,7 @@ export default function ManagerParentsPage() {
   const [parents, setParents] = useState<MembershipProfileRow[]>([]);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [linksSearch, setLinksSearch] = useState("");
+  const [attachmentFilter, setAttachmentFilter] = useState<"all" | "linked" | "unlinked">("all");
   const [pendingParentByPlayer, setPendingParentByPlayer] = useState<Record<string, string>>({});
   const [activePickerPlayerId, setActivePickerPlayerId] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -145,21 +146,27 @@ export default function ManagerParentsPage() {
 
   const filteredPlayers = useMemo(() => {
     const q = normalizeForSearch(linksSearch);
-    if (!q) return players;
+    const basePlayers = players.filter((p) => {
+      const linked = (linksByPlayer[p.user_id] ?? []).length > 0;
+      if (attachmentFilter === "linked") return linked;
+      if (attachmentFilter === "unlinked") return !linked;
+      return true;
+    });
+    if (!q) return basePlayers;
 
     const parentMatches = parents.some((p) => normalizeForSearch(fullName(p.profiles)).includes(q));
     if (parentMatches) {
       // If query matches a parent, keep all players visible so manager can link quickly.
-      return players;
+      return basePlayers;
     }
 
-    return players.filter((p) => {
+    return basePlayers.filter((p) => {
       const playerName = normalizeForSearch(fullName(p.profiles));
       if (playerName.includes(q)) return true;
       const playerLinks = linksByPlayer[p.user_id] ?? [];
       return playerLinks.some((l) => normalizeForSearch(fullName(parentMap[l.guardian_user_id])).includes(q));
     });
-  }, [players, parents, linksByPlayer, linksSearch, parentMap]);
+  }, [players, parents, linksByPlayer, linksSearch, parentMap, attachmentFilter]);
 
   async function addLinkForPlayer(playerId: string, parentId: string) {
     if (!clubId || !playerId || !parentId) return;
@@ -254,6 +261,31 @@ export default function ManagerParentsPage() {
                 onChange={(e) => setLinksSearch(e.target.value)}
                 placeholder={tr("Rechercher un rattachement", "Search link")}
               />
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              {[
+                { value: "all" as const, label: tr("Tous", "All") },
+                { value: "linked" as const, label: tr("Avec parent", "Linked") },
+                { value: "unlinked" as const, label: tr("Sans parent", "Unlinked") },
+              ].map((option) => {
+                const active = attachmentFilter === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="pill-soft"
+                    onClick={() => setAttachmentFilter(option.value)}
+                    style={{
+                      border: active ? "1px solid #1f6f43" : "1px solid rgba(0,0,0,0.08)",
+                      background: active ? "rgba(31,111,67,0.10)" : undefined,
+                      color: active ? "#1f6f43" : undefined,
+                      fontWeight: active ? 900 : 700,
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
             {loading ? (
               <ListLoadingBlock label={tr("Chargement...", "Loading...")} />

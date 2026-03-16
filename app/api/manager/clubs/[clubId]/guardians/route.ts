@@ -109,9 +109,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
     }
 
-    const links = rawLinks.filter((r: any) => parentIds.includes(String(r.guardian_user_id ?? "")));
-    const linkedPlayerIds = new Set(links.map((r: any) => String(r.player_id ?? "")).filter(Boolean));
-
     const eligiblePlayerIds = rawPlayers
       .filter((row) => {
         const playerId = String(row.user_id ?? "");
@@ -119,15 +116,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         const track = String(row.player_course_track ?? "").trim().toLowerCase();
         if (!track || track === "no_course") return false;
         const age = computeAge((profileById.get(playerId) as any)?.birth_date ?? null);
-        if (age != null && age >= 18) return false;
-        return !linkedPlayerIds.has(playerId);
+        return !(age != null && age >= 18);
       })
       .map((row) => String(row.user_id ?? ""));
+
+    const eligiblePlayerIdSet = new Set(eligiblePlayerIds);
+    const links = rawLinks.filter((r: any) => {
+      const playerId = String(r.player_id ?? "");
+      const guardianId = String(r.guardian_user_id ?? "");
+      return eligiblePlayerIdSet.has(playerId) && parentIds.includes(guardianId);
+    });
 
     return NextResponse.json({
       players: eligiblePlayerIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),
       parents: parentIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),
-      links: [],
+      links,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
