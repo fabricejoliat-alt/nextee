@@ -23,9 +23,26 @@ export default function ResetPasswordPage() {
     let timeoutId: number | null = null;
 
     async function checkSession() {
+      const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
+      const hashParams = new URLSearchParams(hash);
       const code = searchParams.get("code");
       const tokenHash = searchParams.get("token_hash");
       const type = searchParams.get("type");
+      const hashAccessToken = hashParams.get("access_token");
+      const hashRefreshToken = hashParams.get("refresh_token");
+      const hashType = hashParams.get("type");
+
+      if (hashAccessToken && hashRefreshToken) {
+        const setSessionRes = await supabase.auth.setSession({
+          access_token: hashAccessToken,
+          refresh_token: hashRefreshToken,
+        });
+        if (!active) return;
+        if (!setSessionRes.error && setSessionRes.data.session) {
+          setStatus("ready");
+          return;
+        }
+      }
 
       if (code) {
         const exchange = await supabase.auth.exchangeCodeForSession(code);
@@ -40,6 +57,30 @@ export default function ResetPasswordPage() {
         const verify = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: type as any,
+        });
+        if (!active) return;
+        if (!verify.error && verify.data.session) {
+          setStatus("ready");
+          return;
+        }
+      }
+
+      if (tokenHash && !type) {
+        const verify = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "recovery",
+        });
+        if (!active) return;
+        if (!verify.error && verify.data.session) {
+          setStatus("ready");
+          return;
+        }
+      }
+
+      if (hashType === "recovery" && tokenHash) {
+        const verify = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "recovery",
         });
         if (!active) return;
         if (!verify.error && verify.data.session) {
