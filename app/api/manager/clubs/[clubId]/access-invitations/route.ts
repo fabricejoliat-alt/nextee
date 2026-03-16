@@ -38,6 +38,16 @@ function mustEnv(name: string) {
   return v;
 }
 
+function resolveAppBaseUrl(req: NextRequest) {
+  const configured =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "";
+  if (configured.trim()) return configured.trim().replace(/\/+$/, "");
+  return new URL(req.url).origin.replace(/\/+$/, "");
+}
+
 function cleanName(first: string | null | undefined, last: string | null | undefined) {
   const name = `${first ?? ""} ${last ?? ""}`.trim();
   return name || "Utilisateur";
@@ -534,14 +544,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
       return NextResponse.json({ error: "Aucune adresse e-mail parent exploitable" }, { status: 400 });
     }
 
-    const requestOrigin = new URL(req.url).origin;
-    const appUrl = `${requestOrigin}/`;
+    const appBaseUrl = resolveAppBaseUrl(req);
+    const appUrl = `${appBaseUrl}/`;
 
     if (kind === "parent_access") {
       const resetLinkRes = await (supabaseAdmin.auth.admin as any).generateLink({
         type: "recovery",
         email: parent.parent_email,
-        options: { redirectTo: `${requestOrigin}/` },
+        options: { redirectTo: `${appBaseUrl}/` },
       });
       const resetUrl =
         resetLinkRes?.data?.properties?.action_link ??
