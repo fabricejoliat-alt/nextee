@@ -23,3 +23,13 @@ alter table if exists public.club_event_player_structure_items
 alter table if exists public.club_event_player_structure_items
   add constraint club_event_player_structure_items_minutes_check
   check (minutes > 0 and minutes <= 300);
+
+alter table if exists public.club_event_series
+  drop constraint if exists club_event_series_duration_minutes_check;
+
+alter table if exists public.club_event_series
+  add constraint club_event_series_duration_minutes_check
+  check (
+    duration_minutes is null
+    or (duration_minutes > 0 and duration_minutes <= 300)
+  );

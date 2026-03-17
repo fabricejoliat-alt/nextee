@@ -1624,7 +1624,7 @@ export default function CoachEventEditPage() {
                                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
                                 disabled={busy}
                               >
-                                {[45, 60, 75, 90, 105, 120].map((m) => (
+                                {DURATION_OPTIONS.map((m) => (
                                   <option key={m} value={m}>
                                     {m} min
                                   </option>
