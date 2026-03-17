@@ -1218,7 +1218,6 @@ export default function CoachGroupPlanningPage() {
               <div className="section-title" style={{ marginBottom: 0 }}>
                 {tr("Planification", "Planning")} — {group?.name ?? tr("Groupe", "Group")}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>{t("common.club")}: {clubName}</div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -1226,7 +1225,7 @@ export default function CoachGroupPlanningPage() {
                 {t("common.back")}
               </Link>
               <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/add`}>
-                {tr("Ajouter un événement", "Add event")}
+                {tr("Ajouter une activité", "Add activity")}
               </Link>
             </div>
           </div>
@@ -1239,7 +1238,7 @@ export default function CoachGroupPlanningPage() {
           <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
               <SlidersHorizontal size={16} />
-              {tr("Filtrer les évènements", "Filter events")}
+              {tr("Filtrer les activités", "Filter activities")}
             </div>
 
             <label style={{ display: "grid", gap: 6 }}>

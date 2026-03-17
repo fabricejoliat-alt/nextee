@@ -336,7 +336,7 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    if (viewerRole === "player" && newPassword.trim()) {
+    if (newPassword.trim()) {
       if (newPassword.trim().length < 8) {
         setError("Le mot de passe doit contenir au moins 8 caractères.");
         setBusy(false);
@@ -669,14 +669,9 @@ export default function PlayerProfilePage() {
                   </div>
 
                   {viewerRole === "parent" && (
-                    <>
-                      <Field label="Username">
-                        <input value={username} disabled />
-                      </Field>
-                      <div style={{ color: "var(--muted)", fontSize: 12 }}>
-                        Le mot de passe se modifie depuis l’espace manager.
-                      </div>
-                    </>
+                    <Field label="Username">
+                      <input value={username} disabled />
+                    </Field>
                   )}
                 </div>
 
@@ -701,7 +696,7 @@ export default function PlayerProfilePage() {
                   </div>
                 </div>
 
-                {viewerRole === "player" && (
+                {(viewerRole === "player" || viewerRole === "parent") && (
                   <>
                     <div className="hr-soft" />
                     <div style={{ display: "grid", gap: 10 }}>
@@ -730,6 +725,11 @@ export default function PlayerProfilePage() {
                       </Field>
                     </div>
 
+                  </>
+                )}
+
+                {viewerRole === "player" && (
+                  <>
                     <div className="hr-soft" />
                     <div style={{ display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
