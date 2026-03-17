@@ -32,6 +32,8 @@ export default function ResetPasswordPage() {
 
     async function checkSession() {
       if (inviteToken) {
+        await supabase.auth.signOut({ scope: "local" });
+        if (!active) return;
         const res = await fetch(`/api/auth/invitation-reset?token=${encodeURIComponent(inviteToken)}`, {
           cache: "no-store",
         });
@@ -148,6 +150,7 @@ export default function ResetPasswordPage() {
     setError(null);
     try {
       if (inviteToken) {
+        await supabase.auth.signOut({ scope: "local" });
         const resetRes = await fetch("/api/auth/invitation-reset", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

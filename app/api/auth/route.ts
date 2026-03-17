@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) ✅ Lire la session depuis les COOKIES (pas besoin de Bearer)
+    // 1) ✅ Utiliser en priorité le bearer token si fourni; sinon fallback sur les cookies.
     let res = NextResponse.next();
     const supabase = createServerClient(supabaseUrl, anonKey, {
       cookies: {
@@ -72,16 +72,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const { data: userData } = await supabase.auth.getUser();
     const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "").trim() || "";
+    let userId = "";
 
-    let userId = userData.user?.id ?? "";
-    if (!userId && bearerToken) {
+    if (bearerToken) {
       const adminAuthClient = createClient(supabaseUrl, serviceRoleKey, {
         auth: { persistSession: false },
       });
       const { data: bearerUserData } = await adminAuthClient.auth.getUser(bearerToken);
       userId = bearerUserData.user?.id ?? "";
+    }
+
+    if (!userId) {
+      const { data: userData } = await supabase.auth.getUser();
+      userId = userData.user?.id ?? "";
     }
 
     if (!userId) {
