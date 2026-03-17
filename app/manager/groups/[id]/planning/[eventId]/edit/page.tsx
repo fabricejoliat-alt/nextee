@@ -156,6 +156,7 @@ const fieldLabelStyle: React.CSSProperties = {
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
   "long_game",
+  "short_game_all",
   "putting",
   "wedging",
   "pitching",
@@ -169,6 +170,7 @@ const TRAINING_CATEGORY_VALUES = [
 const TRAINING_CATEGORY_LABELS: Record<string, string> = {
   warmup_mobility: "Échauffement / mobilité",
   long_game: "Long jeu",
+  short_game_all: "Petit jeu (tout secteur)",
   putting: "Putting",
   wedging: "Wedging",
   pitching: "Pitching",
@@ -181,17 +183,17 @@ const TRAINING_CATEGORY_LABELS: Record<string, string> = {
 };
 function buildMinuteOptions() {
   const out: number[] = [];
-  for (let m = 5; m <= 120; m += 5) out.push(m);
+  for (let m = 5; m <= 300; m += 5) out.push(m);
   return out;
 }
 const MINUTE_OPTIONS = buildMinuteOptions();
 function buildDurationOptions() {
   const out: number[] = [];
-  for (let m = 30; m <= 240; m += 15) out.push(m);
+  for (let m = 30; m <= 300; m += 15) out.push(m);
   return out;
 }
 const DURATION_OPTIONS = buildDurationOptions();
-const MAX_DB_EVENT_DURATION_MINUTES = 240;
+const MAX_DB_EVENT_DURATION_MINUTES = 300;
 function buildQuarterHourOptions() {
   const out: string[] = [];
   const pad = (n: number) => String(n).padStart(2, "0");

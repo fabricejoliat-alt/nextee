@@ -104,6 +104,7 @@ function categoryLabel(cat: string, tr: (key: string) => string) {
   const map: Record<string, string> = {
     warmup_mobility: tr("cat.warmup_mobility"),
     long_game: tr("cat.long_game"),
+    short_game_all: tr("cat.short_game_all"),
     putting: tr("cat.putting"),
     wedging: tr("cat.wedging"),
     pitching: tr("cat.pitching"),

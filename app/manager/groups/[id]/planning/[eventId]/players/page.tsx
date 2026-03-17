@@ -105,6 +105,7 @@ function categoryLabel(cat: string) {
   const map: Record<string, string> = {
     warmup_mobility: "Warmup / mobility",
     long_game: "Long jeu",
+    short_game_all: "Petit jeu (tout secteur)",
     putting: "Putting",
     wedging: "Wedging",
     pitching: "Pitching",

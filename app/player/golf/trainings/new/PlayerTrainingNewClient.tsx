@@ -99,6 +99,7 @@ type CoachOption = {
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
   "long_game",
+  "short_game_all",
   "putting",
   "wedging",
   "pitching",
@@ -112,7 +113,7 @@ const TRAINING_CATEGORY_VALUES = [
 
 function buildMinuteOptions() {
   const opts: number[] = [];
-  for (let m = 5; m <= 120; m += 5) opts.push(m);
+  for (let m = 5; m <= 300; m += 5) opts.push(m);
   return opts;
 }
 const MINUTE_OPTIONS = buildMinuteOptions();

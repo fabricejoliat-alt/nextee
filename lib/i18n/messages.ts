@@ -400,6 +400,7 @@ export const messages = ({
 
     "cat.warmup_mobility": "Échauffement / mobilité",
     "cat.long_game": "Long jeu",
+    "cat.short_game_all": "Petit jeu (tout secteur)",
     "cat.putting": "Putting",
     "cat.wedging": "Wedging",
     "cat.pitching": "Pitching",
@@ -807,6 +808,7 @@ export const messages = ({
 
     "cat.warmup_mobility": "Warm-up / mobility",
     "cat.long_game": "Long game",
+    "cat.short_game_all": "Short game (all areas)",
     "cat.putting": "Putting",
     "cat.wedging": "Wedging",
     "cat.pitching": "Pitching",

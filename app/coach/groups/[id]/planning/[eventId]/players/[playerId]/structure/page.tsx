@@ -39,6 +39,7 @@ type TrainingItemDraft = {
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
   "long_game",
+  "short_game_all",
   "putting",
   "wedging",
   "pitching",
@@ -50,7 +51,7 @@ const TRAINING_CATEGORY_VALUES = [
   "other",
 ] as const;
 
-const MINUTE_OPTIONS = Array.from({ length: 24 }, (_, i) => (i + 1) * 5);
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => (i + 1) * 5);
 
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,

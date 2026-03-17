@@ -62,6 +62,12 @@ type ProfileLite = {
 type AttendeeUiRow = AttendeeDbRow & {
   profile?: ProfileLite | null;
 };
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -95,6 +101,24 @@ function fmtDateTimeRange(startIso: string, endIso: string | null) {
 
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
+}
+
+function categoryLabel(cat: string) {
+  const map: Record<string, string> = {
+    warmup_mobility: "Échauffement / mobilité",
+    long_game: "Long jeu",
+    short_game_all: "Petit jeu (tout secteur)",
+    putting: "Putting",
+    wedging: "Wedging",
+    pitching: "Pitching",
+    chipping: "Chipping",
+    bunker: "Bunker",
+    course: "Parcours",
+    mental: "Mental",
+    fitness: "Fitness",
+    other: "Autre",
+  };
+  return map[cat] ?? cat;
 }
 
 function initials(p?: { first_name: string | null; last_name: string | null } | null) {
@@ -150,8 +174,11 @@ export default function CoachEventDetailPage() {
   const [attendees, setAttendees] = useState<AttendeeUiRow[]>([]);
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
+  const [structureItems, setStructureItems] = useState<EventStructureItemRow[]>([]);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
+  const [copyingStructure, setCopyingStructure] = useState(false);
+  const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -246,6 +273,15 @@ export default function CoachEventDetailPage() {
       if (ecRes.error) throw new Error(ecRes.error.message);
       setSelectedCoachIds((ecRes.data ?? []).map((r: any) => String(r.coach_id ?? "")).filter(Boolean));
 
+      const structRes = await supabase
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", ev.id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (structRes.error) throw new Error(structRes.error.message);
+      setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
@@ -255,6 +291,7 @@ export default function CoachEventDetailPage() {
       setAttendees([]);
       setCoaches([]);
       setSelectedCoachIds([]);
+      setStructureItems([]);
       setLoading(false);
     }
   }
@@ -331,6 +368,74 @@ export default function CoachEventDetailPage() {
     const current: "present" | "absent" = status === "absent" ? "absent" : "present";
     const next: "present" | "absent" = current === "present" ? "absent" : "present";
     setAttendanceStatus(playerId, next);
+  }
+
+  async function copyStructureToFutureEvents() {
+    if (!event?.series_id) return;
+    if (structureItems.length === 0) {
+      setCopyStructureMessage(tr("Aucune structure à copier.", "No structure to copy."));
+      return;
+    }
+
+    const confirmed = window.confirm(
+      tr(
+        "Copier cette structure planifiée sur toutes les activités futures de cette récurrence ? Les structures déjà présentes sur ces activités seront remplacées.",
+        "Copy this planned structure to all future events in this recurrence? Existing planned structures on those events will be replaced."
+      )
+    );
+    if (!confirmed) return;
+
+    setCopyingStructure(true);
+    setCopyStructureMessage(null);
+    try {
+      const futureEventsRes = await supabase
+        .from("club_events")
+        .select("id")
+        .eq("series_id", event.series_id)
+        .gt("starts_at", event.starts_at)
+        .order("starts_at", { ascending: true });
+      if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
+
+      const futureEventIds = (futureEventsRes.data ?? [])
+        .map((row: any) => String(row?.id ?? "").trim())
+        .filter(Boolean);
+
+      if (futureEventIds.length === 0) {
+        setCopyStructureMessage(tr("Aucune activité future à mettre à jour.", "No future event to update."));
+        return;
+      }
+
+      const deleteRes = await supabase.from("club_event_structure_items").delete().in("event_id", futureEventIds);
+      if (deleteRes.error) throw new Error(deleteRes.error.message);
+
+      const payload = futureEventIds.flatMap((futureEventId) =>
+        structureItems.map((item, index) => ({
+          event_id: futureEventId,
+          category: item.category,
+          minutes: item.minutes,
+          note: item.note ?? null,
+          position: item.position ?? index,
+        }))
+      );
+
+      if (payload.length > 0) {
+        const insertRes = await supabase.from("club_event_structure_items").insert(payload);
+        if (insertRes.error) throw new Error(insertRes.error.message);
+      }
+
+      setCopyStructureMessage(
+        futureEventIds.length === 1
+          ? tr("Structure copiée sur 1 activité future.", "Structure copied to 1 future event.")
+          : tr(
+              `Structure copiée sur ${futureEventIds.length} activités futures.`,
+              `Structure copied to ${futureEventIds.length} future events.`
+            )
+      );
+    } catch (e: any) {
+      setCopyStructureMessage(String(e?.message ?? tr("Copie impossible.", "Copy failed.")));
+    } finally {
+      setCopyingStructure(false);
+    }
   }
 
   return (
@@ -469,9 +574,70 @@ export default function CoachEventDetailPage() {
                 ) : null}
                 </div>
 
+                {event.event_type === "training" || event.event_type === "camp" ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        {tr("Structure planifiée commune au groupe", "Planned structure shared with group")}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.88)",
+                        padding: 10,
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
+                      {structureItems.length === 0 ? (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          {tr("Non saisi.", "Not entered.")}
+                        </div>
+                      ) : (
+                        <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                          {structureItems.map((it, idx) => {
+                            const extra = String(it.note ?? "").trim();
+                            return (
+                              <li key={`manager-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                {categoryLabel(it.category)} — {it.minutes} min
+                                {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+
+                      {copyStructureMessage ? (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>{copyStructureMessage}</div>
+                      ) : null}
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        {event.series_id ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={copyStructureToFutureEvents}
+                            disabled={copyingStructure || structureItems.length === 0}
+                          >
+                            {copyingStructure
+                              ? tr("Copie…", "Copying…")
+                              : tr("Copier la structure dans les activités futures", "Copy structure to future events")}
+                          </button>
+                        ) : null}
+                        <Link className="btn" href={`/manager/groups/${groupId}/planning/${eventId}/edit`}>
+                          {t("common.edit")}
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <Users size={16} />
+                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Users size={16} />
                   {tr("Participants", "Participants")}
                 </div>
 

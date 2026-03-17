@@ -138,6 +138,7 @@ function categoryLabel(cat: string) {
     warmup: "Échauffement",
     mobility: "Mobilité",
     long_game: "Long jeu",
+    short_game_all: "Petit jeu (tout secteur)",
     long: "Long jeu",
     putting: "Putting",
     wedging: "Approches (wedging)",

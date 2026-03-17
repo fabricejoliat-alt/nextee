@@ -1641,6 +1641,7 @@ export default function PlayerHomePage() {
     const map: Record<string, string> = {
       warmup_mobility: t("cat.warmup_mobility"),
       long_game: t("cat.long_game"),
+      short_game_all: t("cat.short_game_all"),
       putting: t("cat.putting"),
       wedging: t("cat.wedging"),
       pitching: t("cat.pitching"),

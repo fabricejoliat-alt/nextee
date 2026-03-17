@@ -146,6 +146,7 @@ function categoryLabel(cat: string) {
   const map: Record<string, string> = {
     warmup_mobility: "Échauffement / mobilité",
     long_game: "Long jeu",
+    short_game_all: "Petit jeu (tout secteur)",
     putting: "Putting",
     wedging: "Wedging",
     pitching: "Pitching",
@@ -223,6 +224,75 @@ export default function CoachEventDetailPage() {
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
   const [evaluatedPlayerIds, setEvaluatedPlayerIds] = useState<Set<string>>(new Set());
+  const [copyingStructure, setCopyingStructure] = useState(false);
+  const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
+
+  async function copyStructureToFutureEvents() {
+    if (!event?.series_id) return;
+    if (structureItems.length === 0) {
+      setCopyStructureMessage(tr("Aucune structure à copier.", "No structure to copy."));
+      return;
+    }
+    const confirmed = window.confirm(
+      tr(
+        "Copier cette structure planifiée sur toutes les activités futures de cette récurrence ? Les structures déjà présentes sur ces activités seront remplacées.",
+        "Copy this planned structure to all future events in this recurrence? Existing planned structures on those events will be replaced."
+      )
+    );
+    if (!confirmed) return;
+
+    setCopyingStructure(true);
+    setCopyStructureMessage(null);
+    try {
+      const futureEventsRes = await supabase
+        .from("club_events")
+        .select("id")
+        .eq("series_id", event.series_id)
+        .gt("starts_at", event.starts_at)
+        .order("starts_at", { ascending: true });
+      if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
+
+      const futureEventIds = (futureEventsRes.data ?? [])
+        .map((row: any) => String(row?.id ?? "").trim())
+        .filter(Boolean);
+
+      if (futureEventIds.length === 0) {
+        setCopyStructureMessage(tr("Aucune activité future à mettre à jour.", "No future event to update."));
+        return;
+      }
+
+      const deleteRes = await supabase.from("club_event_structure_items").delete().in("event_id", futureEventIds);
+      if (deleteRes.error) throw new Error(deleteRes.error.message);
+
+      const payload = futureEventIds.flatMap((futureEventId) =>
+        structureItems.map((item, index) => ({
+          event_id: futureEventId,
+          category: item.category,
+          minutes: item.minutes,
+          note: item.note ?? null,
+          position: item.position ?? index,
+        }))
+      );
+
+      if (payload.length > 0) {
+        const insertRes = await supabase.from("club_event_structure_items").insert(payload);
+        if (insertRes.error) throw new Error(insertRes.error.message);
+      }
+
+      setCopyStructureMessage(
+        futureEventIds.length === 1
+          ? tr("Structure copiée sur 1 activité future.", "Structure copied to 1 future event.")
+          : tr(
+              `Structure copiée sur ${futureEventIds.length} activités futures.`,
+              `Structure copied to ${futureEventIds.length} future events.`
+            )
+      );
+    } catch (e: any) {
+      setCopyStructureMessage(String(e?.message ?? tr("Copie impossible.", "Copy failed.")));
+    } finally {
+      setCopyingStructure(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -784,7 +854,23 @@ export default function CoachEventDetailPage() {
                         </ul>
                       )}
 
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      {copyStructureMessage ? (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>{copyStructureMessage}</div>
+                      ) : null}
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        {event.series_id ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={copyStructureToFutureEvents}
+                            disabled={copyingStructure || structureItems.length === 0}
+                          >
+                            {copyingStructure
+                              ? tr("Copie…", "Copying…")
+                              : tr("Copier la structure dans les activités futures", "Copy structure to future events")}
+                          </button>
+                        ) : null}
                         <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
                           {tr("Éditer", "Edit")}
                         </Link>
