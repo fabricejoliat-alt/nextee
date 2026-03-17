@@ -22,6 +22,7 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const inviteToken = searchParams.get("invite_token");
 
   const canSubmit = useMemo(() => password.length >= 8 && confirmPassword.length >= 8 && !saving, [password, confirmPassword, saving]);
 
@@ -30,6 +31,15 @@ export default function ResetPasswordPage() {
     let timeoutId: number | null = null;
 
     async function checkSession() {
+      if (inviteToken) {
+        const res = await fetch(`/api/auth/invitation-reset?token=${encodeURIComponent(inviteToken)}`, {
+          cache: "no-store",
+        });
+        if (!active) return;
+        setStatus(res.ok ? "ready" : "invalid");
+        return;
+      }
+
       const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
       const hashParams = new URLSearchParams(hash);
       const code = searchParams.get("code");
@@ -124,7 +134,7 @@ export default function ResetPasswordPage() {
       if (timeoutId != null) window.clearTimeout(timeoutId);
       sub.subscription.unsubscribe();
     };
-  }, [searchParams]);
+  }, [searchParams, inviteToken]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,6 +147,40 @@ export default function ResetPasswordPage() {
     setSaving(true);
     setError(null);
     try {
+      if (inviteToken) {
+        const resetRes = await fetch("/api/auth/invitation-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: inviteToken, password }),
+        });
+        const resetJson = await resetRes.json().catch(() => ({}));
+        if (!resetRes.ok || !resetJson?.email) {
+          setError(String(resetJson?.error ?? "Impossible de définir le mot de passe."));
+          return;
+        }
+
+        const signInRes = await supabase.auth.signInWithPassword({
+          email: String(resetJson.email),
+          password,
+        });
+        if (signInRes.error || !signInRes.data.session) {
+          setStatus("success");
+          router.replace("/");
+          return;
+        }
+
+        const accessToken = signInRes.data.session.access_token;
+        const redirectRes = await fetch("/api/auth", {
+          method: "POST",
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        });
+        const redirectJson = await redirectRes.json().catch(() => ({}));
+        const destination = redirectRes.ok ? String(redirectJson?.redirectTo ?? "/player") : "/player";
+        setStatus("success");
+        router.replace(destination);
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
         setError(translateAuthMessage(updateError.message));

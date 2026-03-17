@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createHash, randomBytes } from "crypto";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,46 @@ function randomPassword(len = 12) {
   let out = "";
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+async function issueParentInvitationToken(
+  supabaseAdmin: any,
+  payload: {
+    clubId: string;
+    userId: string;
+    sentToEmail: string;
+    sentBy: string;
+  }
+) {
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error: cleanupError } = await supabaseAdmin
+    .from("access_invitation_tokens")
+    .delete()
+    .eq("club_id", payload.clubId)
+    .eq("user_id", payload.userId)
+    .eq("invitation_kind", "parent_access")
+    .is("consumed_at", null);
+  if (cleanupError) throw new Error(cleanupError.message);
+
+  const { error: insertError } = await supabaseAdmin.from("access_invitation_tokens").insert({
+    club_id: payload.clubId,
+    user_id: payload.userId,
+    invitation_kind: "parent_access",
+    sent_to_email: payload.sentToEmail,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+    sent_by: payload.sentBy,
+  });
+  if (insertError) throw new Error(insertError.message);
+
+  return { rawToken, expiresAt };
 }
 
 function parseMailFrom(value: string) {
@@ -248,6 +289,7 @@ function buildParentEmail(params: {
     "",
     params.parentUsername ? `Identifiant: ${params.parentUsername}` : "Identifiant: votre compte parent déjà existant",
     `Définir / réinitialiser votre mot de passe: ${params.resetUrl}`,
+    "Ce lien est valable 7 jours et peut être utilisé une seule fois.",
     `Connexion à l'application: ${params.appUrl}`,
     `Mode d'emploi: ${PLAYER_GUIDE_URL}`,
     "",
@@ -260,7 +302,7 @@ function buildParentEmail(params: {
     <div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">
       <p>Bonjour ${params.parentName},</p>
       <p>Votre accès parent <strong>ActiviTee</strong> pour <strong>${params.clubName}</strong> est prêt.</p>
-      <p>${params.parentUsername ? `<strong>Identifiant :</strong> ${params.parentUsername}<br/>` : ""}<strong>Définir / réinitialiser votre mot de passe :</strong> <a href="${params.resetUrl}">Ouvrir le lien sécurisé</a><br/><strong>Connexion à l'application :</strong> <a href="${params.appUrl}">${params.appUrl}</a><br/><strong>Mode d'emploi :</strong> <a href="${PLAYER_GUIDE_URL}">Télécharger le document</a></p>
+      <p>${params.parentUsername ? `<strong>Identifiant :</strong> ${params.parentUsername}<br/>` : ""}<strong>Définir / réinitialiser votre mot de passe :</strong> <a href="${params.resetUrl}">Ouvrir le lien sécurisé</a><br/><span>Ce lien est valable 7 jours et peut être utilisé une seule fois.</span><br/><strong>Connexion à l'application :</strong> <a href="${params.appUrl}">${params.appUrl}</a><br/><strong>Mode d'emploi :</strong> <a href="${PLAYER_GUIDE_URL}">Télécharger le document</a></p>
       <p>Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.</p>
       <p>L'équipe ActiviTee</p>
     </div>
@@ -549,27 +591,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     const resetPasswordUrl = `${appBaseUrl}/reset-password`;
 
     if (kind === "parent_access") {
-      const resetLinkRes = await (supabaseAdmin.auth.admin as any).generateLink({
-        type: "recovery",
-        email: parent.parent_email,
-        options: { redirectTo: resetPasswordUrl },
+      const invite = await issueParentInvitationToken(supabaseAdmin, {
+        clubId,
+        userId: parent.parent_user_id,
+        sentToEmail: parent.parent_email,
+        sentBy: auth.callerId,
       });
-      const tokenHash =
-        resetLinkRes?.data?.properties?.hashed_token ??
-        resetLinkRes?.data?.hashed_token ??
-        null;
-      const verificationType =
-        resetLinkRes?.data?.properties?.verification_type ??
-        resetLinkRes?.data?.verification_type ??
-        "recovery";
-      const resetUrl = tokenHash
-        ? `${resetPasswordUrl}?token_hash=${encodeURIComponent(String(tokenHash))}&type=${encodeURIComponent(
-            String(verificationType || "recovery")
-          )}`
-        : null;
-      if (resetLinkRes?.error || !resetUrl) {
-        throw new Error(resetLinkRes?.error?.message ?? "Impossible de générer le lien de connexion parent");
-      }
+      const resetUrl = `${resetPasswordUrl}?invite_token=${encodeURIComponent(invite.rawToken)}`;
 
       const mail = buildParentEmail({
         clubName: dataset.club.name,
