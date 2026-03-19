@@ -92,9 +92,25 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
       }
     }
 
+    const linkedEventIds = Array.from(
+      new Set((docsRes.data ?? []).map((d: any) => String(d.club_event_id ?? "")).filter(Boolean))
+    );
+    const eventMetaById = new Map<string, { group_id: string | null }>();
+    if (linkedEventIds.length > 0) {
+      const eventRes = await supabaseAdmin.from("club_events").select("id,group_id").in("id", linkedEventIds);
+      if (!eventRes.error) {
+        for (const ev of eventRes.data ?? []) {
+          eventMetaById.set(String((ev as any).id ?? ""), {
+            group_id: String((ev as any).group_id ?? "").trim() || null,
+          });
+        }
+      }
+    }
+
     const docs = (docsRes.data ?? []).map((d: any) => ({
       ...d,
       uploaded_by_name: uploaderNameById.get(String(d.uploaded_by ?? "")) ?? String(d.uploaded_by ?? "").slice(0, 8),
+      linked_event_group_id: eventMetaById.get(String(d.club_event_id ?? ""))?.group_id ?? null,
       public_url: supabaseAdmin.storage.from("marketplace").getPublicUrl(String(d.storage_path ?? "")).data.publicUrl,
     }));
     return NextResponse.json({ documents: docs });

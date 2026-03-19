@@ -67,16 +67,6 @@ type EventStructureItemRow = {
   note: string | null;
   position: number | null;
 };
-type LinkedEventDocument = {
-  id: string;
-  player_id: string;
-  uploaded_by: string;
-  uploaded_by_name?: string | null;
-  file_name: string;
-  coach_only: boolean;
-  created_at: string;
-  public_url: string;
-};
 
 type ThreadMessageRow = {
   id: string;
@@ -236,8 +226,6 @@ export default function CoachEventDetailPage() {
   const [evaluatedPlayerIds, setEvaluatedPlayerIds] = useState<Set<string>>(new Set());
   const [copyingStructure, setCopyingStructure] = useState(false);
   const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
-  const [linkedDocuments, setLinkedDocuments] = useState<LinkedEventDocument[]>([]);
-  const [playerNamesById, setPlayerNamesById] = useState<Record<string, string>>({});
 
   async function copyStructureToFutureEvents() {
     if (!event?.series_id) return;
@@ -409,39 +397,6 @@ export default function CoachEventDetailPage() {
       if (structRes.error) throw new Error(structRes.error.message);
       setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
 
-      const docsRes = await supabase
-        .from("player_dashboard_documents")
-        .select("id,player_id,uploaded_by,file_name,coach_only,created_at,storage_path")
-        .eq("club_event_id", ev.id)
-        .order("created_at", { ascending: false });
-      if (docsRes.error) throw new Error(docsRes.error.message);
-      const docs = (docsRes.data ?? []).map((doc: any) => ({
-        id: String(doc.id ?? ""),
-        player_id: String(doc.player_id ?? ""),
-        uploaded_by: String(doc.uploaded_by ?? ""),
-        file_name: String(doc.file_name ?? "").trim(),
-        coach_only: !!doc.coach_only,
-        created_at: String(doc.created_at ?? ""),
-        public_url: supabase.storage.from("marketplace").getPublicUrl(String(doc.storage_path ?? "")).data.publicUrl,
-      })) as LinkedEventDocument[];
-      setLinkedDocuments(docs);
-
-      const docPlayerIds = Array.from(new Set(docs.map((doc) => doc.player_id).filter(Boolean)));
-      if (docPlayerIds.length > 0) {
-        const docPlayerRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", docPlayerIds);
-        if (docPlayerRes.error) throw new Error(docPlayerRes.error.message);
-        const nextPlayerNames: Record<string, string> = {};
-        for (const p of docPlayerRes.data ?? []) {
-          nextPlayerNames[String((p as any).id ?? "")] = nameOf(
-            (p as any).first_name ?? null,
-            (p as any).last_name ?? null
-          );
-        }
-        setPlayerNamesById(nextPlayerNames);
-      } else {
-        setPlayerNamesById({});
-      }
-
       const feedbackRes = await supabase
         .from("club_event_coach_feedback")
         .select("player_id")
@@ -518,8 +473,6 @@ export default function CoachEventDetailPage() {
       setEventThreadMessages([]);
       setEventThreadParticipants([]);
       setLoadingEventThread(false);
-      setLinkedDocuments([]);
-      setPlayerNamesById({});
       setLoading(false);
     }
   }
@@ -802,55 +755,6 @@ export default function CoachEventDetailPage() {
                         </button>
                       </div>
                     </>
-                  )}
-                </div>
-
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    {tr("Documents liés à la séance", "Documents linked to this session")}
-                  </div>
-                  {linkedDocuments.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {tr("Aucun document lié à cette séance.", "No document linked to this session.")}
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {linkedDocuments.map((doc) => (
-                        <div
-                          key={doc.id}
-                          style={{
-                            border: "1px solid rgba(0,0,0,0.10)",
-                            borderRadius: 12,
-                            background: "rgba(255,255,255,0.94)",
-                            padding: "10px 12px",
-                            display: "flex",
-                            alignItems: "start",
-                            justifyContent: "space-between",
-                            gap: 12,
-                          }}
-                        >
-                          <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                            <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{doc.file_name}</div>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              <span className="pill-soft">
-                                {playerNamesById[doc.player_id] || tr("Joueur", "Player")}
-                              </span>
-                              {doc.coach_only ? <span className="pill-soft">Coach only</span> : null}
-                            </div>
-                            <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
-                              {new Intl.DateTimeFormat("fr-CH", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                              }).format(new Date(doc.created_at))}
-                            </div>
-                          </div>
-                          <a href={doc.public_url} target="_blank" rel="noreferrer" className="btn" style={{ whiteSpace: "nowrap" }}>
-                            {tr("Ouvrir", "Open")}
-                          </a>
-                        </div>
-                      ))}
-                    </div>
                   )}
                 </div>
 

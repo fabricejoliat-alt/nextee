@@ -169,6 +169,8 @@ type PlayerDashboardDocument = {
   mime_type: string | null;
   size_bytes: number | null;
   coach_only: boolean;
+  club_event_id?: string | null;
+  linked_event_group_id?: string | null;
   created_at: string;
   public_url: string;
 };
@@ -3400,6 +3402,14 @@ function presetToSelectValue(p: Preset): Preset {
                         <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
                           Voir
                         </button>
+                        {d.club_event_id && d.linked_event_group_id ? (
+                          <Link
+                            className="btn"
+                            href={`/coach/groups/${encodeURIComponent(d.linked_event_group_id)}/planning/${encodeURIComponent(d.club_event_id)}`}
+                          >
+                            Rejoindre l'entraînement
+                          </Link>
+                        ) : null}
                         {String(d.uploaded_by ?? "") === coachId ? (
                           <>
                             <button

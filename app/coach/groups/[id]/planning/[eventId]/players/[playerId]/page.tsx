@@ -98,6 +98,14 @@ type PlayerPlannedStructureItemRow = {
   note: string | null;
   position: number | null;
 };
+type LinkedPlayerEventDocument = {
+  id: string;
+  file_name: string;
+  coach_only: boolean;
+  created_at: string;
+  public_url: string;
+  uploaded_by_name?: string | null;
+};
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -221,6 +229,7 @@ export default function CoachEventPlayerDetailPage() {
   const [items, setItems] = useState<TrainingItemRow[]>([]);
   const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
   const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
+  const [linkedDocuments, setLinkedDocuments] = useState<LinkedPlayerEventDocument[]>([]);
 
   async function load() {
     setLoading(true);
@@ -336,6 +345,22 @@ export default function CoachEventPlayerDetailPage() {
         setItems([]);
       }
 
+      const { data: sessAuth } = await supabase.auth.getSession();
+      const token = sessAuth.session?.access_token ?? "";
+      if (token) {
+        const query = new URLSearchParams({ club_event_id: eventId });
+        const docsRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents?${query.toString()}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const docsJson = await docsRes.json().catch(() => ({}));
+        if (!docsRes.ok) throw new Error(String(docsJson?.error ?? "Impossible de charger les documents liés."));
+        setLinkedDocuments((docsJson?.documents ?? []) as LinkedPlayerEventDocument[]);
+      } else {
+        setLinkedDocuments([]);
+      }
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? "Erreur chargement.");
@@ -350,6 +375,7 @@ export default function CoachEventPlayerDetailPage() {
       setItems([]);
       setEventStructureItems([]);
       setPlayerPlannedStructureItems([]);
+      setLinkedDocuments([]);
       setLoading(false);
     }
   }
@@ -637,6 +663,49 @@ export default function CoachEventPlayerDetailPage() {
                           {coachFb.private_note}
                         </div>
                       ) : null}
+                    </div>
+                  )}
+                </div>
+
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>Documents liés à l'entraînement</div>
+                  {linkedDocuments.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun document lié à cet entraînement.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {linkedDocuments.map((doc) => (
+                        <div
+                          key={doc.id}
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.65)",
+                            padding: "10px 12px",
+                            display: "flex",
+                            alignItems: "start",
+                            justifyContent: "space-between",
+                            gap: 12,
+                          }}
+                        >
+                          <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{doc.file_name}</div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {doc.coach_only ? <span className="pill-soft">Coach only</span> : null}
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
+                              {doc.uploaded_by_name ? `${doc.uploaded_by_name} • ` : ""}
+                              {new Intl.DateTimeFormat("fr-CH", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              }).format(new Date(doc.created_at))}
+                            </div>
+                          </div>
+                          <a href={doc.public_url} target="_blank" rel="noreferrer" className="btn" style={{ whiteSpace: "nowrap" }}>
+                            Ouvrir
+                          </a>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
