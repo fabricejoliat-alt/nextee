@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
@@ -97,6 +95,7 @@ type DisplayItem =
   | { kind: "competition"; key: string; dateIso: string; competition: PlayerActivityEventRow };
 
 type TrainingsPageCache = {
+  performanceEnabled: boolean;
   sessions: SessionRow[];
   attendeeEvents: PlannedEventRow[];
   attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
@@ -108,6 +107,19 @@ type TrainingsPageCache = {
   viewerUserId: string;
   effectiveUserId: string;
   effectivePlayerName: string;
+};
+
+type TrainingsCoreResponse = {
+  viewerUserId: string;
+  effectiveUserId: string;
+  effectivePlayerName: string;
+  performanceEnabled: boolean;
+  sessions: SessionRow[];
+  attendeeEvents: PlannedEventRow[];
+  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
+  competitionEvents: PlayerActivityEventRow[];
+  clubNameById: Record<string, string>;
+  groupNameById: Record<string, string>;
 };
 
 const TRAININGS_CACHE_TTL_MS = 45_000;
@@ -605,126 +617,42 @@ export default function TrainingsListPage() {
     setError(null);
 
     try {
-      const { effectiveUserId: uid, viewerUserId: actorId } = await resolveEffectivePlayerContext();
-      setViewerUserId(actorId);
-      setEffectiveUserId(uid);
-      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
-      setPerformanceEnabled(perfEnabled);
-      const pageCache = readClientPageCache<TrainingsPageCache>(
-        trainingsPageCacheKey(uid),
-        TRAININGS_CACHE_TTL_MS
-      );
-      if (pageCache) {
-        setSessions(pageCache.sessions);
-        setAttendeeEvents(pageCache.attendeeEvents);
-        setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
-        setCompetitionEvents(pageCache.competitionEvents);
-        setClubNameById(pageCache.clubNameById);
-        setGroupNameById(pageCache.groupNameById);
-        setItemsBySessionId(pageCache.itemsBySessionId);
-        setEventStructureByEventId(pageCache.eventStructureByEventId);
-        setViewerUserId(pageCache.viewerUserId || actorId);
-        setEffectiveUserId(pageCache.effectiveUserId || uid);
-        setEffectivePlayerName(pageCache.effectivePlayerName || "Joueur");
-      }
-      const profRes = await supabase.from("profiles").select("first_name,last_name").eq("id", uid).maybeSingle();
-      if (!profRes.error && profRes.data) {
-        const full = `${String(profRes.data.first_name ?? "").trim()} ${String(profRes.data.last_name ?? "").trim()}`.trim();
-        setEffectivePlayerName(full || "Joueur");
-      } else {
-        setEffectivePlayerName("Joueur");
-      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-      // all player-owned sessions (local filtering + pagination by mode)
-      const sRes = await supabase
-        .from("training_sessions")
-        .select(
-          "id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id"
-        )
-        .eq("user_id", uid)
-        .order("start_at", { ascending: false });
+      const query = new URLSearchParams();
+      const childId = String(searchParams.get("child_id") ?? "").trim();
+      if (childId) query.set("child_id", childId);
 
-      if (sRes.error) throw new Error(sRes.error.message);
-
-      const list = (sRes.data ?? []) as SessionRow[];
-      setSessions(list);
-
-      // attendee events for this player
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id,player_id,status")
-        .eq("player_id", uid);
-
-      if (aRes.error) throw new Error(aRes.error.message);
-
-      const eventIds = Array.from(new Set((aRes.data ?? []).map((r: any) => r.event_id as string)));
-      const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-      (aRes.data ?? []).forEach((r: any) => {
-        statusMap[String(r.event_id)] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
+      const res = await fetch(`/api/player/trainings${query.toString() ? `?${query.toString()}` : ""}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
       });
-      setAttendeeStatusByEventId(statusMap);
+      const json = (await res.json().catch(() => ({}))) as TrainingsCoreResponse & { error?: string };
+      if (!res.ok) throw new Error(String(json?.error ?? t("common.errorLoading")));
 
-      let events: PlannedEventRow[] = [];
-      if (eventIds.length > 0) {
-        const eRes = await supabase
-          .from("club_events")
-          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status")
-          .in("id", eventIds)
-          .order("starts_at", { ascending: false });
+      const effectiveId = String(json.effectiveUserId ?? "").trim();
+      const pageCache = effectiveId
+        ? readClientPageCache<TrainingsPageCache>(
+            trainingsPageCacheKey(effectiveId),
+            TRAININGS_CACHE_TTL_MS
+          )
+        : null;
 
-        if (eRes.error) throw new Error(eRes.error.message);
-        events = (eRes.data ?? []) as PlannedEventRow[];
-
-        const map: Record<string, EventStructureItemRow[]> = {};
-        const individualRes = await supabase
-          .from("club_event_player_structure_items")
-          .select("event_id,category,minutes,note,position,created_at")
-          .in("event_id", eventIds)
-          .eq("player_id", uid)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true });
-
-        if (!individualRes.error) {
-          (individualRes.data ?? []).forEach((r: any) => {
-            const eid = String(r.event_id ?? "");
-            if (!eid) return;
-            if (!map[eid]) map[eid] = [];
-            map[eid].push(r as EventStructureItemRow);
-          });
-        }
-
-        const fallbackEventIds = eventIds.filter((eid) => (map[eid]?.length ?? 0) === 0);
-        if (fallbackEventIds.length > 0) {
-          const esRes = await supabase
-            .from("club_event_structure_items")
-            .select("event_id,category,minutes,note,position,created_at")
-            .in("event_id", fallbackEventIds)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true });
-
-          if (!esRes.error) {
-            (esRes.data ?? []).forEach((r: any) => {
-              const eid = String(r.event_id ?? "");
-              if (!eid) return;
-              if (!map[eid]) map[eid] = [];
-              map[eid].push(r as EventStructureItemRow);
-            });
-          }
-        }
-
-        setEventStructureByEventId(map);
-      } else {
-        setEventStructureByEventId({});
-      }
-      setAttendeeEvents(events);
-
-      const compRes = await supabase
-        .from("player_activity_events")
-        .select("id,user_id,event_type,title,starts_at,ends_at,location_text,notes,status,created_at")
-        .eq("user_id", uid)
-        .order("starts_at", { ascending: false });
-      if (compRes.error) throw new Error(compRes.error.message);
-      setCompetitionEvents((compRes.data ?? []) as PlayerActivityEventRow[]);
+      setViewerUserId(String(json.viewerUserId ?? "").trim());
+      setEffectiveUserId(effectiveId);
+      setEffectivePlayerName(String(json.effectivePlayerName ?? "Joueur"));
+      setPerformanceEnabled(Boolean(json.performanceEnabled));
+      setSessions(json.sessions ?? []);
+      setAttendeeEvents(json.attendeeEvents ?? []);
+      setAttendeeStatusByEventId(json.attendeeStatusByEventId ?? {});
+      setCompetitionEvents(json.competitionEvents ?? []);
+      setClubNameById(json.clubNameById ?? {});
+      setGroupNameById(json.groupNameById ?? {});
+      setItemsBySessionId(pageCache?.itemsBySessionId ?? {});
+      setEventStructureByEventId(pageCache?.eventStructureByEventId ?? {});
 
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : t("common.errorLoading");
@@ -744,7 +672,7 @@ export default function TrainingsListPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (loading || !effectiveUserId) return;
@@ -753,6 +681,7 @@ export default function TrainingsListPage() {
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents,
+      performanceEnabled,
       clubNameById,
       groupNameById,
       itemsBySessionId,
@@ -768,6 +697,7 @@ export default function TrainingsListPage() {
     attendeeEvents,
     attendeeStatusByEventId,
     competitionEvents,
+    performanceEnabled,
     clubNameById,
     groupNameById,
     itemsBySessionId,
@@ -1056,7 +986,11 @@ export default function TrainingsListPage() {
       return;
     }
 
-    const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+    const uid = effectiveUserId;
+    if (!uid) {
+      setError(pickLocaleText(locale, "Session invalide.", "Invalid session."));
+      return;
+    }
 
     setCreatingCompetition(true);
     setError(null);
