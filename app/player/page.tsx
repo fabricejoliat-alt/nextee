@@ -581,6 +581,11 @@ export default function PlayerHomePage() {
     return text || null;
   }, [profile?.handicap, trainingVolumeRows]);
 
+  const displayedTrainingVolumeObjective = useMemo(() => {
+    if (trainingVolumeObjective <= 0) return 0;
+    return trainingVolumeObjective * 4;
+  }, [trainingVolumeObjective]);
+
   const monthEffectiveMinutes = useMemo(() => {
     if (isPerformanceEnabled) {
       return monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
@@ -611,7 +616,7 @@ export default function PlayerHomePage() {
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, 3);
 
-    const objective = trainingVolumeObjective;
+    const objective = displayedTrainingVolumeObjective;
     const percent = objective > 0 ? (totalMinutes / objective) * 100 : 0;
 
     // ✅ Tendance = dernière valeur vs précédente (ignorer null)
@@ -633,7 +638,7 @@ export default function PlayerHomePage() {
       deltaDifficulty,
       deltaSatisfaction,
     };
-  }, [monthEffectiveMinutes, monthSessions, monthItems, t, trainingVolumeObjective]);
+  }, [monthEffectiveMinutes, monthSessions, monthItems, t, displayedTrainingVolumeObjective]);
 
   const topMax = useMemo(() => {
     const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
