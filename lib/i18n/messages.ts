@@ -235,6 +235,8 @@ export const messages = ({
     "trainingDetail.error.notFound": "Entraînement introuvable.",
     "trainingDetail.error.forbidden": "Tu n’as pas l’autorisation de voir cet entraînement.",
 
+    "trainingEdit.title": "Éditer l'entraînement",
+
     "trainingNew.title": "Ajouter un entraînement",
     "trainingNew.extraCoach": "Coach supplémentaire",
     "trainingNew.extraCoaches": "Coachs supplémentaires",
@@ -643,6 +645,8 @@ export const messages = ({
     "trainingDetail.error.notFound": "Training not found.",
     "trainingDetail.error.forbidden": "You are not allowed to view this training.",
 
+    "trainingEdit.title": "Edit training",
+
     "trainingNew.title": "Add a training",
     "trainingNew.extraCoach": "Extra coach",
     "trainingNew.extraCoaches": "Extra coaches",
@@ -981,6 +985,7 @@ const deOverrides: Record<string, string> = {
   "trainingDetail.feelings": "Empfinden",
   "trainingDetail.notes": "Bemerkungen",
   "trainingDetail.backToList": "Zurück zur Liste",
+  "trainingEdit.title": "Training bearbeiten",
   "trainingNew.title": "Training hinzufügen",
   "trainingNew.trainingType": "Trainingsart",
   "trainingNew.coachOptional": "Trainer (optional)",
@@ -1173,6 +1178,7 @@ const itOverrides: Record<string, string> = {
   "trainingDetail.feelings": "Sensazioni",
   "trainingDetail.notes": "Note",
   "trainingDetail.backToList": "Torna alla lista",
+  "trainingEdit.title": "Modifica allenamento",
   "trainingNew.title": "Aggiungi allenamento",
   "trainingNew.trainingType": "Tipo di allenamento",
   "trainingNew.coachOptional": "Coach (opzionale)",

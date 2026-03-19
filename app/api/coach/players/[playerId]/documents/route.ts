@@ -61,13 +61,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
     if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const url = new URL(req.url);
+    const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
 
-    const docsRes = await supabaseAdmin
+    let docsQuery = supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .order("created_at", { ascending: false });
+    if (requestedEventId) docsQuery = docsQuery.eq("club_event_id", requestedEventId);
+    const docsRes = await docsQuery.limit(200);
     if (docsRes.error) return NextResponse.json({ error: docsRes.error.message }, { status: 400 });
 
     const uploaderIds = Array.from(
@@ -117,6 +120,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
         action?: string | null;
         organization_id?: string | null;
         coach_only?: boolean | string | null;
+        club_event_id?: string | null;
         original_name?: string | null;
         file_name?: string | null;
         mime_type?: string | null;
@@ -128,6 +132,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       const sizeBytes = Number(body?.size_bytes ?? 0);
       const organizationIdFromBody = String(body?.organization_id ?? "").trim();
       const coachOnlyFromBody = String(body?.coach_only ?? "false").trim() === "true";
+      const clubEventIdFromBody = String(body?.club_event_id ?? "").trim() || null;
       if (!organizationIdFromBody || !sharedOrgIds.includes(organizationIdFromBody)) {
         return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
       }
@@ -172,8 +177,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
             mime_type: mimeType,
             size_bytes: sizeBytes,
             coach_only: coachOnlyFromBody,
+            club_event_id: clubEventIdFromBody,
           })
-          .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+          .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
           .single();
         if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 
@@ -188,6 +194,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     const form = await req.formData();
     const organizationId = String(form.get("organization_id") ?? "").trim();
     const coachOnly = String(form.get("coach_only") ?? "false").trim() === "true";
+    const clubEventId = String(form.get("club_event_id") ?? "").trim() || null;
     const providedName = String(form.get("file_name") ?? "").trim();
     const file = form.get("file");
     if (!organizationId || !sharedOrgIds.includes(organizationId)) {
@@ -221,8 +228,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
         mime_type: file.type || null,
         size_bytes: file.size ?? null,
         coach_only: coachOnly,
+        club_event_id: clubEventId,
       })
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .single();
     if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 

@@ -79,9 +79,19 @@ export async function PATCH(
     const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
     if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const body = (await req.json().catch(() => ({}))) as { file_name?: string | null };
+    const body = (await req.json().catch(() => ({}))) as {
+      file_name?: string | null;
+      coach_only?: boolean | null;
+      club_event_id?: string | null;
+    };
     const nextName = String(body?.file_name ?? "").trim();
-    if (!nextName) return NextResponse.json({ error: "Missing file_name" }, { status: 400 });
+    const hasFileName = Object.prototype.hasOwnProperty.call(body, "file_name");
+    const hasCoachOnly = Object.prototype.hasOwnProperty.call(body, "coach_only");
+    const hasClubEventId = Object.prototype.hasOwnProperty.call(body, "club_event_id");
+    if (!hasFileName && !hasCoachOnly && !hasClubEventId) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+    }
+    if (hasFileName && !nextName) return NextResponse.json({ error: "Missing file_name" }, { status: 400 });
 
     const docRes = await supabaseAdmin
       .from("player_dashboard_documents")
@@ -98,11 +108,19 @@ export async function PATCH(
       return NextResponse.json({ error: "Only uploader can rename this document" }, { status: 403 });
     }
 
+    const patch: Record<string, unknown> = {};
+    if (hasFileName) patch.file_name = nextName;
+    if (hasCoachOnly) patch.coach_only = !!body.coach_only;
+    if (hasClubEventId) {
+      const nextClubEventId = String(body?.club_event_id ?? "").trim();
+      patch.club_event_id = nextClubEventId || null;
+    }
+
     const updRes = await supabaseAdmin
       .from("player_dashboard_documents")
-      .update({ file_name: nextName })
+      .update(patch)
       .eq("id", documentId)
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .single();
     if (updRes.error) return NextResponse.json({ error: updRes.error.message }, { status: 400 });
 

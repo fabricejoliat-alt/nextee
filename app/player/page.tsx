@@ -193,6 +193,7 @@ type HeroCachePayload = {
 };
 
 const HERO_CACHE_TTL_MS = 10 * 60 * 1000;
+const PLAY_VOLUME_CACHE_TTL_MS = 15 * 60 * 1000;
 
 function heroCacheKey(userId: string) {
   return `player:home:hero:${userId}`;
@@ -221,6 +222,43 @@ function writeHeroCache(userId: string, payload: { profile: Profile | null; club
       updatedAt: Date.now(),
     };
     window.localStorage.setItem(heroCacheKey(userId), JSON.stringify(data));
+  } catch {
+    // ignore cache write issues
+  }
+}
+
+type PlayVolumeCachePayload = {
+  summary: PlayVolumeSummary;
+  updatedAt: number;
+};
+
+function playVolumeCacheKey(userId: string) {
+  return `player:home:play-volume:${userId}`;
+}
+
+function readPlayVolumeCache(userId: string) {
+  if (typeof window === "undefined" || !userId) return null as PlayVolumeCachePayload | null;
+  try {
+    const raw = window.localStorage.getItem(playVolumeCacheKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PlayVolumeCachePayload;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > PLAY_VOLUME_CACHE_TTL_MS) return null;
+    if (!parsed.summary || typeof parsed.summary !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePlayVolumeCache(userId: string, summary: PlayVolumeSummary) {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    const payload: PlayVolumeCachePayload = {
+      summary,
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(playVolumeCacheKey(userId), JSON.stringify(payload));
   } catch {
     // ignore cache write issues
   }
@@ -838,14 +876,16 @@ export default function PlayerHomePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "Failed to load play volume"));
 
-      setPlayVolumeSummary({
+      const summary: PlayVolumeSummary = {
         roundsCount: Number(json?.roundsCount ?? 0),
         holesPlayed: Number(json?.holesPlayed ?? 0),
         girPctAvg: typeof json?.girPctAvg === "number" ? json.girPctAvg : null,
         fwPctAvg: typeof json?.fwPctAvg === "number" ? json.fwPctAvg : null,
         puttAvg: typeof json?.puttAvg === "number" ? json.puttAvg : null,
         scramblingPct: typeof json?.scramblingPct === "number" ? json.scramblingPct : null,
-      });
+      };
+      setPlayVolumeSummary(summary);
+      writePlayVolumeCache(effectiveUid, summary);
       setPlayVolumeLoadedOnce(true);
     } catch (e) {
       console.warn("player home play volume load failed:", e);
@@ -870,6 +910,7 @@ export default function PlayerHomePage() {
       viewerUid = ctx.viewerUserId;
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
+      void loadRollingPlayVolume(effectiveUid, viewerUid);
       const performanceEnabled = await isEffectivePlayerPerformanceEnabled(effectiveUid);
       setIsPerformanceEnabled(performanceEnabled);
       const pageCache = readClientPageCache<PlayerHomePageCache>(
@@ -923,6 +964,12 @@ export default function PlayerHomePage() {
         setProfile(heroCache.profile);
         setClubs(heroCache.clubs);
         setHeroLoading(false);
+      }
+      const playCache = readPlayVolumeCache(effectiveUid);
+      if (playCache) {
+        setPlayVolumeSummary(playCache.summary);
+        setPlayVolumeLoadedOnce(true);
+        setPlayVolumeLoading(false);
       }
     } catch {
       setError(t("roundsNew.error.invalidSession"));
@@ -1335,8 +1382,6 @@ export default function PlayerHomePage() {
       setUpcomingActivities([]);
       setUpcomingLoading(false);
     }
-
-    void loadRollingPlayVolume(effectiveUid, viewerUid);
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("common.errorLoading"));

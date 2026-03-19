@@ -301,8 +301,13 @@ export default function PlayerTrainingNewPage() {
     if (!linkedEvent?.starts_at) return true;
     return new Date(linkedEvent.starts_at).getTime() < Date.now();
   }, [linkedEvent?.starts_at]);
+  const linkedAttendanceStatus = useMemo<"expected" | "present" | "absent" | "excused" | null>(() => {
+    if (!userId || eventAttendees.length === 0) return null;
+    return eventAttendees.find((a) => a.player_id === userId)?.status ?? null;
+  }, [eventAttendees, userId]);
+  const linkedEventAttendanceBlocked = linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused";
   const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
-  const inputsDisabled = busy || plannedEventLocked;
+  const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
   const showSensationsCard = useMemo(() => {
     if (!performanceEnabled) return false;
@@ -346,6 +351,7 @@ export default function PlayerTrainingNewPage() {
   const canSave = useMemo(() => {
     if (busy) return false;
     if (plannedEventLocked) return false;
+    if (linkedEventAttendanceBlocked) return false;
     if (!linkedEvent && !hasChosenTrainingType) return false;
     if (!userId) return false;
     if (!startAt) return false;
@@ -365,7 +371,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, plannedEventLocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
+  }, [busy, performanceEnabled, plannedEventLocked, linkedEventAttendanceBlocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -872,6 +878,17 @@ export default function PlayerTrainingNewPage() {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
+  function copyPlannedStructure() {
+    if (inputsDisabled || plannedStructureItems.length === 0) return;
+    setItems(
+      plannedStructureItems.map((it) => ({
+        category: String(it.category ?? ""),
+        minutes: String(it.minutes ?? ""),
+        note: String(it.note ?? "").trim(),
+      }))
+    );
+  }
+
   function setType(next: SessionType) {
     // if linked to an event: type forced club
     if (linkedEvent) return;
@@ -924,6 +941,16 @@ export default function PlayerTrainingNewPage() {
         locale === "fr"
           ? "Tu peux saisir la structure et les sensations uniquement une fois l'entraînement passé."
           : "You can enter structure and feelings only once the training is past."
+      );
+      setBusy(false);
+      return;
+    }
+
+    if (linkedEventAttendanceBlocked) {
+      setError(
+        locale === "fr"
+          ? "Tu ne peux pas évaluer cet entraînement car ton statut est absent."
+          : "You cannot evaluate this training because your attendance status is absent."
       );
       setBusy(false);
       return;
@@ -1102,6 +1129,25 @@ export default function PlayerTrainingNewPage() {
                       {linkedEvent.location_text ? (
                         <div style={{ color: "rgba(0,0,0,0.68)", fontWeight: 800, fontSize: 12 }}>
                           📍 {linkedEvent.location_text}
+                        </div>
+                      ) : null}
+                      {linkedEventAttendanceBlocked ? (
+                        <div
+                          style={{
+                            border: "1px solid rgba(239,68,68,0.18)",
+                            background: "rgba(239,68,68,0.08)",
+                            color: "rgba(127,29,29,1)",
+                            borderRadius: 12,
+                            padding: "10px 12px",
+                            fontSize: 12,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {pickLocaleText(
+                            locale,
+                            "Tu es indiqué absent sur cet entraînement. Il n'apparaît pas dans les entraînements à évaluer et il ne peut pas être évalué.",
+                            "You are marked absent for this training. It should not appear in trainings to complete and it cannot be evaluated."
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -1822,36 +1868,20 @@ export default function PlayerTrainingNewPage() {
 
                 {performanceEnabled ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
-
-                  {plannedStructureItems.length > 0 ? (
-                    <div
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.78)",
-                        padding: 10,
-                        display: "grid",
-                        gap: 8,
-                      }}
-                    >
-                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.66)" }}>
-                        {pickLocaleText(locale, "Structure planifiée (coach)", "Planned structure (coach)")}
-                      </div>
-                      <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                        {plannedStructureItems.map((it, idx) => {
-                          const label = TRAINING_CATEGORIES.find((c) => c.value === it.category)?.label ?? it.category;
-                          const extra = String(it.note ?? "").trim();
-                          return (
-                            <li key={`planned-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                              {label} — {it.minutes} min
-                              {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ) : null}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
+                    {plannedStructureItems.length > 0 ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={copyPlannedStructure}
+                        disabled={inputsDisabled}
+                        style={{ minHeight: 34, fontWeight: 900 }}
+                      >
+                        {pickLocaleText(locale, "Copier la structure planifiée", "Copy planned structure")}
+                      </button>
+                    ) : null}
+                  </div>
 
                   {linkedEvent ? (
                     <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.58)" }}>

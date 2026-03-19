@@ -1503,6 +1503,7 @@ export default function TrainingsListPage() {
                     const isTraining = e.event_type === "training";
                     const isArchivedTraining = isAttendanceEvent && isArchiveGroupName(groupName);
                     const isUpcomingEvent = new Date(e.starts_at).getTime() >= nowTs;
+                    const canEvaluateEvent = performanceEnabled && !isUpcomingEvent && attendanceStatus !== "absent" && attendanceStatus !== "excused";
                     const isCollapsedTraining = isAttendanceEvent && attendanceStatus === "absent";
                     const eventStructure = eventStructureByEventId[e.id] ?? [];
                     const showEventStructure = isAttendanceEvent && attendanceStatus === "present" && eventStructure.length > 0;
@@ -1641,7 +1642,7 @@ export default function TrainingsListPage() {
                                   style={{ marginLeft: 0 }}
                                 />
                               </Link>
-                              {performanceEnabled && !isUpcomingEvent ? (
+                              {canEvaluateEvent ? (
                                 <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
                                   <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                   {pickLocaleText(locale, "Évaluer", "Evaluate")}
@@ -1763,6 +1764,12 @@ export default function TrainingsListPage() {
                   const sessionDuration = Math.max(1, Number(s.total_minutes ?? 0) || durationFromPostes || 0);
                   const sessionEnd = new Date(new Date(s.start_at).getTime() + sessionDuration * 60_000).toISOString();
                   const isPastSession = new Date(s.start_at).getTime() < nowTs;
+                  const canEvaluateLinkedSession =
+                    performanceEnabled &&
+                    isPastSession &&
+                    !completeSessionIds.has(s.id) &&
+                    linkedAttendanceStatus !== "absent" &&
+                    linkedAttendanceStatus !== "excused";
                   const isMultiDaySession = !sameDay(s.start_at, sessionEnd);
                   const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
                   const canDeleteSession = !s.club_event_id;
@@ -1908,7 +1915,7 @@ export default function TrainingsListPage() {
                               </Link>
                             ) : null}
 
-                            {performanceEnabled && isPastSession && !completeSessionIds.has(s.id) ? (
+                            {canEvaluateLinkedSession ? (
                               <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
                                 <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Évaluer", "Evaluate")}

@@ -320,8 +320,29 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       }
 
       const nowTs = Date.now();
+      const aRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id,status")
+        .eq("player_id", uid);
+      if (aRes.error) {
+        setPendingEvalCount(0);
+        return;
+      }
+      const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+      (aRes.data ?? []).forEach((row: any) => {
+        const eventId = String(row.event_id ?? "").trim();
+        if (!eventId) return;
+        attendanceMap[eventId] = (row.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
+      });
+
       const incompletePastSessionsCount = (sessions as any[])
         .filter((s) => new Date(String(s.start_at)).getTime() < nowTs)
+        .filter((s) => {
+          const eventId = s.club_event_id ? String(s.club_event_id) : "";
+          if (!eventId) return true;
+          const status = attendanceMap[eventId] ?? null;
+          return status !== "absent" && status !== "excused";
+        })
         .filter((s) => !completeSessionIds.has(String(s.id))).length;
 
       const completedEventIds = new Set(
@@ -336,14 +357,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           .filter((x): x is string => !!x)
       );
 
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id")
-        .eq("player_id", uid);
-      if (aRes.error) {
-        setPendingEvalCount(incompletePastSessionsCount);
-        return;
-      }
       const eventIds = Array.from(new Set((aRes.data ?? []).map((r: any) => String(r.event_id))));
 
       let incompleteEventsCount = 0;
@@ -357,6 +370,10 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             .filter((ev: any) => ev.status === "scheduled")
             .filter((ev: any) => ev.event_type === "training")
             .filter((ev: any) => new Date(String(ev.starts_at)).getTime() < nowTs)
+            .filter((ev: any) => {
+              const status = attendanceMap[String(ev.id)] ?? null;
+              return status !== "absent" && status !== "excused";
+            })
             .filter((ev: any) => !completedEventIds.has(String(ev.id)))
             .filter((ev: any) => !eventIdsWithAnySession.has(String(ev.id))).length;
         }

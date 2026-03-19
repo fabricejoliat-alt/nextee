@@ -41,9 +41,35 @@ function roundPlayedHolesFromRound(round: {
   return 18;
 }
 
-function isGIR(par: number | null, score: number | null, putts: number | null) {
-  if (typeof par !== "number" || typeof score !== "number" || typeof putts !== "number") return false;
-  return score - putts <= par - 2;
+function estimatedScramblingPct(rounds: Array<{
+  id: string;
+  gir: number | null;
+  eagles: number | null;
+  birdies: number | null;
+  pars: number | null;
+  bogeys: number | null;
+  doubles_plus: number | null;
+  fairways_total: number | null;
+  total_putts: number | null;
+}>) {
+  let opp = 0;
+  let success = 0;
+  for (const round of rounds) {
+    const played = roundPlayedHolesFromRound(round);
+    const gir = typeof round.gir === "number" ? round.gir : null;
+    if (!played || gir == null) continue;
+    const roundOpp = Math.max(played - gir, 0);
+    if (roundOpp <= 0) continue;
+    const parOrBetter =
+      (typeof round.pars === "number" ? round.pars : 0) +
+      (typeof round.birdies === "number" ? round.birdies : 0) +
+      (typeof round.eagles === "number" ? round.eagles : 0);
+    const roundSuccess = Math.min(roundOpp, Math.max(parOrBetter - gir, 0));
+    opp += roundOpp;
+    success += roundSuccess;
+  }
+  if (opp <= 0) return null;
+  return Math.round((success / opp) * 1000) / 10;
 }
 
 export async function GET(req: NextRequest) {
@@ -79,6 +105,18 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
       if (linkRes.error) return NextResponse.json({ error: linkRes.error.message }, { status: 400 });
       if (linkRes.data?.player_id) effectiveUserId = String(linkRes.data.player_id);
+    }
+    if (isParent && effectiveUserId === viewerUserId) {
+      const childrenRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id,is_primary")
+        .eq("guardian_user_id", viewerUserId)
+        .or("can_view.is.null,can_view.eq.true")
+        .order("is_primary", { ascending: false })
+        .limit(1);
+      if (childrenRes.error) return NextResponse.json({ error: childrenRes.error.message }, { status: 400 });
+      const fallbackChildId = String(childrenRes.data?.[0]?.player_id ?? "").trim();
+      if (fallbackChildId) effectiveUserId = fallbackChildId;
     }
 
     const { curStart, curEnd } = rollingYearWindows(new Date());
@@ -117,30 +155,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const roundIds = rounds.map((round) => round.id).filter(Boolean);
-    const holesRes = roundIds.length
-      ? await supabaseAdmin
-          .from("golf_round_holes")
-          .select("round_id,score,par,putts")
-          .in("round_id", roundIds)
-      : ({ data: [], error: null } as const);
-    if (holesRes.error) return NextResponse.json({ error: holesRes.error.message }, { status: 400 });
-
-    const holesByRoundId: Record<string, number> = {};
-    let scramblingOpp = 0;
-    let scramblingSuccess = 0;
-    ((holesRes.data ?? []) as Array<{ round_id: string | null; score: number | null; par: number | null; putts: number | null }>).forEach((hole) => {
-      if (!hole?.round_id || typeof hole.score !== "number") return;
-      holesByRoundId[hole.round_id] = (holesByRoundId[hole.round_id] ?? 0) + 1;
-      if (typeof hole.par === "number" && typeof hole.putts === "number") {
-        const gir = isGIR(hole.par, hole.score, hole.putts);
-        if (!gir) {
-          scramblingOpp += 1;
-          if (hole.score <= hole.par) scramblingSuccess += 1;
-        }
-      }
-    });
-
     let holesPlayed = 0;
     let girPctSum = 0;
     let girPctCount = 0;
@@ -150,7 +164,7 @@ export async function GET(req: NextRequest) {
     let puttCount = 0;
 
     rounds.forEach((round) => {
-      const played = holesByRoundId[round.id] ?? roundPlayedHolesFromRound(round);
+      const played = roundPlayedHolesFromRound(round);
       holesPlayed += played;
 
       if (typeof round.gir === "number" && played > 0) {
@@ -167,13 +181,15 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    const scramblingPct = estimatedScramblingPct(rounds);
+
     return NextResponse.json({
       roundsCount: rounds.length,
       holesPlayed,
       girPctAvg: girPctCount > 0 ? Math.round((girPctSum / girPctCount) * 10) / 10 : null,
       fwPctAvg: fwPctCount > 0 ? Math.round((fwPctSum / fwPctCount) * 10) / 10 : null,
       puttAvg: puttCount > 0 ? Math.round((puttSum / puttCount) * 10) / 10 : null,
-      scramblingPct: scramblingOpp > 0 ? Math.round((scramblingSuccess / scramblingOpp) * 100) : null,
+      scramblingPct,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

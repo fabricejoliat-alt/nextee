@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
     const docsRes = await supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
       .eq("coach_only", false)
       .order("created_at", { ascending: false })
@@ -119,6 +119,7 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("application/json")) {
       const body = (await req.json().catch(() => ({}))) as {
         action?: string | null;
+        club_event_id?: string | null;
         original_name?: string | null;
         file_name?: string | null;
         mime_type?: string | null;
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
         const providedName = String(body?.file_name ?? "").trim();
         const originalName = String(body?.original_name ?? "").trim();
         const mimeType = String(body?.mime_type ?? "").trim() || null;
+        const clubEventId = String(body?.club_event_id ?? "").trim() || null;
         if (!storagePath) return NextResponse.json({ error: "Missing storage_path" }, { status: 400 });
 
         const insRes = await supabaseAdmin
@@ -169,8 +171,9 @@ export async function POST(req: NextRequest) {
             mime_type: mimeType,
             size_bytes: sizeBytes,
             coach_only: false,
+            club_event_id: clubEventId,
           })
-          .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+          .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
           .single();
         if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 
@@ -214,7 +217,7 @@ export async function POST(req: NextRequest) {
         size_bytes: file.size ?? null,
         coach_only: false,
       })
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .single();
     if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
 

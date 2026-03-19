@@ -45,6 +45,13 @@ type ItemDbRow = {
   created_at?: string;
 };
 
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position?: number | null;
+};
+
 // ✅ enum values from DB + nice labels
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
@@ -105,6 +112,7 @@ export default function PlayerTrainingEditPage() {
   const [isCoachPlannedTraining, setIsCoachPlannedTraining] = useState(false);
   const [linkedEventDurationMinutes, setLinkedEventDurationMinutes] = useState<number | null>(null);
   const [nonPerformanceDuration, setNonPerformanceDuration] = useState<string>("");
+  const [attendanceStatus, setAttendanceStatus] = useState<"expected" | "present" | "absent" | "excused" | null>(null);
 
   // sensations 1..6
   const [motivation, setMotivation] = useState<string>("");
@@ -113,6 +121,7 @@ export default function PlayerTrainingEditPage() {
 
   // items
   const [items, setItems] = useState<TrainingItemDraft[]>([]);
+  const [plannedStructureItems, setPlannedStructureItems] = useState<EventStructureItemRow[]>([]);
 
   const normalizedSessionType: SessionType = isCoachPlannedTraining ? "club" : sessionType;
 
@@ -156,11 +165,13 @@ export default function PlayerTrainingEditPage() {
     if (Number.isNaN(dt.getTime())) return false;
     return dt.getTime() < nowTs;
   }, [normalizedSessionType, startAt, nowTs]);
+  const attendanceBlocked = attendanceStatus === "absent" || attendanceStatus === "excused";
 
-  const evaluationDisabled = busy || !isClubSessionPast || !performanceEnabled;
+  const evaluationDisabled = busy || !isClubSessionPast || !performanceEnabled || attendanceBlocked;
 
   const canSave = useMemo(() => {
     if (busy) return false;
+    if (attendanceBlocked) return false;
     if (!userId) return false;
     if (!sessionId) return false;
     if (!startAt) return false;
@@ -185,7 +196,7 @@ export default function PlayerTrainingEditPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, normalizedSessionType, clubIdForTraining, items]);
+  }, [busy, attendanceBlocked, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, normalizedSessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
@@ -280,6 +291,17 @@ export default function PlayerTrainingEditPage() {
       setIsCoachPlannedTraining(Boolean(sess.club_event_id));
       setNonPerformanceDuration(typeof sess.total_minutes === "number" && sess.total_minutes > 0 ? String(sess.total_minutes) : "");
       if (sess.club_event_id) {
+        const attRes = await supabase
+          .from("club_event_attendees")
+          .select("status")
+          .eq("event_id", sess.club_event_id)
+          .eq("player_id", uid)
+          .maybeSingle();
+        if (!attRes.error) {
+          setAttendanceStatus((attRes.data?.status ?? null) as "expected" | "present" | "absent" | "excused" | null);
+        } else {
+          setAttendanceStatus(null);
+        }
         const evRes = await supabase
           .from("club_events")
           .select("duration_minutes")
@@ -291,8 +313,31 @@ export default function PlayerTrainingEditPage() {
         } else {
           setLinkedEventDurationMinutes(null);
         }
+
+        const playerStructRes = await supabase
+          .from("club_event_player_structure_items")
+          .select("category,minutes,note,position")
+          .eq("event_id", sess.club_event_id)
+          .eq("player_id", uid)
+          .order("position", { ascending: true });
+        if (!playerStructRes.error && (playerStructRes.data ?? []).length > 0) {
+          setPlannedStructureItems((playerStructRes.data ?? []) as EventStructureItemRow[]);
+        } else {
+          const eventStructRes = await supabase
+            .from("club_event_structure_items")
+            .select("category,minutes,note,position")
+            .eq("event_id", sess.club_event_id)
+            .order("position", { ascending: true });
+          if (!eventStructRes.error) {
+            setPlannedStructureItems((eventStructRes.data ?? []) as EventStructureItemRow[]);
+          } else {
+            setPlannedStructureItems([]);
+          }
+        }
       } else {
+        setAttendanceStatus(null);
         setLinkedEventDurationMinutes(null);
+        setPlannedStructureItems([]);
       }
 
       const cid = (sess.club_event_id ? "club" : sess.session_type) === "club" ? (sess.club_id ?? "") : "";
@@ -341,6 +386,17 @@ export default function PlayerTrainingEditPage() {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
+  function copyPlannedStructure() {
+    if (busy || plannedStructureItems.length === 0) return;
+    setItems(
+      plannedStructureItems.map((it) => ({
+        category: String(it.category ?? ""),
+        minutes: String(it.minutes ?? ""),
+        note: String(it.note ?? "").trim(),
+      }))
+    );
+  }
+
   function setType(next: SessionType) {
     setSessionType(next);
     if (next === "club") {
@@ -360,6 +416,17 @@ export default function PlayerTrainingEditPage() {
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
       setError(t("roundsNew.error.invalidDate"));
+      setBusy(false);
+      return;
+    }
+    if (attendanceBlocked) {
+      setError(
+        pickLocaleText(
+          locale,
+          "Tu ne peux pas évaluer cet entraînement car ton statut est absent.",
+          "You cannot evaluate this training because your attendance status is absent."
+        )
+      );
       setBusy(false);
       return;
     }
@@ -461,8 +528,27 @@ export default function PlayerTrainingEditPage() {
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {pickLocaleText(locale, "Date, lieu et type d'entrainement", "Date, place and training type")}
+                  {pickLocaleText(locale, "Date, lieu et type d'entraînement", "Date, place and training type")}
                 </div>
+                {attendanceBlocked ? (
+                  <div
+                    style={{
+                      border: "1px solid rgba(239,68,68,0.18)",
+                      background: "rgba(239,68,68,0.08)",
+                      color: "rgba(127,29,29,1)",
+                      borderRadius: 12,
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 900,
+                    }}
+                  >
+                    {pickLocaleText(
+                      locale,
+                      "Tu es indiqué absent sur cet entraînement. L'évaluation joueur est désactivée.",
+                      "You are marked absent for this training. Player evaluation is disabled."
+                    )}
+                  </div>
+                ) : null}
 
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
@@ -609,9 +695,59 @@ export default function PlayerTrainingEditPage() {
                 </div>
               </div>
 
+              {performanceEnabled && isCoachPlannedTraining ? (
+              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>
+                  {pickLocaleText(locale, "Structure planifiée", "Planned structure")}
+                </div>
+                <div
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.88)",
+                    padding: 10,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  {plannedStructureItems.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {pickLocaleText(locale, "Non saisi.", "Not entered.")}
+                    </div>
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                      {plannedStructureItems.map((it, idx) => {
+                        const label = TRAINING_CATEGORIES.find((c) => c.value === it.category)?.label ?? it.category;
+                        const extra = String(it.note ?? "").trim();
+                        return (
+                          <li key={`planned-struct-edit-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                            {label} — {it.minutes} min
+                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              ) : null}
+
               {performanceEnabled ? (
               <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
+                  {plannedStructureItems.length > 0 ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={copyPlannedStructure}
+                      disabled={busy}
+                      style={{ minHeight: 34, fontWeight: 900 }}
+                    >
+                      {pickLocaleText(locale, "Copier la structure planifiée", "Copy planned structure")}
+                    </button>
+                  ) : null}
+                </div>
 
                 {items.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>

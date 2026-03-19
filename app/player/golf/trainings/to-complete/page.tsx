@@ -27,6 +27,7 @@ type SessionItemRow = {
 
 type EventAttendeeRow = {
   event_id: string | null;
+  status: "expected" | "present" | "absent" | "excused" | null;
 };
 
 type ClubNameRow = {
@@ -116,6 +117,7 @@ export default function PlayerTrainingsToCompletePage() {
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [eventById, setEventById] = useState<Record<string, PlannedEventRow>>({});
+  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   useEffect(() => {
@@ -131,6 +133,7 @@ export default function PlayerTrainingsToCompletePage() {
           setClubNameById({});
           setGroupNameById({});
           setEventById({});
+          setAttendeeStatusByEventId({});
           setLoading(false);
           return;
         }
@@ -169,17 +172,6 @@ export default function PlayerTrainingsToCompletePage() {
         }
 
         const nowTs = Date.now();
-        const incompletePastSessions: IncompleteSession[] = sessions
-          .filter((s) => new Date(s.start_at).getTime() < nowTs)
-          .filter((s) => !completeSessionIds.has(s.id))
-          .map((s) => ({
-            kind: "session",
-            id: s.id,
-            starts_at: s.start_at,
-            club_event_id: s.club_event_id,
-            location_text: s.location_text ?? null,
-          }));
-
         const completedEventIds = new Set(
           sessions
             .filter((s) => completeSessionIds.has(s.id))
@@ -192,9 +184,32 @@ export default function PlayerTrainingsToCompletePage() {
 
         const aRes = await supabase
           .from("club_event_attendees")
-          .select("event_id")
+          .select("event_id,status")
           .eq("player_id", uid);
         if (aRes.error) throw new Error(aRes.error.message);
+        const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+        ((aRes.data ?? []) as EventAttendeeRow[]).forEach((row) => {
+          const eventId = String(row.event_id ?? "").trim();
+          if (!eventId) return;
+          attendanceMap[eventId] = row.status ?? null;
+        });
+        setAttendeeStatusByEventId(attendanceMap);
+
+        const incompletePastSessions: IncompleteSession[] = sessions
+          .filter((s) => new Date(s.start_at).getTime() < nowTs)
+          .filter((s) => {
+            if (!s.club_event_id) return true;
+            const status = attendanceMap[s.club_event_id] ?? null;
+            return status !== "absent" && status !== "excused";
+          })
+          .filter((s) => !completeSessionIds.has(s.id))
+          .map((s) => ({
+            kind: "session",
+            id: s.id,
+            starts_at: s.start_at,
+            club_event_id: s.club_event_id,
+            location_text: s.location_text ?? null,
+          }));
         const eventIds = Array.from(
           new Set(
             ((aRes.data ?? []) as EventAttendeeRow[])
@@ -270,6 +285,10 @@ export default function PlayerTrainingsToCompletePage() {
           .filter((ev) => ev.status === "scheduled")
           .filter((ev) => ev.event_type === "training")
           .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
+          .filter((ev) => {
+            const status = attendanceMap[ev.id] ?? null;
+            return status !== "absent" && status !== "excused";
+          })
           .filter((ev) => !completedEventIds.has(ev.id))
           .filter((ev) => !eventIdsWithAnySession.has(ev.id))
           .map((ev) => ({
@@ -294,6 +313,7 @@ export default function PlayerTrainingsToCompletePage() {
         setClubNameById({});
         setGroupNameById({});
         setEventById({});
+        setAttendeeStatusByEventId({});
       } finally {
         setLoading(false);
       }

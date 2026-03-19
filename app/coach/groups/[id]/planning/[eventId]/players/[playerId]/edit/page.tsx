@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -66,6 +66,20 @@ type PlayerPlannedStructureItemRow = {
   minutes: number;
   note: string | null;
   position: number | null;
+};
+type PlayerDashboardDocument = {
+  id: string;
+  organization_id: string;
+  player_id: string;
+  uploaded_by: string;
+  uploaded_by_name?: string | null;
+  file_name: string;
+  storage_path: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  coach_only: boolean;
+  created_at: string;
+  public_url: string;
 };
 
 function fmtDateTime(iso: string) {
@@ -172,6 +186,12 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
   const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
   const [sessionItems, setSessionItems] = useState<TrainingItemRow[]>([]);
+  const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState("");
+  const docFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
     event_id: eventId,
@@ -374,6 +394,122 @@ export default function CoachEventPlayerFeedbackEditPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId, playerId]);
+
+  async function loadDocuments() {
+    if (!playerId) return;
+    setLoadingDocuments(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Load documents error"));
+      setDocuments((json?.documents ?? []) as PlayerDashboardDocument[]);
+    } catch {
+      setDocuments([]);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerId]);
+
+  function openDocumentPicker() {
+    if (uploadingDocument) return;
+    docFileInputRef.current?.click();
+  }
+
+  function onPickDocument(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    setDocFile(file);
+    setDocName(file?.name ?? "");
+  }
+
+  async function uploadDocument() {
+    if (!docFile || !playerId || !event?.club_id || uploadingDocument) return;
+    const finalDocName = docName.trim();
+    if (!finalDocName) {
+      setError("Veuillez saisir un nom de document.");
+      return;
+    }
+    setUploadingDocument(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+
+      const prepareRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "prepare",
+          organization_id: event.club_id,
+          coach_only: false,
+          original_name: docFile.name,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
+      });
+      const prepareJson = await prepareRes.json().catch(() => ({}));
+      if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
+
+      const uploadPath = String(prepareJson?.path ?? "").trim();
+      const uploadToken = String(prepareJson?.token ?? "").trim();
+      if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
+
+      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(uploadPath, uploadToken, docFile, {
+        upsert: false,
+        contentType: docFile.type || "application/octet-stream",
+      });
+      if (uploadRes.error) throw new Error(uploadRes.error.message);
+
+      const finalizeRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "finalize",
+          organization_id: event.club_id,
+          coach_only: false,
+          storage_path: uploadPath,
+          original_name: docFile.name,
+          file_name: finalDocName,
+          mime_type: docFile.type,
+          size_bytes: docFile.size,
+        }),
+      });
+      const json = await finalizeRes.json().catch(() => ({}));
+      if (!finalizeRes.ok) throw new Error(String(json?.error ?? "Upload failed"));
+
+      const created = json?.document as PlayerDashboardDocument | undefined;
+      if (created?.id) {
+        setDocuments((prev) => [created, ...prev]);
+      } else {
+        await loadDocuments();
+      }
+      setDocFile(null);
+      setDocName("");
+      if (docFileInputRef.current) docFileInputRef.current.value = "";
+    } catch (e: any) {
+      setError(e?.message ?? "Upload failed");
+    } finally {
+      setUploadingDocument(false);
+    }
+  }
 
   const canSave = useMemo(() => {
     if (busy || loading) return false;
@@ -626,6 +762,119 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   )}
                 </div>
               ) : null}
+
+              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+
+                <input
+                  ref={docFileInputRef}
+                  type="file"
+                  onChange={onPickDocument}
+                  style={{ display: "none" }}
+                />
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button type="button" className="btn" onClick={openDocumentPicker} disabled={uploadingDocument}>
+                      Choisir un fichier
+                    </button>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
+                      }}
+                    >
+                      {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                    </span>
+                  </div>
+
+                  <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
+                    <span style={fieldLabelStyle}>Nom du document</span>
+                    <input
+                      className="input"
+                      value={docName}
+                      onChange={(e) => setDocName(e.target.value)}
+                      placeholder="Nom du document"
+                      maxLength={180}
+                    />
+                  </label>
+
+                  <div>
+                    <button
+                      className="btn btn-primary btn-upload-green"
+                      type="button"
+                      onClick={() => void uploadDocument()}
+                      style={{
+                        opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
+                        pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
+                      }}
+                    >
+                      <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                      Upload
+                    </button>
+                  </div>
+                </div>
+
+                {loadingDocuments ? (
+                  <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                    <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+                  </div>
+                ) : documents.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {documents.map((doc) => {
+                      const uploader = String(doc.uploaded_by_name ?? "").trim() || String(doc.uploaded_by ?? "").slice(0, 8);
+                      return (
+                        <div
+                          key={doc.id}
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 12,
+                            background: "rgba(255,255,255,0.86)",
+                            padding: "10px 12px",
+                            display: "grid",
+                            gap: 6,
+                            boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
+                            <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+                              <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>
+                                {doc.file_name}
+                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
+                                Par {uploader} • {new Intl.DateTimeFormat("fr-CH", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                }).format(new Date(doc.created_at))}
+                              </div>
+                            </div>
+                            <a
+                              href={doc.public_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn"
+                              style={{ whiteSpace: "nowrap" }}
+                            >
+                              Ouvrir
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
