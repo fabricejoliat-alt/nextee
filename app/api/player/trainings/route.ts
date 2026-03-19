@@ -47,6 +47,18 @@ export async function GET(req: NextRequest) {
         effectiveUserId = String(linkRes.data.player_id);
       }
     }
+    if (isParent && effectiveUserId === viewerUserId) {
+      const childrenRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("player_id,is_primary")
+        .eq("guardian_user_id", viewerUserId)
+        .or("can_view.is.null,can_view.eq.true")
+        .order("is_primary", { ascending: false })
+        .limit(1);
+      if (childrenRes.error) return NextResponse.json({ error: childrenRes.error.message }, { status: 400 });
+      const fallbackChildId = String(childrenRes.data?.[0]?.player_id ?? "").trim();
+      if (fallbackChildId) effectiveUserId = fallbackChildId;
+    }
 
     const [perfRes, profileRes, sessionsRes, attendeeRes, competitionRes] = await Promise.all([
       supabaseAdmin

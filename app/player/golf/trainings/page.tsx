@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
@@ -623,13 +624,17 @@ export default function TrainingsListPage() {
     setError(null);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
+      const [{ data: sessionData }, ctx] = await Promise.all([
+        supabase.auth.getSession(),
+        resolveEffectivePlayerContext(),
+      ]);
       const token = sessionData.session?.access_token ?? "";
       if (!token) throw new Error("Session invalide.");
 
       const query = new URLSearchParams();
       const childId = String(searchParams.get("child_id") ?? "").trim();
-      if (childId) query.set("child_id", childId);
+      const requestedChildId = childId || (ctx.viewerUserId !== ctx.effectiveUserId ? ctx.effectiveUserId : "");
+      if (requestedChildId) query.set("child_id", requestedChildId);
 
       const res = await fetch(`/api/player/trainings${query.toString() ? `?${query.toString()}` : ""}`, {
         method: "GET",
