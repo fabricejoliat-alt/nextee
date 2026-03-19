@@ -78,6 +78,7 @@ type PlayerDashboardDocument = {
   mime_type: string | null;
   size_bytes: number | null;
   coach_only: boolean;
+  club_event_id: string | null;
   created_at: string;
   public_url: string;
 };
@@ -191,6 +192,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docName, setDocName] = useState("");
+  const [docCoachOnly, setDocCoachOnly] = useState(false);
+  const [renamingDocumentId, setRenamingDocumentId] = useState("");
+  const [deletingDocumentId, setDeletingDocumentId] = useState("");
   const docFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
@@ -402,7 +406,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token) throw new Error("Missing token");
-      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
+      const query = eventId ? `?club_event_id=${encodeURIComponent(eventId)}` : "";
+      const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents${query}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
@@ -420,7 +425,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
   useEffect(() => {
     void loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId]);
+  }, [playerId, eventId]);
 
   function openDocumentPicker() {
     if (uploadingDocument) return;
@@ -456,7 +461,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
         body: JSON.stringify({
           action: "prepare",
           organization_id: event.club_id,
-          coach_only: false,
+          coach_only: docCoachOnly,
+          club_event_id: eventId,
           original_name: docFile.name,
           mime_type: docFile.type,
           size_bytes: docFile.size,
@@ -484,7 +490,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
         body: JSON.stringify({
           action: "finalize",
           organization_id: event.club_id,
-          coach_only: false,
+          coach_only: docCoachOnly,
+          club_event_id: eventId,
           storage_path: uploadPath,
           original_name: docFile.name,
           file_name: finalDocName,
@@ -503,11 +510,100 @@ export default function CoachEventPlayerFeedbackEditPage() {
       }
       setDocFile(null);
       setDocName("");
+      setDocCoachOnly(false);
       if (docFileInputRef.current) docFileInputRef.current.value = "";
     } catch (e: any) {
       setError(e?.message ?? "Upload failed");
     } finally {
       setUploadingDocument(false);
+    }
+  }
+
+  async function renameDocument(doc: PlayerDashboardDocument) {
+    if (!meId || meId !== String(doc.uploaded_by ?? "")) return;
+    const currentName = String(doc.file_name ?? "").trim();
+    const nextName = window.prompt("Nouveau nom du document", currentName)?.trim() ?? "";
+    if (!nextName || nextName === currentName) return;
+    setRenamingDocumentId(doc.id);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(doc.id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ file_name: nextName }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Rename failed"));
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Rename failed");
+    } finally {
+      setRenamingDocumentId("");
+    }
+  }
+
+  async function toggleDocumentCoachOnly(doc: PlayerDashboardDocument) {
+    if (!meId || meId !== String(doc.uploaded_by ?? "")) return;
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token || !playerId) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(doc.id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ coach_only: !doc.coach_only }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Update failed"));
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === doc.id ? { ...d, coach_only: Boolean(json?.document?.coach_only ?? !doc.coach_only) } : d
+        )
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Update failed");
+    }
+  }
+
+  async function deleteDocument(doc: PlayerDashboardDocument) {
+    if (!doc?.id || deletingDocumentId || !meId || meId !== String(doc.uploaded_by ?? "")) return;
+    const ok = window.confirm(`Supprimer le document "${doc.file_name}" ?`);
+    if (!ok) return;
+    setDeletingDocumentId(doc.id);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Missing token");
+      const res = await fetch(
+        `/api/coach/players/${encodeURIComponent(playerId)}/documents/${encodeURIComponent(doc.id)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    } finally {
+      setDeletingDocumentId("");
     }
   }
 
@@ -807,6 +903,25 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     />
                   </label>
 
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "rgba(0,0,0,0.72)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={docCoachOnly}
+                      onChange={(e) => setDocCoachOnly(e.target.checked)}
+                      disabled={uploadingDocument}
+                    />
+                    Document visible uniquement par les coachs
+                  </label>
+
                   <div>
                     <button
                       className="btn btn-primary btn-upload-green"
@@ -833,6 +948,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   <div style={{ display: "grid", gap: 10 }}>
                     {documents.map((doc) => {
                       const uploader = String(doc.uploaded_by_name ?? "").trim() || String(doc.uploaded_by ?? "").slice(0, 8);
+                      const canManage = meId === String(doc.uploaded_by ?? "");
                       return (
                         <div
                           key={doc.id}
@@ -850,6 +966,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
                             <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
                               <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>
                                 {doc.file_name}
+                              </div>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                <span className="pill-soft">Lié à cet entraînement</span>
+                                {doc.coach_only ? <span className="pill-soft">Coach only</span> : null}
                               </div>
                               <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
                                 Par {uploader} • {new Intl.DateTimeFormat("fr-CH", {
@@ -869,6 +989,34 @@ export default function CoachEventPlayerFeedbackEditPage() {
                               Ouvrir
                             </a>
                           </div>
+                          {canManage ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => void renameDocument(doc)}
+                                disabled={renamingDocumentId === doc.id || deletingDocumentId === doc.id}
+                              >
+                                Renommer
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => void toggleDocumentCoachOnly(doc)}
+                                disabled={renamingDocumentId === doc.id || deletingDocumentId === doc.id}
+                              >
+                                {doc.coach_only ? "Rendre visible au joueur" : "Passer en coach only"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => void deleteDocument(doc)}
+                                disabled={deletingDocumentId === doc.id || renamingDocumentId === doc.id}
+                              >
+                                Supprimer
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}

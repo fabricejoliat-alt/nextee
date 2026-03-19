@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const url = new URL(req.url);
     const requestedPlayerId = String(url.searchParams.get("player_id") ?? "").trim();
+    const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
     const playerId = requestedPlayerId || callerId;
     if (!playerId) return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
 
@@ -50,13 +51,14 @@ export async function GET(req: NextRequest) {
       if (!parentLinkRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const docsRes = await supabaseAdmin
+    let docsQuery = supabaseAdmin
       .from("player_dashboard_documents")
       .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
       .eq("coach_only", false)
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .order("created_at", { ascending: false });
+    if (requestedEventId) docsQuery = docsQuery.eq("club_event_id", requestedEventId);
+    const docsRes = await docsQuery.limit(200);
     if (docsRes.error) return NextResponse.json({ error: docsRes.error.message }, { status: 400 });
 
     const uploaderIds = Array.from(

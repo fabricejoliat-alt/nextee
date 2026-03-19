@@ -65,6 +65,15 @@ type CoachProfileLite = {
   last_name: string | null;
   avatar_url: string | null;
 };
+type PlayerTrainingDocument = {
+  id: string;
+  file_name: string;
+  coach_only: boolean;
+  club_event_id: string | null;
+  created_at: string;
+  public_url: string;
+  uploaded_by_name?: string | null;
+};
 
 function effectiveSessionType(session: SessionDbRow): SessionDbRow["session_type"] {
   if (session.club_event_id) return "club";
@@ -181,6 +190,7 @@ export default function PlayerTrainingDetailPage() {
   // ✅ coach feedback visible to player
   const [coachFeedback, setCoachFeedback] = useState<CoachFeedbackRow[]>([]);
   const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
+  const [linkedDocuments, setLinkedDocuments] = useState<PlayerTrainingDocument[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -234,20 +244,31 @@ export default function PlayerTrainingDetailPage() {
           const { data: sessionData } = await supabase.auth.getSession();
           const token = sessionData.session?.access_token ?? "";
           const query = new URLSearchParams({ event_id: s.club_event_id, child_id: uid });
-          const eventRes = await fetch(`/api/player/training-event?${query.toString()}`, {
-            method: "GET",
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            cache: "no-store",
-          });
+          const docsQuery = new URLSearchParams({ player_id: uid, club_event_id: s.club_event_id });
+          const [eventRes, docsRes] = await Promise.all([
+            fetch(`/api/player/training-event?${query.toString()}`, {
+              method: "GET",
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              cache: "no-store",
+            }),
+            fetch(`/api/player/documents?${docsQuery.toString()}`, {
+              method: "GET",
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              cache: "no-store",
+            }),
+          ]);
           const eventJson = await eventRes.json().catch(() => ({}));
+          const docsJson = await docsRes.json().catch(() => ({}));
 
           if (!eventRes.ok) throw new Error(String(eventJson?.error ?? "Impossible de charger l'entraînement lié."));
+          if (!docsRes.ok) throw new Error(String(docsJson?.error ?? "Impossible de charger les documents liés."));
 
           setPlannedItems((eventJson?.plannedStructureItems ?? []) as EventStructureItemRow[]);
           setGroupName(String(eventJson?.groupName ?? "").trim());
           if (String(eventJson?.clubName ?? "").trim()) {
             setClubName(String(eventJson.clubName).trim());
           }
+          setLinkedDocuments((docsJson?.documents ?? []) as PlayerTrainingDocument[]);
 
           const fb = (eventJson?.coachFeedback ?? []) as CoachFeedbackRow[];
           setCoachFeedback(fb);
@@ -265,10 +286,12 @@ export default function PlayerTrainingDetailPage() {
         setGroupName("");
         setPlannedItems([]);
         setPerformanceEnabled(false);
+        setLinkedDocuments([]);
       }
         if (!s.club_event_id) {
           setCoachFeedback([]);
           setCoachProfilesById({});
+          setLinkedDocuments([]);
         }
 
         setLoading(false);
@@ -282,6 +305,7 @@ export default function PlayerTrainingDetailPage() {
         setGroupName("");
         setCoachFeedback([]);
         setCoachProfilesById({});
+        setLinkedDocuments([]);
         setLoading(false);
       }
     })();
@@ -504,6 +528,53 @@ export default function PlayerTrainingDetailPage() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {session.club_event_id ? (
+                <div className="glass-card" style={{ borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
+                  <div className="card-title" style={{ marginBottom: 0 }}>
+                    {pickLocaleText(locale, "Documents liés à l'entraînement", "Documents linked to this training")}
+                  </div>
+
+                  {linkedDocuments.length === 0 ? (
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      {pickLocaleText(locale, "Aucun document lié à cet entraînement.", "No document linked to this training.")}
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {linkedDocuments.map((doc) => (
+                        <div
+                          key={doc.id}
+                          style={{
+                            border: "1px solid rgba(0,0,0,0.10)",
+                            borderRadius: 12,
+                            background: "#fff",
+                            padding: "10px 12px",
+                            display: "flex",
+                            alignItems: "start",
+                            justifyContent: "space-between",
+                            gap: 12,
+                          }}
+                        >
+                          <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{doc.file_name}</div>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
+                              {doc.uploaded_by_name ? `${doc.uploaded_by_name} • ` : ""}
+                              {new Intl.DateTimeFormat("fr-CH", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              }).format(new Date(doc.created_at))}
+                            </div>
+                          </div>
+                          <a href={doc.public_url} target="_blank" rel="noreferrer" className="btn" style={{ whiteSpace: "nowrap" }}>
+                            {pickLocaleText(locale, "Ouvrir", "Open")}
+                          </a>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
