@@ -231,7 +231,7 @@ const TRAINING_CATEGORY_LABELS: Record<string, string> = {
 };
 function buildMinuteOptions() {
   const opts: number[] = [];
-  for (let m = 5; m <= 120; m += 5) opts.push(m);
+  for (let m = 5; m <= 300; m += 5) opts.push(m);
   return opts;
 }
 const MINUTE_OPTIONS = buildMinuteOptions();

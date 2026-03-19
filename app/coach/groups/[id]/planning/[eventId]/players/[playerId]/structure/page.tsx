@@ -111,7 +111,7 @@ export default function CoachPlayerStructurePage() {
     for (const it of items) {
       if (!it.category) return false;
       const v = Number(it.minutes);
-      if (!Number.isFinite(v) || v <= 0 || v > 120 || v % 5 !== 0) return false;
+      if (!Number.isFinite(v) || v <= 0 || v > 300 || v % 5 !== 0) return false;
     }
     return true;
   }, [busy, loading, items]);

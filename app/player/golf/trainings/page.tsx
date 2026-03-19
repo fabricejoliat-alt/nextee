@@ -726,89 +726,6 @@ export default function TrainingsListPage() {
       if (compRes.error) throw new Error(compRes.error.message);
       setCompetitionEvents((compRes.data ?? []) as PlayerActivityEventRow[]);
 
-      // clubs names (sessions + all attendee events)
-      const clubIds = Array.from(
-        new Set(
-          [
-            ...list.map((s) => uuidOrNull(s.club_id)),
-            ...events.map((e) => uuidOrNull(e.club_id)),
-          ].filter((x): x is string => typeof x === "string" && x.length > 0)
-        )
-      );
-
-      if (clubIds.length > 0) {
-        const cRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
-        if (!cRes.error) {
-          const map: Record<string, string> = {};
-          (cRes.data ?? []).forEach((c: ClubRow) => {
-            map[c.id] = (c.name ?? t("common.club")) as string;
-          });
-          setClubNameById(map);
-        } else {
-          setClubNameById({});
-        }
-      } else {
-        setClubNameById({});
-      }
-
-      // group names (via server endpoint to avoid coach_groups RLS blocking on client)
-      const groupIds = Array.from(
-        new Set(events.map((e) => uuidOrNull(e.group_id)).filter((x): x is string => typeof x === "string" && x.length > 0))
-      );
-      if (groupIds.length > 0) {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token ?? "";
-        if (!token) {
-          setGroupNameById({});
-        } else {
-          const query = new URLSearchParams({
-            ids: groupIds.join(","),
-            child_id: uid,
-          });
-          const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
-            method: "GET",
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          });
-          const gJson = await gRes.json().catch(() => ({}));
-          if (!gRes.ok) {
-            setGroupNameById({});
-          } else {
-            const map: Record<string, string> = {};
-            ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
-              map[g.id] = g.name ?? "Groupe";
-            });
-            setGroupNameById(map);
-          }
-        }
-      } else {
-        setGroupNameById({});
-      }
-
-      // items for all sessions (needed in past list)
-      const sessionIds = list.map((s) => s.id);
-      if (sessionIds.length > 0) {
-        const itRes = await supabase
-          .from("training_session_items")
-          .select("session_id,category,minutes,note,other_detail,created_at")
-          .in("session_id", sessionIds)
-          .order("created_at", { ascending: true });
-
-        if (!itRes.error) {
-          const map: Record<string, SessionItemRow[]> = {};
-          (itRes.data ?? []).forEach((r: any) => {
-            const sid = r.session_id as string;
-            if (!map[sid]) map[sid] = [];
-            map[sid].push(r as SessionItemRow);
-          });
-          setItemsBySessionId(map);
-        } else {
-          setItemsBySessionId({});
-        }
-      } else {
-        setItemsBySessionId({});
-      }
-
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : t("common.errorLoading");
       setError(message);
@@ -866,6 +783,202 @@ export default function TrainingsListPage() {
   useEffect(() => {
     setPage(1);
   }, [filterMode, plannedTypeFilter]);
+
+  useEffect(() => {
+    if (loading || !effectiveUserId || pagedItems.length === 0) return;
+    let cancelled = false;
+
+    (async () => {
+      const visibleSessionIds = Array.from(
+        new Set(
+          pagedItems
+            .filter((item): item is Extract<DisplayItem, { kind: "session" }> => item.kind === "session")
+            .map((item) => item.session.id)
+            .filter(Boolean)
+        )
+      );
+
+      const visibleEventIds = Array.from(
+        new Set(
+          pagedItems
+            .filter((item): item is Extract<DisplayItem, { kind: "event" }> => item.kind === "event")
+            .map((item) => item.event.id)
+            .filter(Boolean)
+        )
+      );
+
+      const visibleClubIds = Array.from(
+        new Set(
+          pagedItems.flatMap((item) => {
+            if (item.kind === "event") return [uuidOrNull(item.event.club_id)];
+            if (item.kind === "session") {
+              const linkedEvent = item.session.club_event_id
+                ? attendeeEvents.find((ev) => ev.id === item.session.club_event_id) ?? null
+                : null;
+              return [uuidOrNull(item.session.club_id), uuidOrNull(linkedEvent?.club_id)];
+            }
+            return [];
+          }).filter((x): x is string => typeof x === "string" && x.length > 0)
+        )
+      );
+
+      const visibleGroupIds = Array.from(
+        new Set(
+          pagedItems.flatMap((item) => {
+            if (item.kind === "event") return [uuidOrNull(item.event.group_id)];
+            if (item.kind === "session") {
+              const linkedEvent = item.session.club_event_id
+                ? attendeeEvents.find((ev) => ev.id === item.session.club_event_id) ?? null
+                : null;
+              return [uuidOrNull(linkedEvent?.group_id)];
+            }
+            return [];
+          }).filter((x): x is string => typeof x === "string" && x.length > 0)
+        )
+      );
+
+      const missingClubIds = visibleClubIds.filter((id) => !clubNameById[id]);
+      const missingGroupIds = visibleGroupIds.filter((id) => !groupNameById[id]);
+      const missingSessionIds = visibleSessionIds.filter((id) => !(id in itemsBySessionId));
+      const missingEventStructureIds = visibleEventIds.filter((id) => !(id in eventStructureByEventId));
+
+      const tasks: Promise<void>[] = [];
+
+      if (missingClubIds.length > 0) {
+        tasks.push(
+          (async () => {
+            const cRes = await supabase.from("clubs").select("id,name").in("id", missingClubIds);
+            if (cancelled || cRes.error) return;
+            setClubNameById((prev) => {
+              const next = { ...prev };
+              (cRes.data ?? []).forEach((c: ClubRow) => {
+                next[c.id] = (c.name ?? t("common.club")) as string;
+              });
+              return next;
+            });
+          })()
+        );
+      }
+
+      if (missingGroupIds.length > 0) {
+        tasks.push(
+          (async () => {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token ?? "";
+            if (!token || cancelled) return;
+            const query = new URLSearchParams({
+              ids: missingGroupIds.join(","),
+              child_id: effectiveUserId,
+            });
+            const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            });
+            const gJson = await gRes.json().catch(() => ({}));
+            if (cancelled || !gRes.ok) return;
+            setGroupNameById((prev) => {
+              const next = { ...prev };
+              ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
+                next[g.id] = g.name ?? "Groupe";
+              });
+              return next;
+            });
+          })()
+        );
+      }
+
+      if (missingSessionIds.length > 0) {
+        tasks.push(
+          (async () => {
+            const itRes = await supabase
+              .from("training_session_items")
+              .select("session_id,category,minutes,note,other_detail,created_at")
+              .in("session_id", missingSessionIds)
+              .order("created_at", { ascending: true });
+            if (cancelled || itRes.error) return;
+            const fetched: Record<string, SessionItemRow[]> = {};
+            missingSessionIds.forEach((id) => {
+              fetched[id] = [];
+            });
+            (itRes.data ?? []).forEach((r: any) => {
+              const sid = String(r.session_id ?? "");
+              if (!sid) return;
+              if (!fetched[sid]) fetched[sid] = [];
+              fetched[sid].push(r as SessionItemRow);
+            });
+            setItemsBySessionId((prev) => ({ ...prev, ...fetched }));
+          })()
+        );
+      }
+
+      if (missingEventStructureIds.length > 0) {
+        tasks.push(
+          (async () => {
+            const map: Record<string, EventStructureItemRow[]> = {};
+            missingEventStructureIds.forEach((id) => {
+              map[id] = [];
+            });
+
+            const individualRes = await supabase
+              .from("club_event_player_structure_items")
+              .select("event_id,category,minutes,note,position,created_at")
+              .in("event_id", missingEventStructureIds)
+              .eq("player_id", effectiveUserId)
+              .order("position", { ascending: true })
+              .order("created_at", { ascending: true });
+
+            if (!individualRes.error) {
+              (individualRes.data ?? []).forEach((r: any) => {
+                const eid = String(r.event_id ?? "");
+                if (!eid) return;
+                if (!map[eid]) map[eid] = [];
+                map[eid].push(r as EventStructureItemRow);
+              });
+            }
+
+            const fallbackEventIds = missingEventStructureIds.filter((eid) => (map[eid]?.length ?? 0) === 0);
+            if (fallbackEventIds.length > 0) {
+              const esRes = await supabase
+                .from("club_event_structure_items")
+                .select("event_id,category,minutes,note,position,created_at")
+                .in("event_id", fallbackEventIds)
+                .order("position", { ascending: true })
+                .order("created_at", { ascending: true });
+              if (!esRes.error) {
+                (esRes.data ?? []).forEach((r: any) => {
+                  const eid = String(r.event_id ?? "");
+                  if (!eid) return;
+                  if (!map[eid]) map[eid] = [];
+                  map[eid].push(r as EventStructureItemRow);
+                });
+              }
+            }
+
+            if (!cancelled) {
+              setEventStructureByEventId((prev) => ({ ...prev, ...map }));
+            }
+          })()
+        );
+      }
+
+      await Promise.all(tasks);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loading,
+    effectiveUserId,
+    pagedItems,
+    attendeeEvents,
+    clubNameById,
+    groupNameById,
+    itemsBySessionId,
+    eventStructureByEventId,
+    t,
+  ]);
 
   useEffect(() => {
     const type = String(searchParams.get("type") ?? "").trim().toLowerCase();

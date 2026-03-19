@@ -178,7 +178,7 @@ export default function PlayerTrainingEditPage() {
       if (!it.category) return false;
       if (!it.minutes.trim()) return false;
       const v = Number(it.minutes);
-      if (!Number.isFinite(v) || v <= 0 || v > 120) return false;
+      if (!Number.isFinite(v) || v <= 0 || v > 300) return false;
       if (v % 5 !== 0) return false;
     }
 
