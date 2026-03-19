@@ -66,6 +66,11 @@ type CoachProfileLite = {
   avatar_url: string | null;
 };
 
+function effectiveSessionType(session: SessionDbRow): SessionDbRow["session_type"] {
+  if (session.club_event_id) return "club";
+  return session.session_type;
+}
+
 function fmtDateLabelNoTime(iso: string, locale: string) {
   const d = new Date(iso);
   if (locale === "en") {
@@ -214,8 +219,10 @@ export default function PlayerTrainingDetailPage() {
         if (itRes.error) throw new Error(itRes.error.message);
         setItems((itRes.data ?? []) as ItemDbRow[]);
 
+        const normalizedSessionType = effectiveSessionType(s);
+
         // club name
-        if (s.session_type === "club" && s.club_id) {
+        if (normalizedSessionType === "club" && s.club_id) {
           const cRes = await supabase.from("clubs").select("id,name").eq("id", s.club_id).maybeSingle();
           if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? t("common.club"));
           else setClubName(t("common.club"));
@@ -224,103 +231,42 @@ export default function PlayerTrainingDetailPage() {
         }
 
         if (s.club_event_id) {
-          const individualPlannedRes = await supabase
-            .from("club_event_player_structure_items")
-            .select("category,minutes,note,position")
-            .eq("event_id", s.club_event_id)
-            .eq("player_id", uid)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true });
-          if (individualPlannedRes.error) throw new Error(individualPlannedRes.error.message);
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData.session?.access_token ?? "";
+          const query = new URLSearchParams({ event_id: s.club_event_id, child_id: uid });
+          const eventRes = await fetch(`/api/player/training-event?${query.toString()}`, {
+            method: "GET",
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            cache: "no-store",
+          });
+          const eventJson = await eventRes.json().catch(() => ({}));
 
-          const individualRows = (individualPlannedRes.data ?? []) as EventStructureItemRow[];
-          if (individualRows.length > 0) {
-            setPlannedItems(individualRows);
-          } else {
-            const plannedRes = await supabase
-              .from("club_event_structure_items")
-              .select("category,minutes,note,position")
-              .eq("event_id", s.club_event_id)
-              .order("position", { ascending: true })
-              .order("created_at", { ascending: true });
-            if (!plannedRes.error) {
-              setPlannedItems((plannedRes.data ?? []) as EventStructureItemRow[]);
-            } else {
-              setPlannedItems([]);
-            }
+          if (!eventRes.ok) throw new Error(String(eventJson?.error ?? "Impossible de charger l'entraînement lié."));
+
+          setPlannedItems((eventJson?.plannedStructureItems ?? []) as EventStructureItemRow[]);
+          setGroupName(String(eventJson?.groupName ?? "").trim());
+          if (String(eventJson?.clubName ?? "").trim()) {
+            setClubName(String(eventJson.clubName).trim());
           }
 
-          const evRes = await supabase
-            .from("club_events")
-            .select("group_id")
-            .eq("id", s.club_event_id)
-            .maybeSingle();
-          const eventGroupId = String((evRes.data as { group_id?: string | null } | null)?.group_id ?? "").trim();
-          if (!evRes.error && eventGroupId) {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token ?? "";
-            if (token) {
-              const q = new URLSearchParams({ ids: eventGroupId, child_id: uid });
-              const gRes = await fetch(`/api/player/group-names?${q.toString()}`, {
-                method: "GET",
-                headers: { Authorization: `Bearer ${token}` },
-                cache: "no-store",
-              });
-              const gJson = await gRes.json().catch(() => ({}));
-              if (gRes.ok) {
-                const arr = (gJson?.groups ?? []) as Array<{ id: string; name: string | null }>;
-                const found = arr.find((g) => g.id === eventGroupId);
-                setGroupName(found?.name ?? "");
-              } else {
-                setGroupName("");
-              }
-            } else {
-              setGroupName("");
-            }
-          } else {
-            setGroupName("");
-          }
+          const fb = (eventJson?.coachFeedback ?? []) as CoachFeedbackRow[];
+          setCoachFeedback(fb);
+          const map: Record<string, CoachProfileLite> = {};
+          ((eventJson?.coachProfiles ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>).forEach((p) => {
+            map[p.id] = {
+              id: p.id,
+              first_name: p.first_name ?? null,
+              last_name: p.last_name ?? null,
+              avatar_url: p.avatar_url ?? null,
+            };
+          });
+          setCoachProfilesById(map);
         } else {
         setGroupName("");
         setPlannedItems([]);
         setPerformanceEnabled(false);
       }
-
-        // ✅ coach feedback (only visible_to_player)
-        if (s.club_event_id) {
-          const cfRes = await supabase
-            .from("club_event_coach_feedback")
-            .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-            .eq("event_id", s.club_event_id)
-            .eq("player_id", uid);
-
-          if (cfRes.error) throw new Error(cfRes.error.message);
-
-          const fb = (cfRes.data ?? []) as CoachFeedbackRow[];
-          setCoachFeedback(fb);
-
-          // profiles (no join assumption -> 2nd query)
-          const coachIds = Array.from(new Set(fb.map((r) => r.coach_id)));
-          if (coachIds.length > 0) {
-            const pRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds);
-            if (!pRes.error) {
-              const map: Record<string, CoachProfileLite> = {};
-              (pRes.data ?? []).forEach((p: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }) => {
-                map[p.id] = {
-                  id: p.id,
-                  first_name: p.first_name ?? null,
-                  last_name: p.last_name ?? null,
-                  avatar_url: p.avatar_url ?? null,
-                };
-              });
-              setCoachProfilesById(map);
-            } else {
-              setCoachProfilesById({});
-            }
-          } else {
-            setCoachProfilesById({});
-          }
-        } else {
+        if (!s.club_event_id) {
           setCoachFeedback([]);
           setCoachProfilesById({});
         }
@@ -379,6 +325,7 @@ export default function PlayerTrainingDetailPage() {
           ) : (
             <div style={{ display: "grid", gap: 12 }}>
               {(() => {
+                const normalizedSessionType = effectiveSessionType(session);
                 const durationFromItems = items.reduce((sum, it) => sum + Math.max(0, Number(it.minutes ?? 0)), 0);
                 const sessionDuration = Math.max(1, Number(session.total_minutes ?? 0) || durationFromItems || 0);
                 const sessionEnd = new Date(new Date(session.start_at).getTime() + sessionDuration * 60_000).toISOString();
@@ -386,9 +333,9 @@ export default function PlayerTrainingDetailPage() {
                 const displayLocation = (session.location_text ?? "").trim();
                 const trainingGroupLabel = groupName || clubName || (pickLocaleText(locale, "Groupe", "Group"));
                 const sessionTitle =
-                  session.session_type === "club"
+                  normalizedSessionType === "club"
                     ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`
-                    : `${typeLabel(session.session_type, t)}`;
+                    : `${typeLabel(normalizedSessionType, t)}`;
                 return (
                   <div className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                     <div
@@ -423,7 +370,7 @@ export default function PlayerTrainingDetailPage() {
                       <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                         {sessionTitle}
                       </div>
-                      {session.session_type === "club" && clubName ? (
+                      {normalizedSessionType === "club" && clubName ? (
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
                           {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                         </div>

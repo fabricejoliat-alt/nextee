@@ -122,6 +122,11 @@ type TrainingsCoreResponse = {
   groupNameById: Record<string, string>;
 };
 
+function effectiveSessionType(session: SessionRow): SessionRow["session_type"] {
+  if (session.club_event_id) return "club";
+  return session.session_type;
+}
+
 const TRAININGS_CACHE_TTL_MS = 45_000;
 const trainingsPageCacheKey = (userId: string) => `page-cache:player-trainings:${userId}`;
 
@@ -465,8 +470,9 @@ export default function TrainingsListPage() {
       return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
     }
     if (it.kind === "session") {
-      if (plannedTypeFilter === "training") return it.session.session_type === "club";
-      return it.session.session_type === plannedTypeFilter;
+      const sessionType = effectiveSessionType(it.session);
+      if (plannedTypeFilter === "training") return sessionType === "club";
+      return sessionType === plannedTypeFilter;
     }
     return true;
   };
@@ -1725,7 +1731,8 @@ export default function TrainingsListPage() {
                   }
 
                   const s = item.session;
-                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
+                  const normalizedSessionType = effectiveSessionType(s);
+                  const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
                   const postes = itemsBySessionId[s.id] ?? [];
                   const linkedEvent = s.club_event_id
                     ? attendeeEvents.find((ev) => ev.id === s.club_event_id) ?? null
@@ -1742,7 +1749,7 @@ export default function TrainingsListPage() {
                     !linkedEvent ||
                     new Date(linkedEvent.starts_at).getTime() < nowTs;
                   const groupName = linkedEvent?.group_id ? groupNameById[linkedEvent.group_id] ?? null : null;
-                  const isArchivedTrainingSession = s.session_type === "club" && isArchiveGroupName(groupName);
+                  const isArchivedTrainingSession = normalizedSessionType === "club" && isArchiveGroupName(groupName);
                   const trainingGroupLabel =
                     (isArchivedTrainingSession ? null : groupName) ||
                     clubName ||
@@ -1755,9 +1762,9 @@ export default function TrainingsListPage() {
                   const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
                   const canDeleteSession = !s.club_event_id;
                   const sessionTitle =
-                    s.session_type === "club"
+                    normalizedSessionType === "club"
                       ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`
-                      : `${typeLabel(s.session_type, pickLocaleText(locale, "fr", "en"))}`;
+                      : `${typeLabel(normalizedSessionType, pickLocaleText(locale, "fr", "en"))}`;
 
                   return (
                     <div
@@ -1826,7 +1833,7 @@ export default function TrainingsListPage() {
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                                 {sessionTitle}
                               </div>
-                              {s.session_type === "club" && clubName ? (
+                              {normalizedSessionType === "club" && clubName ? (
                                 <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
                                   {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                                 </div>

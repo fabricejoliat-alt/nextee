@@ -99,24 +99,24 @@ export default function PlayerMarketplaceHome() {
       .from("club_members")
       .select("club_id")
       .eq("user_id", uid)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+      .eq("is_active", true);
 
-    if (memRes.error || !memRes.data?.club_id) {
+    const clubIds = Array.from(
+      new Set(((memRes.data ?? []) as Array<{ club_id: string | null }>).map((row) => String(row.club_id ?? "")).filter(Boolean))
+    );
+
+    if (memRes.error || clubIds.length === 0) {
       setError(t("marketplace.noActiveClub"));
       setLoading(false);
       return;
     }
-
-    const cid = memRes.data.club_id as string;
 
     const itemsRes = await supabase
       .from("marketplace_items")
       .select(
         "id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery"
       )
-      .eq("club_id", cid)
+      .in("club_id", clubIds)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
 

@@ -584,18 +584,22 @@ export default function PlayerTrainingNewPage() {
 
       // If clubEventId provided: load planned club event and prefill
       if (clubEventId) {
-        const eRes = await supabase
-          .from("club_events")
-          .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status")
-          .eq("id", clubEventId)
-          .maybeSingle();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        const query = new URLSearchParams({ event_id: clubEventId, child_id: uid });
+        const plannedRes = await fetch(`/api/player/training-event?${query.toString()}`, {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+        });
+        const plannedJson = await plannedRes.json().catch(() => ({}));
 
-        if (eRes.error) {
-          setError(eRes.error.message);
-        } else if (eRes.data) {
-          const ev = eRes.data as ClubEventRow;
+        if (!plannedRes.ok) {
+          setError(String(plannedJson?.error ?? "Impossible de charger l'entraînement planifié."));
+        } else if (plannedJson?.event) {
+          const ev = plannedJson.event as ClubEventRow;
           setLinkedEvent(ev);
-          setLinkedGroupName("");
+          setLinkedGroupName(String(plannedJson?.groupName ?? "").trim());
           setExistingSessionId("");
 
           // ✅ force club session
@@ -613,31 +617,10 @@ export default function PlayerTrainingNewPage() {
 
           // ✅ ensure event club exists in dropdown map (even if not in memberships)
           if (ev.club_id && !clubsById[ev.club_id]) {
-            const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
-            if (!cRes.error && cRes.data) {
-              setClubsById((prev) => ({ ...prev, [ev.club_id]: cRes.data as ClubRow }));
+            const plannedClubName = String(plannedJson?.clubName ?? "").trim();
+            if (plannedClubName) {
+              setClubsById((prev) => ({ ...prev, [ev.club_id]: { id: ev.club_id as string, name: plannedClubName } }));
               if (!ids.includes(ev.club_id)) setClubIds((prev) => Array.from(new Set([...prev, ev.club_id])));
-            }
-          }
-
-          if (ev.group_id) {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token ?? "";
-            if (token) {
-              const query = new URLSearchParams({
-                ids: ev.group_id,
-                child_id: uid,
-              });
-              const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
-                method: "GET",
-                headers: { Authorization: `Bearer ${token}` },
-                cache: "no-store",
-              });
-              const gJson = await gRes.json().catch(() => ({}));
-              const groupName = String((gJson?.groups?.[0]?.name ?? "")).trim();
-              if (gRes.ok && groupName) {
-                setLinkedGroupName(groupName);
-              }
             }
           }
 
@@ -646,35 +629,19 @@ export default function PlayerTrainingNewPage() {
           setCoachOptions(opts);
           setSelectedCoachIds([]); // pas utilisé en planned
 
-          const coachFeedbackRes = await supabase
-            .from("club_event_coach_feedback")
-            .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,player_note")
-            .eq("event_id", ev.id)
-            .eq("player_id", uid);
-
-          if (!coachFeedbackRes.error) {
-            const fb = (coachFeedbackRes.data ?? []) as CoachFeedbackRow[];
+          const fb = (plannedJson?.coachFeedback ?? []) as CoachFeedbackRow[];
+          if (fb.length > 0) {
             setCoachFeedback(fb);
-            const coachIds = Array.from(new Set(fb.map((r) => r.coach_id)));
-            if (coachIds.length > 0) {
-              const cpRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds);
-              if (!cpRes.error) {
-                const map: Record<string, CoachProfileLite> = {};
-                (cpRes.data ?? []).forEach((p: any) => {
-                  map[String(p.id)] = {
-                    id: String(p.id),
-                    first_name: p.first_name ?? null,
-                    last_name: p.last_name ?? null,
-                    avatar_url: p.avatar_url ?? null,
-                  };
-                });
-                setCoachProfilesById(map);
-              } else {
-                setCoachProfilesById({});
-              }
-            } else {
-              setCoachProfilesById({});
-            }
+            const map: Record<string, CoachProfileLite> = {};
+            ((plannedJson?.coachProfiles ?? []) as any[]).forEach((p: any) => {
+              map[String(p.id)] = {
+                id: String(p.id),
+                first_name: p.first_name ?? null,
+                last_name: p.last_name ?? null,
+                avatar_url: p.avatar_url ?? null,
+              };
+            });
+            setCoachProfilesById(map);
           } else {
             setCoachFeedback([]);
             setCoachProfilesById({});
@@ -726,33 +693,7 @@ export default function PlayerTrainingNewPage() {
             }
           }
 
-          const individualStructureRes = await supabase
-            .from("club_event_player_structure_items")
-            .select("category,minutes,note,position")
-            .eq("event_id", ev.id)
-            .eq("player_id", uid)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true });
-          if (!individualStructureRes.error) {
-            const individualRows = (individualStructureRes.data ?? []) as EventStructureItemRow[];
-            if (individualRows.length > 0) {
-              setPlannedStructureItems(individualRows);
-            } else {
-              const structureRes = await supabase
-                .from("club_event_structure_items")
-                .select("category,minutes,note,position")
-                .eq("event_id", ev.id)
-                .order("position", { ascending: true })
-                .order("created_at", { ascending: true });
-              if (!structureRes.error) {
-                setPlannedStructureItems((structureRes.data ?? []) as EventStructureItemRow[]);
-              } else {
-                setPlannedStructureItems([]);
-              }
-            }
-          } else {
-            setPlannedStructureItems([]);
-          }
+          setPlannedStructureItems((plannedJson?.plannedStructureItems ?? []) as EventStructureItemRow[]);
 
           if (!prefilledFromExistingSession) {
             setItems([]);
@@ -1883,7 +1824,7 @@ export default function PlayerTrainingNewPage() {
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
 
-                  {!linkedEvent && plannedStructureItems.length > 0 ? (
+                  {plannedStructureItems.length > 0 ? (
                     <div
                       style={{
                         border: "1px solid rgba(0,0,0,0.10)",

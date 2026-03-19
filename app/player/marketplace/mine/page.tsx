@@ -74,32 +74,34 @@ export default function MarketplaceMine() {
     setLoading(true);
     setError(null);
 
-    const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+    const { viewerUserId, effectiveUserId } = await resolveEffectivePlayerContext();
 
     const memRes = await supabase
       .from("club_members")
       .select("club_id")
-      .eq("user_id", uid)
+      .eq("user_id", effectiveUserId)
       .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+      .order("club_id", { ascending: true });
 
-    if (memRes.error || !memRes.data?.club_id) {
+    const clubIds = Array.from(
+      new Set(((memRes.data ?? []) as Array<{ club_id: string | null }>).map((row) => String(row.club_id ?? "")).filter(Boolean))
+    );
+
+    if (memRes.error || clubIds.length === 0) {
       setError(memRes.error?.message ?? t("marketplace.noActiveClub"));
       setLoading(false);
       return;
     }
 
-    const cid = memRes.data.club_id as string;
-    setClubId(cid);
+    setClubId(clubIds[0] ?? "");
 
     const itemsRes = await supabase
       .from("marketplace_items")
       .select(
         "id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery"
       )
-      .eq("club_id", cid)
-      .eq("user_id", uid)
+      .in("club_id", clubIds)
+      .eq("user_id", viewerUserId)
       .order("created_at", { ascending: false });
 
     if (itemsRes.error) {

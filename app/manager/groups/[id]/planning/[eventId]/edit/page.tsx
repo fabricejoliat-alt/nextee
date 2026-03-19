@@ -907,8 +907,6 @@ export default function CoachEventEditPage() {
 
       await replaceStructureForEvent(eventId);
 
-      await syncPlayerChangesOnFuturePlannedEvents();
-
       if (hasPlayerVisibleChange && attendeeIdsSelected.length > 0 && meId) {
         const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
         if (recipientIds.length > 0) {

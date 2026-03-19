@@ -114,6 +114,8 @@ export default function PlayerTrainingEditPage() {
   // items
   const [items, setItems] = useState<TrainingItemDraft[]>([]);
 
+  const normalizedSessionType: SessionType = isCoachPlannedTraining ? "club" : sessionType;
+
   const TRAINING_CATEGORIES: { value: string; label: string }[] = useMemo(
     () => TRAINING_CATEGORY_VALUES.map((value) => ({ value, label: t(`cat.${value}`) })),
     [t]
@@ -128,14 +130,14 @@ export default function PlayerTrainingEditPage() {
 
   const effectiveTotalMinutes = useMemo(() => {
     if (performanceEnabled) return totalMinutes;
-    if (isCoachPlannedTraining && sessionType === "club") {
+    if (isCoachPlannedTraining && normalizedSessionType === "club") {
       const planned = Number(linkedEventDurationMinutes);
       if (Number.isFinite(planned) && planned > 0) return Math.round(planned);
     }
     const v = Number(nonPerformanceDuration);
     if (!Number.isFinite(v) || v <= 0) return 0;
     return Math.round(v);
-  }, [performanceEnabled, totalMinutes, nonPerformanceDuration, isCoachPlannedTraining, sessionType, linkedEventDurationMinutes]);
+  }, [performanceEnabled, totalMinutes, nonPerformanceDuration, isCoachPlannedTraining, normalizedSessionType, linkedEventDurationMinutes]);
 
   const nonPerformanceSaveLabel = useMemo(
     () =>
@@ -148,12 +150,12 @@ export default function PlayerTrainingEditPage() {
   );
 
   const isClubSessionPast = useMemo(() => {
-    if (sessionType !== "club") return true;
+    if (normalizedSessionType !== "club") return true;
     if (!startAt) return false;
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) return false;
     return dt.getTime() < nowTs;
-  }, [sessionType, startAt, nowTs]);
+  }, [normalizedSessionType, startAt, nowTs]);
 
   const evaluationDisabled = busy || !isClubSessionPast || !performanceEnabled;
 
@@ -163,10 +165,10 @@ export default function PlayerTrainingEditPage() {
     if (!sessionId) return false;
     if (!startAt) return false;
 
-    if (sessionType === "club" && !clubIdForTraining) return false;
+    if (normalizedSessionType === "club" && !clubIdForTraining && !isCoachPlannedTraining) return false;
 
     if (!performanceEnabled) {
-      if (isCoachPlannedTraining && sessionType === "club") return effectiveTotalMinutes > 0;
+      if (isCoachPlannedTraining && normalizedSessionType === "club") return effectiveTotalMinutes > 0;
       const v = Number(nonPerformanceDuration);
       return Number.isFinite(v) && v > 0;
     }
@@ -183,7 +185,7 @@ export default function PlayerTrainingEditPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, sessionType, clubIdForTraining, items]);
+  }, [busy, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, normalizedSessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
@@ -267,7 +269,7 @@ export default function PlayerTrainingEditPage() {
 
       setStartAt(toLocalDateTimeInputValue(sess.start_at));
       setPlace((sess.location_text ?? "") as string);
-      setSessionType(sess.session_type);
+      setSessionType(sess.club_event_id ? "club" : sess.session_type);
 
       setCoachName((sess.coach_name ?? "") as string);
       setNotes((sess.notes ?? "") as string);
@@ -293,8 +295,8 @@ export default function PlayerTrainingEditPage() {
         setLinkedEventDurationMinutes(null);
       }
 
-      const cid = sess.session_type === "club" ? (sess.club_id ?? "") : "";
-      if (sess.session_type === "club") {
+      const cid = (sess.club_event_id ? "club" : sess.session_type) === "club" ? (sess.club_id ?? "") : "";
+      if ((sess.club_event_id ? "club" : sess.session_type) === "club") {
         // si club_id présent, on le garde; sinon fallback = premier club actif
         if (cid) setClubIdForTraining(cid);
         else if (ids.length > 0) setClubIdForTraining(ids[0]);
@@ -366,7 +368,7 @@ export default function PlayerTrainingEditPage() {
     const dif = performanceEnabled && difficulty ? Number(difficulty) : null;
     const sat = performanceEnabled && satisfaction ? Number(satisfaction) : null;
 
-    const club_id = sessionType === "club" ? clubIdForTraining : null;
+    const club_id = normalizedSessionType === "club" ? clubIdForTraining : null;
 
     // 1) update session
     const upd = await supabase

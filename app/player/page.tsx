@@ -171,6 +171,16 @@ type PlayerHomePageCache = {
   groupNameById: Record<string, string>;
   eventStructureByEventId: Record<string, HomeEventStructureItem[]>;
   upcomingActivities: HomeUpcomingItem[];
+  playVolumeSummary?: PlayVolumeSummary;
+};
+
+type PlayVolumeSummary = {
+  roundsCount: number;
+  holesPlayed: number;
+  girPctAvg: number | null;
+  fwPctAvg: number | null;
+  puttAvg: number | null;
+  scramblingPct: number | null;
 };
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
@@ -494,6 +504,11 @@ function isClubAttendanceEventType(eventType: HomePlannedEventRow["event_type"])
   return eventType === "training" || eventType === "interclub" || eventType === "camp" || eventType === "event" || eventType === "session";
 }
 
+function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) {
+  if (session.club_event_id) return "club" as const;
+  return session.session_type;
+}
+
 export default function PlayerHomePage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -507,12 +522,21 @@ export default function PlayerHomePage() {
 
   const [latestItems, setLatestItems] = useState<Item[]>([]);
   const [thumbByItemId, setThumbByItemId] = useState<Record<string, string>>({});
+  const [marketplaceLoading, setMarketplaceLoading] = useState(true);
 
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthClubEventDurationById, setMonthClubEventDurationById] = useState<Record<string, number>>({});
   const [monthClubEventDurationByStartKey, setMonthClubEventDurationByStartKey] = useState<Record<string, number>>({});
   const [monthPlannedClubMinutes, setMonthPlannedClubMinutes] = useState<number>(0);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
+  const [playVolumeSummary, setPlayVolumeSummary] = useState<PlayVolumeSummary>({
+    roundsCount: 0,
+    holesPlayed: 0,
+    girPctAvg: null,
+    fwPctAvg: null,
+    puttAvg: null,
+    scramblingPct: null,
+  });
 
   // ✅ Rounds month + previous month (pour tendances focus)
   const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
@@ -522,6 +546,8 @@ export default function PlayerHomePage() {
   const [scramblingPctMonth, setScramblingPctMonth] = useState<number | null>(null);
   const [scramblingPctPrevMonth, setScramblingPctPrevMonth] = useState<number | null>(null);
   const [holesPlayedMonth, setHolesPlayedMonth] = useState<number>(0);
+  const [playVolumeLoading, setPlayVolumeLoading] = useState(true);
+  const [playVolumeLoadedOnce, setPlayVolumeLoadedOnce] = useState(false);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState<boolean>(false);
@@ -591,7 +617,7 @@ export default function PlayerHomePage() {
       return monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
     }
     const nonClubEffective = monthSessions
-      .filter((s) => s.session_type !== "club")
+      .filter((s) => effectiveHomeSessionType(s) !== "club")
       .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
     return monthPlannedClubMinutes + nonClubEffective;
   }, [isPerformanceEnabled, monthSessions, monthPlannedClubMinutes]);
@@ -646,40 +672,7 @@ export default function PlayerHomePage() {
   }, [trainingsSummary.top]);
 
   // ===== Focus calculé depuis golf_rounds (comme dashboard) =====
-  const focusFromRounds = useMemo(() => {
-    const girPctVals = roundsMonth
-      .map((r) => {
-        if (typeof r.gir !== "number") return null;
-        const played = playedHolesMonthByRoundId[r.id] ?? roundPlayedHolesFromRound(r);
-        if (played <= 0) return null;
-        return (r.gir / played) * 100;
-      })
-      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-    const fwPctVals = roundsMonth
-      .map((r) => {
-        if (typeof r.fairways_hit !== "number" || typeof r.fairways_total !== "number" || r.fairways_total <= 0) return null;
-        return (r.fairways_hit / r.fairways_total) * 100;
-      })
-      .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
-    const puttVals = roundsMonth
-      .map((r) => {
-        const played = playedHolesMonthByRoundId[r.id] ?? roundPlayedHolesFromRound(r);
-        if (played !== 18) return null;
-        return typeof r.total_putts === "number" ? r.total_putts : null;
-      })
-      .filter((x): x is number => typeof x === "number");
-
-    const girPctAvg = girPctVals.length ? Math.round((girPctVals.reduce((a, b) => a + b, 0) / girPctVals.length) * 10) / 10 : null;
-    const fwPctAvg = fwPctVals.length ? Math.round((fwPctVals.reduce((a, b) => a + b, 0) / fwPctVals.length) * 10) / 10 : null;
-    const puttAvg = puttVals.length ? Math.round((puttVals.reduce((a, b) => a + b, 0) / puttVals.length) * 10) / 10 : null;
-
-    const scramblingPct =
-      scramblingPctMonth != null
-        ? scramblingPctMonth
-        : estimatedScramblingFromRounds(roundsMonth, playedHolesMonthByRoundId);
-
-    return { girPctAvg, fwPctAvg, puttAvg, scramblingPct };
-  }, [roundsMonth, playedHolesMonthByRoundId, scramblingPctMonth]);
+  const focusFromRounds = playVolumeSummary;
 
   async function loadUpcomingPreview(userId: string) {
     const nowIso = new Date().toISOString();
@@ -757,9 +750,115 @@ export default function PlayerHomePage() {
     }
   }
 
+  async function loadLatestMarketplace(clubIds: string[]) {
+    if (latestItems.length === 0) setMarketplaceLoading(true);
+    try {
+      const dedupedClubIds = Array.from(new Set(clubIds.filter(Boolean)));
+      if (dedupedClubIds.length === 0) {
+        setLatestItems([]);
+        setThumbByItemId({});
+        return;
+      }
+
+      const itemsRes = await supabase
+        .from("marketplace_items")
+        .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
+        .in("club_id", dedupedClubIds)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (itemsRes.error) {
+        setLatestItems([]);
+        setThumbByItemId({});
+        return;
+      }
+
+      const list = (itemsRes.data ?? []) as Item[];
+      setLatestItems(list);
+
+      const ids = list.map((x) => x.id);
+      if (ids.length === 0) {
+        setThumbByItemId({});
+        return;
+      }
+
+      const imgRes = await supabase
+        .from("marketplace_images")
+        .select("item_id,path,sort_order")
+        .in("item_id", ids)
+        .eq("sort_order", 0);
+
+      if (imgRes.error) {
+        setThumbByItemId({});
+        return;
+      }
+
+      const map: Record<string, string> = {};
+      (imgRes.data ?? []).forEach((r: MarketplaceImageRow) => {
+        const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
+        if (data?.publicUrl) map[r.item_id] = data.publicUrl;
+      });
+      setThumbByItemId(map);
+    } catch (e) {
+      console.warn("player home marketplace load failed:", e);
+      setLatestItems([]);
+      setThumbByItemId({});
+    } finally {
+      setMarketplaceLoading(false);
+    }
+  }
+
+  async function loadRollingPlayVolume(effectiveUid: string, viewerUid: string) {
+    if (!playVolumeLoadedOnce && playVolumeSummary.roundsCount === 0 && playVolumeSummary.holesPlayed === 0) {
+      setPlayVolumeLoading(true);
+    }
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        setPlayVolumeSummary({
+          roundsCount: 0,
+          holesPlayed: 0,
+          girPctAvg: null,
+          fwPctAvg: null,
+          puttAvg: null,
+          scramblingPct: null,
+        });
+        return;
+      }
+
+      const query = new URLSearchParams();
+      if (viewerUid && viewerUid !== effectiveUid) query.set("child_id", effectiveUid);
+      const res = await fetch(`/api/player/home-play-volume?${query.toString()}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Failed to load play volume"));
+
+      setPlayVolumeSummary({
+        roundsCount: Number(json?.roundsCount ?? 0),
+        holesPlayed: Number(json?.holesPlayed ?? 0),
+        girPctAvg: typeof json?.girPctAvg === "number" ? json.girPctAvg : null,
+        fwPctAvg: typeof json?.fwPctAvg === "number" ? json.fwPctAvg : null,
+        puttAvg: typeof json?.puttAvg === "number" ? json.puttAvg : null,
+        scramblingPct: typeof json?.scramblingPct === "number" ? json.scramblingPct : null,
+      });
+      setPlayVolumeLoadedOnce(true);
+    } catch (e) {
+      console.warn("player home play volume load failed:", e);
+    } finally {
+      setPlayVolumeLoading(false);
+    }
+  }
+
   async function load() {
     setLoading(true);
     setUpcomingLoading(true);
+    setMarketplaceLoading(true);
+    if (!playVolumeLoadedOnce) setPlayVolumeLoading(true);
     setError(null);
     setHeroLoading(true);
 
@@ -783,6 +882,7 @@ export default function PlayerHomePage() {
         setClubs(pageCache.clubs);
         setLatestItems(pageCache.latestItems);
         setThumbByItemId(pageCache.thumbByItemId);
+        setMarketplaceLoading(false);
         setMonthSessions(pageCache.monthSessions);
         setMonthClubEventDurationById(pageCache.monthClubEventDurationById ?? {});
         setMonthClubEventDurationByStartKey({});
@@ -793,6 +893,18 @@ export default function PlayerHomePage() {
         setPlayedHolesMonthByRoundId(pageCache.playedHolesMonthByRoundId);
         setPlayedHolesPrevMonthByRoundId(pageCache.playedHolesPrevMonthByRoundId);
         setHolesPlayedMonth(pageCache.holesPlayedMonth);
+        setPlayVolumeSummary(
+          pageCache.playVolumeSummary ?? {
+            roundsCount: pageCache.roundsMonth.length,
+            holesPlayed: pageCache.holesPlayedMonth,
+            girPctAvg: null,
+            fwPctAvg: null,
+            puttAvg: null,
+            scramblingPct: null,
+          }
+        );
+        setPlayVolumeLoadedOnce(true);
+        setPlayVolumeLoading(false);
         setViewerUserId(pageCache.viewerUserId || viewerUid);
         setEffectiveUserId(pageCache.effectiveUserId || effectiveUid);
         setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
@@ -920,44 +1032,12 @@ export default function PlayerHomePage() {
       setTrainingOffseasonMonths([]);
     }
 
-    // Latest marketplace items
     if (cids.length > 0) {
-      const itemsRes = await supabase
-        .from("marketplace_items")
-        .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
-        .in("club_id", cids)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(3);
-
-      if (itemsRes.error) {
-        setLatestItems([]);
-        setThumbByItemId({});
-      } else {
-        const list = (itemsRes.data ?? []) as Item[];
-        setLatestItems(list);
-
-        const ids = list.map((x) => x.id);
-        if (ids.length > 0) {
-          const imgRes = await supabase.from("marketplace_images").select("item_id,path,sort_order").in("item_id", ids).eq("sort_order", 0);
-
-          if (!imgRes.error) {
-            const map: Record<string, string> = {};
-            (imgRes.data ?? []).forEach((r: MarketplaceImageRow) => {
-              const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
-              if (data?.publicUrl) map[r.item_id] = data.publicUrl;
-            });
-            setThumbByItemId(map);
-          } else {
-            setThumbByItemId({});
-          }
-        } else {
-          setThumbByItemId({});
-        }
-      }
+      void loadLatestMarketplace(cids);
     } else {
       setLatestItems([]);
       setThumbByItemId({});
+      setMarketplaceLoading(false);
     }
 
     // Trainings month
@@ -985,7 +1065,7 @@ export default function PlayerHomePage() {
       const monthClubEventIds = Array.from(
         new Set(
           sess
-            .filter((s) => s.session_type === "club")
+            .filter((s) => effectiveHomeSessionType(s) === "club")
             .map((s) => s.club_event_id)
             .filter((v): v is string => Boolean(v))
         )
@@ -1021,7 +1101,7 @@ export default function PlayerHomePage() {
             }
           );
         }
-        const missingClubSessions = sess.filter((s) => s.session_type === "club" && !s.club_event_id);
+        const missingClubSessions = sess.filter((s) => effectiveHomeSessionType(s) === "club" && !s.club_event_id);
         if (missingClubSessions.length > 0) {
           const attendeeRes = await supabase
             .from("club_event_attendees")
@@ -1150,6 +1230,13 @@ export default function PlayerHomePage() {
         if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
       }
 
+      const linkedFutureEventIds = new Set(
+        futureSessions
+          .map((session) => String(session.club_event_id ?? "").trim())
+          .filter((id) => id.length > 0)
+      );
+      plannedEvents = plannedEvents.filter((event) => !linkedFutureEventIds.has(event.id));
+
       const plannedCompetitionsRes = await supabase
         .from("player_activity_events")
         .select("id,event_type,title,starts_at,ends_at,location_text,status")
@@ -1249,128 +1336,19 @@ export default function PlayerHomePage() {
       setUpcomingLoading(false);
     }
 
-    // Rounds rolling 12 months + previous 12 months (GIR/fairways/putts)
-    try {
-      const { curStart, curEnd, prevStart, prevEnd } = rollingYearWindows(new Date());
-
-      const allRoundsRes = await supabase
-        .from("golf_rounds")
-        .select("id,start_at,gir,fairways_hit,fairways_total,total_putts,eagles,birdies,pars,bogeys,doubles_plus")
-        .eq("user_id", effectiveUid)
-        .order("start_at", { ascending: false })
-        .limit(2000);
-
-      let allRounds = !allRoundsRes.error ? ((allRoundsRes.data ?? []) as GolfRoundRow[]) : [];
-      if (allRoundsRes.error) {
-        console.warn("golf_rounds load failed (effective user):", allRoundsRes.error.message);
-      }
-      if (allRounds.length === 0 && viewerUid && viewerUid !== effectiveUid) {
-        const fallbackRoundsRes = await supabase
-          .from("golf_rounds")
-          .select("id,start_at,gir,fairways_hit,fairways_total,total_putts,eagles,birdies,pars,bogeys,doubles_plus")
-          .eq("user_id", viewerUid)
-          .order("start_at", { ascending: false })
-          .limit(2000);
-        if (!fallbackRoundsRes.error) {
-          allRounds = (fallbackRoundsRes.data ?? []) as GolfRoundRow[];
-        }
-      }
-      const isInWindow = (iso: string | null | undefined, from: Date, to: Date) => {
-        const ms = Date.parse(String(iso ?? ""));
-        return Number.isFinite(ms) && ms >= from.getTime() && ms < to.getTime();
-      };
-      const curRoundsFiltered = allRounds.filter((r) => isInWindow(r.start_at, curStart, curEnd));
-      const curRounds = curRoundsFiltered.length > 0 ? curRoundsFiltered : allRounds;
-      setRoundsMonth(curRounds);
-      const monthRoundIds = curRounds.map((r) => r.id).filter(Boolean);
-      if (monthRoundIds.length > 0) {
-        const holesRes = await supabase
-          .from("golf_round_holes")
-          .select("round_id,score,par,putts")
-          .in("round_id", monthRoundIds);
-        const byRound: Record<string, number> = {};
-        let scramblingOppMonth = 0;
-        let scramblingSuccessMonth = 0;
-        ((holesRes.data ?? []) as Array<{ round_id: string | null; score: number | null; par: number | null; putts: number | null }>).forEach((h) => {
-          if (!h?.round_id) return;
-          if (typeof h.score !== "number") return;
-          byRound[h.round_id] = (byRound[h.round_id] ?? 0) + 1;
-          if (typeof h.par === "number" && typeof h.putts === "number") {
-            const gir = isGIR(h.par, h.score, h.putts);
-            if (!gir) {
-              scramblingOppMonth += 1;
-              if (h.score <= h.par) scramblingSuccessMonth += 1;
-            }
-          }
-        });
-        const mergedByRound: Record<string, number> = { ...byRound };
-        for (const r of curRounds) {
-          if (mergedByRound[r.id] && mergedByRound[r.id] > 0) continue;
-          const n = roundPlayedHolesFromRound(r);
-          if (n > 0) mergedByRound[r.id] = n;
-        }
-        setPlayedHolesMonthByRoundId(mergedByRound);
-        setHolesPlayedMonth(Object.values(mergedByRound).reduce((sum, n) => sum + n, 0));
-        setScramblingPctMonth(
-          scramblingOppMonth > 0 ? Math.round((scramblingSuccessMonth / scramblingOppMonth) * 100) : null
-        );
-      } else {
-        setPlayedHolesMonthByRoundId({});
-        setHolesPlayedMonth(0);
-        setScramblingPctMonth(null);
-      }
-
-      const prevRounds = allRounds.filter((r) => isInWindow(r.start_at, prevStart, prevEnd));
-      setRoundsPrevMonth(prevRounds);
-      const prevRoundIds = prevRounds.map((r) => r.id).filter(Boolean);
-      if (prevRoundIds.length > 0) {
-        const prevHolesRes = await supabase
-          .from("golf_round_holes")
-          .select("round_id,score,par,putts")
-          .in("round_id", prevRoundIds);
-        const byRoundPrev: Record<string, number> = {};
-        let scramblingOppPrev = 0;
-        let scramblingSuccessPrev = 0;
-        ((prevHolesRes.data ?? []) as Array<{ round_id: string | null; score: number | null; par: number | null; putts: number | null }>).forEach((h) => {
-          if (!h?.round_id) return;
-          if (typeof h.score !== "number") return;
-          byRoundPrev[h.round_id] = (byRoundPrev[h.round_id] ?? 0) + 1;
-          if (typeof h.par === "number" && typeof h.putts === "number") {
-            const gir = isGIR(h.par, h.score, h.putts);
-            if (!gir) {
-              scramblingOppPrev += 1;
-              if (h.score <= h.par) scramblingSuccessPrev += 1;
-            }
-          }
-        });
-        const mergedByRoundPrev: Record<string, number> = { ...byRoundPrev };
-        for (const r of prevRounds) {
-          if (mergedByRoundPrev[r.id] && mergedByRoundPrev[r.id] > 0) continue;
-          const n = roundPlayedHolesFromRound(r);
-          if (n > 0) mergedByRoundPrev[r.id] = n;
-        }
-        setPlayedHolesPrevMonthByRoundId(mergedByRoundPrev);
-        setScramblingPctPrevMonth(
-          scramblingOppPrev > 0 ? Math.round((scramblingSuccessPrev / scramblingOppPrev) * 100) : null
-        );
-      } else {
-        setPlayedHolesPrevMonthByRoundId({});
-        setScramblingPctPrevMonth(null);
-      }
-    } catch (e) {
-      // Keep previous round KPIs to avoid flashing back to zero on transient errors.
-      console.warn("player home rounds load failed:", e);
-    }
+    void loadRollingPlayVolume(effectiveUid, viewerUid);
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("common.errorLoading"));
       setLatestItems([]);
       setThumbByItemId({});
+      setMarketplaceLoading(false);
       setMonthSessions([]);
       setMonthClubEventDurationById({});
       setMonthClubEventDurationByStartKey({});
       setMonthPlannedClubMinutes(0);
       setMonthItems([]);
+      setPlayVolumeLoading(false);
       setUpcomingActivities([]);
       setUpcomingLoading(false);
     } finally {
@@ -1399,6 +1377,7 @@ export default function PlayerHomePage() {
       playedHolesMonthByRoundId,
       playedHolesPrevMonthByRoundId,
       holesPlayedMonth,
+      playVolumeSummary,
       viewerUserId,
       effectiveUserId,
       attendeeStatusByEventId,
@@ -1423,6 +1402,7 @@ export default function PlayerHomePage() {
     playedHolesMonthByRoundId,
     playedHolesPrevMonthByRoundId,
     holesPlayedMonth,
+    playVolumeSummary,
     viewerUserId,
     attendeeStatusByEventId,
     clubNameById,
@@ -1607,15 +1587,8 @@ export default function PlayerHomePage() {
     justifyContent: "flex-end",
   };
 
-  const roundsMonthCount = roundsMonth.length;
-  const holesPlayedDisplay = useMemo(() => {
-    const derived = roundsMonth.reduce((sum, r) => {
-      const fromMap = playedHolesMonthByRoundId[r.id] ?? 0;
-      if (fromMap > 0) return sum + fromMap;
-      return sum + roundPlayedHolesFromRound(r);
-    }, 0);
-    return Math.max(holesPlayedMonth, derived);
-  }, [holesPlayedMonth, playedHolesMonthByRoundId, roundsMonth]);
+  const roundsMonthCount = playVolumeSummary.roundsCount;
+  const holesPlayedDisplay = playVolumeSummary.holesPlayed;
   const focusTiles = useMemo(
     () => [
       {
@@ -1725,6 +1698,10 @@ export default function PlayerHomePage() {
               <>
                 {currentUpcoming.kind === "event" ? (() => {
                   const e = currentUpcoming.event;
+                  const linkedSession = upcomingActivities.find(
+                    (item): item is Extract<HomeUpcomingItem, { kind: "session" }> =>
+                      item.kind === "session" && item.session.club_event_id === e.id
+                  )?.session ?? null;
                   const clubName = clubNameById[e.club_id] ?? t("common.club");
                   const groupName = e.group_id ? groupNameById[e.group_id] : null;
                   const eventEnd =
@@ -1822,7 +1799,7 @@ export default function PlayerHomePage() {
                           ) : null}
                           {e.event_type === "training" ? (
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                              <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
+                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
                                 {pickLocaleText(locale, "Détails", "Details")}
                               </Link>
                               {(() => {
@@ -1830,7 +1807,7 @@ export default function PlayerHomePage() {
                                 return (
                                   <Link
                                     className="btn"
-                                    href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
+                                    href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
                                     title={pickLocaleText(locale, "Messagerie", "Messages")}
                                     aria-label={pickLocaleText(locale, "Ouvrir la page de l'activité", "Open activity page")}
                                   >
@@ -1890,11 +1867,12 @@ export default function PlayerHomePage() {
 
                 {currentUpcoming.kind === "session" ? (() => {
                   const s = currentUpcoming.session;
-                  const clubName = s.session_type === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
+                  const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
+                  const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
                   const sessionTitle =
-                    s.session_type === "club"
+                    normalizedSessionType === "club"
                       ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
-                      : `${s.session_type === "private" ? (pickLocaleText(locale, "Cours privé", "Private lesson")) : (pickLocaleText(locale, "Entraînement individuel", "Individual training"))}`;
+                      : `${normalizedSessionType === "private" ? (pickLocaleText(locale, "Cours privé", "Private lesson")) : (pickLocaleText(locale, "Entraînement individuel", "Individual training"))}`;
                   return (
                     <div style={{ display: "grid", gap: 10 }}>
                       <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
@@ -2070,83 +2048,114 @@ export default function PlayerHomePage() {
           </div>
 
           <div className="glass-card">
-            <div
-              style={{
-                marginTop: 4,
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-                alignItems: "center",
-              }}
-            >
-              {/* PARCOURS */}
+            {playVolumeLoading && !playVolumeLoadedOnce ? (
               <div
                 style={{
-                  borderWidth: 1,
-                  borderStyle: "solid",
-                  borderColor: "rgba(0,0,0,0.08)",
-                  background: "rgba(255,255,255,0.72)",
-                  borderRadius: 16,
-                  padding: "18px 12px",
-                  textAlign: "center",
+                  marginTop: 4,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                  alignItems: "center",
+                }}
+                aria-hidden="true"
+              >
+                {[0, 1].map((idx) => (
+                  <div
+                    key={`play-volume-skeleton-${idx}`}
+                    style={{
+                      borderWidth: 1,
+                      borderStyle: "solid",
+                      borderColor: "rgba(0,0,0,0.08)",
+                      background: "rgba(255,255,255,0.72)",
+                      borderRadius: 16,
+                      padding: "18px 12px",
+                      textAlign: "center",
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ height: 28, width: "46%", margin: "0 auto", borderRadius: 999, background: "rgba(15,23,42,0.14)" }} />
+                    <div style={{ height: 12, width: "54%", margin: "0 auto", borderRadius: 999, background: "rgba(15,23,42,0.10)" }} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 4,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                  alignItems: "center",
                 }}
               >
                 <div
                   style={{
-                    fontSize: 28,
-                    fontWeight: 950,
-                    lineHeight: 1,
-                    color: "var(--green-dark)",
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor: "rgba(0,0,0,0.08)",
+                    background: "rgba(255,255,255,0.72)",
+                    borderRadius: 16,
+                    padding: "18px 12px",
+                    textAlign: "center",
                   }}
                 >
-                  <CountUpNumber value={roundsMonthCount} durationMs={900} />
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 950,
+                      lineHeight: 1,
+                      color: "var(--green-dark)",
+                    }}
+                  >
+                    <CountUpNumber value={roundsMonthCount} durationMs={900} />
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 14,
+                      fontWeight: 900,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    {t("playerHome.rounds").toUpperCase()}
+                  </div>
                 </div>
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: 14,
-                    fontWeight: 900,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {t("playerHome.rounds").toUpperCase()}
-                </div>
-              </div>
 
-              {/* TROUS */}
-              <div
-                style={{
-                  borderWidth: 1,
-                  borderStyle: "solid",
-                  borderColor: "rgba(0,0,0,0.08)",
-                  background: "rgba(255,255,255,0.72)",
-                  borderRadius: 16,
-                  padding: "18px 12px",
-                  textAlign: "center",
-                }}
-              >
                 <div
                   style={{
-                    fontSize: 28,
-                    fontWeight: 950,
-                    lineHeight: 1,
-                    color: "var(--green-dark)",
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor: "rgba(0,0,0,0.08)",
+                    background: "rgba(255,255,255,0.72)",
+                    borderRadius: 16,
+                    padding: "18px 12px",
+                    textAlign: "center",
                   }}
                 >
-                  <CountUpNumber value={holesPlayedDisplay} durationMs={1200} />
-                </div>
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: 14,
-                    fontWeight: 900,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {t("playerHome.holes").toUpperCase()}
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 950,
+                      lineHeight: 1,
+                      color: "var(--green-dark)",
+                    }}
+                  >
+                    <CountUpNumber value={holesPlayedDisplay} durationMs={1200} />
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 14,
+                      fontWeight: 900,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    {t("playerHome.holes").toUpperCase()}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {isPerformanceEnabled ? (
@@ -2160,7 +2169,7 @@ export default function PlayerHomePage() {
             >
               <div className="card-title">{t("playerHome.focus")}</div>
 
-              {loading ? (
+              {playVolumeLoading && !playVolumeLoadedOnce ? (
                 <div
                   style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
                   aria-hidden="true"
@@ -2250,7 +2259,7 @@ export default function PlayerHomePage() {
         <section className="glass-section">
           <div className="section-title">{t("nav.marketplace")}</div>
 
-          {loading ? (
+          {marketplaceLoading ? (
             <div className="marketplace-list" style={{ marginTop: 10 }}>
               {[0, 1, 2].map((idx) => (
                 <div key={`mk-skeleton-${idx}`} className="marketplace-item" aria-hidden="true">
