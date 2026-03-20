@@ -104,51 +104,66 @@ export default function PushActivationBanner({ settingsHref }: Props) {
   if (!visible) return null;
 
   return (
-    <div className="glass-section" style={{ paddingTop: 0 }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1400,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+        background: "rgba(8, 12, 10, 0.28)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+      }}
+    >
       <div
-        className="glass-card"
         style={{
+          width: "min(100%, 520px)",
+          borderRadius: 20,
+          padding: 18,
+          background: "#ffffff",
+          color: "#111827",
+          border: "1px solid rgba(32,99,62,0.18)",
+          boxShadow: "0 22px 60px rgba(0,0,0,0.28)",
           display: "grid",
-          gap: 10,
-          border: "1px solid rgba(32,99,62,0.20)",
-          background: "rgba(255,255,255,0.92)",
+          gap: 14,
         }}
       >
-        <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-              <BellRing size={16} />
-              {tr("Activer les notifications push", "Enable push notifications")}
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.66)", lineHeight: 1.45 }}>
-              {unsupported
-                ? tr(
-                    "Le push PWA n'est pas supporté sur cet appareil ou ce navigateur. Sur Android, installe et ouvre de préférence ActiviTee depuis Chrome.",
-                    "PWA push is not supported on this device or browser. On Android, install and open ActiviTee from Chrome if possible."
-                  )
-                : denied
-                ? tr(
-                    "Les notifications sont activées sur ton compte, mais refusées sur cet appareil. Autorise-les dans Android / le navigateur, puis reviens ici.",
-                    "Notifications are enabled on your account, but blocked on this device. Allow them in Android / the browser, then come back here."
-                  )
-                : tr(
-                    "Les notifications push sont actives sur ton compte, mais pas encore sur cet appareil. Termine l'activation pour recevoir les alertes.",
-                    "Push notifications are enabled on your account, but not yet on this device. Complete activation to receive alerts."
-                  )}
-            </div>
-            {error ? <div className="marketplace-error" style={{ marginTop: 2 }}>{error}</div> : null}
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
+            <BellRing size={16} />
+            {tr("Activer les notifications push", "Enable push notifications")}
           </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(0,0,0,0.70)", lineHeight: 1.5 }}>
+            {unsupported
+              ? tr(
+                  "Le push PWA n'est pas supporté sur cet appareil ou ce navigateur. Sur Android, installe et ouvre de préférence ActiviTee depuis Chrome.",
+                  "PWA push is not supported on this device or browser. On Android, install and open ActiviTee from Chrome if possible."
+                )
+              : denied
+              ? tr(
+                  "Les notifications sont activées sur ton compte, mais refusées sur cet appareil. Autorise-les dans Android / le navigateur, puis reviens ici.",
+                  "Notifications are enabled on your account, but blocked on this device. Allow them in Android / the browser, then come back here."
+                )
+              : tr(
+                  "Les notifications push sont actives sur ton compte, mais pas encore sur cet appareil. Termine l'activation pour recevoir les alertes.",
+                  "Push notifications are enabled on your account, but not yet on this device. Complete activation to receive alerts."
+                )}
+          </div>
+          {error ? <div className="marketplace-error" style={{ marginTop: 0 }}>{error}</div> : null}
+        </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {!unsupported && !denied ? (
-              <button type="button" className="btn btn-primary" onClick={() => void activate()} disabled={busy}>
-                {busy ? tr("Activation…", "Activating...") : tr("Activer maintenant", "Activate now")}
-              </button>
-            ) : null}
-            <Link className="btn" href={settingsHref}>
-              {tr("Paramètres notifications", "Notification settings")}
-            </Link>
-          </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {!unsupported && !denied ? (
+            <button type="button" className="btn btn-primary" onClick={() => void activate()} disabled={busy}>
+              {busy ? tr("Activation…", "Activating...") : tr("Activer maintenant", "Activate now")}
+            </button>
+          ) : null}
+          <Link className="btn" href={settingsHref}>
+            {tr("Paramètres notifications", "Notification settings")}
+          </Link>
         </div>
       </div>
     </div>
