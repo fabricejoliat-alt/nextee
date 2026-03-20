@@ -32,7 +32,13 @@ export default function PushActivationBanner({ settingsHref }: Props) {
   const isIOS =
     typeof navigator !== "undefined" &&
     /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone =
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches ||
+      window.matchMedia?.("(display-mode: fullscreen)").matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   const isSettingsPage = pathname === settingsHref;
+  const shouldHideOnIOSBrowser = isIOS && !isStandalone;
 
   useEffect(() => {
     if (isSettingsPage) setVisible(false);
@@ -112,7 +118,7 @@ export default function PushActivationBanner({ settingsHref }: Props) {
     }
   }
 
-  if (!visible || isSettingsPage) return null;
+  if (!visible || isSettingsPage || shouldHideOnIOSBrowser) return null;
 
   return (
     <div
