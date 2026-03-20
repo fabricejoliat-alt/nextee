@@ -100,6 +100,17 @@ function normalizeAuthEmailInput(raw?: string | null) {
   return email;
 }
 
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function roleLabel(role: MemberRow["role"]) {
+  if (role === "manager") return "Manager";
+  if (role === "coach") return "Coach";
+  if (role === "parent") return "Parent";
+  return "Joueur";
+}
+
 export default function ManagerUsersPage() {
   const [clubId, setClubId] = useState("");
   const [clubNamesById, setClubNamesById] = useState<Record<string, string>>({});
@@ -411,6 +422,35 @@ export default function ManagerUsersPage() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  function exportFilteredUsers() {
+    const rows = filtered.map((m) => {
+      const firstName = String(m.profiles?.first_name ?? "").trim();
+      const lastName = String(m.profiles?.last_name ?? "").trim();
+      const email = normalizeAuthEmailInput(m.auth_email);
+      return [lastName, firstName, email, roleLabel(m.role)];
+    });
+
+    const csv = [
+      ["Nom", "Prénom", "Adresse e-mail", "Rôle"],
+      ...rows,
+    ]
+      .map((row) => row.map((value) => csvCell(String(value ?? ""))).join(";"))
+      .join("\n");
+
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const date = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `utilisateurs-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div style={{ display: "grid", gap: 16, width: "min(980px, 100%)", margin: "0 auto", boxSizing: "border-box" }}>
       <div>
@@ -507,6 +547,9 @@ export default function ManagerUsersPage() {
               {totalItems === 0 ? "0 résultat" : `${pageStart}-${pageEnd} sur ${totalItems}`}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn" type="button" onClick={exportFilteredUsers} disabled={filtered.length === 0}>
+                Exporter CSV
+              </button>
               <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 13 }}>
                 Par page
                 <select

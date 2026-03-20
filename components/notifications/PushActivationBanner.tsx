@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { BellRing } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadMyNotificationPreferences } from "@/lib/notificationPreferences";
@@ -14,6 +15,7 @@ type Props = {
 
 export default function PushActivationBanner({ settingsHref }: Props) {
   const { locale } = useI18n();
+  const pathname = usePathname();
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
     if (locale === "de") return de ?? en;
@@ -26,6 +28,15 @@ export default function PushActivationBanner({ settingsHref }: Props) {
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isIOS =
+    typeof navigator !== "undefined" &&
+    /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isSettingsPage = pathname === settingsHref;
+
+  useEffect(() => {
+    if (isSettingsPage) setVisible(false);
+  }, [isSettingsPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +112,7 @@ export default function PushActivationBanner({ settingsHref }: Props) {
     }
   }
 
-  if (!visible) return null;
+  if (!visible || isSettingsPage) return null;
 
   return (
     <div
@@ -139,13 +150,21 @@ export default function PushActivationBanner({ settingsHref }: Props) {
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(0,0,0,0.70)", lineHeight: 1.5 }}>
             {unsupported
               ? tr(
-                  "Le push PWA n'est pas supporté sur cet appareil ou ce navigateur. Sur Android, installe et ouvre de préférence ActiviTee depuis Chrome.",
-                  "PWA push is not supported on this device or browser. On Android, install and open ActiviTee from Chrome if possible."
+                  isIOS
+                    ? "Les notifications push ne sont pas encore actives sur cet appareil. Sur iPhone/iPad, utilise de préférence ActiviTee depuis l’app installée sur l’écran d’accueil, puis vérifie les autorisations de notifications."
+                    : "Le push PWA n'est pas supporté sur cet appareil ou ce navigateur. Sur Android, installe et ouvre de préférence ActiviTee depuis Chrome.",
+                  isIOS
+                    ? "Push notifications are not active yet on this device. On iPhone/iPad, use ActiviTee from the app installed on the home screen, then check notification permissions."
+                    : "PWA push is not supported on this device or browser. On Android, install and open ActiviTee from Chrome if possible."
                 )
               : denied
               ? tr(
-                  "Les notifications sont activées sur ton compte, mais refusées sur cet appareil. Autorise-les dans Android / le navigateur, puis reviens ici.",
-                  "Notifications are enabled on your account, but blocked on this device. Allow them in Android / the browser, then come back here."
+                  isIOS
+                    ? "Les notifications sont activées sur ton compte, mais refusées sur cet appareil. Autorise-les dans Réglages iPhone / navigateur, puis reviens ici."
+                    : "Les notifications sont activées sur ton compte, mais refusées sur cet appareil. Autorise-les dans Android / le navigateur, puis reviens ici.",
+                  isIOS
+                    ? "Notifications are enabled on your account, but blocked on this device. Allow them in iPhone Settings / browser, then come back here."
+                    : "Notifications are enabled on your account, but blocked on this device. Allow them in Android / the browser, then come back here."
                 )
               : tr(
                   "Les notifications push sont actives sur ton compte, mais pas encore sur cet appareil. Termine l'activation pour recevoir les alertes.",
@@ -161,7 +180,7 @@ export default function PushActivationBanner({ settingsHref }: Props) {
               {busy ? tr("Activation…", "Activating...") : tr("Activer maintenant", "Activate now")}
             </button>
           ) : null}
-          <Link className="btn" href={settingsHref}>
+          <Link className="btn" href={settingsHref} onClick={() => setVisible(false)}>
             {tr("Paramètres notifications", "Notification settings")}
           </Link>
         </div>
