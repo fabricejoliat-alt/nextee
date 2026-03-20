@@ -6,6 +6,7 @@ import { Bell } from "lucide-react";
 import CoachDesktopDrawer from "@/components/coach/CoachDesktopDrawer";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import PushActivationBanner from "@/components/notifications/PushActivationBanner";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
 import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
 import { supabase } from "@/lib/supabaseClient";
@@ -156,6 +157,8 @@ export default function CoachHeader() {
           </div>
         </div>
       </header>
+
+      <PushActivationBanner settingsHref="/coach/notifications/settings" />
 
       <CoachDesktopDrawer open={open} onClose={() => setOpen(false)} />
     </>

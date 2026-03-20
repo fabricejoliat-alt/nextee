@@ -21,6 +21,13 @@ export function supportsWebPush() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+export async function hasLocalPushSubscription() {
+  if (!supportsWebPush()) return false;
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  const sub = await reg.pushManager.getSubscription();
+  return !!sub;
+}
+
 export async function ensurePushSubscription(options?: { prompt?: boolean }) {
   if (!supportsWebPush()) return { ok: false as const, reason: "unsupported" as const };
   if (typeof Notification === "undefined") return { ok: false as const, reason: "unsupported" as const };

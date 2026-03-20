@@ -6,6 +6,7 @@ import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
 import { Bell } from "lucide-react";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import PushActivationBanner from "@/components/notifications/PushActivationBanner";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
 import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
 import { supabase } from "@/lib/supabaseClient";
@@ -202,6 +203,8 @@ export default function PlayerHeader() {
           </div>
         </div>
       </header>
+
+      <PushActivationBanner settingsHref="/player/notifications/settings" />
 
       {/* Drawer (désormais utilisable aussi en mobile/app via CSS) */}
       <PlayerDesktopDrawer open={open} onClose={() => setOpen(false)} />
