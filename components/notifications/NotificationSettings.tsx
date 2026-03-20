@@ -152,18 +152,18 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
 
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950, fontSize: 14 }}>
               <Settings size={16} />
               {tr("Paramètres notifications", "Notification settings", "Benachrichtigungseinstellungen", "Impostazioni notifiche")}
             </div>
 
             {loading ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("common.loading")}</div>
+              <div style={{ opacity: 0.8, fontWeight: 800, fontSize: 13 }}>{t("common.loading")}</div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
                 <label className="glass-card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: 12 }}>
                   <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900 }}>{tr("Activer les notifications", "Enable notifications", "Benachrichtigungen aktivieren", "Attiva notifiche")}</div>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>{tr("Activer les notifications", "Enable notifications", "Benachrichtigungen aktivieren", "Attiva notifiche")}</div>
                   </div>
                   <span
                     role="switch"
@@ -210,8 +210,8 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
 
                 <label className="glass-card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: 12, opacity: pushSupported ? 1 : 0.6 }}>
                   <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900 }}>{tr("Push PWA", "PWA push", "PWA-Push", "Push PWA")}</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.62)" }}>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>{tr("Push PWA", "PWA push", "PWA-Push", "Push PWA")}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.62)", lineHeight: 1.4 }}>
                       {pushSupported
                         ? tr(
                             "Notification sur l'application et le navigateur mobile/desktop",
@@ -266,7 +266,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
                 </label>
 
                 <div className="glass-card" style={{ display: "grid", gap: 8, padding: 12, opacity: receiveInApp ? 1 : 0.6 }}>
-                  <div style={{ fontWeight: 900 }}>{tr("Types de notifications", "Notification types", "Benachrichtigungstypen", "Tipi di notifiche")}</div>
+                  <div style={{ fontWeight: 900, fontSize: 13 }}>{tr("Types de notifications", "Notification types", "Benachrichtigungstypen", "Tipi di notifiche")}</div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {NOTIFICATION_KIND_OPTIONS.map((opt) => {
@@ -284,7 +284,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
                             width: "100%",
                           }}
                         >
-                          <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.72)" }}>
+                          <span style={{ fontWeight: 700, fontSize: 12, color: "rgba(0,0,0,0.72)", lineHeight: 1.35 }}>
                             {locale === "fr" ? opt.labelFr : opt.labelEn}
                           </span>
                           <span
