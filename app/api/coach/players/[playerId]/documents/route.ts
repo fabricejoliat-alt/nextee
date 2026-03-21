@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 
 const DOCUMENTS_BUCKET = "marketplace";
 const MAX_DOCUMENT_SIZE_BYTES = 500 * 1024 * 1024;
@@ -26,31 +27,6 @@ async function resolveUploaderName(supabaseAdmin: any, callerId: string) {
   return uploadedByName;
 }
 
-async function resolveSharedCoachOrManagerOrgs(supabaseAdmin: any, callerId: string, playerId: string) {
-  const [coachRes, playerRes] = await Promise.all([
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", callerId)
-      .eq("is_active", true)
-      .in("role", ["manager", "coach"]),
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", playerId)
-      .eq("is_active", true)
-      .eq("role", "player"),
-  ]);
-  if (coachRes.error) throw new Error(coachRes.error.message);
-  if (playerRes.error) throw new Error(playerRes.error.message);
-
-  const coachOrgs = new Set<string>((coachRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-  const shared = Array.from(
-    new Set((playerRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter((id: string) => coachOrgs.has(id)))
-  );
-  return shared;
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: string }> }) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -59,8 +35,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
-    if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const url = new URL(req.url);
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
 
@@ -127,8 +105,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
-    if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
@@ -149,7 +129,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       const organizationIdFromBody = String(body?.organization_id ?? "").trim();
       const coachOnlyFromBody = String(body?.coach_only ?? "false").trim() === "true";
       const clubEventIdFromBody = String(body?.club_event_id ?? "").trim() || null;
-      if (!organizationIdFromBody || !sharedOrgIds.includes(organizationIdFromBody)) {
+      if (!organizationIdFromBody || !access.sharedClubIds.includes(organizationIdFromBody)) {
         return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
       }
       if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
@@ -213,7 +193,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     const clubEventId = String(form.get("club_event_id") ?? "").trim() || null;
     const providedName = String(form.get("file_name") ?? "").trim();
     const file = form.get("file");
-    if (!organizationId || !sharedOrgIds.includes(organizationId)) {
+    if (!organizationId || !access.sharedClubIds.includes(organizationId)) {
       return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
     }
     if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });

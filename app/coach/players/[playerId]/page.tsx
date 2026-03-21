@@ -593,6 +593,7 @@ export default function GolfDashboardPage() {
   const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
   const [accessChecked, setAccessChecked] = useState(false);
   const [canLoadData, setCanLoadData] = useState(false);
+  const [canAccessSensitiveSections, setCanAccessSensitiveSections] = useState(false);
   const [playerProfile, setPlayerProfile] = useState<ProfileLite | null>(null);
   const [sharedClubNames, setSharedClubNames] = useState<string[]>([]);
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
@@ -634,6 +635,7 @@ export default function GolfDashboardPage() {
     (async () => {
       setAccessChecked(false);
       setCanLoadData(false);
+      setCanAccessSensitiveSections(false);
       setError(null);
 
       try {
@@ -649,83 +651,43 @@ export default function GolfDashboardPage() {
           setAccessChecked(true);
           return;
         }
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) throw new Error("Session invalide.");
 
-        const meRes = await supabase
-          .from("club_members")
-          .select("club_id,role,is_active")
-          .eq("user_id", meId)
-          .eq("is_active", true)
-          .in("role", ["coach", "manager"]);
-        if (meRes.error) throw new Error(meRes.error.message);
-
-        const targetRes = await supabase
-          .from("club_members")
-          .select("club_id,role,is_active")
-          .eq("user_id", playerId)
-          .eq("is_active", true);
-        if (targetRes.error) throw new Error(targetRes.error.message);
-
-        const myClubIds = new Set(
-          ((meRes.data ?? []) as ClubMemberRow[]).map((r) => r.club_id).filter(Boolean)
-        );
-        const sharedClubIds = ((targetRes.data ?? []) as ClubMemberRow[])
-          .map((r) => r.club_id)
-          .filter((id) => myClubIds.has(id));
-
-        if (sharedClubIds.length === 0) throw new Error("Access denied for this player.");
-        setSharedClubIds(sharedClubIds);
-
-        const allPlayerClubIds = Array.from(
-          new Set(((targetRes.data ?? []) as ClubMemberRow[]).map((r) => r.club_id).filter(Boolean))
-        );
-
-        const [profileRes, clubsRes] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id,first_name,last_name,handicap,avatar_url")
-            .eq("id", playerId)
-            .maybeSingle(),
-          supabase.from("clubs").select("id,name").in("id", allPlayerClubIds),
-        ]);
-
-        if (profileRes.error) throw new Error(profileRes.error.message);
-        if (clubsRes.error) throw new Error(clubsRes.error.message);
-
-        setPlayerProfile((profileRes.data ?? null) as ProfileLite | null);
-        setSharedClubNames(
-          ((clubsRes.data ?? []) as Array<{ id: string; name: string | null }>)
-            .map((c) => String(c.name ?? "").trim())
-            .filter(Boolean)
-        );
-
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData.session?.access_token ?? "";
-          if (token) {
-            const orgRes = await fetch(
-              `/api/coach/players/${encodeURIComponent(playerId)}/organizations`,
-              {
-                headers: { Authorization: `Bearer ${token}` },
-                cache: "no-store",
-              }
-            );
-            const orgJson = await orgRes.json().catch(() => ({}));
-            if (orgRes.ok && Array.isArray(orgJson?.organizations)) {
-              const names = (orgJson.organizations as any[])
-                .map((x: any) => String(x ?? "").trim())
-                .filter(Boolean);
-              if (names.length > 0) setSharedClubNames(Array.from(new Set(names)));
-            }
+        const accessRes = await fetch(
+          `/api/coach/players/${encodeURIComponent(playerId)}/access`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
           }
-        } catch {
-          // fallback keeps current names
-        }
+        );
+        const accessJson = await accessRes.json().catch(() => ({}));
+        if (!accessRes.ok) throw new Error(String(accessJson?.error ?? "Access denied for this player."));
+
+        const nextSharedClubIds = Array.isArray(accessJson?.access?.shared_club_ids)
+          ? (accessJson.access.shared_club_ids as any[]).map((id: any) => String(id ?? "")).filter(Boolean)
+          : [];
+        if (nextSharedClubIds.length === 0) throw new Error("Access denied for this player.");
+        setSharedClubIds(nextSharedClubIds);
+
+        const sensitiveAccess = Boolean(accessJson?.access?.can_access_sensitive_sections);
+        setCanAccessSensitiveSections(sensitiveAccess);
+        if (!sensitiveAccess) setActiveSection("planning");
+
+        setPlayerProfile((accessJson?.profile ?? null) as ProfileLite | null);
+        setSharedClubNames(
+          Array.isArray(accessJson?.organizations)
+            ? (accessJson.organizations as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+            : []
+        );
 
         setCanLoadData(true);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Erreur chargement.";
         setError(msg);
         setCanLoadData(false);
+        setCanAccessSensitiveSections(false);
         setPlayerProfile(null);
         setSharedClubNames([]);
         setSharedClubIds([]);
@@ -742,6 +704,16 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [playerId]);
+
+  useEffect(() => {
+    if (canAccessSensitiveSections) return;
+    if (activeSection === "evaluations" || activeSection === "thread" || activeSection === "documents") {
+      setActiveSection("trainings");
+    }
+  }, [activeSection, canAccessSensitiveSections]);
+
+  const shouldLoadTrainingData = canLoadData && activeSection === "trainings";
+  const shouldLoadRoundData = canLoadData && (activeSection === "competition" || activeSection === "stats");
 
   useEffect(() => {
     setFromDate("");
@@ -858,7 +830,10 @@ export default function GolfDashboardPage() {
   // ===== LOAD TRAININGS (current) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadTrainingData) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
 
@@ -901,23 +876,23 @@ export default function GolfDashboardPage() {
         setLoading(false);
       }
     })();
-  }, [canLoadData, fromDate, playerId, toDate]);
+  }, [shouldLoadTrainingData, fromDate, playerId, toDate]);
 
   useEffect(() => {
     (async () => {
-      if (!canLoadData || !playerId) {
+      if (!shouldLoadTrainingData || !playerId) {
         setIsPerformanceEnabled(false);
         return;
       }
       const perfEnabled = await isEffectivePlayerPerformanceEnabled(playerId);
       setIsPerformanceEnabled(perfEnabled);
     })();
-  }, [canLoadData, playerId]);
+  }, [shouldLoadTrainingData, playerId]);
 
   // ===== LOAD COACH EVALUATIONS (past trainings) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData || !coachId || !playerId || sharedClubIds.length === 0) {
+      if (!canLoadData || !canAccessSensitiveSections || !coachId || !playerId || sharedClubIds.length === 0) {
         setCoachEvaluations([]);
         return;
       }
@@ -982,12 +957,15 @@ export default function GolfDashboardPage() {
         setLoadingCoachEvaluations(false);
       }
     })();
-  }, [canLoadData, coachId, playerId, sharedClubIds]);
+  }, [canLoadData, canAccessSensitiveSections, coachId, playerId, sharedClubIds]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadTrainingData) {
+        setPrevSessions([]);
+        return;
+      }
       if (!prevRange) {
         setPrevSessions([]);
         return;
@@ -1015,10 +993,15 @@ export default function GolfDashboardPage() {
         setLoadingPrev(false);
       }
     })();
-  }, [canLoadData, playerId, prevRange, prevRange?.from, prevRange?.to]);
+  }, [shouldLoadTrainingData, playerId, prevRange, prevRange?.from, prevRange?.to]);
 
   useEffect(() => {
     (async () => {
+      if (!shouldLoadTrainingData) {
+        setClubEventDurationById({});
+        setClubEventDurationByStartKey({});
+        return;
+      }
       const ids = Array.from(
         new Set(
           [...sessions, ...prevSessions]
@@ -1109,11 +1092,11 @@ export default function GolfDashboardPage() {
       setClubEventDurationById(map);
       setClubEventDurationByStartKey(byStartKey);
     })();
-  }, [sessions, prevSessions, playerId]);
+  }, [shouldLoadTrainingData, sessions, prevSessions, playerId]);
 
   useEffect(() => {
     (async () => {
-      if (!canLoadData || !playerId) {
+      if (!shouldLoadTrainingData || !playerId) {
         setPlannedClubMinutes(0);
         return;
       }
@@ -1154,11 +1137,11 @@ export default function GolfDashboardPage() {
       }, 0);
       setPlannedClubMinutes(total);
     })();
-  }, [canLoadData, playerId, fromDate, toDate, trainingScope, sharedClubIds]);
+  }, [shouldLoadTrainingData, playerId, fromDate, toDate, trainingScope, sharedClubIds]);
 
   useEffect(() => {
     (async () => {
-      if (!canLoadData || !playerId || !prevRange) {
+      if (!shouldLoadTrainingData || !playerId || !prevRange) {
         setPrevPlannedClubMinutes(0);
         return;
       }
@@ -1198,12 +1181,16 @@ export default function GolfDashboardPage() {
       }, 0);
       setPrevPlannedClubMinutes(total);
     })();
-  }, [canLoadData, playerId, prevRange, trainingScope, sharedClubIds]);
+  }, [shouldLoadTrainingData, playerId, prevRange, trainingScope, sharedClubIds]);
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadRoundData) {
+        setRounds([]);
+        setLoadingRounds(false);
+        return;
+      }
       setLoadingRounds(true);
       try {
         const uid = playerId;
@@ -1230,12 +1217,16 @@ export default function GolfDashboardPage() {
         setLoadingRounds(false);
       }
     })();
-  }, [canLoadData, fromDate, playerId, toDate]);
+  }, [shouldLoadRoundData, fromDate, playerId, toDate]);
 
   // ===== LOAD ROUNDS (prev, for trends) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadRoundData) {
+        setPrevRounds([]);
+        setLoadingPrevRounds(false);
+        return;
+      }
       if (!prevRange) {
         setPrevRounds([]);
         return;
@@ -1264,12 +1255,16 @@ export default function GolfDashboardPage() {
         setLoadingPrevRounds(false);
       }
     })();
-  }, [canLoadData, playerId, prevRange, prevRange?.from, prevRange?.to]);
+  }, [shouldLoadRoundData, playerId, prevRange, prevRange?.from, prevRange?.to]);
 
   // ===== LOAD HOLES (current) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadRoundData) {
+        setHoles([]);
+        setLoadingHoles(false);
+        return;
+      }
       setLoadingHoles(true);
       try {
         const ids = rounds.map((r) => r.id);
@@ -1291,12 +1286,15 @@ export default function GolfDashboardPage() {
         setLoadingHoles(false);
       }
     })();
-  }, [canLoadData, rounds]);
+  }, [shouldLoadRoundData, rounds]);
 
   // ===== LOAD OM SCORES (gross/net) FOR CURRENT ROUNDS =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadRoundData) {
+        setOmScoresByRoundId({});
+        return;
+      }
       try {
         const ids = rounds.map((r) => r.id);
         if (ids.length === 0) {
@@ -1320,11 +1318,16 @@ export default function GolfDashboardPage() {
         setOmScoresByRoundId({});
       }
     })();
-  }, [canLoadData, rounds]);
+  }, [shouldLoadRoundData, rounds]);
 
   // ===== LOAD HOLES (prev) =====
   useEffect(() => {
     (async () => {
+      if (!shouldLoadRoundData) {
+        setPrevHoles([]);
+        setLoadingPrevHoles(false);
+        return;
+      }
       setLoadingPrevHoles(true);
       try {
         if (!prevRange) {
@@ -1350,12 +1353,17 @@ export default function GolfDashboardPage() {
         setLoadingPrevHoles(false);
       }
     })();
-  }, [canLoadData, prevRange, prevRounds]);
+  }, [shouldLoadRoundData, prevRange, prevRounds]);
 
   // ===== LOAD TRAININGS LOOKBACK (for correlation) =====
   useEffect(() => {
     (async () => {
-      if (!canLoadData) return;
+      if (!shouldLoadTrainingData) {
+        setSessionsLookback([]);
+        setItemsLookback([]);
+        setLoadingTrainLookback(false);
+        return;
+      }
       setLoadingTrainLookback(true);
       try {
         const uid = playerId;
@@ -1399,7 +1407,7 @@ export default function GolfDashboardPage() {
         setLoadingTrainLookback(false);
       }
     })();
-  }, [canLoadData, fromDate, playerId, toDate]);
+  }, [shouldLoadTrainingData, fromDate, playerId, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
     week: t("common.thisWeek"),
@@ -2364,7 +2372,10 @@ function presetToSelectValue(p: Preset): Preset {
   }, [canLoadData, playerId]);
 
   async function loadDocuments() {
-    if (!canLoadData || !playerId) return;
+    if (!canLoadData || !canAccessSensitiveSections || !playerId) {
+      setDocuments([]);
+      return;
+    }
     setLoadingDocuments(true);
     try {
       const { data: sess } = await supabase.auth.getSession();
@@ -2388,7 +2399,7 @@ function presetToSelectValue(p: Preset): Preset {
   useEffect(() => {
     void loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canLoadData, playerId]);
+  }, [canLoadData, canAccessSensitiveSections, playerId]);
 
   function openDocumentPicker() {
     if (uploadingDocument) return;
@@ -2673,7 +2684,7 @@ function presetToSelectValue(p: Preset): Preset {
   }
 
   async function ensureAndLoadTeamThread() {
-    if (!canLoadData || !playerId || !coachId || sharedClubIds.length === 0) {
+    if (!canLoadData || !canAccessSensitiveSections || !playerId || !coachId || sharedClubIds.length === 0) {
       setTeamThreadId("");
       setTeamMessages([]);
       return;
@@ -2707,7 +2718,7 @@ function presetToSelectValue(p: Preset): Preset {
   useEffect(() => {
     void ensureAndLoadTeamThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canLoadData, playerId, coachId, sharedClubIds.join(",")]);
+  }, [canLoadData, canAccessSensitiveSections, playerId, coachId, sharedClubIds.join(",")]);
 
   useEffect(() => {
     if (!teamThreadId) return;
@@ -3243,7 +3254,11 @@ function presetToSelectValue(p: Preset): Preset {
                 { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
                 { id: "thread" as DashboardSection, label: "Fil de discussion" },
                 { id: "documents" as DashboardSection, label: "Documents" },
-              ].map((tab) => {
+              ]
+                .filter((tab) =>
+                  canAccessSensitiveSections || (tab.id !== "evaluations" && tab.id !== "thread" && tab.id !== "documents")
+                )
+                .map((tab) => {
                 const isActive = activeSection === tab.id;
                 return (
                   <button

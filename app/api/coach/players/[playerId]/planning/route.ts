@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 
 export async function GET(
   req: NextRequest,
@@ -13,53 +14,42 @@ export async function GET(
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-
-    const [meRes, playerRes] = await Promise.all([
-      supabaseAdmin
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", callerId)
-        .eq("is_active", true)
-        .in("role", ["coach", "manager"]),
-      supabaseAdmin
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", playerId)
-        .eq("is_active", true),
-    ]);
-    if (meRes.error) return NextResponse.json({ error: meRes.error.message }, { status: 400 });
-    if (playerRes.error) return NextResponse.json({ error: playerRes.error.message }, { status: 400 });
-
-    const myClubIds = new Set((meRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-    const playerClubIds = Array.from(
-      new Set((playerRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean))
-    );
-    const sharedClubIds = playerClubIds.filter((id) => myClubIds.has(id));
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const sharedClubIds = access.sharedClubIds;
     if (sharedClubIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const evRes = await supabaseAdmin
+      .from("club_events")
+      .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status")
+      .in("club_id", sharedClubIds)
+      .eq("status", "scheduled")
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
+      .limit(300);
+    if (evRes.error) return NextResponse.json({ error: evRes.error.message }, { status: 400 });
+
+    const candidateEvents = evRes.data ?? [];
+    const candidateEventIds = Array.from(
+      new Set(candidateEvents.map((e: any) => String(e.id ?? "")).filter(Boolean))
+    );
+    if (candidateEventIds.length === 0) return NextResponse.json({ events: [] });
 
     const attendeeRes = await supabaseAdmin
       .from("club_event_attendees")
       .select("event_id")
       .eq("player_id", playerId)
-      .limit(2000);
+      .in("event_id", candidateEventIds)
+      .limit(300);
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
 
-    const eventIds = Array.from(
-      new Set((attendeeRes.data ?? []).map((r: any) => String(r.event_id ?? "")).filter(Boolean))
+    const attendeeEventIds = new Set(
+      ((attendeeRes.data ?? []) as Array<{ event_id: string | null }>)
+        .map((row) => String(row.event_id ?? ""))
+        .filter(Boolean)
     );
-    if (eventIds.length === 0) return NextResponse.json({ events: [] });
+    if (attendeeEventIds.size === 0) return NextResponse.json({ events: [] });
 
-    const evRes = await supabaseAdmin
-      .from("club_events")
-      .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status")
-      .in("id", eventIds)
-      .eq("status", "scheduled")
-      .gte("starts_at", new Date().toISOString())
-      .order("starts_at", { ascending: true })
-      .limit(100);
-    if (evRes.error) return NextResponse.json({ error: evRes.error.message }, { status: 400 });
-
-    const events = evRes.data ?? [];
+    const events = candidateEvents.filter((event: any) => attendeeEventIds.has(String(event.id ?? ""))).slice(0, 100);
     const groupIds = Array.from(new Set(events.map((e: any) => String(e.group_id ?? "")).filter(Boolean)));
     const clubIds = Array.from(new Set(events.map((e: any) => String(e.club_id ?? "")).filter(Boolean)));
 

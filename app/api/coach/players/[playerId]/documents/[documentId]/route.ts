@@ -1,30 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
-
-async function resolveSharedCoachOrManagerOrgs(supabaseAdmin: any, callerId: string, playerId: string) {
-  const [coachRes, playerRes] = await Promise.all([
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", callerId)
-      .eq("is_active", true)
-      .in("role", ["manager", "coach"]),
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", playerId)
-      .eq("is_active", true)
-      .eq("role", "player"),
-  ]);
-  if (coachRes.error) throw new Error(coachRes.error.message);
-  if (playerRes.error) throw new Error(playerRes.error.message);
-
-  const coachOrgs = new Set<string>((coachRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-  const shared = Array.from(
-    new Set((playerRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter((id: string) => coachOrgs.has(id)))
-  );
-  return shared;
-}
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 
 export async function DELETE(
   req: NextRequest,
@@ -37,8 +13,10 @@ export async function DELETE(
     if (!playerId || !documentId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
-    if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const docRes = await supabaseAdmin
       .from("player_dashboard_documents")
@@ -48,7 +26,7 @@ export async function DELETE(
       .maybeSingle();
     if (docRes.error) return NextResponse.json({ error: docRes.error.message }, { status: 400 });
     if (!docRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (!sharedOrgIds.includes(String(docRes.data.organization_id ?? ""))) {
+    if (!access.sharedClubIds.includes(String(docRes.data.organization_id ?? ""))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
@@ -76,8 +54,10 @@ export async function PATCH(
     if (!playerId || !documentId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const sharedOrgIds = await resolveSharedCoachOrManagerOrgs(supabaseAdmin, callerId, playerId);
-    if (sharedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const body = (await req.json().catch(() => ({}))) as {
       file_name?: string | null;
@@ -101,7 +81,7 @@ export async function PATCH(
       .maybeSingle();
     if (docRes.error) return NextResponse.json({ error: docRes.error.message }, { status: 400 });
     if (!docRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (!sharedOrgIds.includes(String(docRes.data.organization_id ?? ""))) {
+    if (!access.sharedClubIds.includes(String(docRes.data.organization_id ?? ""))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {

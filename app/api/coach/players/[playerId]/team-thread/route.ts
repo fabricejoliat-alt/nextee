@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: string }> }) {
   try {
@@ -10,63 +11,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-
-    const staffRes = await supabaseAdmin
-      .from("club_members")
-      .select("club_id,role")
-      .eq("user_id", callerId)
-      .eq("is_active", true)
-      .in("role", ["coach", "manager"]);
-    if (staffRes.error) return NextResponse.json({ error: staffRes.error.message }, { status: 400 });
-    if ((staffRes.data ?? []).length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    const playerMembershipsRes = await supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", playerId)
-      .eq("is_active", true);
-    if (playerMembershipsRes.error) return NextResponse.json({ error: playerMembershipsRes.error.message }, { status: 400 });
-
-    const callerOrgIds = new Set((staffRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-    const playerOrgIds = new Set((playerMembershipsRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-    const sharedMembershipOrgIds = Array.from(new Set([...callerOrgIds].filter((id) => playerOrgIds.has(id))));
-
-    const [playerGroupsRes, callerCoachGroupsRes] = await Promise.all([
-      supabaseAdmin
-        .from("coach_group_players")
-        .select("group_id")
-        .eq("player_user_id", playerId),
-      supabaseAdmin
-        .from("coach_group_coaches")
-        .select("group_id")
-        .eq("coach_user_id", callerId),
-    ]);
-    if (playerGroupsRes.error) return NextResponse.json({ error: playerGroupsRes.error.message }, { status: 400 });
-    if (callerCoachGroupsRes.error) return NextResponse.json({ error: callerCoachGroupsRes.error.message }, { status: 400 });
-
-    const playerGroupIds = new Set((playerGroupsRes.data ?? []).map((r: any) => String(r.group_id ?? "")).filter(Boolean));
-    const sharedGroupIds = Array.from(
-      new Set(
-        (callerCoachGroupsRes.data ?? [])
-          .map((r: any) => String(r.group_id ?? ""))
-          .filter((gid: string) => Boolean(gid) && playerGroupIds.has(gid))
-      )
-    );
-
-    let sharedGroupOrgIds: string[] = [];
-    if (sharedGroupIds.length > 0) {
-      const groupOrgRes = await supabaseAdmin
-        .from("coach_groups")
-        .select("id,club_id")
-        .in("id", sharedGroupIds);
-      if (groupOrgRes.error) return NextResponse.json({ error: groupOrgRes.error.message }, { status: 400 });
-      sharedGroupOrgIds = Array.from(
-        new Set((groupOrgRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean))
-      );
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const allowedOrgIds = access.sharedClubIds;
 
-    const allowedOrgIds = Array.from(new Set([...sharedMembershipOrgIds, ...sharedGroupOrgIds]));
-    if (allowedOrgIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const playerGroupsRes = await supabaseAdmin
+      .from("coach_group_players")
+      .select("group_id")
+      .eq("player_user_id", playerId);
+    if (playerGroupsRes.error) return NextResponse.json({ error: playerGroupsRes.error.message }, { status: 400 });
 
     const existingThreadsRes = await supabaseAdmin
       .from("message_threads")
@@ -175,6 +130,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
             .filter((id: string) => Boolean(id) && activeCoachIds.has(id))
         )
       );
+    }
+    if (access.canAccessSensitiveSections) {
+      eligibleCoachIds = Array.from(new Set([...eligibleCoachIds, callerId]));
     }
 
     const guardiansRes = await supabaseAdmin
