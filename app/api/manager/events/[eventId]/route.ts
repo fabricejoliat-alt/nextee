@@ -164,8 +164,9 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
 
     const clubId = String((eventRes.data as { club_id?: string | null }).club_id ?? "").trim();
     const seriesId = String((eventRes.data as { series_id?: string | null }).series_id ?? "").trim();
+    const scope = String(new URL(req.url).searchParams.get("scope") ?? "").trim();
     if (!clubId) return NextResponse.json({ error: "Event club missing" }, { status: 400 });
-    if (seriesId) {
+    if (seriesId && scope !== "occurrence") {
       return NextResponse.json({ error: "Événement récurrent : suppression uniquement depuis l’éditeur de récurrence." }, { status: 400 });
     }
 

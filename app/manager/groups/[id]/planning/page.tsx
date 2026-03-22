@@ -1126,8 +1126,20 @@ export default function CoachGroupPlanningPage() {
     setBusy(true);
     setError(null);
 
-    const del = await supabase.from("club_events").delete().eq("id", eventId);
-    if (del.error) setError(del.error.message);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) {
+      setError(tr("Session invalide.", "Invalid session."));
+      setBusy(false);
+      return;
+    }
+
+    const delRes = await fetch(`/api/manager/events/${encodeURIComponent(eventId)}?scope=occurrence`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const delJson = await delRes.json().catch(() => ({}));
+    if (!delRes.ok) setError(String(delJson?.error ?? tr("Suppression impossible.", "Deletion failed.")));
     setBusy(false);
     await load();
   }

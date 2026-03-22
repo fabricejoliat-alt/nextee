@@ -190,15 +190,34 @@ export async function GET(req: NextRequest) {
       const pid = String((row as any).player_id ?? "").trim();
       if (pid) linkedPlayers.add(pid);
     }
+    const groupNameById: Record<string, string> = {};
+    groups.forEach((g) => {
+      groupNameById[g.id] = String(g.name ?? "").trim() || "Groupe";
+    });
+    const archivedGroups = groups.filter((g) => String(g.name ?? "").trim() === "__ARCHIVE_HISTORIQUE__");
+    const activeGroups = groups.filter((g) => Boolean(g.is_active) && String(g.name ?? "").trim() !== "__ARCHIVE_HISTORIQUE__");
+    const planningGroupIds = activeGroups.map((g) => g.id);
+
+    const groupPlayersRes =
+      planningGroupIds.length > 0 && activePlayerIds.length > 0
+        ? await supabaseAdmin
+            .from("coach_group_players")
+            .select("player_user_id")
+            .in("group_id", planningGroupIds)
+            .in("player_user_id", activePlayerIds)
+        : ({ data: [], error: null } as any);
+    if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
+
+    const playersInActiveGroups = new Set(
+      ((groupPlayersRes.data ?? []) as Array<{ player_user_id: string | null }>)
+        .map((row) => String(row.player_user_id ?? "").trim())
+        .filter(Boolean)
+    );
+
     const eligibleJuniorIds = activePlayerIds.filter((pid) => {
-      const hasCourse = activePlayerMemberships.some((m) => {
-        const track = String(m.player_course_track ?? "").trim().toLowerCase();
-        return String(m.user_id ?? "").trim() === pid && track !== "" && track !== "no_course";
-      });
-      if (!hasCourse) return false;
+      if (!playersInActiveGroups.has(pid)) return false;
       const age = computeAge(profileById.get(pid)?.birth_date);
-      if (age != null && age >= 18) return false;
-      return true;
+      return age == null || age < 18;
     });
     const juniorsWithoutParent = eligibleJuniorIds
       .filter((pid) => !linkedPlayers.has(pid))
@@ -208,14 +227,6 @@ export async function GET(req: NextRequest) {
         last_name: (profileById.get(pid)?.last_name ?? null) as string | null,
       }))
       .sort((a, b) => `${a.last_name ?? ""} ${a.first_name ?? ""}`.localeCompare(`${b.last_name ?? ""} ${b.first_name ?? ""}`, "fr"));
-
-    const groupNameById: Record<string, string> = {};
-    groups.forEach((g) => {
-      groupNameById[g.id] = String(g.name ?? "").trim() || "Groupe";
-    });
-    const archivedGroups = groups.filter((g) => String(g.name ?? "").trim() === "__ARCHIVE_HISTORIQUE__");
-    const activeGroups = groups.filter((g) => Boolean(g.is_active) && String(g.name ?? "").trim() !== "__ARCHIVE_HISTORIQUE__");
-    const planningGroupIds = activeGroups.map((g) => g.id);
 
     let plannedEventsCount = 0;
     let pastEventsCount = 0;
