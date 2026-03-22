@@ -300,118 +300,44 @@ export default function CoachEventDetailPage() {
 
     try {
       if (!eventId) throw new Error("Événement manquant.");
+      const { data: sessRes } = await supabase.auth.getSession();
+      const token = sessRes.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-      // event
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
+      const detailRes = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const detailJson = await detailRes.json().catch(() => ({}));
+      if (!detailRes.ok) throw new Error(String(detailJson?.error ?? "Événement introuvable."));
 
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Événement introuvable.");
-      const ev = eRes.data as EventRow;
+      const ev = detailJson?.event as EventRow | undefined;
+      if (!ev?.id) throw new Error("Événement introuvable.");
+
       setEvent(ev);
-
-      // club name
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
-      setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? "Club" : "Club");
-
-      // group name
-      const gRes = await supabase.from("coach_groups").select("id,name").eq("id", ev.group_id).maybeSingle();
-      setGroupName(!gRes.error && gRes.data ? (gRes.data as GroupRow).name ?? "Groupe" : "Groupe");
-
-      const { data: userRes, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userRes.user) throw new Error("Session invalide.");
-      setMeId(String(userRes.user.id ?? ""));
-
-      // attendees (⚠️ no join, because no FK on player_id -> profiles.id)
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id,status")
-        .eq("event_id", eventId);
-
-      if (aRes.error) throw new Error(aRes.error.message);
-
-      const aList = (aRes.data ?? []) as AttendeeDbRow[];
-      const playerIds = aList.map((r) => r.player_id);
-
-      // profiles (second query)
-      let profilesById: Record<string, ProfileLite> = {};
-      if (playerIds.length > 0) {
-        const pRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name,handicap,avatar_url")
-          .in("id", playerIds);
-
-        if (pRes.error) throw new Error(pRes.error.message);
-
-        (pRes.data ?? []).forEach((p: any) => {
-          profilesById[p.id] = {
-            id: p.id,
-            first_name: p.first_name ?? null,
-            last_name: p.last_name ?? null,
-            handicap: p.handicap ?? null,
-            avatar_url: p.avatar_url ?? null,
-          };
-        });
-      }
-
-      const uiRows: AttendeeUiRow[] = aList.map((a) => ({
-        ...a,
-        profile: profilesById[a.player_id] ?? null,
-      }));
-
-      // sort by name (nice UX)
-      uiRows.sort((x, y) =>
-        nameOf(x.profile?.first_name ?? null, x.profile?.last_name ?? null).localeCompare(
-          nameOf(y.profile?.first_name ?? null, y.profile?.last_name ?? null),
-          "fr"
-        )
+      setClubName(String(detailJson?.clubName ?? "Club"));
+      setGroupName(String(detailJson?.groupName ?? "Groupe"));
+      setMeId(String(detailJson?.meId ?? ""));
+      setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
+      setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
+      setSelectedCoachIds(
+        Array.isArray(detailJson?.selectedCoachIds)
+          ? (detailJson.selectedCoachIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
+          : []
       );
-
-      setAttendees(uiRows);
-
-      const coRes = await supabase
-        .from("coach_group_coaches")
-        .select("coach_user_id, profiles:coach_user_id ( id, first_name, last_name )")
-        .eq("group_id", ev.group_id);
-      if (coRes.error) throw new Error(coRes.error.message);
-      const coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
-        id: String(r.coach_user_id),
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-      }));
-      setCoaches(coList);
-
-      const ecRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", ev.id);
-      if (ecRes.error) throw new Error(ecRes.error.message);
-      setSelectedCoachIds((ecRes.data ?? []).map((r: any) => String(r.coach_id ?? "")).filter(Boolean));
-
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", ev.id)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (structRes.error) throw new Error(structRes.error.message);
-      setStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
-
-      const feedbackRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("player_id")
-        .eq("event_id", ev.id)
-        .eq("coach_id", String(userRes.user.id ?? ""));
-      if (feedbackRes.error) throw new Error(feedbackRes.error.message);
+      setStructureItems(Array.isArray(detailJson?.structureItems) ? (detailJson.structureItems as EventStructureItemRow[]) : []);
       setEvaluatedPlayerIds(
-        new Set((feedbackRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean))
+        new Set(
+          Array.isArray(detailJson?.evaluatedPlayerIds)
+            ? (detailJson.evaluatedPlayerIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
+            : []
+        )
       );
 
       // Thread preview
       setLoadingEventThread(true);
       try {
-        const { data: sessRes } = await supabase.auth.getSession();
-        const token = sessRes.session?.access_token ?? "";
         if (!token) {
           setEventThreadId("");
           setEventThreadMessages([]);

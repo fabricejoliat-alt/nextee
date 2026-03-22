@@ -238,127 +238,49 @@ export default function CoachEventPlayerDetailPage() {
     try {
       if (!eventId || !playerId) throw new Error("Missing parameters.");
 
-      const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
-      setMeId(uRes.user.id);
-
-      // event
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
-
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Training not found.");
-      const ev = eRes.data as EventRow;
-      setEvent(ev);
-
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
-      setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? "Club" : "Club");
-
-      const gRes = await supabase.from("coach_groups").select("id,name").eq("id", ev.group_id).maybeSingle();
-      setGroupName(!gRes.error && gRes.data ? (gRes.data as GroupRow).name ?? "Groupe" : "Groupe");
-
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (structRes.error) throw new Error(structRes.error.message);
-      setEventStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
-
-      const playerStructRes = await supabase
-        .from("club_event_player_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (playerStructRes.error) throw new Error(playerStructRes.error.message);
-      setPlayerPlannedStructureItems((playerStructRes.data ?? []) as PlayerPlannedStructureItemRow[]);
-
-      // player
-      const pRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name,handicap,avatar_url")
-        .eq("id", playerId)
-        .maybeSingle();
-      if (pRes.error) throw new Error(pRes.error.message);
-      if (!pRes.data) throw new Error("Joueur introuvable.");
-      setPlayer(pRes.data as ProfileRow);
-
-      // attendee status
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id,status")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .limit(1);
-      setAttendance(!aRes.error && (aRes.data?.[0] ?? null) ? (aRes.data?.[0] as AttendeeRow) : null);
-
-      // player feedback
-      const pfRes = await supabase
-        .from("club_event_player_feedback")
-        .select("event_id,player_id,motivation,difficulty,satisfaction,player_note,submitted_at")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .order("submitted_at", { ascending: false, nullsFirst: false })
-        .limit(1);
-      setPlayerFb(!pfRes.error && (pfRes.data?.[0] ?? null) ? (pfRes.data?.[0] as PlayerFeedbackRow) : null);
-
-      // coach feedback (this coach)
-      const cfRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .eq("coach_id", uRes.user.id)
-        .limit(1);
-      setCoachFb(!cfRes.error && (cfRes.data?.[0] ?? null) ? (cfRes.data?.[0] as CoachFeedbackRow) : null);
-
-      // ✅ STRUCTURE: training_sessions linked by club_event_id + user_id
-      const sRes = await supabase
-        .from("training_sessions")
-        .select(
-          "id,user_id,start_at,location_text,session_type,club_id,coach_user_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes,club_event_id,created_at"
-        )
-        .eq("user_id", playerId)
-        .eq("club_event_id", eventId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (sRes.error) throw new Error(sRes.error.message);
-
-      const sess = ((sRes.data?.[0] ?? null) as TrainingSessionRow | null);
-      setSession(sess);
-      if (sess?.id) {
-        const itRes = await supabase
-          .from("training_session_items")
-          .select("id,session_id,category,minutes,note,other_detail,created_at")
-          .eq("session_id", sess.id)
-          .order("created_at", { ascending: true });
-        if (itRes.error) throw new Error(itRes.error.message);
-        setItems((itRes.data ?? []) as TrainingItemRow[]);
-      } else {
-        setItems([]);
-      }
-
       const { data: sessAuth } = await supabase.auth.getSession();
       const token = sessAuth.session?.access_token ?? "";
-      if (token) {
-        const query = new URLSearchParams({ club_event_id: eventId });
-        const docsRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents?${query.toString()}`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const docsJson = await docsRes.json().catch(() => ({}));
-        if (!docsRes.ok) throw new Error(String(docsJson?.error ?? "Impossible de charger les documents liés."));
-        setLinkedDocuments((docsJson?.documents ?? []) as LinkedPlayerEventDocument[]);
+      if (!token) throw new Error("Session invalide.");
+
+      const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/players/${encodeURIComponent(playerId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Training not found."));
+
+      const ev = (json?.event ?? null) as EventRow | null;
+      setMeId(String(json?.meId ?? ""));
+      setEvent(ev);
+      setClubName(ev?.club_id ? clubName : "");
+      setGroupName(ev?.group_id ? groupName : "");
+      setPlayer((json?.player ?? null) as ProfileRow | null);
+      setAttendance(
+        json?.attendanceStatus
+          ? ({ player_id: playerId, status: String(json.attendanceStatus) } as AttendeeRow)
+          : null
+      );
+      setPlayerFb((json?.playerFeedback ?? null) as PlayerFeedbackRow | null);
+      setCoachFb((json?.feedback ?? null) as CoachFeedbackRow | null);
+      setSession((json?.session ?? null) as TrainingSessionRow | null);
+      setItems((json?.sessionItems ?? []) as TrainingItemRow[]);
+      setEventStructureItems((json?.eventStructureItems ?? []) as EventStructureItemRow[]);
+      setPlayerPlannedStructureItems((json?.playerPlannedStructureItems ?? []) as PlayerPlannedStructureItemRow[]);
+      setLinkedDocuments((json?.linkedDocuments ?? []) as LinkedPlayerEventDocument[]);
+
+      if (ev?.club_id) {
+        const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
+        setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? "Club" : "Club");
       } else {
-        setLinkedDocuments([]);
+        setClubName("");
+      }
+
+      if (ev?.group_id) {
+        const gRes = await supabase.from("coach_groups").select("id,name").eq("id", ev.group_id).maybeSingle();
+        setGroupName(!gRes.error && gRes.data ? (gRes.data as GroupRow).name ?? "Groupe" : "Groupe");
+      } else {
+        setGroupName("");
       }
 
       setLoading(false);

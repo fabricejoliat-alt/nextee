@@ -44,6 +44,7 @@ type CoachLite = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  avatar_url?: string | null;
 };
 
 type AttendeeDbRow = {
@@ -257,21 +258,52 @@ export default function CoachEventDetailPage() {
 
       setAttendees(uiRows);
 
-      const coRes = await supabase
-        .from("coach_group_coaches")
-        .select("coach_user_id, profiles:coach_user_id ( id, first_name, last_name )")
-        .eq("group_id", ev.group_id);
-      if (coRes.error) throw new Error(coRes.error.message);
-      const coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
-        id: String(r.coach_user_id),
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-      }));
-      setCoaches(coList);
-
       const ecRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", ev.id);
       if (ecRes.error) throw new Error(ecRes.error.message);
-      setSelectedCoachIds((ecRes.data ?? []).map((r: any) => String(r.coach_id ?? "")).filter(Boolean));
+      const selectedCoachIds = (ecRes.data ?? []).map((r: any) => String(r.coach_id ?? "")).filter(Boolean);
+
+      const clubCoachMembershipsRes = await supabase
+        .from("club_members")
+        .select("user_id")
+        .eq("club_id", ev.club_id)
+        .eq("role", "coach")
+        .eq("is_active", true);
+      if (clubCoachMembershipsRes.error) throw new Error(clubCoachMembershipsRes.error.message);
+
+      const coachIds = Array.from(
+        new Set([
+          ...((clubCoachMembershipsRes.data ?? []) as Array<{ user_id: string | null }>)
+            .map((row) => String(row.user_id ?? "").trim())
+            .filter(Boolean),
+          ...selectedCoachIds,
+        ])
+      );
+
+      let coList: CoachLite[] = [];
+      if (coachIds.length > 0) {
+        const coachProfilesRes = await supabase
+          .from("profiles")
+          .select("id,first_name,last_name,avatar_url")
+          .in("id", coachIds);
+        if (coachProfilesRes.error) throw new Error(coachProfilesRes.error.message);
+        coList = ((coachProfilesRes.data ?? []) as Array<{
+          id: string;
+          first_name: string | null;
+          last_name: string | null;
+          avatar_url: string | null;
+        }>)
+          .map((p) => ({
+            id: String(p.id ?? ""),
+            first_name: p.first_name ?? null,
+            last_name: p.last_name ?? null,
+            avatar_url: p.avatar_url ?? null,
+          }))
+          .filter((p) => Boolean(p.id))
+          .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr"));
+      }
+
+      setCoaches(coList);
+      setSelectedCoachIds(selectedCoachIds);
 
       const structRes = await supabase
         .from("club_event_structure_items")
@@ -310,36 +342,55 @@ export default function CoachEventDetailPage() {
     [coaches, selectedCoachIds]
   );
 
+  async function replaceEventCoaches(nextCoachIds: string[]) {
+    if (!event) return;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) throw new Error("Session invalide.");
+
+    const res = await fetch("/api/manager/events/coaches/bulk", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        event_ids: [event.id],
+        coach_ids: nextCoachIds,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(json?.error ?? "Impossible de mettre à jour les coachs."));
+  }
+
   async function addCoach(coachId: string) {
     if (!event) return;
     if (coachBusyIds[coachId]) return;
     setCoachBusyIds((prev) => ({ ...prev, [coachId]: true }));
-    const ins = await supabase.from("club_event_coaches").insert({ event_id: event.id, coach_id: coachId });
-    if (ins.error) {
-      setError(ins.error.message);
+    try {
+      const nextIds = Array.from(new Set([...selectedCoachIds, coachId]));
+      await replaceEventCoaches(nextIds);
+      setSelectedCoachIds(nextIds);
+    } catch (e: any) {
+      setError(e?.message ?? t("common.errorLoading"));
+    } finally {
       setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
-      return;
     }
-    setSelectedCoachIds((prev) => Array.from(new Set([...prev, coachId])));
-    setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
   }
 
   async function removeCoach(coachId: string) {
     if (!event) return;
     if (coachBusyIds[coachId]) return;
     setCoachBusyIds((prev) => ({ ...prev, [coachId]: true }));
-    const del = await supabase
-      .from("club_event_coaches")
-      .delete()
-      .eq("event_id", event.id)
-      .eq("coach_id", coachId);
-    if (del.error) {
-      setError(del.error.message);
+    try {
+      const nextIds = selectedCoachIds.filter((id) => id !== coachId);
+      await replaceEventCoaches(nextIds);
+      setSelectedCoachIds(nextIds);
+    } catch (e: any) {
+      setError(e?.message ?? t("common.errorLoading"));
+    } finally {
       setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
-      return;
     }
-    setSelectedCoachIds((prev) => prev.filter((id) => id !== coachId));
-    setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
   }
 
   async function setAttendanceStatus(playerId: string, nextStatus: "present" | "absent") {
@@ -540,6 +591,9 @@ export default function CoachEventDetailPage() {
                           gap: 10,
                         }}
                       >
+                        <div style={avatarBoxStyle} aria-hidden="true">
+                          {avatarNode(c as any)}
+                        </div>
                         <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
                       </div>
                     ))

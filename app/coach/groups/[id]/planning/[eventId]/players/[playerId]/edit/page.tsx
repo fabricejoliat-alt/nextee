@@ -216,123 +216,33 @@ export default function CoachEventPlayerFeedbackEditPage() {
     try {
       if (!eventId || !playerId) throw new Error("Missing parameters.");
 
-      const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
-      setMeId(uRes.user.id);
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
+      const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/players/${encodeURIComponent(playerId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Training not found."));
 
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Training not found.");
-      setEvent(eRes.data as EventRow);
-
-      const pRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name,handicap,avatar_url")
-        .eq("id", playerId)
-        .maybeSingle();
-
-      if (pRes.error) throw new Error(pRes.error.message);
-      if (!pRes.data) throw new Error("Joueur introuvable.");
-      setPlayer(pRes.data as ProfileRow);
-
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (structRes.error) throw new Error(structRes.error.message);
-      setEventStructureItems((structRes.data ?? []) as EventStructureItemRow[]);
-
-      const playerStructRes = await supabase
-        .from("club_event_player_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (playerStructRes.error) throw new Error(playerStructRes.error.message);
-      setPlayerPlannedStructureItems((playerStructRes.data ?? []) as PlayerPlannedStructureItemRow[]);
-
-      const sRes = await supabase
-        .from("training_sessions")
-        .select("id")
-        .eq("user_id", playerId)
-        .eq("club_event_id", eventId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (sRes.error) throw new Error(sRes.error.message);
-      const sess = ((sRes.data?.[0] ?? null) as TrainingSessionRow | null);
-      if (sess?.id) {
-        const itRes = await supabase
-          .from("training_session_items")
-          .select("id,session_id,category,minutes,note,other_detail,created_at")
-          .eq("session_id", sess.id)
-          .order("created_at", { ascending: true });
-        if (itRes.error) throw new Error(itRes.error.message);
-        setSessionItems((itRes.data ?? []) as TrainingItemRow[]);
-      } else {
-        setSessionItems([]);
-      }
-
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id")
-        .eq("event_id", eventId);
-
-      if (attendeeRes.error) throw new Error(attendeeRes.error.message);
-
-      const attendeeIds = Array.from(
-        new Set((attendeeRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean))
+      setMeId(String(json?.meId ?? ""));
+      setEvent((json?.event ?? null) as EventRow | null);
+      setPlayer((json?.player ?? null) as ProfileRow | null);
+      setEventStructureItems((json?.eventStructureItems ?? []) as EventStructureItemRow[]);
+      setPlayerPlannedStructureItems((json?.playerPlannedStructureItems ?? []) as PlayerPlannedStructureItemRow[]);
+      setSessionItems((json?.sessionItems ?? []) as TrainingItemRow[]);
+      setOrderedPlayerIds(
+        Array.isArray(json?.orderedPlayerIds)
+          ? (json.orderedPlayerIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
+          : [playerId]
       );
 
-      if (attendeeIds.length > 0) {
-        const profRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name")
-          .in("id", attendeeIds);
-
-        if (profRes.error) throw new Error(profRes.error.message);
-
-        const byId = new Map(
-          ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null }>).map((p) => [
-            p.id,
-            p,
-          ])
-        );
-
-        const sorted = [...attendeeIds].sort((a, b) => {
-          const pa = byId.get(a);
-          const pb = byId.get(b);
-          const la = (pa?.last_name ?? "").toLocaleLowerCase("fr-CH");
-          const lb = (pb?.last_name ?? "").toLocaleLowerCase("fr-CH");
-          if (la !== lb) return la.localeCompare(lb, "fr-CH");
-          const fa = (pa?.first_name ?? "").toLocaleLowerCase("fr-CH");
-          const fb = (pb?.first_name ?? "").toLocaleLowerCase("fr-CH");
-          if (fa !== fb) return fa.localeCompare(fb, "fr-CH");
-          return a.localeCompare(b);
-        });
-
-        setOrderedPlayerIds(sorted.includes(playerId) ? sorted : [...sorted, playerId]);
-      } else {
-        setOrderedPlayerIds([playerId]);
-      }
-
-      const cfRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .eq("coach_id", uRes.user.id)
-        .maybeSingle();
-
-      if (!cfRes.error && cfRes.data) {
-        const row = cfRes.data as CoachFeedbackRow;
+      const existingFeedback = (json?.feedback ?? null) as CoachFeedbackRow | null;
+      if (existingFeedback) {
+        const row = existingFeedback;
         setDraft(row);
         setInitialFeedbackFp(
           feedbackFingerprint({
@@ -348,7 +258,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         const row = {
           event_id: eventId,
           player_id: playerId,
-          coach_id: uRes.user.id,
+          coach_id: String(json?.meId ?? ""),
           engagement: null,
           attitude: null,
           performance: null,
@@ -369,17 +279,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         );
       }
 
-      const atRes = await supabase
-        .from("club_event_attendees")
-        .select("status")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .maybeSingle();
-      if (!atRes.error && atRes.data?.status) {
-        setAttendanceStatus(atRes.data.status as AttendanceStatus);
-      } else {
-        setAttendanceStatus("present");
-      }
+      setAttendanceStatus((String(json?.attendanceStatus ?? "present") as AttendanceStatus) || "present");
 
       setLoading(false);
     } catch (e: any) {
@@ -626,36 +526,33 @@ export default function CoachEventPlayerFeedbackEditPage() {
     setBusy(true);
     setError(null);
 
-    if (attendanceStatus === "absent") {
-      const attUp = await supabase
-        .from("club_event_attendees")
-        .update({ status: "absent" })
-        .eq("event_id", eventId)
-        .eq("player_id", playerId);
-      if (attUp.error) {
-        setError(attUp.error.message);
-        setBusy(false);
-        return;
-      }
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token ?? "";
+    if (!token) {
+      setError("Session invalide.");
+      setBusy(false);
+      return;
     }
 
-    const up = await supabase.from("club_event_coach_feedback").upsert(
-      {
-        event_id: eventId,
-        player_id: playerId,
-        coach_id: meId,
-        engagement: attendanceStatus === "absent" ? null : draft.engagement,
-        attitude: attendanceStatus === "absent" ? null : draft.attitude,
-        performance: attendanceStatus === "absent" ? null : draft.performance,
+    const saveRes = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/players/${encodeURIComponent(playerId)}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        attendance_status: attendanceStatus,
+        engagement: draft.engagement,
+        attitude: draft.attitude,
+        performance: draft.performance,
         visible_to_player: attendanceStatus === "absent" ? false : true,
         private_note: draft.private_note?.trim() || null,
         player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
-      },
-      { onConflict: "event_id,player_id,coach_id" }
-    );
-
-    if (up.error) {
-      setError(up.error.message);
+      }),
+    });
+    const saveJson = await saveRes.json().catch(() => ({}));
+    if (!saveRes.ok) {
+      setError(String(saveJson?.error ?? "Save failed"));
       setBusy(false);
       return;
     }
@@ -717,14 +614,34 @@ export default function CoachEventPlayerFeedbackEditPage() {
     const prev = attendanceStatus;
     setAttendanceStatus(next);
     setAttendanceBusy(true);
-    const up = await supabase
-      .from("club_event_attendees")
-      .update({ status: next })
-      .eq("event_id", eventId)
-      .eq("player_id", playerId);
-    if (up.error) {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token ?? "";
+    if (!token) {
       setAttendanceStatus(prev);
-      setError(up.error.message);
+      setError("Session invalide.");
+      setAttendanceBusy(false);
+      return;
+    }
+    const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/players/${encodeURIComponent(playerId)}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        attendance_status: next,
+        engagement: draft.engagement,
+        attitude: draft.attitude,
+        performance: draft.performance,
+        visible_to_player: draft.visible_to_player,
+        private_note: draft.private_note?.trim() || null,
+        player_note: draft.player_note?.trim() || null,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAttendanceStatus(prev);
+      setError(String(json?.error ?? "Save failed"));
     }
     setAttendanceBusy(false);
   }
@@ -1039,7 +956,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   }}
                 >
                   <div>Engagement: implication dans l’entrainement</div>
-                  <div>Attitude: comportement et esprit</div>
+                  <div>Attitude: Concentration, comportement et esprit</div>
                   <div>Application: qualité de mise en pratique des exercices</div>
                 </div>
 

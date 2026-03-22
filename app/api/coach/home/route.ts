@@ -28,6 +28,10 @@ type EventFeedbackLite = {
   player_id: string;
 };
 
+function sortByStartsAtAsc<T extends { starts_at: string }>(items: T[]) {
+  return [...items].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+}
+
 export async function GET(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -46,13 +50,15 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
     const me = !meRes.error && meRes.data ? meRes.data : null;
 
-    const [headGroupsRes, extraGroupsRes] = await Promise.all([
+    const [headGroupsRes, extraGroupsRes, eventCoachRes] = await Promise.all([
       supabaseAdmin.from("coach_groups").select("id").eq("head_coach_user_id", coachId),
       supabaseAdmin.from("coach_group_coaches").select("group_id").eq("coach_user_id", coachId),
+      supabaseAdmin.from("club_event_coaches").select("event_id").eq("coach_id", coachId),
     ]);
 
     if (headGroupsRes.error) return NextResponse.json({ error: headGroupsRes.error.message }, { status: 400 });
     if (extraGroupsRes.error) return NextResponse.json({ error: extraGroupsRes.error.message }, { status: 400 });
+    if (eventCoachRes.error) return NextResponse.json({ error: eventCoachRes.error.message }, { status: 400 });
 
     const groupIds = Array.from(
       new Set([
@@ -60,8 +66,11 @@ export async function GET(req: NextRequest) {
         ...(extraGroupsRes.data ?? []).map((r: { group_id: string | null }) => String(r?.group_id ?? "").trim()),
       ])
     ).filter(Boolean);
+    const eventIdsFromAssign = Array.from(
+      new Set((eventCoachRes.data ?? []).map((r: { event_id: string | null }) => String(r?.event_id ?? "").trim()))
+    ).filter(Boolean);
 
-    if (groupIds.length === 0) {
+    if (groupIds.length === 0 && eventIdsFromAssign.length === 0) {
       return NextResponse.json({
         me,
         groupNameById: {},
@@ -71,32 +80,81 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const groupsRes = await supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", groupIds);
-    if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
-
     const groupNameById: Record<string, string> = {};
-    const planningGroupIds: string[] = [];
     let organizationNames: string[] = [];
     const clubIds = new Set<string>();
-    (groupsRes.data ?? []).forEach((g: { id: string; name: string | null; club_id: string | null }) => {
-      const name = String(g.name ?? "").trim();
-      const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const isArchived = normalized.includes("archive") && normalized.includes("historique");
-      if (!isArchived) {
-        groupNameById[g.id] = g.name ?? "Groupe";
-        planningGroupIds.push(g.id);
-      }
-      const cid = String(g.club_id ?? "").trim();
-      if (cid) clubIds.add(cid);
-    });
 
-    if (planningGroupIds.length === 0) {
-      return NextResponse.json({
-        me,
-        groupNameById: {},
-        organizationNames,
-        upcomingEvents: [],
-        pendingEvalEvents: [],
+    const nowIso = new Date().toISOString();
+    const rowsById: Record<string, EventLite> = {};
+
+    if (groupIds.length > 0) {
+      const [groupUpcomingRes, groupPastRes, groupsRes] = await Promise.all([
+        supabaseAdmin
+          .from("club_events")
+          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+          .in("group_id", groupIds)
+          .gte("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+          .limit(80),
+        supabaseAdmin
+          .from("club_events")
+          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+          .in("group_id", groupIds)
+          .in("event_type", ["training", "interclub", "camp"])
+          .lt("starts_at", nowIso)
+          .order("starts_at", { ascending: false })
+          .limit(120),
+        supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", groupIds),
+      ]);
+      if (groupUpcomingRes.error) return NextResponse.json({ error: groupUpcomingRes.error.message }, { status: 400 });
+      if (groupPastRes.error) return NextResponse.json({ error: groupPastRes.error.message }, { status: 400 });
+      if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
+
+      (groupsRes.data ?? []).forEach((g: { id: string; name: string | null; club_id: string | null }) => {
+        const name = String(g.name ?? "").trim();
+        const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const isArchived = normalized.includes("archive") && normalized.includes("historique");
+        if (!isArchived) {
+          groupNameById[g.id] = g.name ?? "Groupe";
+        }
+        const cid = String(g.club_id ?? "").trim();
+        if (cid) clubIds.add(cid);
+      });
+
+      [...((groupUpcomingRes.data ?? []) as EventLite[]), ...((groupPastRes.data ?? []) as EventLite[])].forEach((event) => {
+        if (groupNameById[event.group_id]) rowsById[event.id] = event;
+      });
+    }
+
+    if (eventIdsFromAssign.length > 0) {
+      const assignedEventsRes = await supabaseAdmin
+        .from("club_events")
+        .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+        .in("id", eventIdsFromAssign)
+        .order("starts_at", { ascending: false });
+      if (assignedEventsRes.error) return NextResponse.json({ error: assignedEventsRes.error.message }, { status: 400 });
+
+      const assignedEvents = (assignedEventsRes.data ?? []) as EventLite[];
+      const missingGroupIds = Array.from(
+        new Set(assignedEvents.map((e) => String(e.group_id ?? "").trim()).filter((id) => Boolean(id) && !groupNameById[id]))
+      );
+      if (missingGroupIds.length > 0) {
+        const missingGroupsRes = await supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", missingGroupIds);
+        if (missingGroupsRes.error) return NextResponse.json({ error: missingGroupsRes.error.message }, { status: 400 });
+        (missingGroupsRes.data ?? []).forEach((g: { id: string; name: string | null; club_id: string | null }) => {
+          const name = String(g.name ?? "").trim();
+          const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const isArchived = normalized.includes("archive") && normalized.includes("historique");
+          if (!isArchived) {
+            groupNameById[g.id] = g.name ?? "Groupe";
+          }
+          const cid = String(g.club_id ?? "").trim();
+          if (cid) clubIds.add(cid);
+        });
+      }
+
+      assignedEvents.forEach((event) => {
+        if (groupNameById[event.group_id]) rowsById[event.id] = event;
       });
     }
 
@@ -104,37 +162,17 @@ export async function GET(req: NextRequest) {
       const clubsRes = await supabaseAdmin.from("clubs").select("id,name").in("id", Array.from(clubIds));
       if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
       organizationNames = Array.from(
-        new Set(
-          (clubsRes.data ?? [])
-            .map((c: { name: string | null }) => String(c.name ?? "").trim())
-            .filter(Boolean)
-        )
+        new Set((clubsRes.data ?? []).map((c: { name: string | null }) => String(c.name ?? "").trim()).filter(Boolean))
       );
     }
 
-    const nowIso = new Date().toISOString();
-    const [upcomingRes, pastRes] = await Promise.all([
-      supabaseAdmin
-        .from("club_events")
-        .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-        .in("group_id", planningGroupIds)
-        .gte("starts_at", nowIso)
-        .order("starts_at", { ascending: true })
-        .limit(5),
-      supabaseAdmin
-        .from("club_events")
-        .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-        .in("group_id", planningGroupIds)
-        .in("event_type", ["training", "interclub", "camp"])
-        .lt("starts_at", nowIso)
-        .order("starts_at", { ascending: false })
-        .limit(120),
-    ]);
-    if (upcomingRes.error) return NextResponse.json({ error: upcomingRes.error.message }, { status: 400 });
-    if (pastRes.error) return NextResponse.json({ error: pastRes.error.message }, { status: 400 });
+    const allEvents = Object.values(rowsById);
+    const upcomingEvents = sortByStartsAtAsc(allEvents.filter((e) => new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 5);
+    const pastEvents = allEvents
+      .filter((e) => ["training", "interclub", "camp"].includes(String(e.event_type ?? "")) && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
+      .slice(0, 120);
 
-    const upcomingEvents = (upcomingRes.data ?? []) as EventLite[];
-    const pastEvents = (pastRes.data ?? []) as EventLite[];
     if (pastEvents.length === 0) {
       return NextResponse.json({
         me,

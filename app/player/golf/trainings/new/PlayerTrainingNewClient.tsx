@@ -1438,6 +1438,60 @@ export default function PlayerTrainingNewPage() {
                   </>
                 ) : null}
 
+                {Boolean(linkedEvent) && coachFeedback.length > 0 ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.coachEvaluation")}</div>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {coachFeedback.map((fb, idx) => {
+                        const cp = coachProfilesById[fb.coach_id];
+                        const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
+                        return (
+                          <div key={`${fb.coach_id}-${idx}`} style={{ display: "grid", gap: 8 }}>
+                            <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{coachName}</div>
+                            <div style={{ display: "grid", gap: 10 }}>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Engagement</div>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.engagement ?? "—"}</div>
+                                </div>
+                                <div className="bar">
+                                  <span style={{ width: `${coachRatingPercent(fb.engagement)}%` }} />
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Attitude</div>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.attitude ?? "—"}</div>
+                                </div>
+                                <div className="bar">
+                                  <span style={{ width: `${coachRatingPercent(fb.attitude)}%` }} />
+                                </div>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 6 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Application</div>
+                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.performance ?? "—"}</div>
+                                </div>
+                                <div className="bar">
+                                  <span style={{ width: `${coachRatingPercent(fb.performance)}%` }} />
+                                </div>
+                              </div>
+
+                              {String(fb.player_note ?? "").trim() ? (
+                                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)", whiteSpace: "pre-wrap" }}>
+                                  {fb.player_note}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
                 {!linkedEvent ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{infoCardTitle}</div>
@@ -1678,69 +1732,6 @@ export default function PlayerTrainingNewPage() {
 
                             </>
                           )}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {showCoachSectionPlannedReadOnly && coachFeedback.length > 0 ? (
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingDetail.coachEvaluation")}</span>
-                        <div
-                          style={{
-                            borderRadius: 12,
-                            border: "1px solid rgba(0,0,0,0.10)",
-                            background: "rgba(255,255,255,0.75)",
-                            padding: "10px 12px",
-                            display: "grid",
-                            gap: 10,
-                          }}
-                        >
-                          {coachFeedback.map((fb, idx) => {
-                            const cp = coachProfilesById[fb.coach_id];
-                            const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
-                            return (
-                              <div key={`${fb.coach_id}-${idx}`} style={{ display: "grid", gap: 8 }}>
-                                <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{coachName}</div>
-                                <div style={{ display: "grid", gap: 10 }}>
-                                  <div style={{ display: "grid", gap: 6 }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Engagement</div>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.engagement ?? "—"}</div>
-                                    </div>
-                                    <div className="bar">
-                                      <span style={{ width: `${coachRatingPercent(fb.engagement)}%` }} />
-                                    </div>
-                                  </div>
-
-                                  <div style={{ display: "grid", gap: 6 }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Attitude</div>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.attitude ?? "—"}</div>
-                                    </div>
-                                    <div className="bar">
-                                      <span style={{ width: `${coachRatingPercent(fb.attitude)}%` }} />
-                                    </div>
-                                  </div>
-
-                                  <div style={{ display: "grid", gap: 6 }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Application</div>
-                                      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.performance ?? "—"}</div>
-                                    </div>
-                                    <div className="bar">
-                                      <span style={{ width: `${coachRatingPercent(fb.performance)}%` }} />
-                                    </div>
-                                  </div>
-
-                                  {String(fb.player_note ?? "").trim() ? (
-                                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)", whiteSpace: "pre-wrap" }}>
-                                      {fb.player_note}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            );
-                          })}
                         </div>
                       </div>
                     ) : null}

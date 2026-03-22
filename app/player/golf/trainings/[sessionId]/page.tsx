@@ -432,7 +432,7 @@ export default function PlayerTrainingDetailPage() {
                       {pickLocaleText(locale, "Engagement: implication dans l’entrainement", "Engagement: involvement in training")}
                     </div>
                     <div>
-                      {pickLocaleText(locale, "Attitude: comportement et esprit", "Attitude: behavior and mindset")}
+                      {pickLocaleText(locale, "Attitude: Concentration, comportement et esprit", "Attitude: behavior and mindset")}
                     </div>
                     <div>
                       {pickLocaleText(

@@ -525,7 +525,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   }}
                 >
                   <div>Engagement: implication dans l’entrainement</div>
-                  <div>Attitude: comportement et esprit</div>
+                  <div>Attitude: Concentration, comportement et esprit</div>
                   <div>Application: qualité de mise en pratique des exercices</div>
                 </div>
 

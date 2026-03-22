@@ -34,6 +34,11 @@ type CalendarGroupRow = {
   head_coach_user_id: string | null;
   head_coach_name: string | null;
 };
+type EventCoachRow = {
+  event_id: string;
+  coach_id: string;
+  coach_name: string | null;
+};
 type MemberLite = {
   user_id: string;
   role: "manager" | "coach" | "player" | "parent";
@@ -140,6 +145,7 @@ export default function CoachCalendarPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [groupHeadCoachNames, setGroupHeadCoachNames] = useState<Record<string, string>>({});
+  const [coachNamesByEventId, setCoachNamesByEventId] = useState<Record<string, string[]>>({});
   const [groupFilterOptions, setGroupFilterOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [attendeeByEvent, setAttendeeByEvent] = useState<Record<string, string[]>>({});
@@ -210,14 +216,23 @@ export default function CoachCalendarPage() {
 
         const groupMap: Record<string, string> = {};
         const groupHeadCoachMap: Record<string, string> = {};
+        const eventCoachNameMap: Record<string, string[]> = {};
         const groups = (Array.isArray(calendarJson?.groups) ? calendarJson.groups : []) as CalendarGroupRow[];
         groups.forEach((g) => {
           groupMap[g.id] = String(g?.name ?? tr("Groupe", "Group"));
           const head = String(g.head_coach_name ?? "").trim();
           if (head) groupHeadCoachMap[g.id] = head;
         });
+        ((Array.isArray(calendarJson?.event_coaches) ? calendarJson.event_coaches : []) as EventCoachRow[]).forEach((row) => {
+          const eventId = String(row.event_id ?? "").trim();
+          const coachName = String(row.coach_name ?? "").trim();
+          if (!eventId || !coachName) return;
+          if (!eventCoachNameMap[eventId]) eventCoachNameMap[eventId] = [];
+          if (!eventCoachNameMap[eventId].includes(coachName)) eventCoachNameMap[eventId].push(coachName);
+        });
         setGroupNames(groupMap);
         setGroupHeadCoachNames(groupHeadCoachMap);
+        setCoachNamesByEventId(eventCoachNameMap);
         setGroupFilterOptions(
           groups
             .filter((g) => !g.is_archived)
@@ -278,6 +293,7 @@ export default function CoachCalendarPage() {
         setEvents([]);
         setGroupNames({});
         setGroupHeadCoachNames({});
+        setCoachNamesByEventId({});
         setGroupFilterOptions([]);
         setClubNames({});
         setAttendeeByEvent({});
@@ -293,7 +309,9 @@ export default function CoachCalendarPage() {
     const groupName = groupNames[e.group_id] ?? tr("Groupe", "Group");
     const base = eventTitle || groupName;
     const head = String(groupHeadCoachNames[e.group_id] ?? "").trim();
-    return head ? `${base} (${head})` : base;
+    const extra = (coachNamesByEventId[e.id] ?? []).filter((name) => name !== head);
+    const allCoachNames = [head, ...extra].filter(Boolean);
+    return allCoachNames.length > 0 ? `${base} (${allCoachNames.join(", ")})` : base;
   }
 
   useEffect(() => {

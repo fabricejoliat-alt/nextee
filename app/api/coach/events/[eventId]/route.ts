@@ -32,6 +32,25 @@ function formatTrainingMoment(iso: string) {
   return `${datePart} à ${timePart}`;
 }
 
+async function canCoachAccessEvent(supabaseAdmin: any, callerId: string, eventId: string, groupId: string, clubId: string) {
+  if (clubId) {
+    const staffAllowed = await isOrgStaffMember(supabaseAdmin, clubId, callerId);
+    if (staffAllowed) return true;
+  }
+
+  const [headRes, assistantRes, assignedRes] = await Promise.all([
+    supabaseAdmin.from("coach_groups").select("id").eq("id", groupId).eq("head_coach_user_id", callerId).maybeSingle(),
+    supabaseAdmin.from("coach_group_coaches").select("id").eq("group_id", groupId).eq("coach_user_id", callerId).maybeSingle(),
+    supabaseAdmin.from("club_event_coaches").select("event_id").eq("event_id", eventId).eq("coach_id", callerId).maybeSingle(),
+  ]);
+
+  if (headRes.error) throw new Error(headRes.error.message);
+  if (assistantRes.error) throw new Error(assistantRes.error.message);
+  if (assignedRes.error) throw new Error(assignedRes.error.message);
+
+  return Boolean(headRes.data?.id || assistantRes.data?.id || assignedRes.data?.event_id);
+}
+
 async function dispatchPushForRecipients(
   supabaseAdmin: any,
   opts: { title: string; body: string; url: string; recipientUserIds: string[] }
@@ -138,6 +157,134 @@ async function notifyEventDeletion(
     url,
     recipientUserIds: recipients,
   });
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
+  try {
+    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+
+    const { eventId: rawEventId } = await ctx.params;
+    const eventId = String(rawEventId ?? "").trim();
+    if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
+
+    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
+    const { callerId } = await requireCaller(accessToken);
+
+    const eventRes = await supabaseAdmin
+      .from("club_events")
+      .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+      .eq("id", eventId)
+      .maybeSingle();
+    if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
+    if (!eventRes.data?.id) return NextResponse.json({ error: "Event not found" }, { status: 404 });
+
+    const event = eventRes.data as any;
+    const groupId = String(event.group_id ?? "").trim();
+    const clubId = String(event.club_id ?? "").trim();
+    const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
+    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes] = await Promise.all([
+      clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
+      groupId ? supabaseAdmin.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
+      supabaseAdmin.from("club_event_attendees").select("player_id,status").eq("event_id", eventId),
+      supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
+      supabaseAdmin
+        .from("club_event_structure_items")
+        .select("category,minutes,note,position")
+        .eq("event_id", eventId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabaseAdmin.from("club_event_coach_feedback").select("player_id").eq("event_id", eventId).eq("coach_id", callerId),
+    ]);
+
+    if (clubRes.error) return NextResponse.json({ error: clubRes.error.message }, { status: 400 });
+    if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
+    if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+    if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
+    if (structureRes.error) return NextResponse.json({ error: structureRes.error.message }, { status: 400 });
+    if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+
+    const attendeeRows = (attendeesRes.data ?? []) as Array<{ player_id: string; status: "expected" | "present" | "absent" | "excused" }>;
+    const playerIds = uniq(attendeeRows.map((row) => row.player_id));
+    const selectedCoachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => String(row.coach_id ?? "").trim()));
+
+    const [profilesRes, clubCoachesRes] = await Promise.all([
+      playerIds.length > 0
+        ? supabaseAdmin.from("profiles").select("id,first_name,last_name,handicap,avatar_url").in("id", playerIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      clubId
+        ? supabaseAdmin
+            .from("club_members")
+            .select("user_id")
+            .eq("club_id", clubId)
+            .eq("role", "coach")
+            .eq("is_active", true)
+        : Promise.resolve({ data: [], error: null } as const),
+    ]);
+    if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
+    if (clubCoachesRes.error) return NextResponse.json({ error: clubCoachesRes.error.message }, { status: 400 });
+
+    const profilesById: Record<string, any> = {};
+    (profilesRes.data ?? []).forEach((profile: any) => {
+      profilesById[String(profile.id)] = profile;
+    });
+
+    const attendees = attendeeRows
+      .map((row) => ({
+        ...row,
+        profile: profilesById[String(row.player_id)] ?? null,
+      }))
+      .sort((a, b) => {
+        const aName = `${a.profile?.first_name ?? ""} ${a.profile?.last_name ?? ""}`.trim();
+        const bName = `${b.profile?.first_name ?? ""} ${b.profile?.last_name ?? ""}`.trim();
+        return aName.localeCompare(bName, "fr");
+      });
+
+    const coachIds = uniq([
+      ...((clubCoachesRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim())),
+      ...selectedCoachIds,
+    ]);
+    const coachesById: Record<string, { id: string; first_name: string | null; last_name: string | null }> = {};
+    if (coachIds.length > 0) {
+      const coachProfilesRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name")
+        .in("id", coachIds);
+      if (coachProfilesRes.error) return NextResponse.json({ error: coachProfilesRes.error.message }, { status: 400 });
+      (coachProfilesRes.data ?? []).forEach((profile: any) => {
+        const id = String(profile.id ?? "").trim();
+        if (!id) return;
+        coachesById[id] = {
+          id,
+          first_name: profile.first_name ?? null,
+          last_name: profile.last_name ?? null,
+        };
+      });
+    }
+
+    const coaches = Object.values(coachesById).sort((a, b) => {
+      const aName = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+      const bName = `${b.first_name ?? ""} ${b.last_name ?? ""}`.trim();
+      return aName.localeCompare(bName, "fr");
+    });
+
+    return NextResponse.json({
+      event,
+      clubName: String((clubRes.data as any)?.name ?? "Club"),
+      groupName: String((groupRes.data as any)?.name ?? "Groupe"),
+      attendees,
+      coaches,
+      selectedCoachIds,
+      structureItems: structureRes.data ?? [],
+      evaluatedPlayerIds: uniq((feedbackRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim())),
+      meId: callerId,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {

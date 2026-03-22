@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
@@ -11,6 +12,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isLocalDev =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "::1");
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -106,6 +110,12 @@ export default function LoginPage() {
             <div className="auth-footnote">
               En cas de souci, contacte ton coach/club pour réinitialiser l’accès.
             </div>
+
+            {isLocalDev ? (
+              <div className="auth-footnote">
+                <Link href="/dev/impersonate">Mode dev: se connecter en tant qu’un autre utilisateur</Link>
+              </div>
+            ) : null}
           </form>
         </div>
       </div>

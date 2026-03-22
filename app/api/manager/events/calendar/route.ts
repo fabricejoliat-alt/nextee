@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     const groupIds = Array.from(new Set(events.map((e: any) => String(e?.group_id ?? "")).filter(Boolean)));
     const eventIds = Array.from(new Set(events.map((e: any) => String(e?.id ?? "")).filter(Boolean)));
 
-    const [groupsRes, clubsRes, attendeesRes] = await Promise.all([
+    const [groupsRes, clubsRes, attendeesRes, eventCoachesRes] = await Promise.all([
       groupIds.length > 0
         ? supabaseAdmin.from("coach_groups").select("id,name,is_active,head_coach_user_id").in("id", groupIds)
         : Promise.resolve({ data: [], error: null } as any),
@@ -56,27 +56,35 @@ export async function GET(req: NextRequest) {
       eventIds.length > 0
         ? supabaseAdmin.from("club_event_attendees").select("event_id,player_id").in("event_id", eventIds)
         : Promise.resolve({ data: [], error: null } as any),
+      eventIds.length > 0
+        ? supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds)
+        : Promise.resolve({ data: [], error: null } as any),
     ]);
 
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+    if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
 
+    const eventCoachRows = (eventCoachesRes.data ?? []) as Array<{ event_id: string | null; coach_id: string | null }>;
     const groupsRaw = (groupsRes.data ?? []) as Array<{
       id: string;
       name: string | null;
       is_active: boolean | null;
       head_coach_user_id: string | null;
     }>;
-    const headCoachIds = Array.from(
-      new Set(groupsRaw.map((g) => String(g.head_coach_user_id ?? "").trim()).filter(Boolean))
+    const coachIds = Array.from(
+      new Set([
+        ...groupsRaw.map((g) => String(g.head_coach_user_id ?? "").trim()).filter(Boolean),
+        ...eventCoachRows.map((r) => String(r.coach_id ?? "").trim()).filter(Boolean),
+      ])
     );
     const headCoachNameById = new Map<string, string>();
-    if (headCoachIds.length > 0) {
+    if (coachIds.length > 0) {
       const profilesRes = await supabaseAdmin
         .from("profiles")
         .select("id,first_name,last_name")
-        .in("id", headCoachIds);
+        .in("id", coachIds);
       if (!profilesRes.error) {
         (profilesRes.data ?? []).forEach((p: any) => {
           const id = String(p?.id ?? "").trim();
@@ -107,6 +115,11 @@ export async function GET(req: NextRequest) {
       groups,
       clubs: clubsRes.data ?? [],
       attendees: attendeesRes.data ?? [],
+      event_coaches: eventCoachRows.map((row) => ({
+        event_id: String(row.event_id ?? "").trim(),
+        coach_id: String(row.coach_id ?? "").trim(),
+        coach_name: headCoachNameById.get(String(row.coach_id ?? "").trim()) ?? null,
+      })),
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

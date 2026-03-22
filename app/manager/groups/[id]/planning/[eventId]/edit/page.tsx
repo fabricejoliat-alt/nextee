@@ -436,6 +436,29 @@ export default function CoachEventEditPage() {
     }
   }
 
+  async function replaceCoachesForEvents(eventIds: string[]) {
+    const targetEventIds = Array.from(new Set(eventIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
+    if (targetEventIds.length === 0) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) throw new Error("Session invalide.");
+
+    const res = await fetch("/api/manager/events/coaches/bulk", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        event_ids: targetEventIds,
+        coach_ids: coachIdsSelected,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(json?.error ?? "Impossible de mettre à jour les coachs."));
+  }
+
   const selectedPlayersList = useMemo(
     () =>
       Object.values(selectedPlayers).sort((a, b) =>
@@ -630,21 +653,14 @@ export default function CoachEventEditPage() {
         setEditScope("occurrence");
       }
 
-      // ✅ group coaches (BD: coach_group_coaches.coach_user_id)
-      const coRes = await supabase
-        .from("coach_group_coaches")
-        .select("coach_user_id, profiles:coach_user_id ( id, first_name, last_name )")
-        .eq("group_id", groupId);
-
-      if (coRes.error) throw new Error(coRes.error.message);
-
-      const coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
-        id: r.coach_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
+      // coachs disponibles pour cette occurrence: tous les coachs actifs du club
+      const clubCoachRows = cmList.filter((m) => m.role === "coach");
+      let coList: CoachLite[] = clubCoachRows.map((m) => ({
+        id: m.id,
+        first_name: m.first_name ?? null,
+        last_name: m.last_name ?? null,
+        avatar_url: m.avatar_url ?? null,
       }));
-      setCoaches(coList);
 
       // ✅ group players (BD: coach_group_players.player_user_id)
       const plRes = await supabase
@@ -666,7 +682,32 @@ export default function CoachEventEditPage() {
 
       // selected coaches on event (BD: club_event_coaches.coach_id)
       const ecRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", eventId);
-      if (!ecRes.error) setCoachIdsSelected((ecRes.data ?? []).map((r: any) => r.coach_id as string));
+      const selectedCoachIds = !ecRes.error ? (ecRes.data ?? []).map((r: any) => r.coach_id as string) : [];
+      const missingCoachIds = selectedCoachIds.filter((id) => !coList.some((c) => c.id === id));
+      if (missingCoachIds.length > 0) {
+        const missingCoachProfiles = await supabase
+          .from("profiles")
+          .select("id,first_name,last_name,avatar_url")
+          .in("id", missingCoachIds);
+        if (missingCoachProfiles.error) throw new Error(missingCoachProfiles.error.message);
+        coList = [
+          ...coList,
+          ...((missingCoachProfiles.data ?? []) as Array<{
+            id: string;
+            first_name: string | null;
+            last_name: string | null;
+            avatar_url: string | null;
+          }>).map((p) => ({
+            id: p.id,
+            first_name: p.first_name ?? null,
+            last_name: p.last_name ?? null,
+            avatar_url: p.avatar_url ?? null,
+          })),
+        ];
+      }
+      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr"));
+      setCoaches(coList);
+      if (!ecRes.error) setCoachIdsSelected(selectedCoachIds);
       else setCoachIdsSelected([]);
 
       // selected attendees -> selectedPlayers map
@@ -882,15 +923,7 @@ export default function CoachEventEditPage() {
 
       if (upd.error) throw new Error(upd.error.message);
 
-      // replace coaches
-      const delC = await supabase.from("club_event_coaches").delete().eq("event_id", eventId);
-      if (delC.error) throw new Error(delC.error.message);
-      if (coachIdsSelected.length > 0) {
-        const insC = await supabase
-          .from("club_event_coaches")
-          .insert(coachIdsSelected.map((cid) => ({ event_id: eventId, coach_id: cid })));
-        if (insC.error) throw new Error(insC.error.message);
-      }
+      await replaceCoachesForEvents([eventId]);
 
       // replace attendees
       const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
@@ -1099,13 +1132,7 @@ export default function CoachEventEditPage() {
 
       // 4) apply coaches/attendees to regenerated events
       if (seriesActive && createdEventIds.length > 0) {
-        if (coachIdsSelected.length > 0) {
-          const coachRows = createdEventIds.flatMap((eid) =>
-            coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid }))
-          );
-          const cIns = await supabase.from("club_event_coaches").insert(coachRows);
-          if (cIns.error) throw new Error(cIns.error.message);
-        }
+        await replaceCoachesForEvents(createdEventIds);
 
         if (attendeeIdsSelected.length > 0) {
           const attRows = createdEventIds.flatMap((eid) =>
@@ -1635,7 +1662,7 @@ export default function CoachEventEditPage() {
                 {/* Coachs attendus */}
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Coachs attendus
+                    <Users size={16} /> Coachs de cette occurrence
                   </div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
