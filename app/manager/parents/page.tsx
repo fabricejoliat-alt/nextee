@@ -7,7 +7,11 @@ import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null };
-type MembershipProfileRow = { user_id: string; profiles?: ProfileLite | null };
+type MembershipProfileRow = {
+  user_id: string;
+  player_consent_status?: "granted" | "pending" | "adult" | null;
+  profiles?: ProfileLite | null;
+};
 type LinkRow = { player_id: string; guardian_user_id: string; relation: string | null; is_primary: boolean | null };
 type PickerOption = { id: string; label: string };
 
@@ -23,6 +27,12 @@ function normalizeForSearch(v: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function consentLabel(status: MembershipProfileRow["player_consent_status"]) {
+  if (status === "granted") return "Accordé";
+  if (status === "adult") return "Majeur";
+  return "En attente";
 }
 
 export default function ManagerParentsPage() {
@@ -312,6 +322,9 @@ export default function ManagerParentsPage() {
                       }}
                     >
                       <div style={{ fontWeight: 900 }}>{fullName(player.profiles)}</div>
+                      <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                        Consentement: {consentLabel(player.player_consent_status ?? null)}
+                      </div>
                       {playerLinks.length === 0 ? (
                         <div style={{ opacity: 0.7 }}>{tr("Aucun parent rattaché.", "No linked parent.")}</div>
                       ) : (

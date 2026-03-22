@@ -109,6 +109,35 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
     }
 
+    const consentStatusByPlayerId = new Map<string, "granted" | "pending" | "adult" | null>();
+    if (playerIds.length > 0) {
+      const consentRowsRes = await supabaseAdmin
+        .from("club_members")
+        .select("user_id,player_consent_status")
+        .in("user_id", playerIds)
+        .eq("role", "player")
+        .eq("is_active", true);
+      if (consentRowsRes.error) return NextResponse.json({ error: consentRowsRes.error.message }, { status: 400 });
+
+      const rawByPlayer = new Map<string, string[]>();
+      for (const row of consentRowsRes.data ?? []) {
+        const playerId = String((row as any).user_id ?? "");
+        if (!playerId) continue;
+        const list = rawByPlayer.get(playerId) ?? [];
+        list.push(String((row as any).player_consent_status ?? ""));
+        rawByPlayer.set(playerId, list);
+      }
+      for (const [playerId, statuses] of rawByPlayer.entries()) {
+        if (statuses.includes("granted")) consentStatusByPlayerId.set(playerId, "granted");
+        else if (statuses.includes("adult")) consentStatusByPlayerId.set(playerId, "adult");
+        else if (statuses.includes("pending")) consentStatusByPlayerId.set(playerId, "pending");
+        else {
+          const age = computeAge((profileById.get(playerId) as any)?.birth_date ?? null);
+          consentStatusByPlayerId.set(playerId, age != null && age >= 18 ? "adult" : "pending");
+        }
+      }
+    }
+
     const eligiblePlayerIds = rawPlayers
       .filter((row) => {
         const playerId = String(row.user_id ?? "");
@@ -128,7 +157,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     });
 
     return NextResponse.json({
-      players: eligiblePlayerIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),
+      players: eligiblePlayerIds.map((id) => ({
+        user_id: id,
+        player_consent_status: consentStatusByPlayerId.get(id) ?? null,
+        profiles: profileById.get(id) ?? null,
+      })),
       parents: parentIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),
       links,
     });

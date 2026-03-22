@@ -27,6 +27,7 @@ type ParentAccessRow = {
     junior_user_id: string;
     junior_name: string;
     junior_username: string | null;
+    player_consent_status: "granted" | "pending" | "adult" | null;
     junior_status: "not_ready" | "ready" | "sent" | "activated" | "error";
     junior_last_sent_at: string | null;
     junior_send_count: number;
@@ -449,6 +450,35 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
       .map((row) => String(row.user_id ?? ""))
   );
 
+  const consentStatusByPlayerId = new Map<string, "granted" | "pending" | "adult" | null>();
+  if (playerIds.length > 0) {
+    const consentRowsRes = await supabaseAdmin
+      .from("club_members")
+      .select("user_id,player_consent_status")
+      .in("user_id", playerIds)
+      .eq("role", "player")
+      .eq("is_active", true);
+    if (consentRowsRes.error) throw new Error(consentRowsRes.error.message);
+
+    const rawByPlayer = new Map<string, string[]>();
+    for (const row of consentRowsRes.data ?? []) {
+      const playerId = String((row as any).user_id ?? "");
+      if (!playerId) continue;
+      const list = rawByPlayer.get(playerId) ?? [];
+      list.push(String((row as any).player_consent_status ?? ""));
+      rawByPlayer.set(playerId, list);
+    }
+    for (const [playerId, statuses] of rawByPlayer.entries()) {
+      if (statuses.includes("granted")) consentStatusByPlayerId.set(playerId, "granted");
+      else if (statuses.includes("adult")) consentStatusByPlayerId.set(playerId, "adult");
+      else if (statuses.includes("pending")) consentStatusByPlayerId.set(playerId, "pending");
+      else {
+        const age = computeAge(profileById.get(playerId)?.birth_date ?? null);
+        consentStatusByPlayerId.set(playerId, age != null && age >= 18 ? "adult" : "pending");
+      }
+    }
+  }
+
   const eligibleLinks = rawLinks.filter((row) => {
     const playerId = String(row.player_id ?? "");
     const guardianId = String(row.guardian_user_id ?? "");
@@ -486,6 +516,7 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
             junior_user_id: link.player_id,
             junior_name: cleanName(juniorProfile?.first_name, juniorProfile?.last_name),
             junior_username: juniorProfile?.username ?? null,
+            player_consent_status: consentStatusByPlayerId.get(link.player_id) ?? null,
             junior_status: computeStatus({
               email: parentEmail,
               activatedAt: juniorAuth?.last_sign_in_at ?? null,
@@ -525,6 +556,7 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
         user_id: playerId,
         name: cleanName(profile?.first_name, profile?.last_name),
         username: profile?.username ?? null,
+        player_consent_status: consentStatusByPlayerId.get(playerId) ?? null,
         activated_at: auth?.last_sign_in_at ?? null,
       };
     })

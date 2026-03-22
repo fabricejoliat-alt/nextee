@@ -10,6 +10,7 @@ type JuniorAccessRow = {
   junior_user_id: string;
   junior_name: string;
   junior_username: string | null;
+  player_consent_status: "granted" | "pending" | "adult" | null;
   junior_status: "not_ready" | "ready" | "sent" | "activated" | "error";
   junior_last_sent_at: string | null;
   junior_send_count: number;
@@ -28,6 +29,7 @@ type UnlinkedJuniorRow = {
   user_id: string;
   name: string;
   username: string | null;
+  player_consent_status: "granted" | "pending" | "adult" | null;
   activated_at: string | null;
 };
 type PageData = {
@@ -65,6 +67,12 @@ function statusTone(status: ParentAccessRow["parent_status"]) {
   return { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" };
 }
 
+function consentLabel(status: "granted" | "pending" | "adult" | null | undefined) {
+  if (status === "granted") return "Accordé";
+  if (status === "adult") return "Majeur";
+  return "En attente";
+}
+
 export default function ManagerAccessPage() {
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [clubId, setClubId] = useState("");
@@ -73,6 +81,7 @@ export default function ManagerAccessPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [consentFilter, setConsentFilter] = useState<"hide_granted" | "all">("hide_granted");
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -203,6 +212,25 @@ export default function ManagerAccessPage() {
     });
   }, [data, search]);
 
+  const visibleParents = useMemo(() => {
+    const base = filteredParents.map((parent) => ({
+      ...parent,
+      linked_juniors:
+        consentFilter === "hide_granted"
+          ? parent.linked_juniors.filter((junior) => junior.player_consent_status !== "granted")
+          : parent.linked_juniors,
+    }));
+    return base.filter((parent) => parent.linked_juniors.length > 0 || consentFilter === "all");
+  }, [filteredParents, consentFilter]);
+
+  const visibleUnlinkedJuniors = useMemo(() => {
+    const list = data?.juniors_without_parent ?? [];
+    if (consentFilter === "hide_granted") {
+      return list.filter((junior) => junior.player_consent_status !== "granted");
+    }
+    return list;
+  }, [data, consentFilter]);
+
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
@@ -229,6 +257,13 @@ export default function ManagerAccessPage() {
               <span className="field-label">Recherche</span>
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Parent, e-mail, junior…" />
             </label>
+            <label className="field-shell">
+              <span className="field-label">Consentement</span>
+              <select value={consentFilter} onChange={(e) => setConsentFilter(e.target.value as "hide_granted" | "all")}>
+                <option value="hide_granted">Masquer consentements accordés</option>
+                <option value="all">Tout afficher</option>
+              </select>
+            </label>
           </div>
 
           {error ? (
@@ -249,11 +284,11 @@ export default function ManagerAccessPage() {
                       1 mail parent et 1 mail junior distinct, tous deux envoyés à l’adresse du parent.
                     </p>
                   </div>
-                  <span className="pill-soft">{filteredParents.length} parent(s)</span>
+                  <span className="pill-soft">{visibleParents.length} parent(s)</span>
                 </div>
 
                 <div style={{ display: "grid", gap: 12 }}>
-                  {filteredParents.map((row) => {
+                  {visibleParents.map((row) => {
                     const parentTone = statusTone(row.parent_status);
                     return (
                       <article key={row.parent_user_id} className="glass-card" style={{ padding: 16, background: "#fff", borderColor: "#e5e7eb" }}>
@@ -326,6 +361,9 @@ export default function ManagerAccessPage() {
                                   <div>
                                     <div style={{ fontWeight: 800 }}>{junior.junior_name}</div>
                                     <div style={{ color: "#5f6c62", fontSize: 13 }}>{junior.junior_username || "Username non renseigné"}</div>
+                                    <div style={{ color: "#5f6c62", fontSize: 13 }}>
+                                      Consentement: {consentLabel(junior.player_consent_status)}
+                                    </div>
                                     <div style={{ color: "#5f6c62", fontSize: 12 }}>
                                       Dernier envoi: {fmtDate(junior.junior_last_sent_at)} • Envois: {junior.junior_send_count}
                                     </div>
@@ -379,14 +417,14 @@ export default function ManagerAccessPage() {
                       Ces juniors sont éligibles à l’application mais aucun parent n’est encore rattaché.
                     </p>
                   </div>
-                  <span className="pill-soft">{data.juniors_without_parent.length} junior(s)</span>
+                  <span className="pill-soft">{visibleUnlinkedJuniors.length} junior(s)</span>
                 </div>
 
-                {data.juniors_without_parent.length === 0 ? (
+                {visibleUnlinkedJuniors.length === 0 ? (
                   <div className="notice-card">Tous les juniors éligibles ont un parent lié.</div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
-                    {data.juniors_without_parent.map((junior) => (
+                    {visibleUnlinkedJuniors.map((junior) => (
                       <div
                         key={junior.user_id}
                         style={{
@@ -403,6 +441,9 @@ export default function ManagerAccessPage() {
                         <div>
                           <div style={{ fontWeight: 800 }}>{junior.name}</div>
                           <div style={{ color: "#5f6c62", fontSize: 13 }}>{junior.username || "Username non renseigné"}</div>
+                          <div style={{ color: "#5f6c62", fontSize: 13 }}>
+                            Consentement: {consentLabel(junior.player_consent_status)}
+                          </div>
                         </div>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#b91c1c", fontWeight: 800 }}>
                           <UserRoundX size={16} />
