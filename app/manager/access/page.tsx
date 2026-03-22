@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Mail, RefreshCw, UserRoundX } from "lucide-react";
@@ -36,7 +37,24 @@ type PageData = {
   club: { id: string; name: string };
   parents: ParentAccessRow[];
   juniors_without_parent: UnlinkedJuniorRow[];
+  mail_config: {
+    parent_subject: string;
+    parent_body: string;
+    junior_subject: string;
+    junior_body: string;
+  };
 };
+
+type MailPreviewState =
+  | null
+  | {
+      title: string;
+      subject: string;
+      body: string;
+      kind: "parent_access" | "junior_access";
+      parentUserId: string;
+      juniorUserId?: string;
+    };
 
 function fmtDate(value: string | null | undefined) {
   if (!value) return "Jamais";
@@ -73,6 +91,114 @@ function consentLabel(status: "granted" | "pending" | "adult" | null | undefined
   return "En attente";
 }
 
+const LINK_TOKEN_RE = /\[\[ACTIVITEE_LINK:([^:\]]+):([^\]]+)\]\]/g;
+
+function isHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+function createLinkToken(label: string, url: string) {
+  return `[[ACTIVITEE_LINK:${encodeURIComponent(label)}:${encodeURIComponent(url)}]]`;
+}
+
+function renderMailTemplate(
+  template: string,
+  variables: Record<string, string>,
+  linkMode: "text" | "token" = "text"
+) {
+  return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_, key: string, label?: string) => {
+    const value = variables[key] ?? "";
+    if (!value) return "";
+    if (!label) return value;
+    if (!isHttpUrl(value)) return `${label}: ${value}`;
+    return linkMode === "token" ? createLinkToken(label, value) : `${label}: ${value}`;
+  });
+}
+
+function renderTemplateText(text: string) {
+  return text.replace(LINK_TOKEN_RE, (_, encodedLabel: string, encodedUrl: string) => {
+    return `${decodeURIComponent(encodedLabel)}: ${decodeURIComponent(encodedUrl)}`;
+  });
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+}
+
+function linkLabelForUrl(url: string) {
+  if (url.includes("/reset-password?")) return "Cliquez ici pour définir votre mot de passe";
+  if (url.includes("ActiviTee_V1_player.pdf")) return "Cliquez ici pour ouvrir le guide d'utilisation";
+  return "Cliquez ici";
+}
+
+function linkifyHtml(value: string) {
+  return value.replace(/https?:\/\/[^\s<]+/g, (url) => {
+    const href = url.replace(/&amp;/g, "&");
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${linkLabelForUrl(
+      href
+    )}</a>`;
+  });
+}
+
+function renderInlineHtml(value: string) {
+  let html = "";
+  let lastIndex = 0;
+  for (const match of value.matchAll(LINK_TOKEN_RE)) {
+    const index = match.index ?? 0;
+    const raw = match[0];
+    const label = decodeURIComponent(match[1] ?? "");
+    const url = decodeURIComponent(match[2] ?? "");
+    html += linkifyHtml(escapeHtml(value.slice(lastIndex, index)));
+    html += `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${escapeHtml(label)}</a>`;
+    lastIndex = index + raw.length;
+  }
+  html += linkifyHtml(escapeHtml(value.slice(lastIndex)));
+  return html.replace(/\n/g, "<br/>");
+}
+
+function textToHtml(text: string) {
+  return `<div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">${text
+    .split("\n\n")
+    .map((block) => `<p>${renderInlineHtml(block)}</p>`)
+    .join("")}</div>`;
+}
+
+function defaultMailConfig(): PageData["mail_config"] {
+  return {
+    parent_subject: "ActiviTee • Accès parent {{club_name}}",
+    parent_body: [
+      "Bonjour {{parent_name}},",
+      "",
+      "Votre accès parent ActiviTee pour {{club_name}} est prêt.",
+      "",
+      "Identifiant: {{parent_username_or_existing}}",
+      "Définir / réinitialiser votre mot de passe: {{reset_url}}",
+      "Ce lien est valable 7 jours et peut être utilisé une seule fois.",
+      "Connexion à l'application: {{app_url}}",
+      "Mode d'emploi: {{player_guide_url}}",
+      "",
+      "Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.",
+      "",
+      "L'équipe ActiviTee",
+    ].join("\n"),
+    junior_subject: "ActiviTee • Accès junior {{junior_name}}",
+    junior_body: [
+      "Bonjour {{parent_name}},",
+      "",
+      "Voici les accès ActiviTee de {{junior_name}} pour {{club_name}}.",
+      "",
+      "Identifiant junior: {{junior_username}}",
+      "Mot de passe temporaire: {{temp_password}}",
+      "Connexion à l'application: {{app_url}}",
+      "Mode d'emploi: {{player_guide_url}}",
+      "",
+      "Merci de transmettre ces accès à votre enfant ou de l'accompagner lors de sa première connexion.",
+      "",
+      "L'équipe ActiviTee",
+    ].join("\n"),
+  };
+}
+
 export default function ManagerAccessPage() {
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [clubId, setClubId] = useState("");
@@ -82,6 +208,10 @@ export default function ManagerAccessPage() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [consentFilter, setConsentFilter] = useState<"hide_granted" | "all">("hide_granted");
+  const [mailConfig, setMailConfig] = useState<PageData["mail_config"] | null>(null);
+  const [savingMailConfig, setSavingMailConfig] = useState(false);
+  const [mailPreview, setMailPreview] = useState<MailPreviewState>(null);
+  const [portalReady, setPortalReady] = useState(false);
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -112,6 +242,7 @@ export default function ManagerAccessPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? "Impossible de charger les invitations");
       setData(json as PageData);
+      setMailConfig((json as PageData).mail_config ?? null);
     } catch (e: any) {
       setError(e?.message ?? "Erreur de chargement");
       setData(null);
@@ -142,6 +273,10 @@ export default function ManagerAccessPage() {
     void loadPage(clubId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   async function sendInvitation(kind: "parent_access" | "junior_access", parentUserId: string, juniorUserId?: string) {
     if (!clubId) return;
@@ -193,6 +328,78 @@ export default function ManagerAccessPage() {
     } finally {
       setBusyKey(null);
     }
+  }
+
+  async function saveMailConfig() {
+    if (!clubId || !mailConfig) return;
+    setSavingMailConfig(true);
+    setError(null);
+    try {
+      const headers = await authHeader();
+      const res = await fetch(`/api/manager/clubs/${clubId}/access-invitations`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify(mailConfig),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? "Impossible d'enregistrer les templates");
+      setMailConfig((json?.mail_config ?? null) as PageData["mail_config"] | null);
+    } catch (e: any) {
+      setError(e?.message ?? "Impossible d'enregistrer les templates");
+    } finally {
+      setSavingMailConfig(false);
+    }
+  }
+
+  function openParentPreview(row: ParentAccessRow) {
+    if (!data) return;
+    const previewConfig = mailConfig ?? data.mail_config ?? defaultMailConfig();
+    const variables = {
+      club_name: data.club.name,
+      parent_name: row.parent_name,
+      parent_username: row.parent_username ?? "",
+      parent_username_or_existing: row.parent_username || "votre compte parent déjà existant",
+      reset_url: "https://www.activitee.golf/reset-password?invite_token=[généré-à-l-envoi]",
+      app_url: "https://www.activitee.golf/",
+      player_guide_url:
+        "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf",
+      junior_name: "",
+      junior_username: "",
+      temp_password: "",
+    };
+    setMailPreview({
+      title: `Aperçu mail parent • ${row.parent_name}`,
+      subject: renderMailTemplate(previewConfig.parent_subject, variables, "text"),
+      body: renderMailTemplate(previewConfig.parent_body, variables, "token"),
+      kind: "parent_access",
+      parentUserId: row.parent_user_id,
+    });
+  }
+
+  function openJuniorPreview(row: ParentAccessRow, junior: JuniorAccessRow) {
+    if (!data) return;
+    const previewConfig = mailConfig ?? data.mail_config ?? defaultMailConfig();
+    const variables = {
+      club_name: data.club.name,
+      parent_name: row.parent_name,
+      parent_username: row.parent_username ?? "",
+      parent_username_or_existing: row.parent_username || "votre compte parent déjà existant",
+      reset_url: "",
+      app_url: "https://www.activitee.golf/",
+      player_guide_url:
+        "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf",
+      junior_name: junior.junior_name,
+      junior_username: junior.junior_username ?? "non renseigné",
+      temp_password: "[généré-à-l-envoi]",
+    };
+    setMailPreview({
+      title: `Aperçu mail junior • ${junior.junior_name}`,
+      subject: renderMailTemplate(previewConfig.junior_subject, variables, "text"),
+      body: renderMailTemplate(previewConfig.junior_body, variables, "token"),
+      kind: "junior_access",
+      parentUserId: row.parent_user_id,
+      juniorUserId: junior.junior_user_id,
+    });
   }
 
   const filteredParents = useMemo(() => {
@@ -277,6 +484,55 @@ export default function ManagerAccessPage() {
           {!loading && data ? (
             <div style={{ display: "grid", gap: 18 }}>
               <section className="glass-card" style={{ padding: 18 }}>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Templates e-mail</h2>
+                    <p style={{ margin: "4px 0 0", color: "#5f6c62", fontSize: 13 }}>
+                      Variables disponibles: {"{{club_name}}"}, {"{{parent_name}}"}, {"{{parent_username}}"}, {"{{parent_username_or_existing}}"}, {"{{reset_url}}"}, {"{{app_url}}"}, {"{{player_guide_url}}"}, {"{{junior_name}}"}, {"{{junior_username}}"}, {"{{temp_password}}"}. Libellé de lien possible, par exemple {"{{reset_url:Cliquez ici}}"}.
+                    </p>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <label className="field-shell">
+                      <span className="field-label">Sujet parent</span>
+                      <input
+                        value={mailConfig?.parent_subject ?? ""}
+                        onChange={(e) => setMailConfig((prev) => (prev ? { ...prev, parent_subject: e.target.value } : prev))}
+                      />
+                    </label>
+                    <label className="field-shell">
+                      <span className="field-label">Corps parent</span>
+                      <textarea
+                        value={mailConfig?.parent_body ?? ""}
+                        onChange={(e) => setMailConfig((prev) => (prev ? { ...prev, parent_body: e.target.value } : prev))}
+                        rows={10}
+                      />
+                    </label>
+                    <label className="field-shell">
+                      <span className="field-label">Sujet junior</span>
+                      <input
+                        value={mailConfig?.junior_subject ?? ""}
+                        onChange={(e) => setMailConfig((prev) => (prev ? { ...prev, junior_subject: e.target.value } : prev))}
+                      />
+                    </label>
+                    <label className="field-shell">
+                      <span className="field-label">Corps junior</span>
+                      <textarea
+                        value={mailConfig?.junior_body ?? ""}
+                        onChange={(e) => setMailConfig((prev) => (prev ? { ...prev, junior_body: e.target.value } : prev))}
+                        rows={10}
+                      />
+                    </label>
+                    <div>
+                      <button className="btn" type="button" onClick={() => void saveMailConfig()} disabled={savingMailConfig || !mailConfig}>
+                        {savingMailConfig ? "Enregistrement..." : "Enregistrer les templates"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass-card" style={{ padding: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                   <div>
                     <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Parents</h2>
@@ -328,6 +584,9 @@ export default function ManagerAccessPage() {
                                 : row.parent_send_count > 0
                                 ? "Renvoyer accès parent"
                                 : "Envoyer accès parent"}
+                            </button>
+                            <button type="button" className="btn" onClick={() => openParentPreview(row)}>
+                              Aperçu
                             </button>
                           </div>
                         </div>
@@ -397,6 +656,9 @@ export default function ManagerAccessPage() {
                                         ? "Renvoyer accès junior"
                                         : "Envoyer accès junior"}
                                     </button>
+                                    <button type="button" className="btn" onClick={() => openJuniorPreview(row, junior)}>
+                                      Aperçu
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -458,6 +720,128 @@ export default function ManagerAccessPage() {
           ) : null}
         </div>
       </div>
+      {portalReady && mailPreview
+        ? createPortal(
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 6000,
+            background: "rgba(15,23,42,0.45)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onClick={() => setMailPreview(null)}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "85vh",
+              overflow: "hidden",
+              background: "#fff",
+              border: "1px solid rgba(0,0,0,0.10)",
+              display: "grid",
+              gridTemplateRows: "auto minmax(0, 1fr) auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                padding: 18,
+                borderBottom: "1px solid #e5e7eb",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 18 }}>{mailPreview.title}</div>
+                <div style={{ color: "#5f6c62", fontSize: 13 }}>Aperçu du message qui sera envoyé.</div>
+              </div>
+              <button type="button" className="btn" onClick={() => setMailPreview(null)}>
+                Fermer
+              </button>
+            </div>
+            <div style={{ overflow: "auto", padding: 18, display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#475569", textTransform: "uppercase" }}>Sujet</div>
+                <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#fff" }}>{mailPreview.subject}</div>
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#475569", textTransform: "uppercase" }}>Corps HTML</div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "#fff",
+                  }}
+                  dangerouslySetInnerHTML={{ __html: textToHtml(mailPreview.body) }}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "#475569", textTransform: "uppercase" }}>Corps texte</div>
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    fontSize: 12,
+                    lineHeight: 1.55,
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: "#fff",
+                  }}
+                >
+                  {renderTemplateText(mailPreview.body)}
+                </pre>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                padding: 18,
+                borderTop: "1px solid #e5e7eb",
+                background: "#fff",
+              }}
+            >
+              <button type="button" className="btn" onClick={() => setMailPreview(null)}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={
+                  busyKey ===
+                  `${mailPreview.kind}:${mailPreview.parentUserId}:${mailPreview.juniorUserId ?? mailPreview.parentUserId}`
+                }
+                onClick={async () => {
+                  await sendInvitation(mailPreview.kind, mailPreview.parentUserId, mailPreview.juniorUserId);
+                  setMailPreview(null);
+                }}
+              >
+                {busyKey ===
+                `${mailPreview.kind}:${mailPreview.parentUserId}:${mailPreview.juniorUserId ?? mailPreview.parentUserId}` ? (
+                  <RefreshCw size={14} className="spin" />
+                ) : (
+                  <Mail size={14} />
+                )}
+                Envoyer le mail
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+        : null}
     </div>
   );
 }

@@ -52,8 +52,17 @@ export default function ManagerOrganizationCollecteInfosPage() {
   }, [clubId]);
 
   const publicHref = useMemo(() => {
-    if (!config?.public_token || typeof window === "undefined") return "";
-    return `${window.location.origin}/parents/collecte-infos?token=${encodeURIComponent(config.public_token)}`;
+    if (!config?.public_token) return "";
+    const configured =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "";
+    const normalizedConfigured = configured.trim().replace(/\/+$/, "");
+    const baseUrl =
+      normalizedConfigured && !/https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?$/i.test(normalizedConfigured)
+        ? normalizedConfigured
+        : "https://www.activitee.golf";
+    return `${baseUrl}/parents/collecte-infos?token=${encodeURIComponent(config.public_token)}`;
   }, [config?.public_token]);
 
   async function save() {

@@ -152,70 +152,81 @@ export default function PlayerConsentGate() {
           <div
             style={{
               width: "min(760px, 100%)",
-              maxHeight: "min(88vh, 900px)",
-              overflow: "auto",
+              maxHeight: "min(76vh, 720px)",
+              overflow: "hidden",
               borderRadius: 24,
               background: "#fffdf7",
               boxShadow: "0 28px 70px rgba(17,24,39,0.28)",
               border: "1px solid rgba(124, 98, 42, 0.18)",
-              padding: 22,
               display: "grid",
-              gap: 16,
+              gridTemplateRows: "auto minmax(0, 1fr) auto",
             }}
           >
-            <div style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "grid", gap: 6, padding: 22, borderBottom: "1px solid rgba(124, 98, 42, 0.12)" }}>
               <div style={{ fontSize: 22, fontWeight: 900, color: "#2b2517" }}>Consentement à l'utilisation d'ActiviTee</div>
               <div style={{ color: "#6c6354", fontSize: 14 }}>
                 Enfant concerné : <b>{fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)}</b>
               </div>
             </div>
 
-            <div style={{ color: "#413829", fontSize: 15, lineHeight: 1.7, display: "grid", gap: 12 }}>
-              <p style={{ margin: 0 }}>
-                En qualité de représentant légal, j'autorise {fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)} à
-                utiliser l'application ActiviTee dans le cadre de son suivi sportif.
-              </p>
-              <p style={{ margin: 0 }}>
-                Cette application permet notamment à mon enfant de consulter son planning, suivre ses entraînements et compétitions,
-                enregistrer ses résultats, communiquer avec ses coachs et recevoir les informations utiles à l'organisation de son
-                activité sportive.
-              </p>
-              <p style={{ margin: 0 }}>
-                Les données utilisées dans l'application peuvent inclure son identité, sa date de naissance, ses informations sportives,
-                ses évaluations, ses messages liés aux événements, ainsi que les documents déposés par l'encadrement sportif lorsqu'ils
-                sont nécessaires à son accompagnement.
-              </p>
-              <p style={{ margin: 0 }}>
-                En validant ce consentement, je confirme être habilité à autoriser l'utilisation d'ActiviTee pour mon enfant et je
-                comprends que ce consentement pourra être réévalué ou retiré en contactant le club ou l'équipe encadrante.
-              </p>
+            <div style={{ overflow: "auto", padding: 22, display: "grid", gap: 16 }}>
+              <div style={{ color: "#413829", fontSize: 15, lineHeight: 1.7, display: "grid", gap: 12 }}>
+                <p style={{ margin: 0 }}>
+                  En qualité de représentant légal, j'autorise {fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)} à
+                  utiliser l'application ActiviTee dans le cadre de son suivi sportif.
+                </p>
+                <p style={{ margin: 0 }}>
+                  Cette application permet notamment à mon enfant de consulter son planning, suivre ses entraînements et compétitions,
+                  enregistrer ses résultats, communiquer avec ses coachs et recevoir les informations utiles à l'organisation de son
+                  activité sportive.
+                </p>
+                <p style={{ margin: 0 }}>
+                  Les données utilisées dans l'application peuvent inclure son identité, sa date de naissance, ses informations sportives,
+                  ses évaluations, ses messages liés aux événements, ainsi que les documents déposés par l'encadrement sportif lorsqu'ils
+                  sont nécessaires à son accompagnement.
+                </p>
+                <p style={{ margin: 0 }}>
+                  En validant ce consentement, je confirme être habilité à autoriser l'utilisation d'ActiviTee pour mon enfant et je
+                  comprends que ce consentement pourra être réévalué ou retiré en contactant le club ou l'équipe encadrante.
+                </p>
+              </div>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: 14,
+                  borderRadius: 14,
+                  background: "rgba(53,72,59,0.06)",
+                  border: "1px solid rgba(53,72,59,0.12)",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={parentConsentChecked}
+                  onChange={(e) => setParentConsentChecked(e.target.checked)}
+                  style={{ marginTop: 4 }}
+                />
+                <span style={{ fontSize: 14, lineHeight: 1.55, color: "#2b2517" }}>
+                  Je consens à ce que mon enfant utilise l'application ActiviTee.
+                </span>
+              </label>
+
+              {error ? <div style={{ color: "#9d2d00", fontSize: 13 }}>{error}</div> : null}
             </div>
 
-            <label
+            <div
               style={{
                 display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                padding: 14,
-                borderRadius: 14,
-                background: "rgba(53,72,59,0.06)",
-                border: "1px solid rgba(53,72,59,0.12)",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+                padding: 22,
+                borderTop: "1px solid rgba(124, 98, 42, 0.12)",
               }}
             >
-              <input
-                type="checkbox"
-                checked={parentConsentChecked}
-                onChange={(e) => setParentConsentChecked(e.target.checked)}
-                style={{ marginTop: 4 }}
-              />
-              <span style={{ fontSize: 14, lineHeight: 1.55, color: "#2b2517" }}>
-                Je consens à ce que mon enfant utilise l'application ActiviTee.
-              </span>
-            </label>
-
-            {error ? <div style={{ color: "#9d2d00", fontSize: 13 }}>{error}</div> : null}
-
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ color: "#6c6354", fontSize: 13 }}>
                 Cette demande restera affichée tant qu'un enfant lié à votre compte est en attente de consentement.
               </div>

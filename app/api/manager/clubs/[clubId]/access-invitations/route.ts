@@ -14,6 +14,12 @@ type AuthUserSummary = {
 };
 
 type InvitationKind = "parent_access" | "junior_access";
+type MailConfig = {
+  parent_subject: string;
+  parent_body: string;
+  junior_subject: string;
+  junior_body: string;
+};
 
 type ParentAccessRow = {
   parent_user_id: string;
@@ -41,13 +47,31 @@ function mustEnv(name: string) {
 }
 
 function resolveAppBaseUrl(req: NextRequest) {
-  const configured =
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    "";
-  if (configured.trim()) return configured.trim().replace(/\/+$/, "");
-  return new URL(req.url).origin.replace(/\/+$/, "");
+  const candidates = [
+    process.env.APP_URL || "",
+    process.env.NEXT_PUBLIC_APP_URL || "",
+    process.env.NEXT_PUBLIC_SITE_URL || "",
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const isUnsafeHost = (input: string) => {
+    try {
+      const url = new URL(input);
+      const host = url.hostname.trim().toLowerCase();
+      return host === "localhost" || host === "127.0.0.1" || host === "::1";
+    } catch {
+      return true;
+    }
+  };
+
+  const configured = candidates.find((value) => !isUnsafeHost(value));
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const requestOrigin = new URL(req.url).origin.replace(/\/+$/, "");
+  if (!isUnsafeHost(requestOrigin)) return requestOrigin;
+
+  return "https://www.activitee.golf";
 }
 
 function cleanName(first: string | null | undefined, last: string | null | undefined) {
@@ -129,6 +153,130 @@ function parseMailFrom(value: string) {
     };
   }
   return { name: "ActiviTee", email: raw };
+}
+
+function defaultMailConfig(): MailConfig {
+  return {
+    parent_subject: "ActiviTee • Accès parent {{club_name}}",
+    parent_body: [
+      "Bonjour {{parent_name}},",
+      "",
+      "Votre accès parent ActiviTee pour {{club_name}} est prêt.",
+      "",
+      "Identifiant: {{parent_username_or_existing}}",
+      "Définir / réinitialiser votre mot de passe: {{reset_url}}",
+      "Ce lien est valable 7 jours et peut être utilisé une seule fois.",
+      "Connexion à l'application: {{app_url}}",
+      "Mode d'emploi: {{player_guide_url}}",
+      "",
+      "Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.",
+      "",
+      "L'équipe ActiviTee",
+    ].join("\n"),
+    junior_subject: "ActiviTee • Accès junior {{junior_name}}",
+    junior_body: [
+      "Bonjour {{parent_name}},",
+      "",
+      "Voici les accès ActiviTee de {{junior_name}} pour {{club_name}}.",
+      "",
+      "Identifiant junior: {{junior_username}}",
+      "Mot de passe temporaire: {{temp_password}}",
+      "Connexion à l'application: {{app_url}}",
+      "Mode d'emploi: {{player_guide_url}}",
+      "",
+      "Merci de transmettre ces accès à votre enfant ou de l'accompagner lors de sa première connexion.",
+      "",
+      "L'équipe ActiviTee",
+    ].join("\n"),
+  };
+}
+
+async function loadMailConfig(supabaseAdmin: any, clubId: string) {
+  const defaults = defaultMailConfig();
+  const { data, error } = await supabaseAdmin
+    .from("club_access_invitation_mail_configs")
+    .select("parent_subject,parent_body,junior_subject,junior_body")
+    .eq("club_id", clubId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return {
+    parent_subject: String(data?.parent_subject ?? defaults.parent_subject),
+    parent_body: String(data?.parent_body ?? defaults.parent_body),
+    junior_subject: String(data?.junior_subject ?? defaults.junior_subject),
+    junior_body: String(data?.junior_body ?? defaults.junior_body),
+  } satisfies MailConfig;
+}
+
+const LINK_TOKEN_RE = /\[\[ACTIVITEE_LINK:([^:\]]+):([^\]]+)\]\]/g;
+
+function isHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+function createLinkToken(label: string, url: string) {
+  return `[[ACTIVITEE_LINK:${encodeURIComponent(label)}:${encodeURIComponent(url)}]]`;
+}
+
+function renderMailTemplate(
+  template: string,
+  variables: Record<string, string>,
+  linkMode: "text" | "token" = "text"
+) {
+  return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_, key: string, label?: string) => {
+    const value = variables[key] ?? "";
+    if (!value) return "";
+    if (!label) return value;
+    if (!isHttpUrl(value)) return `${label}: ${value}`;
+    return linkMode === "token" ? createLinkToken(label, value) : `${label}: ${value}`;
+  });
+}
+
+function renderTemplateText(text: string) {
+  return text.replace(LINK_TOKEN_RE, (_, encodedLabel: string, encodedUrl: string) => {
+    return `${decodeURIComponent(encodedLabel)}: ${decodeURIComponent(encodedUrl)}`;
+  });
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+}
+
+function linkLabelForUrl(url: string) {
+  if (url.includes("/reset-password?")) return "Cliquez ici pour definir votre mot de passe";
+  if (url.includes("ActiviTee_V1_player.pdf")) return "Cliquez ici pour ouvrir le guide d'utilisation";
+  return "Cliquez ici";
+}
+
+function linkifyHtml(value: string) {
+  return value.replace(/https?:\/\/[^\s<]+/g, (url) => {
+    const href = url.replace(/&amp;/g, "&");
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${linkLabelForUrl(
+      href
+    )}</a>`;
+  });
+}
+
+function renderInlineHtml(value: string) {
+  let html = "";
+  let lastIndex = 0;
+  for (const match of value.matchAll(LINK_TOKEN_RE)) {
+    const index = match.index ?? 0;
+    const raw = match[0];
+    const label = decodeURIComponent(match[1] ?? "");
+    const url = decodeURIComponent(match[2] ?? "");
+    html += linkifyHtml(escapeHtml(value.slice(lastIndex, index)));
+    html += `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${escapeHtml(label)}</a>`;
+    lastIndex = index + raw.length;
+  }
+  html += linkifyHtml(escapeHtml(value.slice(lastIndex)));
+  return html.replace(/\n/g, "<br/>");
+}
+
+function textToHtml(text: string) {
+  return `<div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">${text
+    .split("\n\n")
+    .map((block) => `<p>${renderInlineHtml(block)}</p>`)
+    .join("")}</div>`;
 }
 
 async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
@@ -282,34 +430,20 @@ function buildParentEmail(params: {
   parentUsername: string | null;
   resetUrl: string;
   appUrl: string;
+  template: MailConfig;
 }) {
-  const text = [
-    `Bonjour ${params.parentName},`,
-    "",
-    `Votre accès parent ActiviTee pour ${params.clubName} est prêt.`,
-    "",
-    params.parentUsername ? `Identifiant: ${params.parentUsername}` : "Identifiant: votre compte parent déjà existant",
-    `Définir / réinitialiser votre mot de passe: ${params.resetUrl}`,
-    "Ce lien est valable 7 jours et peut être utilisé une seule fois.",
-    `Connexion à l'application: ${params.appUrl}`,
-    `Mode d'emploi: ${PLAYER_GUIDE_URL}`,
-    "",
-    "Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.",
-    "",
-    "L'équipe ActiviTee",
-  ].join("\n");
-
-  const html = `
-    <div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">
-      <p>Bonjour ${params.parentName},</p>
-      <p>Votre accès parent <strong>ActiviTee</strong> pour <strong>${params.clubName}</strong> est prêt.</p>
-      <p>${params.parentUsername ? `<strong>Identifiant :</strong> ${params.parentUsername}<br/>` : ""}<strong>Définir / réinitialiser votre mot de passe :</strong> <a href="${params.resetUrl}">Ouvrir le lien sécurisé</a><br/><span>Ce lien est valable 7 jours et peut être utilisé une seule fois.</span><br/><strong>Connexion à l'application :</strong> <a href="${params.appUrl}">${params.appUrl}</a><br/><strong>Mode d'emploi :</strong> <a href="${PLAYER_GUIDE_URL}">Télécharger le document</a></p>
-      <p>Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.</p>
-      <p>L'équipe ActiviTee</p>
-    </div>
-  `;
-
-  return { text, html };
+  const variables = {
+    club_name: params.clubName,
+    parent_name: params.parentName,
+    parent_username: params.parentUsername ?? "",
+    parent_username_or_existing: params.parentUsername || "votre compte parent déjà existant",
+    reset_url: params.resetUrl,
+    app_url: params.appUrl,
+    player_guide_url: PLAYER_GUIDE_URL,
+  };
+  const subject = renderMailTemplate(params.template.parent_subject, variables, "text");
+  const renderedBody = renderMailTemplate(params.template.parent_body, variables, "token");
+  return { subject, text: renderTemplateText(renderedBody), html: textToHtml(renderedBody) };
 }
 
 function buildJuniorEmail(params: {
@@ -319,33 +453,20 @@ function buildJuniorEmail(params: {
   juniorUsername: string | null;
   tempPassword: string;
   appUrl: string;
+  template: MailConfig;
 }) {
-  const text = [
-    `Bonjour ${params.parentName},`,
-    "",
-    `Voici les accès ActiviTee de ${params.juniorName} pour ${params.clubName}.`,
-    "",
-    `Identifiant junior: ${params.juniorUsername ?? "non renseigné"}`,
-    `Mot de passe temporaire: ${params.tempPassword}`,
-    `Connexion à l'application: ${params.appUrl}`,
-    `Mode d'emploi: ${PLAYER_GUIDE_URL}`,
-    "",
-    "Merci de transmettre ces accès à votre enfant ou de l'accompagner lors de sa première connexion.",
-    "",
-    "L'équipe ActiviTee",
-  ].join("\n");
-
-  const html = `
-    <div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">
-      <p>Bonjour ${params.parentName},</p>
-      <p>Voici les accès <strong>ActiviTee</strong> de <strong>${params.juniorName}</strong> pour <strong>${params.clubName}</strong>.</p>
-      <p><strong>Identifiant junior :</strong> ${params.juniorUsername ?? "non renseigné"}<br/><strong>Mot de passe temporaire :</strong> ${params.tempPassword}<br/><strong>Connexion à l'application :</strong> <a href="${params.appUrl}">${params.appUrl}</a><br/><strong>Mode d'emploi :</strong> <a href="${PLAYER_GUIDE_URL}">Télécharger le document</a></p>
-      <p>Merci de transmettre ces accès à votre enfant ou de l'accompagner lors de sa première connexion.</p>
-      <p>L'équipe ActiviTee</p>
-    </div>
-  `;
-
-  return { text, html };
+  const variables = {
+    club_name: params.clubName,
+    parent_name: params.parentName,
+    junior_name: params.juniorName,
+    junior_username: params.juniorUsername ?? "non renseigné",
+    temp_password: params.tempPassword,
+    app_url: params.appUrl,
+    player_guide_url: PLAYER_GUIDE_URL,
+  };
+  const subject = renderMailTemplate(params.template.junior_subject, variables, "text");
+  const renderedBody = renderMailTemplate(params.template.junior_body, variables, "token");
+  return { subject, text: renderTemplateText(renderedBody), html: textToHtml(renderedBody) };
 }
 
 function computeStatus(args: {
@@ -566,6 +687,7 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
     club: { id: String(clubRes.data?.id ?? clubId), name: String(clubRes.data?.name ?? "Club") },
     parents: parentRows,
     juniors_without_parent: juniorsWithoutParent,
+    mail_config: await loadMailConfig(supabaseAdmin, clubId),
   };
 }
 
@@ -637,13 +759,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
         parentUsername: parent.parent_username,
         resetUrl,
         appUrl,
+        template: dataset.mail_config,
       });
 
       try {
         await sendBrevoEmail({
           toEmail: parent.parent_email,
           toName: parent.parent_name,
-          subject: `ActiviTee • Accès parent ${dataset.club.name}`,
+          subject: mail.subject,
           textContent: mail.text,
           htmlContent: mail.html,
         });
@@ -688,13 +811,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
       juniorUsername: junior.junior_username,
       tempPassword,
       appUrl,
+      template: dataset.mail_config,
     });
 
     try {
       await sendBrevoEmail({
         toEmail: parent.parent_email,
         toName: parent.parent_name,
-        subject: `ActiviTee • Accès junior ${junior.junior_name}`,
+        subject: mail.subject,
         textContent: mail.text,
         htmlContent: mail.html,
       });
@@ -721,6 +845,35 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     }
 
     return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
+  try {
+    const { clubId } = await ctx.params;
+    if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
+    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+      auth: { persistSession: false },
+    });
+    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const body = await req.json().catch(() => ({}));
+    const defaults = defaultMailConfig();
+    const patch = {
+      club_id: clubId,
+      parent_subject: String(body?.parent_subject ?? "").trim() || defaults.parent_subject,
+      parent_body: String(body?.parent_body ?? "").trim() || defaults.parent_body,
+      junior_subject: String(body?.junior_subject ?? "").trim() || defaults.junior_subject,
+      junior_body: String(body?.junior_body ?? "").trim() || defaults.junior_body,
+    };
+    const { error } = await supabaseAdmin
+      .from("club_access_invitation_mail_configs")
+      .upsert(patch, { onConflict: "club_id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, mail_config: await loadMailConfig(supabaseAdmin, clubId) });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
