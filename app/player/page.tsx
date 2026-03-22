@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -11,7 +12,7 @@ import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPage
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { MessageCircle, PlusCircle } from "lucide-react";
+import { ArrowRight, MessageCircle, PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import MessageCountBadge from "@/components/messages/MessageCountBadge";
@@ -548,6 +549,7 @@ function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) 
 }
 
 export default function PlayerHomePage() {
+  const router = useRouter();
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
@@ -588,6 +590,9 @@ export default function PlayerHomePage() {
   const [playVolumeLoadedOnce, setPlayVolumeLoadedOnce] = useState(false);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
+  const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
+  const [playerConsentStatus, setPlayerConsentStatus] = useState<"granted" | "pending" | "adult" | null>(null);
+  const [consentResolved, setConsentResolved] = useState(false);
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState<boolean>(false);
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
@@ -601,6 +606,8 @@ export default function PlayerHomePage() {
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
+  const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
+  const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
 
   const bucket = "marketplace";
 
@@ -908,6 +915,7 @@ export default function PlayerHomePage() {
       const ctx = await resolveEffectivePlayerContext();
       effectiveUid = ctx.effectiveUserId;
       viewerUid = ctx.viewerUserId;
+      setViewerRole(ctx.role === "parent" ? "parent" : "player");
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
       void loadRollingPlayVolume(effectiveUid, viewerUid);
@@ -1622,6 +1630,68 @@ export default function PlayerHomePage() {
     if (!base) return null;
     return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
   }, [profile?.avatar_url]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadConsent = async () => {
+      if (viewerRole !== "player") {
+        if (!cancelled) {
+          setPlayerConsentStatus(null);
+          setConsentResolved(true);
+        }
+        return;
+      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        if (!cancelled) {
+          setPlayerConsentStatus(null);
+          setConsentResolved(true);
+        }
+        return;
+      }
+      const res = await fetch("/api/player/consent", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!cancelled) {
+        setPlayerConsentStatus(
+          res.ok && json?.viewerRole === "player"
+            ? ((json?.player?.consentStatus ?? null) as "granted" | "pending" | "adult" | null)
+            : null
+        );
+        setConsentResolved(true);
+      }
+    };
+    setConsentResolved(false);
+    void loadConsent();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerRole, viewerUserId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (loading || heroLoading || !consentResolved) {
+      setShowProfilePhotoPrompt(false);
+      return;
+    }
+    if (!viewerUserId || viewerRole !== "player" || playerConsentStatus == null || playerConsentStatus === "pending") {
+      setShowProfilePhotoPrompt(false);
+      return;
+    }
+    if (profile?.avatar_url?.trim()) {
+      window.localStorage.removeItem(`player:photo-prompt:dismissed:${viewerUserId}`);
+      setShowProfilePhotoPrompt(false);
+      setHidePhotoPromptForever(false);
+      return;
+    }
+    const dismissed = window.localStorage.getItem(`player:photo-prompt:dismissed:${viewerUserId}`);
+    setShowProfilePhotoPrompt(!dismissed);
+    setHidePhotoPromptForever(Boolean(dismissed));
+  }, [consentResolved, heroLoading, loading, playerConsentStatus, profile?.avatar_url, viewerRole, viewerUserId]);
 
   // ✅ affichage sensations : valeur = moyenne du mois / flèche = tendance vs séance précédente
   const senseRightStyle: React.CSSProperties = {
@@ -2399,6 +2469,146 @@ export default function PlayerHomePage() {
 
         <div style={{ height: 12 }} />
       </div>
+      {showProfilePhotoPrompt ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1400,
+            background: "rgba(15, 23, 42, 0.38)",
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+          }}
+          onClick={() => {
+            if (typeof window !== "undefined" && viewerUserId) {
+              window.localStorage.setItem(`player:photo-prompt:dismissed:${viewerUserId}`, "1");
+            }
+            setShowProfilePhotoPrompt(false);
+          }}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: "min(520px, 100%)",
+              background: "#fff",
+              border: "1px solid rgba(0,0,0,0.10)",
+              boxShadow: "0 28px 80px rgba(15,23,42,0.22)",
+              padding: 22,
+              display: "grid",
+              gap: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div
+                  style={{
+                    width: 68,
+                    height: 68,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    background: "linear-gradient(135deg, #166534 0%, #15803d 100%)",
+                    color: "#fff",
+                    fontSize: 24,
+                    fontWeight: 900,
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18)",
+                  }}
+                >
+                  {getInitials(profile)}
+                </div>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    border: "1px solid #e5e7eb",
+                    flexShrink: 0,
+                  }}
+                >
+                  <ArrowRight size={18} />
+                </div>
+                <div
+                  style={{
+                    width: 68,
+                    height: 68,
+                    borderRadius: "50%",
+                    overflow: "hidden",
+                    border: "2px solid #e5e7eb",
+                    background: "#fff",
+                    flexShrink: 0,
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=160&q=80"
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#1f2937" }}>Ajoute ta photo de profil</div>
+              <div style={{ color: "#475569", fontSize: 15, lineHeight: 1.6 }}>
+                Une photo rend ton profil plus sympa et permet aux coachs de t’identifier plus facilement dans l’application.
+              </div>
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                color: "#475569",
+                fontSize: 14,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={hidePhotoPromptForever}
+                onChange={(e) => setHidePhotoPromptForever(e.target.checked)}
+              />
+              <span>Ne plus afficher</span>
+            </label>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (typeof window !== "undefined" && viewerUserId && hidePhotoPromptForever) {
+                    window.localStorage.setItem(`player:photo-prompt:dismissed:${viewerUserId}`, "1");
+                  }
+                  setShowProfilePhotoPrompt(false);
+                }}
+              >
+                Plus tard
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    if (viewerUserId && hidePhotoPromptForever) {
+                      window.localStorage.setItem(`player:photo-prompt:dismissed:${viewerUserId}`, "1");
+                    } else if (viewerUserId) {
+                      window.localStorage.removeItem(`player:photo-prompt:dismissed:${viewerUserId}`);
+                    }
+                  }
+                  setShowProfilePhotoPrompt(false);
+                  router.push("/player/profile");
+                }}
+              >
+                Ajouter ma photo
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

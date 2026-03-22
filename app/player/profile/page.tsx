@@ -438,6 +438,34 @@ export default function PlayerProfilePage() {
     }
   }
 
+  async function removeAvatar() {
+    if (!userId || loading || avatarBusy) return;
+    setError(null);
+    setInfo(null);
+    setAvatarBusy(true);
+    try {
+      const objectPath = `${userId}/avatar.jpg`;
+      const removeRes = await supabase.storage.from("avatars").remove([objectPath]);
+      if (removeRes.error) {
+        const msg = String(removeRes.error.message ?? "");
+        if (!/not[\s_-]?found/i.test(msg) && !/does not exist/i.test(msg)) {
+          throw new Error(removeRes.error.message);
+        }
+      }
+
+      const { error: upErr } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userId);
+      if (upErr) throw new Error(upErr.message);
+
+      setAvatarDbUrl(null);
+      setAvatarRefreshKey(Date.now());
+      setInfo("Photo de profil supprimée.");
+    } catch (err: any) {
+      setError(err?.message ?? "Impossible de supprimer la photo de profil.");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   const handicapNumber = useMemo(() => parseHandicap(), [handicap]);
   const juniorCategory = useMemo(
     () => (birthDate ? getJuniorCategory(birthDate) : "—"),
@@ -518,6 +546,26 @@ export default function PlayerProfilePage() {
             >
               {avatarBusy ? t("playerProfile.uploading") : t("common.change")}
             </button>
+            {avatarDbUrl ? (
+              <button
+                type="button"
+                onClick={() => void removeAvatar()}
+                disabled={loading || avatarBusy || !userId}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  fontWeight: 800,
+                  fontSize: 12,
+                  letterSpacing: 0.4,
+                  color: "rgba(255,255,255,0.76)",
+                  cursor: loading || avatarBusy ? "default" : "pointer",
+                  opacity: loading || avatarBusy ? 0.6 : 1,
+                }}
+              >
+                Supprimer la photo
+              </button>
+            ) : null}
           </div>
 
           {/* input hidden */}
