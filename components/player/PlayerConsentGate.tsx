@@ -131,9 +131,7 @@ export default function PlayerConsentGate() {
     }
   }
 
-  if (loading || !data) return null;
-
-  const showParentModal = data.viewerRole === "parent" && Boolean(selectedPendingChild);
+  const showParentModal = !loading && data?.viewerRole === "parent" && Boolean(selectedPendingChild);
 
   useEffect(() => {
     if (!showParentModal) return;
@@ -146,6 +144,8 @@ export default function PlayerConsentGate() {
       document.body.style.overscrollBehavior = previousOverscroll;
     };
   }, [showParentModal]);
+
+  if (loading || !data) return null;
 
   return (
     <>
