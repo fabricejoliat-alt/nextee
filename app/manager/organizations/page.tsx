@@ -76,9 +76,14 @@ export default function ManagerOrganizationsPage() {
                   <div key={r.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                       <div style={{ fontWeight: 900 }}>{r.name}</div>
-                      <Link className="btn" href={`/manager/organizations/${r.id}/groups`}>
-                        {tr("Ouvrir", "Open")}
-                      </Link>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <Link className="btn" href={`/manager/organizations/${r.id}/collecte-infos`}>
+                          {tr("Collecte infos", "Parent intake")}
+                        </Link>
+                        <Link className="btn" href={`/manager/organizations/${r.id}/groups`}>
+                          {tr("Ouvrir", "Open")}
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -1,6 +1,53 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+type PlayerFieldDef = {
+  id: string;
+  club_id: string;
+  field_key: string;
+  label: string;
+  field_type: "text" | "boolean" | "select";
+  options_json: string[] | null;
+  is_active: boolean;
+  sort_order: number;
+  legacy_binding: "player_course_track" | "player_membership_paid" | "player_playing_right_paid" | null;
+};
+
+function normalizePlayerFieldOptions(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function readLegacyPlayerFieldValue(field: PlayerFieldDef, member: any) {
+  if (field.legacy_binding === "player_course_track") return member.player_course_track ?? null;
+  if (field.legacy_binding === "player_membership_paid") return member.player_membership_paid ?? null;
+  if (field.legacy_binding === "player_playing_right_paid") return member.player_playing_right_paid ?? null;
+  return null;
+}
+
+async function fetchClubPlayerFields(supabaseAdmin: any, clubId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("club_player_fields")
+    .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,legacy_binding")
+    .eq("club_id", clubId)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((row) => ({
+    id: String(row.id),
+    club_id: String(row.club_id),
+    field_key: String(row.field_key ?? ""),
+    label: String(row.label ?? ""),
+    field_type: row.field_type as PlayerFieldDef["field_type"],
+    options_json: normalizePlayerFieldOptions(row.options_json),
+    is_active: Boolean(row.is_active),
+    sort_order: Number(row.sort_order ?? 0),
+    legacy_binding: (row.legacy_binding ?? null) as PlayerFieldDef["legacy_binding"],
+  })) satisfies PlayerFieldDef[];
+}
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -99,7 +146,57 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (membersError) return NextResponse.json({ error: membersError.message }, { status: 400 });
 
     const members = membersRows ?? [];
+    const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const userIds = Array.from(new Set(members.map((m: any) => String(m.user_id)).filter(Boolean)));
+    const memberIds = Array.from(new Set(members.map((m: any) => String(m.id)).filter(Boolean)));
+    const customFieldIds = playerFields.filter((field) => !field.legacy_binding).map((field) => field.id);
+
+    const valuesByMemberId = new Map<string, Record<string, string | boolean | null>>();
+    if (memberIds.length > 0 && customFieldIds.length > 0) {
+      const { data: valueRows, error: valuesError } = await supabaseAdmin
+        .from("club_member_player_field_values")
+        .select("club_member_id,field_id,value_text,value_bool,value_option")
+        .in("club_member_id", memberIds)
+        .in("field_id", customFieldIds);
+      if (valuesError) return NextResponse.json({ error: valuesError.message }, { status: 400 });
+
+      for (const row of valueRows ?? []) {
+        const memberId = String((row as any).club_member_id);
+        const fieldId = String((row as any).field_id);
+        const current = valuesByMemberId.get(memberId) ?? {};
+        current[fieldId] =
+          (row as any).value_option ??
+          ((row as any).value_bool == null ? null : Boolean((row as any).value_bool)) ??
+          ((row as any).value_text ?? null);
+        valuesByMemberId.set(memberId, current);
+      }
+    }
+
+    const consentStatusByUserId = new Map<string, "granted" | "pending" | "adult" | null>();
+    if (userIds.length > 0) {
+      const { data: consentRows, error: consentError } = await supabaseAdmin
+        .from("club_members")
+        .select("user_id,player_consent_status")
+        .in("user_id", userIds)
+        .eq("role", "player")
+        .eq("is_active", true);
+      if (consentError) return NextResponse.json({ error: consentError.message }, { status: 400 });
+
+      const rawByUser = new Map<string, string[]>();
+      for (const row of consentRows ?? []) {
+        const userId = String((row as any).user_id ?? "");
+        if (!userId) continue;
+        const next = rawByUser.get(userId) ?? [];
+        next.push(String((row as any).player_consent_status ?? ""));
+        rawByUser.set(userId, next);
+      }
+      for (const [userId, statuses] of rawByUser.entries()) {
+        if (statuses.includes("granted")) consentStatusByUserId.set(userId, "granted");
+        else if (statuses.includes("adult")) consentStatusByUserId.set(userId, "adult");
+        else if (statuses.includes("pending")) consentStatusByUserId.set(userId, "pending");
+        else consentStatusByUserId.set(userId, null);
+      }
+    }
 
     let profileById = new Map<
       string,
@@ -171,22 +268,30 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const authEmailById = await fetchAuthEmailsByIds(supabaseAdmin, userIds);
 
-    const hydratedMembers = members.map((m: any) => ({
-      id: String(m.id),
-      club_id: String(m.club_id),
-      user_id: String(m.user_id),
-      role: m.role,
-      is_active: m.is_active,
-      is_performance: m.is_performance,
-      player_course_track: m.player_course_track ?? null,
-      player_membership_paid: m.player_membership_paid ?? null,
-      player_playing_right_paid: m.player_playing_right_paid ?? null,
-      player_consent_status: m.player_consent_status ?? null,
-      auth_email: authEmailById.get(String(m.user_id)) ?? null,
-      profiles: profileById.get(String(m.user_id)) ?? null,
-    }));
+    const hydratedMembers = members.map((m: any) => {
+      const playerFieldValues = valuesByMemberId.get(String(m.id)) ?? {};
+      for (const field of playerFields) {
+        if (!field.legacy_binding) continue;
+        playerFieldValues[field.id] = readLegacyPlayerFieldValue(field, m);
+      }
+      return {
+        id: String(m.id),
+        club_id: String(m.club_id),
+        user_id: String(m.user_id),
+        role: m.role,
+        is_active: m.is_active,
+        is_performance: m.is_performance,
+        player_course_track: m.player_course_track ?? null,
+        player_membership_paid: m.player_membership_paid ?? null,
+        player_playing_right_paid: m.player_playing_right_paid ?? null,
+        player_consent_status: consentStatusByUserId.get(String(m.user_id)) ?? m.player_consent_status ?? null,
+        player_field_values: playerFieldValues,
+        auth_email: authEmailById.get(String(m.user_id)) ?? null,
+        profiles: profileById.get(String(m.user_id)) ?? null,
+      };
+    });
 
-    return NextResponse.json({ members: hydratedMembers });
+    return NextResponse.json({ members: hydratedMembers, playerFields });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
@@ -256,6 +361,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (role) memberPatch.role = role;
     if (typeof isActive === "boolean") memberPatch.is_active = isActive;
     const effectiveRole = role || (memberRow as any).role || "";
+    const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
+    const fieldById = new Map(playerFields.map((field) => [field.id, field]));
     if (effectiveRole === "player") {
       if (has("player_course_track")) memberPatch.player_course_track = playerCourseTrack;
       if (has("player_membership_paid")) memberPatch.player_membership_paid = playerMembershipPaid;
@@ -271,6 +378,94 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (Object.keys(memberPatch).length > 0) {
       const { error } = await supabaseAdmin.from("club_members").update(memberPatch).eq("id", memberId);
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (effectiveRole === "player" && has("player_consent_status")) {
+      const { error: consentSyncError } = await supabaseAdmin
+        .from("club_members")
+        .update({ player_consent_status: playerConsentStatus })
+        .eq("user_id", memberRow.user_id)
+        .eq("role", "player")
+        .eq("is_active", true);
+      if (consentSyncError) return NextResponse.json({ error: consentSyncError.message }, { status: 400 });
+    }
+
+    if (effectiveRole !== "player") {
+      const { error: deleteFieldValuesError } = await supabaseAdmin
+        .from("club_member_player_field_values")
+        .delete()
+        .eq("club_member_id", memberId);
+      if (deleteFieldValuesError) return NextResponse.json({ error: deleteFieldValuesError.message }, { status: 400 });
+    } else if (has("player_field_values") && body.player_field_values && typeof body.player_field_values === "object") {
+      const playerFieldValues = body.player_field_values as Record<string, unknown>;
+      for (const [fieldId, rawValue] of Object.entries(playerFieldValues)) {
+        const field = fieldById.get(fieldId);
+        if (!field) continue;
+
+        if (field.legacy_binding) {
+          if (field.legacy_binding === "player_course_track") {
+            const next =
+              rawValue == null || String(rawValue).trim() === ""
+                ? null
+                : ["junior", "competition", "no_course"].includes(String(rawValue).trim())
+                ? String(rawValue).trim()
+                : "__invalid__";
+            if (next === "__invalid__") {
+              return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
+            }
+            const { error } = await supabaseAdmin.from("club_members").update({ player_course_track: next }).eq("id", memberId);
+            if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+          } else if (field.legacy_binding === "player_membership_paid") {
+            const next = rawValue == null || rawValue === "" ? null : Boolean(rawValue);
+            const { error } = await supabaseAdmin.from("club_members").update({ player_membership_paid: next }).eq("id", memberId);
+            if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+          } else if (field.legacy_binding === "player_playing_right_paid") {
+            const next = rawValue == null || rawValue === "" ? null : Boolean(rawValue);
+            const { error } = await supabaseAdmin.from("club_members").update({ player_playing_right_paid: next }).eq("id", memberId);
+            if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+          }
+          continue;
+        }
+
+        const isEmpty =
+          rawValue == null ||
+          (typeof rawValue === "string" && rawValue.trim() === "") ||
+          (field.field_type === "select" && String(rawValue ?? "").trim() === "");
+
+        if (isEmpty) {
+          const { error } = await supabaseAdmin
+            .from("club_member_player_field_values")
+            .delete()
+            .eq("club_member_id", memberId)
+            .eq("field_id", fieldId);
+          if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+          continue;
+        }
+
+        const valuePatch: Record<string, any> = {
+          club_member_id: memberId,
+          field_id: fieldId,
+          value_text: null,
+          value_bool: null,
+          value_option: null,
+        };
+        if (field.field_type === "text") {
+          valuePatch.value_text = String(rawValue).trim();
+        } else if (field.field_type === "boolean") {
+          valuePatch.value_bool = Boolean(rawValue);
+        } else if (field.field_type === "select") {
+          const option = String(rawValue).trim();
+          if (field.options_json && field.options_json.length > 0 && !field.options_json.includes(option)) {
+            return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
+          }
+          valuePatch.value_option = option;
+        }
+
+        const { error } = await supabaseAdmin
+          .from("club_member_player_field_values")
+          .upsert(valuePatch, { onConflict: "club_member_id,field_id" });
+        if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      }
     }
 
     if (has("auth_email") || has("auth_password")) {

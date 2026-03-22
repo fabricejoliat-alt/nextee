@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 type ParentItem = { first_name: string; last_name: string; email: string };
 type ChildItem = { first_name: string; last_name: string; birth_date: string; handicap?: string | null };
@@ -41,9 +42,45 @@ function parseMailFrom(value: string) {
   return { name: "ActiviTee", email: raw };
 }
 
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const token = String(req.nextUrl.searchParams.get("token") ?? "").trim();
+    if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
+
+    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
+    const { data, error } = await supabaseAdmin
+      .from("club_parent_intake_configs")
+      .select("is_enabled,title,subtitle,intro_text,success_message,clubs(name)")
+      .eq("public_token", token)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!data) return NextResponse.json({ error: "Configuration introuvable" }, { status: 404 });
+
+    return NextResponse.json({
+      config: {
+        club_name: String((data as any)?.clubs?.name ?? "Club"),
+        is_enabled: Boolean((data as any).is_enabled),
+        title: String((data as any).title ?? "Activation des comptes parents"),
+        subtitle: String((data as any).subtitle ?? "Section Junior"),
+        intro_text: String((data as any).intro_text ?? ""),
+        success_message: String((data as any).success_message ?? "Merci, votre formulaire a bien été envoyé."),
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any));
+    const token = cleanString(body?.token);
     const parentsRaw = Array.isArray(body?.parents) ? (body.parents as any[]) : [];
     const childrenRaw = Array.isArray(body?.children) ? (body.children as any[]) : [];
 
@@ -82,6 +119,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let recipientEmail = "info@activitee.golf";
+    let clubName = "ActiviTee";
+    let intakeTitle = "Activation des comptes parents";
+    if (token) {
+      const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
+      const { data: config, error: configError } = await supabaseAdmin
+        .from("club_parent_intake_configs")
+        .select("is_enabled,title,recipient_email,clubs(name)")
+        .eq("public_token", token)
+        .maybeSingle();
+      if (configError) return NextResponse.json({ error: configError.message }, { status: 400 });
+      if (!config) return NextResponse.json({ error: "Configuration introuvable" }, { status: 404 });
+      if (!config.is_enabled) return NextResponse.json({ error: "Cette page n'est pas active" }, { status: 403 });
+      recipientEmail = String((config as any).recipient_email ?? "info@activitee.golf");
+      clubName = String((config as any)?.clubs?.name ?? "Club");
+      intakeTitle = String((config as any).title ?? intakeTitle);
+    }
+
     const text = formatBody(parents, children, cleanString(body?.notes) || null);
     const html = `<pre style=\"font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap\">${text.replace(/</g, "&lt;")}</pre>`;
 
@@ -94,8 +149,8 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         sender,
-        to: [{ email: "info@activitee.golf" }],
-        subject: "[ActiviTee] Nouveau formulaire parents/juniors",
+        to: [{ email: recipientEmail }],
+        subject: `[ActiviTee] ${clubName} • ${intakeTitle}`,
         textContent: text,
         htmlContent: html,
       }),

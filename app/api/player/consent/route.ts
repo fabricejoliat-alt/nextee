@@ -24,9 +24,9 @@ function aggregateConsentStatus(
   statuses: Array<string | null | undefined>,
   birthDate: string | null | undefined
 ): ConsentStatus {
-  if (statuses.some((v) => v === "pending")) return "pending";
   if (statuses.some((v) => v === "granted")) return "granted";
   if (statuses.some((v) => v === "adult")) return "adult";
+  if (statuses.some((v) => v === "pending")) return "pending";
   const age = computeAge(birthDate);
   if (age != null && age >= 18) return "adult";
   return "pending";

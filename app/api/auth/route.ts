@@ -30,8 +30,8 @@ async function resolvePlayerConsentPending(supabaseAdmin: any, userId: string) {
   if (membershipsRes.error) throw new Error(membershipsRes.error.message);
 
   const statuses = (membershipsRes.data ?? []).map((row: any) => String(row?.player_consent_status ?? ""));
-  if (statuses.includes("pending")) return true;
   if (statuses.includes("granted") || statuses.includes("adult")) return false;
+  if (statuses.includes("pending")) return true;
   const age = computeAge((profileRes.data?.birth_date ?? null) as string | null);
   return !(age != null && age >= 18);
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import PublicSimpleHeader from "@/components/public/PublicSimpleHeader";
 
 type ParentForm = {
@@ -35,11 +37,22 @@ const DATE_INPUT_STYLE: React.CSSProperties = {
 };
 
 export default function ParentIntakePublicPage() {
+  const searchParams = useSearchParams();
+  const token = String(searchParams.get("token") ?? "").trim();
   const [parents, setParents] = useState<ParentForm[]>([{ ...EMPTY_PARENT }]);
   const [children, setChildren] = useState<ChildForm[]>([{ ...EMPTY_CHILD }]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [config, setConfig] = useState<{
+    club_name: string;
+    title: string;
+    subtitle: string;
+    intro_text: string;
+    success_message: string;
+    is_enabled: boolean;
+  } | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(false);
 
   const canAddParent = parents.length < 2;
   const hasDuplicateParentEmails = useMemo(() => {
@@ -52,6 +65,29 @@ export default function ParentIntakePublicPage() {
     const validChildren = children.filter((c) => c.firstName.trim() && c.lastName.trim() && c.birthDate.trim());
     return validParents.length >= 1 && validChildren.length >= 1 && !hasDuplicateParentEmails;
   }, [parents, children, hasDuplicateParentEmails]);
+
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      setLoadingConfig(true);
+      try {
+        const res = await fetch(`/api/public/parent-intake?token=${encodeURIComponent(token)}`, { cache: "no-store" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String((json as any)?.error ?? "Configuration introuvable"));
+        setConfig((json as any)?.config ?? null);
+      } catch (err: any) {
+        setError(err?.message ?? "Configuration introuvable");
+      } finally {
+        setLoadingConfig(false);
+      }
+    })();
+  }, [token]);
+
+  useEffect(() => {
+    const baseTitle = config?.club_name || "ActiviTee";
+    const pageTitle = config?.title || "Collecte d'informations parents";
+    document.title = `${baseTitle} • ${pageTitle}`;
+  }, [config]);
 
   function updateParent(index: number, patch: Partial<ParentForm>) {
     setParents((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
@@ -76,6 +112,7 @@ export default function ParentIntakePublicPage() {
 
     try {
       const payload = {
+        token: token || null,
         parents: parents
           .map((p) => ({
             first_name: p.firstName.trim(),
@@ -101,7 +138,7 @@ export default function ParentIntakePublicPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String((json as any)?.error ?? "Envoi impossible"));
 
-      setSuccess("Merci, votre formulaire a bien été envoyé.");
+      setSuccess(config?.success_message || "Merci, votre formulaire a bien été envoyé.");
       setParents([{ ...EMPTY_PARENT }]);
       setChildren([{ ...EMPTY_CHILD }]);
     } catch (err: any) {
@@ -110,6 +147,13 @@ export default function ParentIntakePublicPage() {
       setSubmitting(false);
     }
   }
+
+  const headerTitle = config?.club_name || "ActiviTee";
+  const headerSubtitle = config?.subtitle || "Section junior";
+  const cardTitle = config?.title || "Collecte d'informations parents";
+  const introText =
+    config?.intro_text ||
+    "Nous vous remercions de bien vouloir compléter le formulaire ci-dessous. Les informations recueillies permettront de créer les comptes parents et de les associer aux joueurs juniors de l'organisation. En cas de questions, merci de les adresser à info@activitee.golf";
 
   return (
     <div className="player-dashboard-bg">
@@ -123,8 +167,8 @@ export default function ParentIntakePublicPage() {
                 className="section-title"
                 style={{ marginBottom: 0, fontSize: "clamp(15px, 2.7vw, 19px)", lineHeight: 1.16 }}
               >
-                <span style={{ display: "block" }}>Golf Club de Sion</span>
-                <span style={{ display: "block", fontSize: "0.9em", fontWeight: 600 }}>Section Junior</span>
+                <span style={{ display: "block" }}>{headerTitle}</span>
+                <span style={{ display: "block", fontSize: "0.9em", fontWeight: 600 }}>{headerSubtitle}</span>
               </div>
             </div>
           </div>
@@ -145,7 +189,7 @@ export default function ParentIntakePublicPage() {
               className="card-title"
               style={{ marginBottom: 0, color: "var(--green-dark)", letterSpacing: 0.2 }}
             >
-              Activation des comptes parents
+              {cardTitle}
             </div>
             <div
               style={{
@@ -158,13 +202,22 @@ export default function ParentIntakePublicPage() {
               }}
             >
               <p style={{ margin: 0 }}>
-                Nous vous remercions de bien vouloir compléter le formulaire ci-dessous. Les informations recueillies permettront de créer les comptes parents et de les associer aux joueurs juniors inscrits dans la section junior. En cas de questions, merci de les adresser à info@activitee.golf
+                {introText}
               </p>
             </div>
           </div>
         </div>
 
         <div className="glass-section">
+          {loadingConfig ? (
+            <div className="glass-card" style={{ background: "#ffffff", color: "var(--muted)" }}>
+              Chargement...
+            </div>
+          ) : config && !config.is_enabled ? (
+            <div className="glass-card" style={{ background: "#ffffff", color: "var(--muted)" }}>
+              Cette page n'est pas active pour le moment.
+            </div>
+          ) : (
           <form
             className="glass-card"
             onSubmit={submitForm}
@@ -245,6 +298,7 @@ export default function ParentIntakePublicPage() {
               </button>
             </div>
           </form>
+          )}
         </div>
       </div>
     </div>
