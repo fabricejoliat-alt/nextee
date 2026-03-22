@@ -135,6 +135,18 @@ export default function PlayerConsentGate() {
 
   const showParentModal = data.viewerRole === "parent" && Boolean(selectedPendingChild);
 
+  useEffect(() => {
+    if (!showParentModal) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [showParentModal]);
+
   return (
     <>
       {showParentModal && selectedPendingChild ? (
@@ -147,6 +159,7 @@ export default function PlayerConsentGate() {
             display: "grid",
             placeItems: "center",
             padding: 16,
+            overscrollBehavior: "contain",
           }}
         >
           <div
@@ -169,7 +182,7 @@ export default function PlayerConsentGate() {
               </div>
             </div>
 
-            <div style={{ overflow: "auto", padding: 22, display: "grid", gap: 16 }}>
+            <div style={{ overflow: "auto", padding: 22, display: "grid", gap: 16, overscrollBehavior: "contain" }}>
               <div style={{ color: "#413829", fontSize: 15, lineHeight: 1.7, display: "grid", gap: 12 }}>
                 <p style={{ margin: 0 }}>
                   En qualité de représentant légal, j'autorise {fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)} à
