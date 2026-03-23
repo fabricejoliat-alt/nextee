@@ -1910,14 +1910,21 @@ input[type="radio"]{
     --safe-bottom: env(safe-area-inset-bottom);
   }
 
-  /* Keep app behavior unchanged in installed mode */
+  /* Keep installed mode visually stable, but preserve native vertical scrolling. */
   html{
     background-image: none;
     background-attachment: fixed;
   }
 
   html, body{
-    overscroll-behavior-y: none;
+    height: auto;
+    min-height: 100svh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    -webkit-text-size-adjust: 100%;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   body::before{
