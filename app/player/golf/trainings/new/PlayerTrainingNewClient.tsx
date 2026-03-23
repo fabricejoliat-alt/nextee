@@ -77,7 +77,7 @@ type CoachProfileLite = {
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url?: string | null };
 type EventAttendeeUiRow = {
   player_id: string;
-  status: "expected" | "present" | "absent" | "excused";
+  status: "expected" | "present" | "absent" | "excused" | "not_registered";
   profile: ProfileLite | null;
 };
 type ThreadMessageRow = {
@@ -301,11 +301,12 @@ export default function PlayerTrainingNewPage() {
     if (!linkedEvent?.starts_at) return true;
     return new Date(linkedEvent.starts_at).getTime() < Date.now();
   }, [linkedEvent?.starts_at]);
-  const linkedAttendanceStatus = useMemo<"expected" | "present" | "absent" | "excused" | null>(() => {
+  const linkedAttendanceStatus = useMemo<"expected" | "present" | "absent" | "excused" | "not_registered" | null>(() => {
     if (!userId || eventAttendees.length === 0) return null;
     return eventAttendees.find((a) => a.player_id === userId)?.status ?? null;
   }, [eventAttendees, userId]);
-  const linkedEventAttendanceBlocked = linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused";
+  const linkedEventAttendanceBlocked =
+    linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused" || linkedAttendanceStatus === "not_registered";
   const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
   const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
@@ -752,7 +753,7 @@ export default function PlayerTrainingNewPage() {
         if (!res.ok) throw new Error(String(json?.error ?? "Attendees load failed"));
         const rows = (json?.attendees ?? []) as Array<{
           player_id: string;
-          status: "expected" | "present" | "absent" | "excused";
+          status: "expected" | "present" | "absent" | "excused" | "not_registered";
           first_name: string | null;
           last_name: string | null;
           avatar_url: string | null;

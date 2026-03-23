@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, MessageCircle, Mail } from "lucide-react";
+import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, MessageCircle, Mail, Tent } from "lucide-react";
 
 const ROUTES = {
   home: "/manager",
@@ -13,6 +13,7 @@ const ROUTES = {
   groups: "/manager/groups",
   groupsNew: "/manager/groups/new",
   events: "/manager/calendar",
+  camps: "/manager/camps",
   consents: "/manager/parents",
   access: "/manager/access",
   organizations: "/manager/organizations",
@@ -92,6 +93,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
       { label: locale === "fr" ? "Activité" : "Activity", icon: CalendarDays, href: ROUTES.events },
+      { label: locale === "fr" ? "Stages/camps" : "Camps", icon: Tent, href: ROUTES.camps },
       {
         label:
           locale === "fr"

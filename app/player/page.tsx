@@ -185,7 +185,7 @@ type PlayVolumeSummary = {
 };
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
-const playerHomeCacheKey = (userId: string) => `page-cache:player-home:v2:${userId}`;
+const playerHomeCacheKey = (userId: string) => `page-cache:player-home:v3:${userId}`;
 
 type HeroCachePayload = {
   profile: Profile | null;
@@ -719,71 +719,31 @@ export default function PlayerHomePage() {
   // ===== Focus calculé depuis golf_rounds (comme dashboard) =====
   const focusFromRounds = playVolumeSummary;
 
-  async function loadUpcomingPreview(userId: string) {
-    const nowIso = new Date().toISOString();
+  async function loadUpcomingPreview(userId: string, viewerUid?: string) {
     try {
-      const [futureSessionsRes, attendeeRes, plannedCompetitionsRes] = await Promise.all([
-        supabase
-          .from("training_sessions")
-          .select("id,start_at,location_text,session_type,club_id,club_event_id")
-          .eq("user_id", userId)
-          .gte("start_at", nowIso)
-          .order("start_at", { ascending: true })
-          .limit(3),
-        supabase.from("club_event_attendees").select("event_id,status").eq("player_id", userId),
-        supabase
-          .from("player_activity_events")
-          .select("id,event_type,title,starts_at,ends_at,location_text,status")
-          .eq("user_id", userId)
-          .eq("status", "scheduled")
-          .gte("starts_at", nowIso)
-          .order("starts_at", { ascending: true })
-          .limit(3),
-      ]);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) return;
 
-      const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-      const attendeeEventIds = new Set<string>();
-      if (!attendeeRes.error) {
-        (attendeeRes.data ?? []).forEach((r: AttendeeStatusRow) => {
-          const eid = String(r.event_id ?? "");
-          if (!eid) return;
-          attendeeEventIds.add(eid);
-          statusMap[eid] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
-        });
-      }
-      setAttendeeStatusByEventId((prev) => ({ ...prev, ...statusMap }));
+      const query = new URLSearchParams();
+      if (viewerUid && viewerUid !== userId) query.set("child_id", userId);
+      const res = await fetch(`/api/player/home-upcoming?${query.toString()}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Failed to load upcoming preview"));
 
-      let plannedEvents: HomePlannedEventRow[] = [];
-      if (attendeeEventIds.size > 0) {
-        const plannedRes = await supabase
-          .from("club_events")
-          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
-          .in("id", Array.from(attendeeEventIds))
-          .eq("status", "scheduled")
-          .gte("starts_at", nowIso)
-          .order("starts_at", { ascending: true })
-          .limit(3);
-        if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
+      setAttendeeStatusByEventId((prev) => ({ ...prev, ...(json?.attendeeStatusByEventId ?? {}) }));
+      setClubNameById((prev) => ({ ...prev, ...(json?.clubNameById ?? {}) }));
+      setGroupNameById((prev) => ({ ...prev, ...(json?.groupNameById ?? {}) }));
+      const structureMap = (json?.eventStructureByEventId ?? {}) as Record<string, HomeEventStructureItem[]>;
+      if (Object.keys(structureMap).length > 0) {
+        setEventStructureByEventId((prev) => ({ ...prev, ...structureMap }));
       }
 
-      const futureSessions = !futureSessionsRes.error ? ((futureSessionsRes.data ?? []) as HomeSessionRow[]) : [];
-      const plannedCompetitions = !plannedCompetitionsRes.error
-        ? ((plannedCompetitionsRes.data ?? []) as HomePlayerActivityRow[])
-        : [];
-
-      const previewUpcoming: HomeUpcomingItem[] = [
-        ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
-        ...futureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
-        ...plannedCompetitions.map((competition) => ({
-          kind: "competition" as const,
-          key: `competition-${competition.id}`,
-          dateIso: competition.starts_at,
-          competition,
-        })),
-      ]
-        .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime())
-        .slice(0, 3);
-
+      const previewUpcoming = (json?.upcomingActivities ?? []) as HomeUpcomingItem[];
       setUpcomingActivities(previewUpcoming);
       setUpcomingIndex((i) => {
         if (previewUpcoming.length === 0) return 0;
@@ -964,9 +924,7 @@ export default function PlayerHomePage() {
         setUpcomingLoading(false);
         setLoading(false);
       }
-      if (!hasPageCache) {
-        void loadUpcomingPreview(effectiveUid);
-      }
+      void loadUpcomingPreview(effectiveUid, viewerUid);
       const heroCache = readHeroCache(effectiveUid);
       if (heroCache) {
         setProfile(heroCache.profile);
@@ -1285,12 +1243,11 @@ export default function PlayerHomePage() {
         if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
       }
 
-      const linkedFutureEventIds = new Set(
-        futureSessions
-          .map((session) => String(session.club_event_id ?? "").trim())
-          .filter((id) => id.length > 0)
-      );
-      plannedEvents = plannedEvents.filter((event) => !linkedFutureEventIds.has(event.id));
+      const plannedEventIdSet = new Set(plannedEvents.map((event) => String(event.id ?? "").trim()).filter(Boolean));
+      const dedupedFutureSessions = futureSessions.filter((session) => {
+        const linkedEventId = String(session.club_event_id ?? "").trim();
+        return !linkedEventId || !plannedEventIdSet.has(linkedEventId);
+      });
 
       const plannedCompetitionsRes = await supabase
         .from("player_activity_events")
@@ -1349,28 +1306,35 @@ export default function PlayerHomePage() {
         setGroupNameById({});
       }
 
-      if (plannedEvents.length > 0) {
+      const structureEventIds = Array.from(
+        new Set([
+          ...plannedEvents.map((event) => String(event.id ?? "").trim()),
+          ...futureSessions.map((session) => String(session.club_event_id ?? "").trim()),
+        ].filter(Boolean))
+      );
+
+      if (structureEventIds.length > 0) {
         const structRes = await supabase
           .from("club_event_structure_items")
           .select("event_id,category,minutes,note")
-          .in("event_id", plannedEvents.map((e) => e.id));
-        const map: Record<string, HomeEventStructureItem[]> = {};
+          .in("event_id", structureEventIds);
         if (!structRes.error) {
+          const map: Record<string, HomeEventStructureItem[]> = {};
           (structRes.data ?? []).forEach((r: HomeEventStructureItem) => {
             const eid = String(r.event_id ?? "");
             if (!eid) return;
             if (!map[eid]) map[eid] = [];
             map[eid].push(r);
           });
+          if (Object.keys(map).length > 0) {
+            setEventStructureByEventId((prev) => ({ ...prev, ...map }));
+          }
         }
-        setEventStructureByEventId(map);
-      } else {
-        setEventStructureByEventId({});
       }
 
       const upcoming: HomeUpcomingItem[] = [
         ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
-        ...futureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
+        ...dedupedFutureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
         ...plannedCompetitions.map((competition) => ({
           kind: "competition" as const,
           key: `competition-${competition.id}`,
@@ -1829,7 +1793,10 @@ export default function PlayerHomePage() {
                   const isTraining = e.event_type === "training";
                   const isCollapsedTraining = isAttendanceEvent && attendanceStatus === "absent";
                   const eventStructure = eventStructureByEventId[e.id] ?? [];
-                  const showEventStructure = isAttendanceEvent && attendanceStatus === "present" && eventStructure.length > 0;
+                  const showEventStructure =
+                    isAttendanceEvent &&
+                    attendanceStatus !== "absent" &&
+                    eventStructure.length > 0;
                   let eventTitle = eventType;
                   const customName = (e.title ?? "").trim();
                   if (e.event_type === "training") {
@@ -1984,6 +1951,11 @@ export default function PlayerHomePage() {
                   const s = currentUpcoming.session;
                   const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
                   const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
+                  const sessionStructure =
+                    normalizedSessionType === "club" && s.club_event_id
+                      ? eventStructureByEventId[String(s.club_event_id)] ?? []
+                      : [];
+                  const showSessionStructure = sessionStructure.length > 0;
                   const sessionTitle =
                     normalizedSessionType === "club"
                       ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
@@ -2003,6 +1975,28 @@ export default function PlayerHomePage() {
                       {s.location_text ? (
                         <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
                           📍 {s.location_text}
+                        </div>
+                      ) : null}
+                      {showSessionStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
+                      {showSessionStructure ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                            {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {sessionStructure.map((p, i) => {
+                              const extra = (p.note ?? "").trim();
+                              return (
+                                <li
+                                  key={`${p.event_id ?? s.club_event_id ?? "session"}-${i}`}
+                                  style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}
+                                >
+                                  {activityCategoryLabel(p.category)} — {p.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
                         </div>
                       ) : null}
                     </div>

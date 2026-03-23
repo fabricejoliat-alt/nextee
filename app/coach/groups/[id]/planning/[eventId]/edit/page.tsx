@@ -28,6 +28,14 @@ type EventRow = {
   status: "scheduled" | "cancelled";
 };
 
+type CampDayRow = {
+  camp_id: string;
+  day_index: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_text: string | null;
+};
+
 type SeriesRow = {
   id: string;
   group_id: string;
@@ -301,6 +309,7 @@ export default function CoachEventEditPage() {
 
   const [event, setEvent] = useState<EventRow | null>(null);
   const [series, setSeries] = useState<SeriesRow | null>(null);
+  const [campDay, setCampDay] = useState<CampDayRow | null>(null);
 
   // UI mode
   const [editScope, setEditScope] = useState<"occurrence" | "series">("occurrence");
@@ -335,8 +344,8 @@ export default function CoachEventEditPage() {
   const [selectedGuests, setSelectedGuests] = useState<Record<string, ClubMemberLite>>({});
   const [initialSelectedAttendeeIds, setInitialSelectedAttendeeIds] = useState<string[]>([]);
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
-  const isTrainingLikeEventType = (v: "training" | "interclub" | "camp" | "session" | "event") =>
-    v === "training" || v === "camp";
+  const isDurationOnlyOccurrenceType = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training";
+  const showsStructureEditor = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training" || v === "camp";
 
   const occDate = useMemo(() => {
     if (!startsAtLocal.includes("T")) return ymdToday();
@@ -620,13 +629,34 @@ export default function CoachEventEditPage() {
       if (!eRes.data) throw new Error("Événement introuvable.");
       const ev = eRes.data as EventRow;
       setEvent(ev);
+      setCampDay(null);
 
-      setStartsAtLocal(isoToLocalInput(ev.starts_at));
-      setEndsAtLocal(isoToLocalInput(ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + ev.duration_minutes * 60000).toISOString()));
+      let effectiveStartIso = ev.starts_at;
+      let effectiveEndIso = ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + ev.duration_minutes * 60000).toISOString();
+      let effectiveLocationText = ev.location_text ?? "";
+
+      if ((ev.event_type ?? "training") === "camp") {
+        const campDayRes = await supabase
+          .from("club_camp_days")
+          .select("camp_id,day_index,starts_at,ends_at,location_text")
+          .eq("event_id", eventId)
+          .maybeSingle();
+        if (campDayRes.error) throw new Error(campDayRes.error.message);
+        if (campDayRes.data) {
+          const day = campDayRes.data as CampDayRow;
+          setCampDay(day);
+          effectiveStartIso = day.starts_at ?? effectiveStartIso;
+          effectiveEndIso = day.ends_at ?? effectiveEndIso;
+          effectiveLocationText = day.location_text ?? effectiveLocationText;
+        }
+      }
+
+      setStartsAtLocal(isoToLocalInput(effectiveStartIso));
+      setEndsAtLocal(isoToLocalInput(effectiveEndIso));
       setEventType(ev.event_type ?? "training");
       setEventTitle(ev.title ?? "");
       setDurationMinutes(ev.duration_minutes);
-      setLocationText(ev.location_text ?? "");
+      setLocationText(effectiveLocationText);
       setCoachNote(ev.coach_note ?? "");
 
       // group
@@ -911,7 +941,7 @@ export default function CoachEventEditPage() {
       if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
       let endDt = new Date(endsAtLocal);
       let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-      if (isTrainingLikeEventType(eventType)) {
+      if (isDurationOnlyOccurrenceType(eventType)) {
         computedDuration = Math.max(30, Number(durationMinutes) || 60);
         endDt = new Date(startDt);
         endDt.setMinutes(endDt.getMinutes() + computedDuration);
@@ -920,7 +950,7 @@ export default function CoachEventEditPage() {
         if (endDt <= startDt) throw new Error("La fin doit être après le début.");
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
-      const durationForDb = isTrainingLikeEventType(eventType)
+      const durationForDb = isDurationOnlyOccurrenceType(eventType)
         ? computedDuration
         : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
       const nextStartIso = startDt.toISOString();
@@ -959,6 +989,29 @@ export default function CoachEventEditPage() {
         .eq("id", eventId);
 
       if (upd.error) throw new Error(upd.error.message);
+
+      if ((event.event_type ?? eventType) === "camp") {
+        const campDayUpd = await supabase
+          .from("club_camp_days")
+          .update({
+            starts_at: nextStartIso,
+            ends_at: nextEndIso,
+            location_text: locationText.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("event_id", eventId);
+        if (campDayUpd.error) throw new Error(campDayUpd.error.message);
+        setCampDay((prev) =>
+          prev
+            ? {
+                ...prev,
+                starts_at: nextStartIso,
+                ends_at: nextEndIso,
+                location_text: locationText.trim() || null,
+              }
+            : prev
+        );
+      }
 
       // replace coaches
       const delC = await supabase.from("club_event_coaches").delete().eq("event_id", eventId);
@@ -1440,6 +1493,26 @@ export default function CoachEventEditPage() {
                   {/* OCCURRENCE */}
                   {editScope === "occurrence" ? (
                     <div style={{ display: "grid", gap: 12 }}>
+                      {eventType === "camp" && campDay ? (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            width: "fit-content",
+                            padding: "8px 12px",
+                            borderRadius: 999,
+                            background: "rgba(53,72,59,0.08)",
+                            border: "1px solid rgba(53,72,59,0.14)",
+                            color: "rgba(53,72,59,0.95)",
+                            fontWeight: 900,
+                            fontSize: 12,
+                          }}
+                        >
+                          {`Jour ${campDay.day_index + 1}`}
+                        </div>
+                      ) : null}
+
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>Type d’événement</span>
                         <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
@@ -1483,7 +1556,7 @@ export default function CoachEventEditPage() {
                         </label>
                       </div>
 
-                      {isTrainingLikeEventType(eventType) ? (
+                      {isDurationOnlyOccurrenceType(eventType) ? (
                         <label style={{ display: "grid", gap: 6 }}>
                           <span style={fieldLabelStyle}>Durée</span>
                           <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
@@ -1681,10 +1754,10 @@ export default function CoachEventEditPage() {
                   ) : null}
                 </div>
 
-                {isTrainingLikeEventType(eventType) ? (
+                {showsStructureEditor(eventType) ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    Structure de l’entraînement (postes)
+                    Structure de l'activité (postes)
                   </div>
 
                   {structureItems.length === 0 ? (

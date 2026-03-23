@@ -27,7 +27,7 @@ type SessionItemRow = {
 
 type EventAttendeeRow = {
   event_id: string | null;
-  status: "expected" | "present" | "absent" | "excused" | null;
+  status: "expected" | "present" | "absent" | "excused" | "not_registered" | null;
 };
 
 type ClubNameRow = {
@@ -50,6 +50,7 @@ type PlannedEventRow = {
 type IncompleteEvent = {
   kind: "event";
   id: string;
+  event_type: "training" | "camp";
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number;
@@ -117,7 +118,7 @@ export default function PlayerTrainingsToCompletePage() {
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [eventById, setEventById] = useState<Record<string, PlannedEventRow>>({});
-  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
+  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>>({});
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   useEffect(() => {
@@ -187,7 +188,7 @@ export default function PlayerTrainingsToCompletePage() {
           .select("event_id,status")
           .eq("player_id", uid);
         if (aRes.error) throw new Error(aRes.error.message);
-        const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+        const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null> = {};
         ((aRes.data ?? []) as EventAttendeeRow[]).forEach((row) => {
           const eventId = String(row.event_id ?? "").trim();
           if (!eventId) return;
@@ -200,7 +201,7 @@ export default function PlayerTrainingsToCompletePage() {
           .filter((s) => {
             if (!s.club_event_id) return true;
             const status = attendanceMap[s.club_event_id] ?? null;
-            return status !== "absent" && status !== "excused";
+            return status !== "absent" && status !== "excused" && status !== "not_registered";
           })
           .filter((s) => !completeSessionIds.has(s.id))
           .map((s) => ({
@@ -283,17 +284,18 @@ export default function PlayerTrainingsToCompletePage() {
 
         const incompleteEvents: IncompleteEvent[] = events
           .filter((ev) => ev.status === "scheduled")
-          .filter((ev) => ev.event_type === "training")
+          .filter((ev) => ev.event_type === "training" || ev.event_type === "camp")
           .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
           .filter((ev) => {
             const status = attendanceMap[ev.id] ?? null;
-            return status !== "absent" && status !== "excused";
+            return status !== "absent" && status !== "excused" && status !== "not_registered";
           })
           .filter((ev) => !completedEventIds.has(ev.id))
           .filter((ev) => !eventIdsWithAnySession.has(ev.id))
           .map((ev) => ({
             kind: "event",
             id: ev.id,
+            event_type: ev.event_type === "camp" ? "camp" : "training",
             starts_at: ev.starts_at,
             ends_at: ev.ends_at,
             duration_minutes: ev.duration_minutes,
@@ -366,7 +368,10 @@ export default function PlayerTrainingsToCompletePage() {
                       row.ends_at ??
                       new Date(new Date(row.starts_at).getTime() + Math.max(1, Number(row.duration_minutes ?? 0)) * 60_000).toISOString();
                     const isMultiDay = !sameDay(row.starts_at, eventEnd);
-                    const eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
+                    const eventTitle =
+                      row.event_type === "camp"
+                        ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${groupName}`
+                        : `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
                     return (
                       <div
                         key={`event-${row.id}`}
@@ -425,7 +430,7 @@ export default function PlayerTrainingsToCompletePage() {
                         <div style={{ display: "grid", gap: 10 }}>
                           {(() => {
                             const linkedEvent = row.club_event_id ? eventById[row.club_event_id] : null;
-                            if (linkedEvent && linkedEvent.event_type === "training") {
+                            if (linkedEvent && (linkedEvent.event_type === "training" || linkedEvent.event_type === "camp")) {
                               const clubName = linkedEvent.club_id ? (clubNameById[linkedEvent.club_id] ?? t("common.club")) : t("common.club");
                               const groupName = linkedEvent.group_id
                                 ? (groupNameById[linkedEvent.group_id] ?? (pickLocaleText(locale, "Groupe", "Group")))
@@ -434,7 +439,10 @@ export default function PlayerTrainingsToCompletePage() {
                                 linkedEvent.ends_at ??
                                 new Date(new Date(linkedEvent.starts_at).getTime() + Math.max(1, Number(linkedEvent.duration_minutes ?? 0)) * 60_000).toISOString();
                               const isMultiDay = !sameDay(linkedEvent.starts_at, eventEnd);
-                              const title = `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
+                              const title =
+                                linkedEvent.event_type === "camp"
+                                  ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${groupName}`
+                                  : `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
                               const place = (row.location_text ?? linkedEvent.location_text ?? "").trim();
                               return (
                                 <>

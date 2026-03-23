@@ -232,14 +232,19 @@ function typeLabel(t: SessionRow["session_type"], locale: string) {
 
 function attendanceBadgeConfig(
   locale: string,
-  status: "expected" | "present" | "absent" | "excused" | null
+  status: "expected" | "present" | "absent" | "excused" | "not_registered" | null
 ): { label: string; style: React.CSSProperties } {
+  const isNotRegistered = status === "not_registered";
   const isAbsent = status === "absent";
   return {
-    label: isAbsent
+    label: isNotRegistered
+      ? pickLocaleText(locale, "Non inscrit", "Not registered")
+      : isAbsent
       ? pickLocaleText(locale, "Absent", "Absent")
       : pickLocaleText(locale, "Présent", "Present"),
-    style: isAbsent
+    style: isNotRegistered
+      ? { background: "rgba(107,114,128,0.14)", color: "#374151", fontWeight: 900 }
+      : isAbsent
       ? { background: "rgba(220,38,38,0.12)", color: "#7f1d1d", fontWeight: 900 }
       : { background: "rgba(22,163,74,0.14)", color: "#166534", fontWeight: 900 },
   };
@@ -305,7 +310,7 @@ export default function TrainingsListPage() {
 
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [attendeeEvents, setAttendeeEvents] = useState<PlannedEventRow[]>([]);
-  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
+  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>>({});
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [competitionEvents, setCompetitionEvents] = useState<PlayerActivityEventRow[]>([]);
 
@@ -1114,9 +1119,9 @@ export default function TrainingsListPage() {
 
   function handleTrainingAttendanceToggle(
     event: PlannedEventRow,
-    attendanceStatus: "expected" | "present" | "absent" | "excused" | null
+    attendanceStatus: "expected" | "present" | "absent" | "excused" | "not_registered" | null
   ) {
-    const current: "present" | "absent" = attendanceStatus === "absent" ? "absent" : "present";
+    const current: "present" | "absent" = attendanceStatus === "absent" || attendanceStatus === "not_registered" ? "absent" : "present";
     const next: "present" | "absent" = current === "present" ? "absent" : "present";
     const ok = window.confirm(
       locale === "fr"
@@ -1500,22 +1505,25 @@ export default function TrainingsListPage() {
                     const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
                     const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                     const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
-                    const isTraining = e.event_type === "training";
+                    const isTrainingLike = e.event_type === "training" || e.event_type === "camp";
                     const isArchivedTraining = isAttendanceEvent && isArchiveGroupName(groupName);
                     const isUpcomingEvent = new Date(e.starts_at).getTime() >= nowTs;
-                    const canEvaluateEvent = performanceEnabled && !isUpcomingEvent && attendanceStatus !== "absent" && attendanceStatus !== "excused";
-                    const isCollapsedTraining = isAttendanceEvent && attendanceStatus === "absent";
+                    const canEvaluateEvent = performanceEnabled && !isUpcomingEvent && attendanceStatus !== "absent" && attendanceStatus !== "excused" && attendanceStatus !== "not_registered";
+                    const isCollapsedTraining = isAttendanceEvent && (attendanceStatus === "absent" || attendanceStatus === "not_registered");
                     const eventStructure = eventStructureByEventId[e.id] ?? [];
                     const showEventStructure = isAttendanceEvent && attendanceStatus === "present" && eventStructure.length > 0;
                     let eventTitle = eventType;
                     const customName = (e.title ?? "").trim();
-                    if (e.event_type === "training") {
+                    if (isTrainingLike) {
                       const trainingGroupLabel =
                         (isArchivedTraining ? null : groupName) ||
                         (pickLocaleText(locale, "Groupe", "Group"));
-                      eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
+                      eventTitle =
+                        e.event_type === "camp"
+                          ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${trainingGroupLabel}`
+                          : `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
                     }
-                    if (e.event_type !== "training") {
+                    if (!isTrainingLike) {
                       eventTitle = customName ? `${eventType} • ${customName}` : eventType;
                     }
                     const messageBadge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
@@ -1625,7 +1633,7 @@ export default function TrainingsListPage() {
                             </>
                           ) : null}
 
-                          {e.event_type === "training" ? (
+                          {isTrainingLike ? (
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                               <Link
                                 className="btn"
@@ -1769,13 +1777,18 @@ export default function TrainingsListPage() {
                     isPastSession &&
                     !completeSessionIds.has(s.id) &&
                     linkedAttendanceStatus !== "absent" &&
-                    linkedAttendanceStatus !== "excused";
+                    linkedAttendanceStatus !== "excused" &&
+                    linkedAttendanceStatus !== "not_registered";
                   const isMultiDaySession = !sameDay(s.start_at, sessionEnd);
                   const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
                   const canDeleteSession = !s.club_event_id;
                   const sessionTitle =
                     normalizedSessionType === "club"
-                      ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`
+                      ? `${
+                          linkedEvent?.event_type === "camp"
+                            ? pickLocaleText(locale, "Stage/Camp", "Camp")
+                            : pickLocaleText(locale, "Entraînement", "Training")
+                        } • ${trainingGroupLabel}`
                       : `${typeLabel(normalizedSessionType, pickLocaleText(locale, "fr", "en"))}`;
 
                   return (

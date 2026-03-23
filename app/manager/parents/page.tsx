@@ -29,6 +29,12 @@ function normalizeForSearch(v: string) {
     .trim();
 }
 
+function personSearchHaystack(p?: ProfileLite | null) {
+  const first = normalizeForSearch((p?.first_name ?? "").trim());
+  const last = normalizeForSearch((p?.last_name ?? "").trim());
+  return [first, last, `${first} ${last}`.trim(), `${last} ${first}`.trim()].filter(Boolean).join(" | ");
+}
+
 function consentLabel(status: MembershipProfileRow["player_consent_status"]) {
   if (status === "granted") return "Accordé";
   if (status === "adult") return "Majeur";
@@ -171,10 +177,10 @@ export default function ManagerParentsPage() {
     }
 
     return basePlayers.filter((p) => {
-      const playerName = normalizeForSearch(fullName(p.profiles));
+      const playerName = personSearchHaystack(p.profiles);
       if (playerName.includes(q)) return true;
       const playerLinks = linksByPlayer[p.user_id] ?? [];
-      return playerLinks.some((l) => normalizeForSearch(fullName(parentMap[l.guardian_user_id])).includes(q));
+      return playerLinks.some((l) => personSearchHaystack(parentMap[l.guardian_user_id]).includes(q));
     });
   }, [players, parents, linksByPlayer, linksSearch, parentMap, attachmentFilter]);
 

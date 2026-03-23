@@ -21,6 +21,7 @@ import {
   Trophy,
   MessageCircle,
   ListChecks,
+  Tent,
 } from "lucide-react";
 
 /**
@@ -39,6 +40,7 @@ const ROUTES = {
 
   roundsList: "/player/golf/rounds",
   roundsNew: "/player/golf/rounds/new",
+  camps: "/player/camps",
   om: "/player/om",
 
   marketplaceAll: "/player/marketplace",
@@ -434,6 +436,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
           { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
         ],
+      },
+      {
+        label: locale === "fr" ? "Stages/camps" : "Camps",
+        icon: Tent,
+        href: ROUTES.camps,
       },
       ...(performanceEnabled
         ? [
