@@ -74,66 +74,33 @@ export default function MarketplaceMine() {
     setLoading(true);
     setError(null);
 
-    const { viewerUserId, effectiveUserId } = await resolveEffectivePlayerContext();
-
-    const memRes = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", effectiveUserId)
-      .eq("is_active", true)
-      .order("club_id", { ascending: true });
-
-    const clubIds = Array.from(
-      new Set(((memRes.data ?? []) as Array<{ club_id: string | null }>).map((row) => String(row.club_id ?? "")).filter(Boolean))
-    );
-
-    if (memRes.error || clubIds.length === 0) {
-      setError(memRes.error?.message ?? t("marketplace.noActiveClub"));
+    const ctx = await resolveEffectivePlayerContext();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) {
+      setError("Session invalide.");
       setLoading(false);
       return;
     }
 
-    setClubId(clubIds[0] ?? "");
-
-    const itemsRes = await supabase
-      .from("marketplace_items")
-      .select(
-        "id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery"
-      )
-      .in("club_id", clubIds)
-      .eq("user_id", viewerUserId)
-      .order("created_at", { ascending: false });
-
-    if (itemsRes.error) {
-      setError(itemsRes.error.message);
+    const params = new URLSearchParams();
+    if (ctx.role === "parent") params.set("child_id", ctx.effectiveUserId);
+    const res = await fetch(`/api/player/marketplace/mine?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(String(json?.error ?? t("marketplace.noActiveClub")));
       setLoading(false);
       return;
     }
 
-    const list = (itemsRes.data ?? []) as Item[];
+    setClubId(String(json?.preferredClubId ?? ""));
+
+    const list = (json?.items ?? []) as Item[];
     setItems(list);
-
-    const itemIds = list.map((x) => x.id);
-    if (itemIds.length > 0) {
-      const imgRes = await supabase
-        .from("marketplace_images")
-        .select("item_id,path,sort_order")
-        .in("item_id", itemIds)
-        .eq("sort_order", 0);
-
-      if (!imgRes.error) {
-        const map: Record<string, string> = {};
-        (imgRes.data ?? []).forEach((r: any) => {
-          const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
-          if (data?.publicUrl) map[r.item_id] = data.publicUrl;
-        });
-        setMainImageByItemId(map);
-      } else {
-        setMainImageByItemId({});
-      }
-    } else {
-      setMainImageByItemId({});
-    }
+    setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
 
     setLoading(false);
   }

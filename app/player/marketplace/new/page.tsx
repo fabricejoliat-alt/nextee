@@ -120,35 +120,41 @@ export default function MarketplaceNew() {
         setLoading(false);
         return;
       }
-      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+      const ctx = await resolveEffectivePlayerContext();
+      const uid = ctx.effectiveUserId;
       const email = authRes.user.email ?? "";
       setUserId(uid);
       setContactEmail(email);
 
-      const memRes = await supabase
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", uid)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
-
-      if (memRes.error) {
-        setError(memRes.error.message);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        setError("Session invalide.");
         setLoading(false);
         return;
       }
 
-      if (!memRes.data?.club_id) {
+      const params = new URLSearchParams();
+      if (ctx.role === "parent") params.set("child_id", uid);
+      const res = await fetch(`/api/player/marketplace/context?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(String(json?.error ?? t("marketplace.noActiveClub")));
+        setLoading(false);
+        return;
+      }
+
+      if (!json?.preferredClubId) {
         setError(t("marketplace.noActiveClub"));
         setLoading(false);
         return;
       }
 
-      setClubId(memRes.data.club_id as string);
-
-      const profRes = await supabase.from("profiles").select("phone").eq("id", uid).maybeSingle();
-      if (!profRes.error) setContactPhone((profRes.data?.phone ?? "").toString());
+      setClubId(String(json.preferredClubId));
+      setContactPhone(String(json?.phone ?? ""));
 
       setLoading(false);
     })();
@@ -279,67 +285,69 @@ export default function MarketplaceNew() {
       return;
     }
 
-    const insertRes = await supabase
-      .from("marketplace_items")
-      .insert({
-        club_id: clubId,
-        user_id: userId,
-
-        title: title.trim(),
-        description: description.trim() || null,
-
-        category,
-        condition,
-        brand: brand.trim() || null,
-        model: model.trim() || null,
-
-        is_free: isFree,
-        price: finalPrice,
-
-        contact_email: contactEmail.trim(),
-        contact_phone: contactPhone.trim() || null,
-
-        is_active: true,
-        attributes: {},
-      })
-      .select("id")
-      .single();
-
-    if (insertRes.error) {
-      setError(insertRes.error.message);
+    const ctx = await resolveEffectivePlayerContext();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (!token) {
+      setError("Session invalide.");
       setBusy(false);
       return;
     }
 
-    const itemId = insertRes.data.id as string;
+    const res = await fetch("/api/player/marketplace", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        child_id: ctx.role === "parent" ? userId : null,
+        club_id: clubId,
+        title: title.trim(),
+        description: description.trim() || null,
+        category,
+        condition,
+        brand: brand.trim() || null,
+        model: model.trim() || null,
+        is_free: isFree,
+        price: finalPrice,
+        contact_email: contactEmail.trim(),
+        contact_phone: contactPhone.trim() || null,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(String(json?.error ?? "Création d’annonce impossible."));
+      setBusy(false);
+      return;
+    }
+
+    const itemId = String(json?.itemId ?? "").trim();
+    if (!itemId) {
+      setError("Création d’annonce impossible.");
+      setBusy(false);
+      return;
+    }
 
     // upload images in current order: index 0 = principale
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
-      const filename = `${Date.now()}_${i}.${safeExt}`;
-      const path = `${userId}/${itemId}/${filename}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("sort_order", String(i));
+      if (ctx.role === "parent") formData.append("child_id", userId);
 
-      const up = await supabase.storage.from("marketplace").upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
+      const imgRes = await fetch(`/api/player/marketplace/${encodeURIComponent(itemId)}/images`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
       });
+      const imgJson = await imgRes.json().catch(() => ({}));
 
-      if (up.error) {
-        setError(`Upload image impossible: ${up.error.message}`);
-        setBusy(false);
-        return;
-      }
-
-      const imgRow = await supabase.from("marketplace_images").insert({
-        item_id: itemId,
-        path,
-        sort_order: i,
-      });
-
-      if (imgRow.error) {
-        setError(`DB image impossible: ${imgRow.error.message}`);
+      if (!imgRes.ok) {
+        setError(`Upload image impossible: ${String(imgJson?.error ?? "Erreur inconnue.")}`);
         setBusy(false);
         return;
       }

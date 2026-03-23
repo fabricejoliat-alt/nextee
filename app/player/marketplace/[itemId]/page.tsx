@@ -106,39 +106,23 @@ export default function MarketplaceDetailPage() {
     setError(null);
 
     try {
-      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+      const ctx = await resolveEffectivePlayerContext();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-      const itRes = await supabase
-        .from("marketplace_items")
-        .select(
-          "id,title,description,created_at,club_id,is_active,category,condition,brand,model,price,is_free,contact_email,contact_phone,user_id"
-        )
-        .eq("id", itemId)
-        .maybeSingle();
+      const params = new URLSearchParams();
+      if (ctx.role === "parent") params.set("child_id", ctx.effectiveUserId);
+      const res = await fetch(`/api/player/marketplace/${encodeURIComponent(itemId)}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? t("marketplace.notFound")));
 
-      if (itRes.error) throw new Error(itRes.error.message);
-      if (!itRes.data) throw new Error(t("marketplace.notFound"));
-
-      const it = itRes.data as Item;
-      setItem(it);
-      setIsMine(it.user_id === uid);
-
-      const imgRes = await supabase
-        .from("marketplace_images")
-        .select("path,sort_order")
-        .eq("item_id", itemId)
-        .order("sort_order", { ascending: true });
-
-      if (imgRes.error) {
-        setImages([]);
-      } else {
-        const urls: string[] = [];
-        (imgRes.data ?? []).forEach((r: any) => {
-          const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
-          if (data?.publicUrl) urls.push(data.publicUrl);
-        });
-        setImages(urls);
-      }
+      setItem((json?.item ?? null) as Item | null);
+      setIsMine(Boolean(json?.isMine));
+      setImages(Array.isArray(json?.images) ? (json.images as string[]) : []);
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
       setItem(null);
