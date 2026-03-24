@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 
 const BUCKET = "marketplace";
 const MAX_IMAGES = 5;
@@ -444,7 +445,7 @@ export default function MarketplaceEditPage() {
         const img = uiImages[i];
         if (img.kind !== "new") continue;
 
-        const file = img.file;
+        const file = await optimizeUploadFile(img.file);
         const ext = safeExtFromFileName(file.name);
         const filename = `${Date.now()}_${i}.${ext}`;
         const path = `${item.user_id}/${item.id}/${filename}`;

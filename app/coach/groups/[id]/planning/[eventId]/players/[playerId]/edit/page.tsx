@@ -10,6 +10,7 @@ import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 
 type EventRow = {
   id: string;
@@ -348,6 +349,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
     }
     setUploadingDocument(true);
     try {
+      const uploadFile = await optimizeUploadFile(docFile);
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token) throw new Error("Missing token");
@@ -363,9 +365,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
           organization_id: event.club_id,
           coach_only: docCoachOnly,
           club_event_id: eventId,
-          original_name: docFile.name,
-          mime_type: docFile.type,
-          size_bytes: docFile.size,
+          original_name: uploadFile.name,
+          mime_type: uploadFile.type,
+          size_bytes: uploadFile.size,
         }),
       });
       const prepareJson = await prepareRes.json().catch(() => ({}));
@@ -375,9 +377,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
       const uploadToken = String(prepareJson?.token ?? "").trim();
       if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
 
-      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(uploadPath, uploadToken, docFile, {
+      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(uploadPath, uploadToken, uploadFile, {
         upsert: false,
-        contentType: docFile.type || "application/octet-stream",
+        contentType: uploadFile.type || "application/octet-stream",
       });
       if (uploadRes.error) throw new Error(uploadRes.error.message);
 
@@ -393,10 +395,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
           coach_only: docCoachOnly,
           club_event_id: eventId,
           storage_path: uploadPath,
-          original_name: docFile.name,
+          original_name: uploadFile.name,
           file_name: finalDocName,
-          mime_type: docFile.type,
-          size_bytes: docFile.size,
+          mime_type: uploadFile.type,
+          size_bytes: uploadFile.size,
         }),
       });
       const json = await finalizeRes.json().catch(() => ({}));

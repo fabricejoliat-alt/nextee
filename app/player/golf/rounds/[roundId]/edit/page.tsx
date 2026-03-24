@@ -53,6 +53,23 @@ function clampInt(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(v)));
 }
 
+function isoToYMD(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function localYmdFromIso(iso: string) {
+  return isoToYMD(new Date(iso));
+}
+
+function replaceIsoDateKeepingTime(currentIso: string, nextYmd: string) {
+  const current = new Date(currentIso);
+  const [year, month, day] = nextYmd.split("-").map(Number);
+  const next = new Date(current);
+  next.setFullYear(year, (month || 1) - 1, day || 1);
+  return next.toISOString();
+}
+
 function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
   const next: Hole = { ...base, ...patch };
 
@@ -83,6 +100,7 @@ export default function EditRoundWizardPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dateSaving, setDateSaving] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [uxError, setUxError] = useState<string | null>(null);
@@ -91,6 +109,7 @@ export default function EditRoundWizardPage() {
   const [tournamentRoundIndex, setTournamentRoundIndex] = useState<number | null>(null);
 
   const [round, setRound] = useState<Round | null>(null);
+  const [roundDate, setRoundDate] = useState("");
   const [holes, setHoles] = useState<Hole[]>(
     Array.from({ length: 18 }, (_, i) => ({
       hole_no: i + 1,
@@ -268,6 +287,7 @@ export default function EditRoundWizardPage() {
     }
     const loadedRound = rRes.data as Round;
     setRound(loadedRound);
+    setRoundDate(localYmdFromIso(loadedRound.start_at));
 
     setNextRoundId(null);
     setTournamentRounds([]);
@@ -525,6 +545,22 @@ export default function EditRoundWizardPage() {
     router.push("/player/golf/rounds");
   }
 
+  async function saveRoundDate() {
+    if (!roundId || !round || !roundDate) return;
+    setDateSaving(true);
+    setError(null);
+    try {
+      const nextStartAt = replaceIsoDateKeepingTime(round.start_at, roundDate);
+      const upd = await supabase.from("golf_rounds").update({ start_at: nextStartAt }).eq("id", roundId);
+      if (upd.error) throw new Error(upd.error.message);
+      setRound((prev) => (prev ? { ...prev, start_at: nextStartAt } : prev));
+    } catch (e: any) {
+      setError(e?.message ?? t("common.errorLoading"));
+    } finally {
+      setDateSaving(false);
+    }
+  }
+
   if (loading) return <CompactLoadingBlock label={t("common.loading")} />;
 
   if (!round) {
@@ -572,6 +608,32 @@ export default function EditRoundWizardPage() {
 
           {error && <div className="marketplace-error">{error}</div>}
           {uxError && <div className="marketplace-error">{uxError}</div>}
+        </div>
+
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+              Date du parcours
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                className="input"
+                type="date"
+                value={roundDate}
+                onChange={(e) => setRoundDate(e.target.value)}
+                disabled={saving || dateSaving}
+                style={{ maxWidth: 220 }}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={saveRoundDate}
+                disabled={saving || dateSaving || !roundDate || roundDate === localYmdFromIso(round.start_at)}
+              >
+                {dateSaving ? "Enregistrement..." : "Enregistrer la date"}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="glass-section">

@@ -8,6 +8,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import {
   ResponsiveContainer,
   LineChart,
@@ -840,6 +841,7 @@ export default function GolfDashboardPage() {
     }
     setUploadingDocument(true);
     try {
+      const uploadFile = await optimizeUploadFile(docFile);
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
@@ -852,9 +854,9 @@ export default function GolfDashboardPage() {
         },
         body: JSON.stringify({
           action: "prepare",
-          original_name: docFile.name,
-          mime_type: docFile.type,
-          size_bytes: docFile.size,
+          original_name: uploadFile.name,
+          mime_type: uploadFile.type,
+          size_bytes: uploadFile.size,
         }),
       });
       const prepareJson = await prepareRes.json().catch(() => ({} as any));
@@ -867,10 +869,10 @@ export default function GolfDashboardPage() {
       const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(
         uploadPath,
         uploadToken,
-        docFile,
+        uploadFile,
         {
           upsert: false,
-          contentType: docFile.type || "application/octet-stream",
+          contentType: uploadFile.type || "application/octet-stream",
         }
       );
       if (uploadRes.error) throw new Error(uploadRes.error.message);
@@ -884,10 +886,10 @@ export default function GolfDashboardPage() {
         body: JSON.stringify({
           action: "finalize",
           storage_path: uploadPath,
-          original_name: docFile.name,
+          original_name: uploadFile.name,
           file_name: finalDocName,
-          mime_type: docFile.type,
-          size_bytes: docFile.size,
+          mime_type: uploadFile.type,
+          size_bytes: uploadFile.size,
         }),
       });
       const json = await finalizeRes.json().catch(() => ({} as any));

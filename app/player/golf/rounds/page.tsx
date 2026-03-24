@@ -624,6 +624,17 @@ export default function RoundsListPage() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                router.push(`/player/golf/rounds/${r.id}/edit`);
+                              }}
+                            >
+                              {pickLocaleText(locale, "Modifier", "Edit")}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 router.push(`/player/golf/rounds/${r.id}/scorecard`);
                               }}
                             >

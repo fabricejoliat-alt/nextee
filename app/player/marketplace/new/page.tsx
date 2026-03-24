@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 
 const CATEGORIES = [
   "Driver",
@@ -331,7 +332,7 @@ export default function MarketplaceNew() {
 
     // upload images in current order: index 0 = principale
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      const file = await optimizeUploadFile(files[i]);
       const formData = new FormData();
       formData.append("file", file);
       formData.append("sort_order", String(i));

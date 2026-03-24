@@ -114,8 +114,52 @@ export async function GET(req: NextRequest) {
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
     const attendeeEvents = eventsRes.data ?? [];
 
+    const sessionIds = uniq((sessions as any[]).map((row: any) => row.id));
+    const campDaysRes = sessionIds.length
+      ? await supabaseAdmin
+          .from("player_camp_days")
+          .select("session_id,camp_id,day_index,starts_at,ends_at,location_text")
+          .in("session_id", sessionIds)
+      : ({ data: [], error: null } as any);
+    if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+
+    const campIds = uniq((campDaysRes.data ?? []).map((row: any) => row.camp_id));
+    const campsRes = campIds.length
+      ? await supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status").in("id", campIds)
+      : ({ data: [], error: null } as any);
+    if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
+
+    const campById: Record<string, any> = {};
+    (campsRes.data ?? []).forEach((row: any) => {
+      const id = String(row.id ?? "").trim();
+      if (id) campById[id] = row;
+    });
+
+    const sessionCampMetaBySessionId: Record<string, any> = {};
+    (campDaysRes.data ?? []).forEach((row: any) => {
+      const sessionId = String(row.session_id ?? "").trim();
+      const campId = String(row.camp_id ?? "").trim();
+      if (!sessionId || !campId) return;
+      const camp = campById[campId] ?? null;
+      sessionCampMetaBySessionId[sessionId] = {
+        player_camp_id: campId,
+        player_camp_title: String(camp?.title ?? "").trim() || null,
+        player_camp_coach_name: String(camp?.coach_name ?? "").trim() || null,
+        player_camp_notes: String(camp?.notes ?? "").trim() || null,
+        player_camp_day_index: Number(row.day_index ?? 0),
+        player_camp_starts_at: row.starts_at ?? null,
+        player_camp_ends_at: row.ends_at ?? null,
+        player_camp_location_text: row.location_text ?? null,
+      };
+    });
+
+    const enrichedSessions = (sessions as any[]).map((session: any) => ({
+      ...session,
+      ...(sessionCampMetaBySessionId[String(session.id ?? "").trim()] ?? {}),
+    }));
+
     const clubIds = uniq([
-      ...sessions.map((s: any) => s.club_id),
+      ...enrichedSessions.map((s: any) => s.club_id),
       ...attendeeEvents.map((e: any) => e.club_id),
     ]);
     const groupIds = uniq(attendeeEvents.map((e: any) => e.group_id));
@@ -148,7 +192,7 @@ export async function GET(req: NextRequest) {
       effectiveUserId,
       effectivePlayerName: fullName || "Joueur",
       performanceEnabled: (perfRes.data ?? []).length > 0,
-      sessions,
+      sessions: enrichedSessions,
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents: competitionRes.data ?? [],

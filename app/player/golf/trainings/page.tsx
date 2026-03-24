@@ -27,6 +27,14 @@ type SessionRow = {
   satisfaction: number | null;
   created_at: string;
   club_event_id: string | null; // ✅ important
+  player_camp_id?: string | null;
+  player_camp_title?: string | null;
+  player_camp_coach_name?: string | null;
+  player_camp_notes?: string | null;
+  player_camp_day_index?: number | null;
+  player_camp_starts_at?: string | null;
+  player_camp_ends_at?: string | null;
+  player_camp_location_text?: string | null;
 };
 
 type ClubRow = { id: string; name: string | null };
@@ -123,6 +131,7 @@ type TrainingsCoreResponse = {
 };
 
 function effectiveSessionType(session: SessionRow): SessionRow["session_type"] {
+  if (session.player_camp_id) return "individual";
   if (session.club_event_id) return "club";
   return session.session_type;
 }
@@ -509,6 +518,7 @@ export default function TrainingsListPage() {
       return plannedTypeFilter === "competition" || (plannedTypeFilter === "camp" && it.competition.event_type === "camp");
     }
     if (it.kind === "session") {
+      if (it.session.player_camp_id) return plannedTypeFilter === "camp";
       const sessionType = effectiveSessionType(it.session);
       if (plannedTypeFilter === "training") return sessionType === "club";
       return sessionType === plannedTypeFilter;
@@ -1301,15 +1311,8 @@ export default function TrainingsListPage() {
                   type="button"
                   className="btn"
                   onClick={() => {
-                    setActivityCreateType("camp");
-                    setEditingCompetitionId(null);
-                    setCompTitle("");
-                    setCompPlace("");
-                    setCompNotes("");
-                    setCompStartDate(new Date().toISOString().slice(0, 10));
-                    setCompEndDate(new Date().toISOString().slice(0, 10));
-                    setShowCompetitionForm(true);
                     setShowAddMenu(false);
+                    router.push("/player/golf/camps/new");
                   }}
                   style={{ justifyContent: "flex-start" }}
                 >
@@ -1801,6 +1804,7 @@ export default function TrainingsListPage() {
                     new Date(linkedEvent.starts_at).getTime() < nowTs;
                   const groupName = linkedEvent?.group_id ? groupNameById[linkedEvent.group_id] ?? null : null;
                   const isArchivedTrainingSession = normalizedSessionType === "club" && isArchiveGroupName(groupName);
+                  const isPlayerCampSession = Boolean(s.player_camp_id);
                   const trainingGroupLabel =
                     (isArchivedTrainingSession ? null : groupName) ||
                     clubName ||
@@ -1820,7 +1824,9 @@ export default function TrainingsListPage() {
                   const displayLocation = (s.location_text ?? linkedEvent?.location_text ?? "").trim();
                   const canDeleteSession = !s.club_event_id;
                   const sessionTitle =
-                    normalizedSessionType === "club"
+                    isPlayerCampSession
+                      ? `${String(s.player_camp_title ?? "").trim() || pickLocaleText(locale, "Stage", "Camp")} • ${pickLocaleText(locale, "Jour", "Day")} ${(Number(s.player_camp_day_index ?? 0) || 0) + 1}`
+                      : normalizedSessionType === "club"
                       ? `${
                           linkedEvent?.event_type === "camp"
                             ? ((linkedEvent?.title ?? "").trim() || pickLocaleText(locale, "Stage/Camp", "Camp"))
@@ -1948,6 +1954,16 @@ export default function TrainingsListPage() {
                             <Link className="btn" href={`/player/golf/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
                               {pickLocaleText(locale, "Détails", "Details")}
                             </Link>
+                            {isPlayerCampSession && s.player_camp_id ? (
+                              <Link
+                                className="btn"
+                                href={`/player/golf/camps/new?campId=${encodeURIComponent(s.player_camp_id)}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {pickLocaleText(locale, "Éditer le stage", "Edit camp")}
+                              </Link>
+                            ) : null}
                             {linkedEvent ? (
                               <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(linkedEvent.id)}`} onClick={(e) => e.stopPropagation()}>
                                 <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
@@ -1972,17 +1988,17 @@ export default function TrainingsListPage() {
                               </Link>
                             ) : null}
 
-                            {canEditSession ? (
+                            {!isPlayerCampSession && canEditSession ? (
                               <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
                                 <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Éditer", "Edit")}
                               </Link>
-                            ) : (
+                            ) : !isPlayerCampSession ? (
                               <button type="button" className="btn" disabled onClick={(e) => e.stopPropagation()}>
                                 <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {pickLocaleText(locale, "Éditer", "Edit")}
                               </button>
-                            )}
+                            ) : null}
 
                             {canDeleteSession ? (
                               <button
