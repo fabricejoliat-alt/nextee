@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
@@ -92,6 +91,85 @@ function CoachMiniCard({ coach }: { coach: ProfileLite | null }) {
       )}
       <div style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 900, fontSize: 14, lineHeight: 1.2 }}>{fullName(coach)}</div>
+      </div>
+    </div>
+  );
+}
+
+function CampCardSkeleton() {
+  return (
+    <div
+      className="marketplace-item"
+      style={{
+        border: "1px solid rgba(0,0,0,0.10)",
+        borderRadius: 18,
+        background: "rgba(255,255,255,0.82)",
+        display: "grid",
+        gap: 14,
+      }}
+    >
+      <div
+        className="glass-card"
+        style={{
+          display: "grid",
+          gap: 12,
+          background: "rgba(255,255,255,0.96)",
+          border: "1px solid rgba(0,0,0,0.08)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ display: "grid", gap: 6, minWidth: 0, flex: 1 }}>
+            <div className="soft-shimmer" style={{ width: "52%", height: 22, borderRadius: 999, background: "rgba(15,23,42,0.08)" }} />
+            <div className="soft-shimmer" style={{ width: "34%", height: 12, borderRadius: 999, background: "rgba(15,23,42,0.07)" }} />
+          </div>
+          <div className="soft-shimmer" style={{ width: 118, height: 40, borderRadius: 999, background: "rgba(15,23,42,0.08)" }} />
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          <div className="soft-shimmer" style={{ width: "100%", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.06)" }} />
+          <div className="soft-shimmer" style={{ width: "88%", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.06)" }} />
+          <div className="soft-shimmer" style={{ width: "67%", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.06)" }} />
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          <div className="soft-shimmer" style={{ width: 132, height: 12, borderRadius: 999, background: "rgba(15,23,42,0.07)" }} />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              minWidth: 0,
+              background: "rgba(255,255,255,0.96)",
+              border: "1px solid rgba(0,0,0,0.08)",
+              borderRadius: 16,
+              padding: 12,
+            }}
+          >
+            <div className="soft-shimmer" style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(15,23,42,0.08)", flexShrink: 0 }} />
+            <div className="soft-shimmer" style={{ width: 150, height: 14, borderRadius: 999, background: "rgba(15,23,42,0.07)" }} />
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div className="soft-shimmer" style={{ width: 96, height: 12, borderRadius: 999, background: "rgba(15,23,42,0.07)" }} />
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div
+            key={index}
+            className="marketplace-item"
+            style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
+          >
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="soft-shimmer" style={{ width: "58%", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.08)" }} />
+              <div className="soft-shimmer" style={{ width: "40%", height: 18, borderRadius: 999, background: "rgba(15,23,42,0.07)" }} />
+              <div className="soft-shimmer" style={{ width: "30%", height: 14, borderRadius: 999, background: "rgba(15,23,42,0.06)" }} />
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="soft-shimmer" style={{ width: 124, height: 38, borderRadius: 999, background: "rgba(15,23,42,0.08)" }} />
+                <div className="soft-shimmer" style={{ width: 116, height: 38, borderRadius: 999, background: "rgba(15,23,42,0.08)" }} />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -212,7 +290,10 @@ export default function PlayerCampsPage() {
 
         <div className="glass-section">
           {loading ? (
-            <ListLoadingBlock label="Chargement" />
+            <div className="marketplace-list marketplace-list-top">
+              <CampCardSkeleton />
+              <CampCardSkeleton />
+            </div>
           ) : camps.length === 0 ? (
             <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>Aucun stage/camp disponible.</div>
           ) : (

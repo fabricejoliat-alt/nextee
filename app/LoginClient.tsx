@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
@@ -12,9 +12,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const isLocalDev =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "::1");
+  const [isLocalDev, setIsLocalDev] = useState(false);
+
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    setIsLocalDev(hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1");
+  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();

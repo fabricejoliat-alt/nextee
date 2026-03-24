@@ -55,6 +55,13 @@ function toInputDateTime(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function isoToInputDateTime(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? toInputDateTime(date) : "";
+}
+
 function nextMorning(offsetDays = 0) {
   const date = new Date();
   date.setDate(date.getDate() + offsetDays);
@@ -138,8 +145,8 @@ export default function ManagerCampEditorPage() {
     setDays(
       (camp.days ?? []).map((day) => ({
         event_id: day.event_id ?? null,
-        starts_at: day.starts_at ? day.starts_at.slice(0, 16) : "",
-        ends_at: day.ends_at ? day.ends_at.slice(0, 16) : "",
+        starts_at: isoToInputDateTime(day.starts_at),
+        ends_at: isoToInputDateTime(day.ends_at),
         location_text: day.location_text ?? "",
         practical_info: day.practical_info ?? "",
         coach_ids: day.coach_ids ?? [],
@@ -302,8 +309,8 @@ export default function ManagerCampEditorPage() {
   useEffect(() => {
     if (suggestedPlayerIds.length === 0) return;
     setSelectedPlayerIds((current) => {
-      if (current.length > 0) return current.filter((playerId) => playerMembers.some((player) => player.id === playerId));
-      return suggestedPlayerIds;
+      const visibleCurrent = current.filter((playerId) => playerMembers.some((player) => player.id === playerId));
+      return Array.from(new Set([...visibleCurrent, ...suggestedPlayerIds]));
     });
   }, [suggestedPlayerIds, playerMembers]);
 

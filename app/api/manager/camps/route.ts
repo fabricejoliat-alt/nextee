@@ -4,6 +4,7 @@ import {
   createAdminClient,
   createCampDayEvent,
   getCaller,
+  localDateTimeInputToIso,
   normalizeText,
   uniq,
 } from "@/app/api/camps/_lib";
@@ -299,8 +300,8 @@ export async function POST(req: NextRequest) {
 
     for (let index = 0; index < days.length; index += 1) {
       const day = days[index];
-      const startsAt = normalizeText(day?.starts_at);
-      const endsAt = normalizeText(day?.ends_at);
+      const startsAt = localDateTimeInputToIso(normalizeText(day?.starts_at));
+      const endsAt = localDateTimeInputToIso(normalizeText(day?.ends_at));
       const locationText = normalizeText(day?.location_text) || null;
       const practicalInfo = normalizeText(day?.practical_info) || null;
       const createdDay = await createCampDayEvent(supabaseAdmin, {

@@ -44,6 +44,24 @@ export function minutesBetween(startIso: string, endIso: string) {
   return Math.round((end - start) / 60000);
 }
 
+export function localDateTimeInputToIso(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    0,
+    0
+  );
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "";
+}
+
 function isMissingTableError(error: any) {
   return String(error?.code ?? "") === "42P01";
 }

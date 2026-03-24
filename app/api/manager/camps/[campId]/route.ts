@@ -5,6 +5,7 @@ import {
   createCampDayEvent,
   deleteClubEventDeep,
   getCaller,
+  localDateTimeInputToIso,
   minutesBetween,
   normalizeText,
   uniq,
@@ -187,8 +188,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ campId: s
     for (let index = 0; index < days.length; index += 1) {
       const day = days[index] as CampCreateDayInput & { event_id?: string | null };
       const eventId = normalizeText(day?.event_id);
-      const startsAt = normalizeText(day?.starts_at);
-      const endsAt = normalizeText(day?.ends_at);
+      const startsAt = localDateTimeInputToIso(normalizeText(day?.starts_at));
+      const endsAt = localDateTimeInputToIso(normalizeText(day?.ends_at));
       const locationText = normalizeText(day?.location_text) || null;
       const practicalInfo = normalizeText(day?.practical_info) || null;
       const desiredCoachIds = uniq([headCoachUserId, ...allCoachIds, ...uniqIds(day?.coach_ids)]);
