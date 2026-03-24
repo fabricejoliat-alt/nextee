@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { PlusCircle, Users, X } from "lucide-react";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type ProfileRow = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
 
@@ -170,7 +171,10 @@ export default function ManagerCampsPage() {
                     </div>
 
                     {camp.notes?.trim() ? (
-                      <div style={{ whiteSpace: "pre-wrap", fontSize: 12, color: "rgba(0,0,0,0.72)" }}>{camp.notes}</div>
+                      <div
+                        style={{ fontSize: 12, color: "rgba(0,0,0,0.72)" }}
+                        dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
+                      />
                     ) : null}
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

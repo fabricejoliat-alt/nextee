@@ -6,6 +6,7 @@ import { CheckCircle2, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
 type CampRow = {
@@ -244,7 +245,12 @@ export default function PlayerCampsPage() {
                         </div>
                       </div>
 
-                      {camp.notes?.trim() ? <div style={{ fontSize: 14, color: "#111827", whiteSpace: "pre-wrap", paddingBlock: 6 }}>{camp.notes}</div> : null}
+                      {camp.notes?.trim() ? (
+                        <div
+                          style={{ fontSize: 14, color: "#111827", paddingBlock: 6 }}
+                          dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
+                        />
+                      ) : null}
 
                       <div style={{ display: "grid", gap: 8 }}>
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.56)", textTransform: "uppercase", letterSpacing: 0.4 }}>Responsable du camp</div>

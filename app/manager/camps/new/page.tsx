@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { PlusCircle } from "lucide-react";
+import { Bold, Italic, List, ListOrdered, PlusCircle, Underline } from "lucide-react";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type ClubRow = { id: string; name: string | null };
 type GroupRow = { id: string; name: string; club_id: string };
@@ -65,6 +66,141 @@ function nextAfternoon(offsetDays = 0) {
   date.setDate(date.getDate() + offsetDays);
   date.setHours(16, 0, 0, 0);
   return toInputDateTime(date);
+}
+
+function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    if (el.innerHTML !== value) el.innerHTML = value || "";
+  }, [value]);
+
+  function rememberSelection() {
+    const el = editorRef.current;
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    if (!el || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const target = container.nodeType === Node.TEXT_NODE ? container.parentNode : container;
+    if (target && el.contains(target)) {
+      savedRangeRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    const range = savedRangeRef.current;
+    if (!selection || !range) return null;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return range;
+  }
+
+  function wrapSelection(tagName: "strong" | "em" | "u") {
+    const el = editorRef.current;
+    const range = restoreSelection();
+    if (!el || !range || range.collapsed) return;
+
+    const extracted = range.extractContents();
+    const wrapper = document.createElement(tagName);
+    wrapper.appendChild(extracted);
+    range.insertNode(wrapper);
+    range.selectNodeContents(wrapper);
+    savedRangeRef.current = range.cloneRange();
+    onChange(normalizeCampRichTextHtml(el.innerHTML));
+  }
+
+  function insertList(tagName: "ul" | "ol") {
+    const el = editorRef.current;
+    const range = restoreSelection();
+    if (!el || !range || range.collapsed) return;
+
+    const selectedText = range.toString();
+    const items = selectedText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (items.length === 0) return;
+
+    const list = document.createElement(tagName);
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+
+    range.deleteContents();
+    range.insertNode(list);
+    range.selectNodeContents(list);
+    savedRangeRef.current = range.cloneRange();
+    onChange(normalizeCampRichTextHtml(el.innerHTML));
+  }
+
+  function formatButton(label: string, icon: React.ReactNode, onPress: () => void) {
+    return (
+      <button type="button" className="btn" onClick={onPress} aria-label={label} title={label}>
+        {icon}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {formatButton("Gras", <Bold size={16} />, () => wrapSelection("strong"))}
+        {formatButton("Italique", <Italic size={16} />, () => wrapSelection("em"))}
+        {formatButton("Souligné", <Underline size={16} />, () => wrapSelection("u"))}
+        {formatButton("Liste à puces", <List size={16} />, () => insertList("ul"))}
+        {formatButton("Liste numérotée", <ListOrdered size={16} />, () => insertList("ol"))}
+      </div>
+
+      <div
+        style={{
+          border: "1px solid rgba(0,0,0,0.14)",
+          borderRadius: 12,
+          background: "rgba(255,255,255,0.9)",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+          padding: 12,
+        }}
+      >
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={(e) => onChange(normalizeCampRichTextHtml((e.currentTarget as HTMLDivElement).innerHTML))}
+          onMouseUp={rememberSelection}
+          onKeyUp={rememberSelection}
+          onFocus={rememberSelection}
+          data-placeholder={placeholder}
+          style={{
+            minHeight: 116,
+            whiteSpace: "pre-wrap",
+            outline: "none",
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: "#111827",
+          }}
+        />
+      </div>
+      <style jsx>{`
+        div[contenteditable][data-placeholder]:empty:before {
+          content: attr(data-placeholder);
+          color: rgba(0, 0, 0, 0.38);
+        }
+      `}</style>
+    </div>
+  );
 }
 
 export default function ManagerCampEditorPage() {
@@ -128,7 +264,7 @@ export default function ManagerCampEditorPage() {
     setEditingCampId(camp.id);
     setClubId(camp.club_id);
     setTitle(camp.title);
-    setNotes(camp.notes ?? "");
+    setNotes(normalizeCampRichTextHtml(camp.notes ?? ""));
     setSelectedGroupIds(camp.group_ids ?? []);
     setSelectedPlayerIds(camp.player_ids ?? []);
     setHeadCoachId(String(camp.head_coach_user_id ?? camp.head_coach?.id ?? ""));
@@ -352,7 +488,7 @@ export default function ManagerCampEditorPage() {
         body: JSON.stringify({
           club_id: clubId,
           title,
-          notes,
+          notes: normalizeCampRichTextHtml(notes),
           group_ids: selectedGroupIds,
           player_ids: selectedPlayerIds,
           head_coach_user_id: headCoachId,
@@ -419,7 +555,7 @@ export default function ManagerCampEditorPage() {
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontWeight: 800 }}>Notes générales</span>
-                <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Informations générales du stage" />
+                <RichTextEditor value={notes} onChange={setNotes} placeholder="Informations générales du stage" />
               </label>
 
               <div style={{ display: "grid", gap: 8 }}>

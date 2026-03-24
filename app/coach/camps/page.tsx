@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Users, X } from "lucide-react";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
 type CampRow = {
@@ -110,7 +111,12 @@ export default function CoachCampsPage() {
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>{camp.club_name}</div>
                       <div style={{ fontSize: 12, fontWeight: 800 }}>Head coach: {fullName(camp.head_coach)}</div>
                     </div>
-                    {camp.notes?.trim() ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>{camp.notes}</div> : null}
+                    {camp.notes?.trim() ? (
+                      <div
+                        style={{ fontSize: 12, color: "rgba(0,0,0,0.72)" }}
+                        dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
+                      />
+                    ) : null}
                     <div style={{ display: "grid", gap: 8 }}>
                       {camp.days.map((day) => (
                         <div key={day.event_id} className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.08)", display: "grid", gap: 4 }}>
