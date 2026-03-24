@@ -32,6 +32,11 @@ export default function PushActivationBanner({ settingsHref }: Props) {
   const isIOS =
     typeof navigator !== "undefined" &&
     /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isMacSafari =
+    typeof navigator !== "undefined" &&
+    /Macintosh/.test(navigator.userAgent) &&
+    /Safari/.test(navigator.userAgent) &&
+    !/Chrome|Chromium|Edg|OPR/.test(navigator.userAgent);
   const isStandalone =
     typeof window !== "undefined" &&
     (window.matchMedia?.("(display-mode: standalone)").matches ||
@@ -158,9 +163,13 @@ export default function PushActivationBanner({ settingsHref }: Props) {
               ? tr(
                   isIOS
                     ? "Les notifications push ne sont pas encore actives sur cet appareil. Sur iPhone/iPad, utilise de préférence ActiviTee depuis l’app installée sur l’écran d’accueil, puis vérifie les autorisations de notifications."
+                    : isMacSafari
+                    ? "Le push web devrait être disponible sur Safari macOS. Si ce message apparaît, vérifie les autorisations de notifications de Safari et du Mac, puis recharge la page."
                     : "Le push PWA n'est pas supporté sur cet appareil ou ce navigateur. Sur Android, installe et ouvre de préférence ActiviTee depuis Chrome.",
                   isIOS
                     ? "Push notifications are not active yet on this device. On iPhone/iPad, use ActiviTee from the app installed on the home screen, then check notification permissions."
+                    : isMacSafari
+                    ? "Web push should be available on Safari for macOS. If you see this message, check Safari and macOS notification permissions, then reload the page."
                     : "PWA push is not supported on this device or browser. On Android, install and open ActiviTee from Chrome if possible."
                 )
               : denied

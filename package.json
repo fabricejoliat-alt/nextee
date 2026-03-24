@@ -9,8 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@lexical/html": "^0.42.0",
+    "@lexical/list": "^0.42.0",
+    "@lexical/react": "^0.42.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.97.0",
+    "@tiptap/extension-underline": "^3.20.5",
+    "@tiptap/pm": "^3.20.5",
+    "@tiptap/react": "^3.20.5",
+    "@tiptap/starter-kit": "^3.20.5",
+    "lexical": "^0.42.0",
     "lucide-react": "^0.574.0",
     "next": "16.1.6",
     "react": "19.2.3",

@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
     const sessions = sessionsRes.data ?? [];
     const attendeeRows = attendeeRes.data ?? [];
     const eventIds = uniq(attendeeRows.map((r: any) => r.event_id));
-    const attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
+    const attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null> = {};
     attendeeRows.forEach((r: any) => {
       attendeeStatusByEventId[String(r.event_id)] = (r.status ?? null) as any;
     });

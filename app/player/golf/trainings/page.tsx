@@ -9,7 +9,6 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter, MessageCircle, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -99,7 +98,7 @@ type TrainingsPageCache = {
   performanceEnabled: boolean;
   sessions: SessionRow[];
   attendeeEvents: PlannedEventRow[];
-  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
+  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>;
   competitionEvents: PlayerActivityEventRow[];
   clubNameById: Record<string, string>;
   groupNameById: Record<string, string>;
@@ -117,7 +116,7 @@ type TrainingsCoreResponse = {
   performanceEnabled: boolean;
   sessions: SessionRow[];
   attendeeEvents: PlannedEventRow[];
-  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
+  attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>;
   competitionEvents: PlayerActivityEventRow[];
   clubNameById: Record<string, string>;
   groupNameById: Record<string, string>;
@@ -132,6 +131,36 @@ const TRAININGS_CACHE_TTL_MS = 45_000;
 const trainingsPageCacheKey = (userId: string) => `page-cache:player-trainings:${userId}`;
 
 const PAGE_SIZE = 10;
+
+function TrainingsCardSkeleton() {
+  return (
+    <div
+      className="marketplace-item"
+      aria-hidden="true"
+      style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
+    >
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "grid", gap: 6, flex: 1, minWidth: 0 }}>
+            <div className="trainings-skeleton-line" style={{ width: "52%", height: 12 }} />
+            <div className="trainings-skeleton-line" style={{ width: "34%", height: 10 }} />
+          </div>
+          <div className="trainings-skeleton-pill" />
+        </div>
+        <div className="hr-soft" style={{ margin: "1px 0" }} />
+        <div style={{ display: "grid", gap: 8 }}>
+          <div className="trainings-skeleton-line" style={{ width: "66%", height: 18 }} />
+          <div className="trainings-skeleton-line" style={{ width: "46%", height: 11 }} />
+          <div className="trainings-skeleton-line" style={{ width: "58%", height: 11 }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+          <div className="trainings-skeleton-btn" />
+          <div className="trainings-skeleton-btn" style={{ width: 104 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function fmtDateTime(iso: string) {
   const d = new Date(iso);
@@ -436,9 +465,13 @@ export default function TrainingsListPage() {
 
   const plannedEvents = useMemo(() => {
     return scheduledEvents
+      .filter((ev) => {
+        const attendanceStatus = attendeeStatusByEventId[ev.id] ?? null;
+        return !(ev.event_type === "camp" && attendanceStatus === "not_registered");
+      })
       .filter((ev) => new Date(ev.starts_at).getTime() >= nowTs)
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-  }, [scheduledEvents, nowTs]);
+  }, [scheduledEvents, attendeeStatusByEventId, nowTs]);
 
   const pastAttendeeEvents = useMemo(() => {
     return scheduledEvents
@@ -1487,7 +1520,11 @@ export default function TrainingsListPage() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <ListLoadingBlock label={t("common.loading")} />
+              <div className="marketplace-list marketplace-list-top" aria-live="polite" aria-busy="true">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <TrainingsCardSkeleton key={`training-skeleton-${index}`} />
+                ))}
+              </div>
             ) : totalCount === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("trainings.nonePlanned")}</div>
             ) : (
@@ -1520,7 +1557,7 @@ export default function TrainingsListPage() {
                         (pickLocaleText(locale, "Groupe", "Group"));
                       eventTitle =
                         e.event_type === "camp"
-                          ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${trainingGroupLabel}`
+                          ? customName || `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${trainingGroupLabel}`
                           : `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
                     }
                     if (!isTrainingLike) {
@@ -1786,7 +1823,7 @@ export default function TrainingsListPage() {
                     normalizedSessionType === "club"
                       ? `${
                           linkedEvent?.event_type === "camp"
-                            ? pickLocaleText(locale, "Stage/Camp", "Camp")
+                            ? ((linkedEvent?.title ?? "").trim() || pickLocaleText(locale, "Stage/Camp", "Camp"))
                             : pickLocaleText(locale, "Entraînement", "Training")
                         } • ${trainingGroupLabel}`
                       : `${typeLabel(normalizedSessionType, pickLocaleText(locale, "fr", "en"))}`;
@@ -1991,6 +2028,30 @@ export default function TrainingsListPage() {
           )}
         </div>
       </div>
+
+      <style jsx global>{`
+        .trainings-skeleton-line,
+        .trainings-skeleton-pill,
+        .trainings-skeleton-btn {
+          background: linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06));
+          background-size: 200% 100%;
+          animation: soft-shimmer 1.2s ease-in-out infinite;
+        }
+        .trainings-skeleton-line {
+          border-radius: 999px;
+        }
+        .trainings-skeleton-pill {
+          width: 92px;
+          height: 32px;
+          border-radius: 999px;
+          flex: 0 0 auto;
+        }
+        .trainings-skeleton-btn {
+          width: 88px;
+          height: 34px;
+          border-radius: 999px;
+        }
+      `}</style>
     </div>
   );
 }
