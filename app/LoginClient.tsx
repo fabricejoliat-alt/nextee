@@ -139,36 +139,37 @@ export default function LoginPage() {
   return (
     <div className="auth-bg">
       <div className="auth-shell">
-        <div className="auth-card">
-          <div className="auth-brand-wrapper">
-            <div className="auth-brand auth-brand--dark">
-              <span className="auth-brand-nex">Activi</span>
-              <span className="auth-brand-tee">Tee</span>
-            </div>
-            <div className="auth-tagline">Organize. Track. Develop.</div>
-          </div>
-
-          <form onSubmit={handleLogin} className="auth-form">
-            <div className="field auth-field">
-              <label>Email ou username</label>
-              <input
-                required
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                autoComplete="username"
-              />
+        <div style={{ width: "100%", maxWidth: 420, display: "grid", gap: 14 }}>
+          <div className="auth-card">
+            <div className="auth-brand-wrapper">
+              <div className="auth-brand auth-brand--dark">
+                <span className="auth-brand-nex">Activi</span>
+                <span className="auth-brand-tee">Tee</span>
+              </div>
+              <div className="auth-tagline">Organize. Track. Develop.</div>
             </div>
 
-            <div className="field auth-field">
-              <label>Mot de passe</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-            </div>
+            <form onSubmit={handleLogin} className="auth-form">
+              <div className="field auth-field">
+                <label>Email ou username</label>
+                <input
+                  required
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  autoComplete="username"
+                />
+              </div>
+
+              <div className="field auth-field">
+                <label>Mot de passe</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
 
             {error && <div className="auth-error">{error}</div>}
 
@@ -303,16 +304,16 @@ export default function LoginPage() {
               </div>
             ) : null}
 
-            <div className="auth-footnote">
-              En cas de souci, contacte ton coach/club pour réinitialiser l’accès.
-            </div>
-
-            {isLocalDev ? (
-              <div className="auth-footnote">
-                <Link href="/dev/impersonate">Mode dev: se connecter en tant qu’un autre utilisateur</Link>
-              </div>
-            ) : null}
-          </form>
+              {isLocalDev ? (
+                <div className="auth-footnote">
+                  <Link href="/dev/impersonate">Mode dev: se connecter en tant qu’un autre utilisateur</Link>
+                </div>
+              ) : null}
+            </form>
+          </div>
+          <div className="auth-footnote" style={{ color: "rgba(255,255,255,0.88)", textAlign: "center", marginTop: 0 }}>
+          Contact et support: info@activitee.golf
+          </div>
         </div>
       </div>
     </div>

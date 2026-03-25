@@ -452,6 +452,23 @@ a.btn{ padding: 8px 12px !important; }
   border-color: #2b3a2f !important;
 }
 
+.btn-camp-register{
+  background: #dff3e6 !important;
+  border-color: #9ed4ae !important;
+  color: #123322 !important;
+}
+
+.btn-camp-register:hover{
+  background: #d2ebdc !important;
+  border-color: #87c79c !important;
+}
+
+.btn-camp-register:disabled{
+  background: #dff3e6 !important;
+  border-color: #9ed4ae !important;
+  color: #123322 !important;
+}
+
 /* (si tu veux garder la variante “soft” que tu avais) */
 .btn-danger.soft{
   border-color: #f1b3b3 !important;

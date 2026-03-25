@@ -310,7 +310,7 @@ export default function PlayerCampsPage() {
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                           {!isRegistered ? (
-                            <button type="button" className="btn" onClick={() => void registerCamp(camp.id)} disabled={busyKey === `register-${camp.id}`}>
+                            <button type="button" className="btn btn-camp-register" onClick={() => void registerCamp(camp.id)} disabled={busyKey === `register-${camp.id}`}>
                               {busyKey === `register-${camp.id}` ? "Inscription…" : "S'inscrire"}
                             </button>
                           ) : (
