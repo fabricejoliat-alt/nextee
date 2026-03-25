@@ -124,7 +124,7 @@ export default function LoginPage() {
         setContactMessage(String(json?.error ?? "Envoi impossible."));
         return;
       }
-      setContactMessage("Ta demande a bien été envoyée à info@activitee.golf.");
+      setContactMessage("Ta demande a bien été envoyée.");
       setContactFirstName("");
       setContactLastName("");
       setContactBirthDate("");
@@ -253,7 +253,7 @@ export default function LoginPage() {
                     }}
                   >
                     <div style={{ fontSize: 13, color: "rgba(0,0,0,0.66)", fontWeight: 700 }}>
-                      Remplis ce formulaire. La demande sera envoyée à `info@activitee.golf`.
+                      Remplis ce formulaire. La demande sera envoyée à ActiviTee.
                     </div>
                     <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
                       <input

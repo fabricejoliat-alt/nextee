@@ -896,6 +896,7 @@ input[type="radio"]{
 
 .auth-bg{
   min-height: 100vh;
+  min-height: 100svh;
   position: relative;
   color: #fff;
 }
@@ -916,18 +917,13 @@ input[type="radio"]{
 }
 
 .auth-shell{
-  position: fixed;        /* ✅ ne scroll plus */
-  inset: 0;               /* prend tout l’écran */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 18px;
-}
-
-/* Important pour éviter micro scroll mobile */
-.auth-bg{
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100svh;
 }
 
 /* card glass */
@@ -947,6 +943,12 @@ input[type="radio"]{
   border: 1px solid rgba(255,255,255,0.22);
   transform: translateZ(0);        /* force layer GPU */
   will-change: transform;
+}
+
+@media (max-width: 640px){
+  .auth-shell{
+    align-items: flex-start;
+  }
 }
 
 @media (min-width: 480px){
