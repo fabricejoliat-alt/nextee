@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-async function fetchAuthEmailByUserId(supabaseAdmin: ReturnType<typeof createClient>, userId: string) {
-  const authUsersRes = await supabaseAdmin.schema("auth").from("users").select("email").eq("id", userId).maybeSingle();
+async function fetchAuthEmailByUserId(supabaseAdmin: any, userId: string) {
+  const authSchema = (supabaseAdmin as any).schema("auth");
+  const authUsersRes = await authSchema.from("users").select("email").eq("id", userId).maybeSingle();
   if (!authUsersRes.error) {
     const email = typeof authUsersRes.data?.email === "string" ? authUsersRes.data.email.toLowerCase() : null;
     if (email) return { email, error: null };

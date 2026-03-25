@@ -65,7 +65,8 @@ async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
   const authEmailById = new Map<string, string | null>();
   if (userIds.length === 0) return authEmailById;
 
-  const { data, error } = await supabaseAdmin.schema("auth").from("users").select("id,email").in("id", userIds);
+  const authSchema = (supabaseAdmin as any).schema("auth");
+  const { data, error } = await authSchema.from("users").select("id,email").in("id", userIds);
   if (!error) {
     const rows = Array.isArray(data) ? data : [];
     for (const row of rows) {
