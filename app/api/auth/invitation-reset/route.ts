@@ -36,6 +36,13 @@ function translateAuthMessage(message: string) {
   return message;
 }
 
+function normalizeUsableEmail(raw: string | null | undefined) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return email;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = String(new URL(req.url).searchParams.get("token") ?? "").trim();
@@ -87,7 +94,14 @@ export async function POST(req: NextRequest) {
       .eq("id", invite.row.id);
     if (consumeError) throw new Error(consumeError.message);
 
-    return NextResponse.json({ ok: true, email: invite.row.sent_to_email });
+    return NextResponse.json({
+      ok: true,
+      email:
+        invite.row.invitation_kind === "parent_access"
+          ? normalizeUsableEmail(invite.row.sent_to_email)
+          : null,
+      invitation_kind: invite.row.invitation_kind,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }

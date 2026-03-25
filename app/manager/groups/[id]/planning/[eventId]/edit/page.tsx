@@ -908,18 +908,17 @@ export default function CoachEventEditPage() {
         prevLocRaw !== nextLocRaw ||
         prevNote !== nextNote;
 
-      const upd = await supabase
-        .from("club_events")
-        .update({
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          starts_at: nextStartIso,
-          ends_at: nextEndIso,
-          duration_minutes: durationForDb,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-        })
-        .eq("id", eventId);
+      const eventUpdatePayload: Record<string, any> = {
+        starts_at: nextStartIso,
+        ends_at: nextEndIso,
+        duration_minutes: durationForDb,
+        location_text: locationText.trim() || null,
+        coach_note: coachNote.trim() || null,
+      };
+      if (event.event_type !== eventType) eventUpdatePayload.event_type = eventType;
+      if ((event.title ?? null) !== (eventTitle.trim() || null)) eventUpdatePayload.title = eventTitle.trim() || null;
+
+      const upd = await supabase.from("club_events").update(eventUpdatePayload).eq("id", eventId);
 
       if (upd.error) throw new Error(upd.error.message);
 
@@ -1076,6 +1075,19 @@ export default function CoachEventEditPage() {
 
       // 2) delete future occurrences for this series
       const nowIso = new Date().toISOString();
+      const futureEventsRes = await supabase
+        .from("club_events")
+        .select("id")
+        .eq("series_id", event.series_id)
+        .gte("starts_at", nowIso);
+      if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
+      const futureEventIds = (futureEventsRes.data ?? []).map((row: any) => String(row.id ?? "").trim()).filter(Boolean);
+
+      if (futureEventIds.length > 0) {
+        const delThreads = await supabase.from("message_threads").delete().in("event_id", futureEventIds);
+        if (delThreads.error) throw new Error(delThreads.error.message);
+      }
+
       const delFuture = await supabase
         .from("club_events")
         .delete()

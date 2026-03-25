@@ -65,31 +65,39 @@ async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
   const authEmailById = new Map<string, string | null>();
   if (userIds.length === 0) return authEmailById;
 
-  const wanted = new Set(userIds);
-  const perPage = Math.min(1000, Math.max(200, userIds.length));
-  let page = 1;
-
-  while (wanted.size > 0) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-      page,
-      perPage,
-    });
-    if (error) throw error;
-
-    const users = data?.users ?? [];
-    if (users.length === 0) break;
-
-    for (const user of users) {
-      if (!wanted.has(user.id)) continue;
-      authEmailById.set(user.id, user.email ?? null);
-      wanted.delete(user.id);
+  const { data, error } = await supabaseAdmin.schema("auth").from("users").select("id,email").in("id", userIds);
+  if (!error) {
+    const rows = Array.isArray(data) ? data : [];
+    for (const row of rows) {
+      const userId = String((row as any).id ?? "");
+      if (!userId) continue;
+      authEmailById.set(userId, (row as any).email ?? null);
     }
+  } else {
+    const wanted = new Set(userIds);
+    const perPage = Math.min(1000, Math.max(200, userIds.length));
+    let page = 1;
 
-    if (users.length < perPage) break;
-    page += 1;
+    while (wanted.size > 0) {
+      const adminRes = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+      if (adminRes.error) break;
+
+      const users = adminRes.data?.users ?? [];
+      if (users.length === 0) break;
+
+      for (const user of users) {
+        if (!wanted.has(user.id)) continue;
+        authEmailById.set(user.id, user.email ?? null);
+        wanted.delete(user.id);
+      }
+
+      if (users.length < perPage) break;
+      page += 1;
+    }
   }
 
-  for (const userId of wanted) {
+  for (const userId of userIds) {
+    if (authEmailById.has(userId)) continue;
     authEmailById.set(userId, null);
   }
 

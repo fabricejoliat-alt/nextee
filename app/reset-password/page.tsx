@@ -157,8 +157,14 @@ export default function ResetPasswordPage() {
           body: JSON.stringify({ token: inviteToken, password }),
         });
         const resetJson = await resetRes.json().catch(() => ({}));
-        if (!resetRes.ok || !resetJson?.email) {
+        if (!resetRes.ok) {
           setError(String(resetJson?.error ?? "Impossible de définir le mot de passe."));
+          return;
+        }
+
+        if (!resetJson?.email) {
+          setStatus("success");
+          router.replace("/");
           return;
         }
 

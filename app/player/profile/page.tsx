@@ -65,6 +65,13 @@ function translateAuthMessage(message: string) {
   return message;
 }
 
+function normalizeDisplayEmail(raw: string | null | undefined) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return email;
+}
+
 /** Categorys juniors (SwissGolf-style):
  *  - enfants nés en 2016 et + : U10
  *  - 2014 et + : U12
@@ -177,7 +184,7 @@ export default function PlayerProfilePage() {
 
     const uid = userRes.user.id;
     setUserId(uid);
-    setEmail(userRes.user.email ?? "");
+    setEmail(normalizeDisplayEmail(userRes.user.email));
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token ?? "";

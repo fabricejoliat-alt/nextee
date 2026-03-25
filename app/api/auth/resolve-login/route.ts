@@ -3,6 +3,22 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
+async function fetchAuthEmailByUserId(supabaseAdmin: ReturnType<typeof createClient>, userId: string) {
+  const authUsersRes = await supabaseAdmin.schema("auth").from("users").select("email").eq("id", userId).maybeSingle();
+  if (!authUsersRes.error) {
+    const email = typeof authUsersRes.data?.email === "string" ? authUsersRes.data.email.toLowerCase() : null;
+    if (email) return { email, error: null };
+  }
+
+  const adminRes = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (adminRes.error) return { email: null, error: authUsersRes.error ?? adminRes.error };
+
+  return {
+    email: typeof adminRes.data?.user?.email === "string" ? adminRes.data.user.email.toLowerCase() : null,
+    error: null,
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -36,14 +52,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const { data: authUser, error: authErr } = await supabaseAdmin.auth.admin.getUserById(profile.id);
-    if (authErr || !authUser?.user?.email) {
+    const authUser = await fetchAuthEmailByUserId(supabaseAdmin, String(profile.id));
+    if (authUser.error || !authUser.email) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    return NextResponse.json({ email: authUser.user.email.toLowerCase() });
+    return NextResponse.json({ email: authUser.email });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
-
