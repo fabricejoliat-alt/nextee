@@ -125,6 +125,11 @@ type GolfHoleRow = {
   fairway_hit: boolean | null;
 };
 
+type TrainingVolumeSummarySnapshot = {
+  current: { minutes: number; count: number };
+  previous: { minutes: number; count: number };
+};
+
 type OmTournamentScoreRow = {
   round_id: string;
   score_gross: number | null;
@@ -539,13 +544,6 @@ function initials(p?: ProfileLite | null) {
   return fi + li || "👤";
 }
 
-function eventStartKey(iso: string | null | undefined) {
-  if (!iso) return "";
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return "";
-  return new Date(ms).toISOString().slice(0, 16);
-}
-
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -567,7 +565,7 @@ export default function GolfDashboardPage() {
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [preset, setPreset] = useState<Preset>("all");
+  const [preset, setPreset] = useState<Preset>("month");
   const [customOpen, setCustomOpen] = useState(false);
 
   const [fromDate, setFromDate] = useState<string>("");
@@ -577,10 +575,10 @@ export default function GolfDashboardPage() {
   const [items, setItems] = useState<TrainingItemRow[]>([]);
 
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
-  const [clubEventDurationById, setClubEventDurationById] = useState<Record<string, number>>({});
-  const [clubEventDurationByStartKey, setClubEventDurationByStartKey] = useState<Record<string, number>>({});
+  const [prevItems, setPrevItems] = useState<TrainingItemRow[]>([]);
   const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
   const [prevPlannedClubMinutes, setPrevPlannedClubMinutes] = useState<number>(0);
+  const [plannedClubEventsCount, setPlannedClubEventsCount] = useState<number>(0);
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
@@ -631,6 +629,7 @@ export default function GolfDashboardPage() {
   const [trainingVolumeLevelFromDb, setTrainingVolumeLevelFromDb] = useState<string | null>(null);
   const [trainingVolumeObjectiveFromDb, setTrainingVolumeObjectiveFromDb] = useState<number | null>(null);
   const [trainingVolumeMotivationFromDb, setTrainingVolumeMotivationFromDb] = useState<string | null>(null);
+  const [trainingVolumeSummary, setTrainingVolumeSummary] = useState<TrainingVolumeSummarySnapshot | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -717,9 +716,13 @@ export default function GolfDashboardPage() {
   const shouldLoadRoundData = canLoadData && (activeSection === "competition" || activeSection === "stats");
 
   useEffect(() => {
-    setFromDate("");
-    setToDate("");
-    setPreset("all");
+    const now = new Date();
+    const { start, end } = monthRangeLocal(now);
+    const endInclusive = new Date(end);
+    endInclusive.setDate(endInclusive.getDate() - 1);
+    setFromDate(isoToYMD(start));
+    setToDate(isoToYMD(endInclusive));
+    setPreset("month");
   }, []);
 
   useEffect(() => {
@@ -965,10 +968,12 @@ export default function GolfDashboardPage() {
     (async () => {
       if (!shouldLoadTrainingData) {
         setPrevSessions([]);
+        setPrevItems([]);
         return;
       }
       if (!prevRange) {
         setPrevSessions([]);
+        setPrevItems([]);
         return;
       }
 
@@ -987,9 +992,22 @@ export default function GolfDashboardPage() {
         const res = await q;
         if (res.error) throw new Error(res.error.message);
 
-        setPrevSessions((res.data ?? []) as TrainingSessionRow[]);
+        const sess = (res.data ?? []) as TrainingSessionRow[];
+        setPrevSessions(sess);
+
+        const ids = sess.map((s) => s.id);
+        if (ids.length === 0) {
+          setPrevItems([]);
+          return;
+        }
+
+        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
+        if (iRes.error) throw new Error(iRes.error.message);
+
+        setPrevItems((iRes.data ?? []) as TrainingItemRow[]);
       } catch {
         setPrevSessions([]);
+        setPrevItems([]);
       } finally {
         setLoadingPrev(false);
       }
@@ -998,107 +1016,9 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     (async () => {
-      if (!shouldLoadTrainingData) {
-        setClubEventDurationById({});
-        setClubEventDurationByStartKey({});
-        return;
-      }
-      const ids = Array.from(
-        new Set(
-          [...sessions, ...prevSessions]
-            .filter((s) => s.session_type === "club")
-            .map((s) => s.club_event_id)
-            .filter((v): v is string => Boolean(v))
-        )
-      );
-      if (ids.length === 0) {
-        setClubEventDurationById({});
-        setClubEventDurationByStartKey({});
-        return;
-      }
-      const res = await supabase
-        .from("club_events")
-        .select("id,duration_minutes,starts_at,ends_at")
-        .in("id", ids);
-      if (res.error) {
-        setClubEventDurationById({});
-        setClubEventDurationByStartKey({});
-        return;
-      }
-      const map: Record<string, number> = {};
-      const byStartKey: Record<string, number> = {};
-      (res.data ?? []).forEach(
-        (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
-        if (!row?.id) return;
-        const mins = Number(row.duration_minutes ?? 0);
-          if (Number.isFinite(mins) && mins > 0) {
-            map[row.id] = mins;
-            const key = eventStartKey(row.starts_at);
-            if (key) byStartKey[key] = mins;
-            return;
-          }
-          if (row.starts_at && row.ends_at) {
-            const startMs = new Date(row.starts_at).getTime();
-            const endMs = new Date(row.ends_at).getTime();
-            const diff = Math.round((endMs - startMs) / 60000);
-            map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-            const key = eventStartKey(row.starts_at);
-            if (key) byStartKey[key] = map[row.id];
-            return;
-          }
-          map[row.id] = 0;
-        }
-      );
-      const missingClubSessions = [...sessions, ...prevSessions].filter((s) => s.session_type === "club" && !s.club_event_id);
-      if (missingClubSessions.length > 0 && playerId) {
-        const attendeeRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id")
-          .eq("player_id", playerId)
-          .eq("status", "present");
-        const attendeeEventIds = Array.from(
-          new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-        );
-        if (attendeeEventIds.length > 0) {
-          const starts = missingClubSessions.map((s) => new Date(s.start_at).getTime()).filter((v) => Number.isFinite(v));
-          const minMs = starts.length > 0 ? Math.min(...starts) : null;
-          const maxMs = starts.length > 0 ? Math.max(...starts) : null;
-          if (minMs != null && maxMs != null) {
-            const fallbackRes = await supabase
-              .from("club_events")
-              .select("starts_at,ends_at,duration_minutes")
-              .in("id", attendeeEventIds)
-              .gte("starts_at", new Date(minMs - 60_000).toISOString())
-              .lt("starts_at", new Date(maxMs + 60_000).toISOString());
-            if (!fallbackRes.error) {
-              (fallbackRes.data ?? []).forEach(
-                (row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-                  const key = eventStartKey(row.starts_at);
-                  if (!key || byStartKey[key] > 0) return;
-                  const mins = Number(row.duration_minutes ?? 0);
-                  if (Number.isFinite(mins) && mins > 0) {
-                    byStartKey[key] = mins;
-                    return;
-                  }
-                  if (row.starts_at && row.ends_at) {
-                    const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-                    byStartKey[key] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-                  }
-                }
-              );
-            }
-          }
-        }
-      }
-      setClubEventDurationById(map);
-      setClubEventDurationByStartKey(byStartKey);
-    })();
-  }, [shouldLoadTrainingData, sessions, prevSessions, playerId]);
-
-  useEffect(() => {
-    (async () => {
       if (!shouldLoadTrainingData || !playerId) {
         setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
         return;
       }
       const attendeeRes = await supabase
@@ -1111,6 +1031,7 @@ export default function GolfDashboardPage() {
       );
       if (attendeeEventIds.length === 0) {
         setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
         return;
       }
       let q = supabase
@@ -1125,8 +1046,10 @@ export default function GolfDashboardPage() {
       const res = await q;
       if (res.error) {
         setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
         return;
       }
+      setPlannedClubEventsCount((res.data ?? []).length);
       const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
         const mins = Number(row.duration_minutes ?? 0);
         if (Number.isFinite(mins) && mins > 0) return sum + mins;
@@ -1461,16 +1384,33 @@ function presetToSelectValue(p: Preset): Preset {
     );
   }, [trainingScope, prevSessions, coachId, sharedClubIds]);
 
+  const filteredPrevSessionIds = useMemo(
+    () => new Set(filteredPrevSessions.map((s) => s.id)),
+    [filteredPrevSessions]
+  );
+
+  const filteredPrevItems = useMemo(
+    () => prevItems.filter((it) => filteredPrevSessionIds.has(it.session_id)),
+    [prevItems, filteredPrevSessionIds]
+  );
+
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(
     () => {
-      if (isPerformanceEnabled) return filteredSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-      const nonClubEffective = filteredSessions
-        .filter((s) => s.session_type !== "club")
-        .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-      return plannedClubMinutes + nonClubEffective;
+      if (trainingVolumeSummary) return trainingVolumeSummary.current.minutes;
+      if (isPerformanceEnabled) return filteredItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
+      return plannedClubMinutes;
     },
-    [isPerformanceEnabled, filteredSessions, plannedClubMinutes]
+    [trainingVolumeSummary, isPerformanceEnabled, filteredItems, plannedClubMinutes]
+  );
+  const displayedTrainingCount = useMemo(
+    () =>
+      trainingVolumeSummary
+        ? trainingVolumeSummary.current.count
+        : isPerformanceEnabled
+          ? filteredSessions.length
+          : plannedClubEventsCount,
+    [trainingVolumeSummary, isPerformanceEnabled, filteredSessions.length, plannedClubEventsCount]
   );
   const trainingLevel = trainingVolumeLevelFromDb ?? "—";
   const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
@@ -1533,10 +1473,16 @@ function presetToSelectValue(p: Preset): Preset {
   const avgSatisfaction = useMemo(() => avg(filteredSessions.map((s) => s.satisfaction)), [filteredSessions]);
 
   const byType = useMemo(() => {
+    if (!isPerformanceEnabled) {
+      const clubCount = trainingVolumeSummary
+        ? trainingVolumeSummary.current.count
+        : plannedClubEventsCount;
+      return { club: clubCount, private: 0, individual: 0 } satisfies Record<SessionType, number>;
+    }
     const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
     for (const s of filteredSessions) m[s.session_type] += 1;
     return m;
-  }, [filteredSessions]);
+  }, [isPerformanceEnabled, trainingVolumeSummary, plannedClubEventsCount, filteredSessions]);
 
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};
@@ -1557,15 +1503,66 @@ function presetToSelectValue(p: Preset): Preset {
 
   const prevTotalMinutes = useMemo(
     () => {
-      if (isPerformanceEnabled) return filteredPrevSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-      const nonClubEffective = filteredPrevSessions
-        .filter((s) => s.session_type !== "club")
-        .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-      return prevPlannedClubMinutes + nonClubEffective;
+      if (trainingVolumeSummary) return trainingVolumeSummary.previous.minutes;
+      if (isPerformanceEnabled) return filteredPrevItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
+      return prevPlannedClubMinutes;
     },
-    [isPerformanceEnabled, filteredPrevSessions, prevPlannedClubMinutes]
+    [trainingVolumeSummary, isPerformanceEnabled, filteredPrevItems, prevPlannedClubMinutes]
   );
-  const prevCount = useMemo(() => filteredPrevSessions.length, [filteredPrevSessions]);
+  useEffect(() => {
+    (async () => {
+      if (!shouldLoadTrainingData || !playerId) {
+        setTrainingVolumeSummary(null);
+        return;
+      }
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token ?? "";
+        if (!token) {
+          setTrainingVolumeSummary(null);
+          return;
+        }
+
+        const params = new URLSearchParams();
+        params.set("scope", trainingScope);
+        if (fromDate) params.set("from", fromDate);
+        if (toDate) params.set("to", toDate);
+        if (prevRange?.from) params.set("prev_from", prevRange.from);
+        if (prevRange?.to) params.set("prev_to", prevRange.to);
+
+        const res = await fetch(
+          `/api/coach/players/${encodeURIComponent(playerId)}/training-volume-summary?${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setTrainingVolumeSummary(null);
+          return;
+        }
+
+        const currentMinutes = Number(json?.current?.minutes);
+        const currentCount = Number(json?.current?.count);
+        const previousMinutes = Number(json?.previous?.minutes);
+        const previousCount = Number(json?.previous?.count);
+
+        setTrainingVolumeSummary({
+          current: {
+            minutes: Number.isFinite(currentMinutes) ? currentMinutes : 0,
+            count: Number.isFinite(currentCount) ? currentCount : 0,
+          },
+          previous: {
+            minutes: Number.isFinite(previousMinutes) ? previousMinutes : 0,
+            count: Number.isFinite(previousCount) ? previousCount : 0,
+          },
+        });
+      } catch {
+        setTrainingVolumeSummary(null);
+      }
+    })();
+  }, [shouldLoadTrainingData, playerId, trainingScope, fromDate, toDate, prevRange?.from, prevRange?.to]);
   const prevAvgMotivation = useMemo(() => avg(filteredPrevSessions.map((s) => s.motivation)), [filteredPrevSessions]);
   const prevAvgDifficulty = useMemo(() => avg(filteredPrevSessions.map((s) => s.difficulty)), [filteredPrevSessions]);
   const prevAvgSatisfaction = useMemo(
@@ -1576,10 +1573,6 @@ function presetToSelectValue(p: Preset): Preset {
   const deltaMinutes = useMemo(
     () => (prevRange ? totalMinutes - prevTotalMinutes : null),
     [prevRange, totalMinutes, prevTotalMinutes]
-  );
-  const deltaCount = useMemo(
-    () => (prevRange ? filteredSessions.length - prevCount : null),
-    [prevRange, filteredSessions.length, prevCount]
   );
   const deltaMot = useMemo(() => {
     if (!prevRange) return null;
@@ -3734,7 +3727,7 @@ function presetToSelectValue(p: Preset): Preset {
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                        <span className="pill-soft">⛳ {filteredSessions.length} {t("golfDashboard.sessions")}</span>
+                        <span className="pill-soft">⛳ {displayedTrainingCount} {t("golfDashboard.sessions")}</span>
                       </div>
 
                       {trainingVolumeObjective > 0 ? (

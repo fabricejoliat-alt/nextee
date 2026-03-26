@@ -659,13 +659,10 @@ export default function PlayerHomePage() {
 
   const monthEffectiveMinutes = useMemo(() => {
     if (isPerformanceEnabled) {
-      return monthSessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
+      return monthItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
     }
-    const nonClubEffective = monthSessions
-      .filter((s) => effectiveHomeSessionType(s) !== "club")
-      .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-    return monthPlannedClubMinutes + nonClubEffective;
-  }, [isPerformanceEnabled, monthSessions, monthPlannedClubMinutes]);
+    return monthPlannedClubMinutes;
+  }, [isPerformanceEnabled, monthItems, monthPlannedClubMinutes]);
 
   const trainingsSummary = useMemo(() => {
     const totalMinutes = monthEffectiveMinutes;
@@ -1216,7 +1213,7 @@ export default function PlayerHomePage() {
         .from("club_event_attendees")
         .select("event_id,status")
         .eq("player_id", effectiveUid)
-        .in("status", ["expected", "present", "excused"])
+        .in("status", ["expected", "present", "absent", "excused"])
         .limit(2000);
       const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
       const attendeeEventIds = new Set<string>();
@@ -1757,7 +1754,7 @@ export default function PlayerHomePage() {
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">{pickLocaleText(locale, "Prochaine activité", "Upcoming activity")}</div>
+          <div className="section-title">{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</div>
 
           <div className="glass-card">
             {upcomingLoading ? (
@@ -1791,12 +1788,8 @@ export default function PlayerHomePage() {
                   const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                   const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
                   const isTraining = e.event_type === "training";
-                  const isCollapsedTraining = isAttendanceEvent && attendanceStatus === "absent";
                   const eventStructure = eventStructureByEventId[e.id] ?? [];
-                  const showEventStructure =
-                    isAttendanceEvent &&
-                    attendanceStatus !== "absent" &&
-                    eventStructure.length > 0;
+                  const showEventStructure = isAttendanceEvent && eventStructure.length > 0;
                   let eventTitle = eventType;
                   const customName = (e.title ?? "").trim();
                   if (e.event_type === "training") {
@@ -1846,67 +1839,63 @@ export default function PlayerHomePage() {
                             {eventTitle}
                           </div>
                         </div>
-                        {isAttendanceEvent && !isCollapsedTraining ? (
+                        {isAttendanceEvent ? (
                           <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
                             {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                           </div>
                         ) : null}
                       </div>
 
-                      {!isCollapsedTraining ? (
-                        <>
-                          {e.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                              📍 {e.location_text}
-                            </div>
-                          ) : null}
-                          {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
-                          {showEventStructure ? (
-                            <div style={{ display: "grid", gap: 8 }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                                {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
-                              </div>
-                              <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                                {eventStructure.map((p, i) => {
-                                  const extra = (p.note ?? "").trim();
-                                  return (
-                                    <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                      {activityCategoryLabel(p.category)} — {p.minutes} min
-                                      {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {e.event_type === "training" ? (
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
-                                {pickLocaleText(locale, "Détails", "Details")}
+                      {e.location_text ? (
+                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                          📍 {e.location_text}
+                        </div>
+                      ) : null}
+                      {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
+                      {showEventStructure ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                            {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                            {eventStructure.map((p, i) => {
+                              const extra = (p.note ?? "").trim();
+                              return (
+                                <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                                  {activityCategoryLabel(p.category)} — {p.minutes} min
+                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {e.event_type === "training" ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                          <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
+                            {pickLocaleText(locale, "Détails", "Details")}
+                          </Link>
+                          {(() => {
+                            const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
+                            return (
+                              <Link
+                                className="btn"
+                                href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
+                                title={pickLocaleText(locale, "Messagerie", "Messages")}
+                                aria-label={pickLocaleText(locale, "Ouvrir la page de l'activité", "Open activity page")}
+                              >
+                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                {pickLocaleText(locale, "Messagerie", "Messages")}
+                                <MessageCountBadge
+                                  messageCount={badge.message_count ?? 0}
+                                  unreadCount={badge.unread_count ?? 0}
+                                  showZero
+                                  style={{ marginLeft: 6 }}
+                                />
                               </Link>
-                              {(() => {
-                                const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-                                return (
-                                  <Link
-                                    className="btn"
-                                    href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
-                                    title={pickLocaleText(locale, "Messagerie", "Messages")}
-                                    aria-label={pickLocaleText(locale, "Ouvrir la page de l'activité", "Open activity page")}
-                                  >
-                                    <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                    {pickLocaleText(locale, "Messagerie", "Messages")}
-                                    <MessageCountBadge
-                                      messageCount={badge.message_count ?? 0}
-                                      unreadCount={badge.unread_count ?? 0}
-                                      showZero
-                                      style={{ marginLeft: 6 }}
-                                    />
-                                  </Link>
-                                );
-                              })()}
-                            </div>
-                          ) : null}
-                        </>
+                            );
+                          })()}
+                        </div>
                       ) : null}
                     </div>
                   );

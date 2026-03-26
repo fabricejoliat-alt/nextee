@@ -518,13 +518,6 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
   return score - putts <= par - 2;
 }
 
-function eventStartKey(iso: string | null | undefined) {
-  if (!iso) return "";
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return "";
-  return new Date(ms).toISOString().slice(0, 16);
-}
-
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -554,8 +547,8 @@ export default function GolfDashboardPage() {
   const [items, setItems] = useState<TrainingItemRow[]>([]);
 
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
-  const [clubEventDurationById, setClubEventDurationById] = useState<Record<string, number>>({});
-  const [clubEventDurationByStartKey, setClubEventDurationByStartKey] = useState<Record<string, number>>({});
+  const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
+  const [plannedClubEventsCount, setPlannedClubEventsCount] = useState<number>(0);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
@@ -1300,102 +1293,65 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const ids = Array.from(
+      if (!effectivePlayerId) {
+        setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
+        return;
+      }
+
+      const attendeeRes = await supabase
+        .from("club_event_attendees")
+        .select("event_id")
+        .eq("player_id", effectivePlayerId)
+        .eq("status", "present");
+
+      const attendeeEventIds = Array.from(
         new Set(
-          [...sessions, ...prevSessions]
-            .filter((s) => s.session_type === "club")
-            .map((s) => s.club_event_id)
+          ((attendeeRes.data ?? []) as Array<{ event_id: string | null }>)
+            .map((r) => r.event_id)
             .filter((v): v is string => Boolean(v))
         )
       );
-      if (ids.length === 0) {
-        setClubEventDurationById({});
-        setClubEventDurationByStartKey({});
+
+      if (attendeeEventIds.length === 0) {
+        setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
         return;
       }
-      const res = await supabase
+
+      let q = supabase
         .from("club_events")
-        .select("id,duration_minutes,starts_at,ends_at")
-        .in("id", ids);
+        .select("id,starts_at,ends_at,duration_minutes,status")
+        .in("id", attendeeEventIds)
+        .neq("status", "cancelled")
+        .lt("starts_at", new Date().toISOString());
+
+      if (fromDate) q = q.gte("starts_at", startOfDayISO(fromDate));
+      if (toDate) q = q.lt("starts_at", nextDayStartISO(toDate));
+
+      const res = await q;
       if (res.error) {
-        setClubEventDurationById({});
-        setClubEventDurationByStartKey({});
+        setPlannedClubMinutes(0);
+        setPlannedClubEventsCount(0);
         return;
       }
-      const map: Record<string, number> = {};
-      const byStartKey: Record<string, number> = {};
-      (res.data ?? []).forEach(
-        (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
-        if (!row?.id) return;
-        const mins = Number(row.duration_minutes ?? 0);
-          if (Number.isFinite(mins) && mins > 0) {
-            map[row.id] = mins;
-            const key = eventStartKey(row.starts_at);
-            if (key) byStartKey[key] = mins;
-            return;
-          }
+
+      setPlannedClubEventsCount((res.data ?? []).length);
+      const total = (res.data ?? []).reduce(
+        (sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
+          const mins = Number(row.duration_minutes ?? 0);
+          if (Number.isFinite(mins) && mins > 0) return sum + mins;
           if (row.starts_at && row.ends_at) {
-            const startMs = new Date(row.starts_at).getTime();
-            const endMs = new Date(row.ends_at).getTime();
-            const diff = Math.round((endMs - startMs) / 60000);
-            map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-            const key = eventStartKey(row.starts_at);
-            if (key) byStartKey[key] = map[row.id];
-            return;
+            const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
+            return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
           }
-          map[row.id] = 0;
-        }
+          return sum;
+        },
+        0
       );
-      const missingClubSessions = [...sessions, ...prevSessions].filter((s) => s.session_type === "club" && !s.club_event_id);
-      if (missingClubSessions.length > 0) {
-        if (!effectivePlayerId) {
-          setClubEventDurationById(map);
-          setClubEventDurationByStartKey(byStartKey);
-          return;
-        }
-        const attendeeRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id")
-          .eq("player_id", effectivePlayerId)
-          .eq("status", "present");
-        const attendeeEventIds = Array.from(
-          new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-        );
-        if (attendeeEventIds.length > 0) {
-          const starts = missingClubSessions.map((s) => new Date(s.start_at).getTime()).filter((v) => Number.isFinite(v));
-          const minMs = starts.length > 0 ? Math.min(...starts) : null;
-          const maxMs = starts.length > 0 ? Math.max(...starts) : null;
-          if (minMs != null && maxMs != null) {
-            const fallbackRes = await supabase
-              .from("club_events")
-              .select("starts_at,ends_at,duration_minutes")
-              .in("id", attendeeEventIds)
-              .gte("starts_at", new Date(minMs - 60_000).toISOString())
-              .lt("starts_at", new Date(maxMs + 60_000).toISOString());
-            if (!fallbackRes.error) {
-              (fallbackRes.data ?? []).forEach(
-                (row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-                  const key = eventStartKey(row.starts_at);
-                  if (!key || byStartKey[key] > 0) return;
-                  const mins = Number(row.duration_minutes ?? 0);
-                  if (Number.isFinite(mins) && mins > 0) {
-                    byStartKey[key] = mins;
-                    return;
-                  }
-                  if (row.starts_at && row.ends_at) {
-                    const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-                    byStartKey[key] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-                  }
-                }
-              );
-            }
-          }
-        }
-      }
-      setClubEventDurationById(map);
-      setClubEventDurationByStartKey(byStartKey);
+      setPlannedClubMinutes(total);
     })();
-  }, [effectivePlayerId, sessions, prevSessions]);
+  }, [effectivePlayerId, fromDate, toDate]);
 
   const shouldLoadRoundStats = activeSection === "stats" || activeSection === "rounds";
   const shouldLoadTrainLookback = activeSection === "stats" && isPerformanceEnabled;
@@ -1459,7 +1415,7 @@ export default function GolfDashboardPage() {
           return;
         }
 
-        let q = supabase
+        const q = supabase
           .from("golf_rounds")
           .select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus")
           .eq("user_id", effectivePlayerId)
@@ -1623,24 +1579,15 @@ function presetToSelectValue(p: Preset): Preset {
     if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
     return pickLocaleText(locale, "Mon volume d'entraînement", "Training volume");
   }, [locale, preset]);
-  const plannedClubMinutes = useMemo(() => {
-    return sessions
-      .filter((s) => s.session_type === "club")
-      .reduce((sum, s) => {
-        const byEventId = s.club_event_id ? Number(clubEventDurationById[s.club_event_id] ?? 0) : 0;
-        if (Number.isFinite(byEventId) && byEventId > 0) return sum + byEventId;
-        const byStart = Number(clubEventDurationByStartKey[eventStartKey(s.start_at)] ?? 0);
-        return sum + (Number.isFinite(byStart) && byStart > 0 ? byStart : 0);
-      }, 0);
-  }, [sessions, clubEventDurationById, clubEventDurationByStartKey]);
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(() => {
-    if (isPerformanceEnabled) return sessions.reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-    const nonClubEffective = sessions
-      .filter((s) => s.session_type !== "club")
-      .reduce((sum, s) => sum + (s.total_minutes || 0), 0);
-    return plannedClubMinutes + nonClubEffective;
-  }, [isPerformanceEnabled, sessions, plannedClubMinutes]);
+    if (isPerformanceEnabled) return items.reduce((sum, it) => sum + (it.minutes || 0), 0);
+    return plannedClubMinutes;
+  }, [isPerformanceEnabled, items, plannedClubMinutes]);
+  const displayedTrainingCount = useMemo(
+    () => (isPerformanceEnabled ? sessions.length : plannedClubEventsCount),
+    [isPerformanceEnabled, sessions.length, plannedClubEventsCount]
+  );
   const trainingVolumeTarget = useMemo(
     () => pickTrainingVolumeTarget(playerHandicap, trainingVolumeRows),
     [playerHandicap, trainingVolumeRows]
@@ -1677,10 +1624,13 @@ function presetToSelectValue(p: Preset): Preset {
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
 
   const byType = useMemo(() => {
+    if (!isPerformanceEnabled) {
+      return { club: plannedClubEventsCount, private: 0, individual: 0 } satisfies Record<SessionType, number>;
+    }
     const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
     for (const s of sessions) m[s.session_type] += 1;
     return m;
-  }, [sessions]);
+  }, [isPerformanceEnabled, sessions, plannedClubEventsCount]);
 
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};
@@ -2861,7 +2811,7 @@ function presetToSelectValue(p: Preset): Preset {
                         </div>
                       ) : null}
                       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span className="pill-soft">⛳ {sessions.length} {t("golfDashboard.sessions")}</span>
+                        <span className="pill-soft">⛳ {displayedTrainingCount} {t("golfDashboard.sessions")}</span>
                         {showMonthlyObjective && trainingVolumeGoalReached ? (
                           <span className="pill-soft" style={{ background: "rgba(47,125,79,0.14)", color: "rgba(16,94,51,1)", fontWeight: 950 }}>
                             {pickLocaleText(locale, "Objectif atteint", "Goal reached")}

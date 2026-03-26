@@ -134,7 +134,9 @@ export async function resolveCoachPlayerAccess(
   return {
     sharedClubIds,
     isManagerForSharedClub: false,
-    canAccessSensitiveSections: sharedGroupIds.length > 0 || sharedEventIds.length > 0,
+    // Sensitive player-wide sections are reserved to coaches who actually
+    // coach the player via a shared group, not just a shared historical event.
+    canAccessSensitiveSections: sharedGroupIds.length > 0,
     sharedGroupIds,
     sharedEventIds,
   };

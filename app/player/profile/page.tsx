@@ -89,6 +89,10 @@ function normalizeDisplayEmail(raw: string | null | undefined) {
   return email;
 }
 
+function normalizeEmailInput(raw: string | null | undefined) {
+  return String(raw ?? "").trim().toLowerCase();
+}
+
 function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
   if (rawValue == null || rawValue === "") return "—";
   if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
@@ -362,6 +366,16 @@ export default function PlayerProfilePage() {
     setError(null);
     setInfo(null);
 
+    const authUserRes = await supabase.auth.getUser();
+    const currentEmail = normalizeDisplayEmail(authUserRes.data.user?.email);
+    const nextEmail = normalizeEmailInput(email);
+
+    if (nextEmail && !nextEmail.includes("@")) {
+      setError("Adresse e-mail invalide.");
+      setBusy(false);
+      return;
+    }
+
     const hc = parseHandicap();
     const isApHandicap = handicap.trim().toUpperCase() === "AP";
     if (viewerRole === "player" && handicap.trim() !== "" && hc === null && !isApHandicap) {
@@ -396,6 +410,26 @@ export default function PlayerProfilePage() {
       setError(error.message);
       setBusy(false);
       return;
+    }
+
+    if (nextEmail && nextEmail !== currentEmail) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      const emailRes = await fetch("/api/auth/update-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: nextEmail }),
+      });
+      const emailJson = await emailRes.json().catch(() => ({}));
+      if (!emailRes.ok) {
+        setError(String(emailJson?.error ?? "Erreur mise à jour e-mail"));
+        setBusy(false);
+        return;
+      }
+      setEmail(nextEmail);
     }
 
     const { data: sessionData } = await supabase.auth.getSession();
@@ -799,7 +833,14 @@ export default function PlayerProfilePage() {
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
-                    <StaticField label={t("playerProfile.emailLogin")} value={email} />
+                    <Field label={t("playerProfile.emailLogin")}>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        autoComplete="email"
+                      />
+                    </Field>
                   </div>
 
                   {viewerRole === "parent" ? (

@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
         .from("club_event_attendees")
         .select("event_id,status")
         .eq("player_id", effectiveUserId)
-        .in("status", ["expected", "present", "excused"]),
+        .in("status", ["expected", "present", "absent", "excused"]),
       supabaseAdmin
         .from("player_activity_events")
         .select("id,event_type,title,starts_at,ends_at,location_text,status")

@@ -47,9 +47,60 @@ export async function GET(
         .map((row) => String(row.event_id ?? ""))
         .filter(Boolean)
     );
-    if (attendeeEventIds.size === 0) return NextResponse.json({ events: [] });
+    const campEventIds = candidateEvents
+      .filter((event: any) => String(event.event_type ?? "") === "camp")
+      .map((event: any) => String(event.id ?? ""))
+      .filter(Boolean);
 
-    const events = candidateEvents.filter((event: any) => attendeeEventIds.has(String(event.id ?? ""))).slice(0, 100);
+    const registeredCampEventIds = new Set<string>();
+    if (campEventIds.length > 0) {
+      const campDaysRes = await supabaseAdmin
+        .from("club_camp_days")
+        .select("camp_id,event_id")
+        .in("event_id", campEventIds)
+        .limit(300);
+      if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+
+      const campIdByEventId = new Map<string, string>();
+      for (const row of (campDaysRes.data ?? []) as Array<{ camp_id: string | null; event_id: string | null }>) {
+        const eventId = String(row.event_id ?? "").trim();
+        const campId = String(row.camp_id ?? "").trim();
+        if (!eventId || !campId) continue;
+        campIdByEventId.set(eventId, campId);
+      }
+
+      const campIds = Array.from(new Set(Array.from(campIdByEventId.values())));
+      if (campIds.length > 0) {
+        const campPlayersRes = await supabaseAdmin
+          .from("club_camp_players")
+          .select("camp_id,registration_status")
+          .eq("player_id", playerId)
+          .in("camp_id", campIds)
+          .limit(300);
+        if (campPlayersRes.error) return NextResponse.json({ error: campPlayersRes.error.message }, { status: 400 });
+
+        const registeredCampIds = new Set(
+          ((campPlayersRes.data ?? []) as Array<{ camp_id: string | null; registration_status: string | null }>)
+            .filter((row) => String(row.registration_status ?? "").trim() === "registered")
+            .map((row) => String(row.camp_id ?? "").trim())
+            .filter(Boolean)
+        );
+
+        for (const [eventId, campId] of campIdByEventId.entries()) {
+          if (registeredCampIds.has(campId)) registeredCampEventIds.add(eventId);
+        }
+      }
+    }
+
+    const events = candidateEvents
+      .filter((event: any) => {
+        const eventId = String(event.id ?? "");
+        const eventType = String(event.event_type ?? "");
+        if (eventType === "camp") return registeredCampEventIds.has(eventId);
+        return attendeeEventIds.has(eventId);
+      })
+      .slice(0, 100);
+    if (events.length === 0) return NextResponse.json({ events: [] });
     const groupIds = Array.from(new Set(events.map((e: any) => String(e.group_id ?? "")).filter(Boolean)));
     const clubIds = Array.from(new Set(events.map((e: any) => String(e.club_id ?? "")).filter(Boolean)));
 
