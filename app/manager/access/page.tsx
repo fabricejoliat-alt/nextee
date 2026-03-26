@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -14,6 +16,7 @@ type JuniorAccessRow = {
   player_consent_status: "granted" | "pending" | "adult" | null;
   junior_status: "not_ready" | "ready" | "sent" | "activated" | "error";
   junior_last_sent_at: string | null;
+  junior_last_activity_at?: string | null;
   junior_send_count: number;
 };
 type ParentAccessRow = {
@@ -23,6 +26,7 @@ type ParentAccessRow = {
   parent_email: string | null;
   parent_status: "not_ready" | "ready" | "sent" | "activated" | "error";
   parent_last_sent_at: string | null;
+  parent_last_activity_at?: string | null;
   parent_send_count: number;
   linked_juniors: JuniorAccessRow[];
 };
@@ -200,6 +204,7 @@ function defaultMailConfig(): PageData["mail_config"] {
 }
 
 export default function ManagerAccessPage() {
+  const searchParams = useSearchParams();
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [clubId, setClubId] = useState("");
   const [data, setData] = useState<PageData | null>(null);
@@ -212,6 +217,12 @@ export default function ManagerAccessPage() {
   const [savingMailConfig, setSavingMailConfig] = useState(false);
   const [mailPreview, setMailPreview] = useState<MailPreviewState>(null);
   const [portalReady, setPortalReady] = useState(false);
+  const [handledPreviewKey, setHandledPreviewKey] = useState("");
+
+  const requestedClubId = searchParams.get("clubId");
+  const requestedPreview = searchParams.get("preview");
+  const requestedParentUserId = searchParams.get("parentUserId");
+  const requestedJuniorUserId = searchParams.get("juniorUserId");
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -256,9 +267,9 @@ export default function ManagerAccessPage() {
       try {
         const list = await loadClubs();
         setClubs(list);
-        const first = list[0]?.id ?? "";
-        setClubId(first);
-        if (first) await loadPage(first);
+        const preferredClubId = (requestedClubId && list.find((club) => club.id === requestedClubId)?.id) ?? list[0]?.id ?? "";
+        setClubId(preferredClubId);
+        if (preferredClubId) await loadPage(preferredClubId);
         else setLoading(false);
       } catch (e: any) {
         setError(e?.message ?? "Impossible de charger les clubs");
@@ -266,13 +277,19 @@ export default function ManagerAccessPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestedClubId]);
 
   useEffect(() => {
     if (!clubId) return;
     void loadPage(clubId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
+
+  useEffect(() => {
+    if (!requestedClubId || clubs.length === 0 || requestedClubId === clubId) return;
+    if (!clubs.some((club) => club.id === requestedClubId)) return;
+    setClubId(requestedClubId);
+  }, [requestedClubId, clubs, clubId]);
 
   useEffect(() => {
     setPortalReady(true);
@@ -351,7 +368,7 @@ export default function ManagerAccessPage() {
     }
   }
 
-  function openParentPreview(row: ParentAccessRow) {
+  const openParentPreview = useCallback((row: ParentAccessRow) => {
     if (!data) return;
     const previewConfig = mailConfig ?? data.mail_config ?? defaultMailConfig();
     const variables = {
@@ -374,9 +391,9 @@ export default function ManagerAccessPage() {
       kind: "parent_access",
       parentUserId: row.parent_user_id,
     });
-  }
+  }, [data, mailConfig]);
 
-  function openJuniorPreview(row: ParentAccessRow, junior: JuniorAccessRow) {
+  const openJuniorPreview = useCallback((row: ParentAccessRow, junior: JuniorAccessRow) => {
     if (!data) return;
     const previewConfig = mailConfig ?? data.mail_config ?? defaultMailConfig();
     const variables = {
@@ -400,7 +417,29 @@ export default function ManagerAccessPage() {
       parentUserId: row.parent_user_id,
       juniorUserId: junior.junior_user_id,
     });
-  }
+  }, [data, mailConfig]);
+
+  useEffect(() => {
+    if (!data || !clubId || !requestedPreview || !requestedParentUserId) return;
+    const previewKey = `${clubId}|${requestedPreview}|${requestedParentUserId}|${requestedJuniorUserId ?? ""}`;
+    if (handledPreviewKey === previewKey) return;
+
+    const parent = data.parents.find((row) => row.parent_user_id === requestedParentUserId);
+    if (!parent) return;
+
+    if (requestedPreview === "parent_access") {
+      openParentPreview(parent);
+      setHandledPreviewKey(previewKey);
+      return;
+    }
+
+    if (requestedPreview === "junior_access" && requestedJuniorUserId) {
+      const junior = parent.linked_juniors.find((row) => row.junior_user_id === requestedJuniorUserId);
+      if (!junior) return;
+      openJuniorPreview(parent, junior);
+      setHandledPreviewKey(previewKey);
+    }
+  }, [data, clubId, requestedPreview, requestedParentUserId, requestedJuniorUserId, handledPreviewKey]);
 
   const filteredParents = useMemo(() => {
     const q = search.trim().toLowerCase();

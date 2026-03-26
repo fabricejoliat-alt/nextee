@@ -5,11 +5,16 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, MessageCircle, Mail, Tent } from "lucide-react";
+import { User, LogOut, X, ShieldCheck, Link2, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, MessageCircle, Mail, Tent, Users } from "lucide-react";
 
 const ROUTES = {
   home: "/manager",
-  users: "/manager/users",
+  userManagementPlayers: "/manager/user-management/players",
+  userManagementParents: "/manager/user-management/parents",
+  userManagementCoaches: "/manager/user-management/coaches",
+  userManagementManagers: "/manager/user-management/managers",
+  userManagementCustomFields: "/manager/user-management/custom-fields",
+  userManagementEmailConfiguration: "/manager/user-management/email-configuration",
   groups: "/manager/groups",
   groupsNew: "/manager/groups/new",
   events: "/manager/calendar",
@@ -82,7 +87,18 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
 
   const nav = useMemo(
     () => [
-      { label: locale === "fr" ? "Gestion des utilisateurs" : "User management", icon: ShieldCheck, href: ROUTES.users },
+      {
+        label: locale === "fr" ? "Gestion des utilisateurs" : "User management",
+        icon: Users,
+        children: [
+          { label: locale === "fr" ? "Joueurs" : "Players", icon: Users, href: ROUTES.userManagementPlayers },
+          { label: locale === "fr" ? "Parents" : "Parents", icon: Link2, href: ROUTES.userManagementParents },
+          { label: "Coach", icon: User, href: ROUTES.userManagementCoaches },
+          { label: "Manager", icon: ShieldCheck, href: ROUTES.userManagementManagers },
+          { label: locale === "fr" ? "Champs personnalisés" : "Custom fields", icon: Building2, href: ROUTES.userManagementCustomFields },
+          { label: locale === "fr" ? "Configuration E-mail" : "Email configuration", icon: Mail, href: ROUTES.userManagementEmailConfiguration },
+        ],
+      },
       {
         label: locale === "fr" ? "Gestion des groupes" : "Group management",
         icon: Building2,

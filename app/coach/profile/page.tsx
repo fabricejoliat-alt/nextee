@@ -30,6 +30,23 @@ type ProfileRow = {
 
 type ClubMember = { club_id: string };
 type Club = { id: string; name: string | null };
+type ProfileCustomField = {
+  id: string;
+  field_key: string;
+  label: string;
+  field_type: "text" | "boolean" | "select";
+  options_json: string[];
+  visible_in_profile: boolean;
+  editable_in_profile: boolean;
+  value: string | boolean | null;
+};
+type ProfileCustomFieldGroup = {
+  member_id: string;
+  club_id: string;
+  club_name: string;
+  role: "player" | "parent" | "coach" | "manager";
+  fields: ProfileCustomField[];
+};
 
 function displayHello(firstName?: string | null) {
   const f = (firstName ?? "").trim();
@@ -60,6 +77,19 @@ function translateAuthMessage(message: string) {
   return message;
 }
 
+function normalizeDisplayEmail(raw: string | null | undefined) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.endsWith("@noemail.local")) return "";
+  return email;
+}
+
+function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
+  if (rawValue == null || rawValue === "") return "—";
+  if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
+  return String(rawValue);
+}
+
 export default function PlayerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -75,6 +105,7 @@ export default function PlayerProfilePage() {
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [customFieldGroups, setCustomFieldGroups] = useState<ProfileCustomFieldGroup[]>([]);
   const heroClubLine = useMemo(() => {
     const names = clubs.map((c) => c.name).filter(Boolean) as string[];
     if (names.length === 0) return "—";
@@ -137,7 +168,34 @@ export default function PlayerProfilePage() {
 
     const uid = userRes.user.id;
     setUserId(uid);
-    setEmail(userRes.user.email ?? "");
+    setEmail(normalizeDisplayEmail(userRes.user.email));
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    if (token) {
+      const customFieldsRes = await fetch("/api/profile/custom-fields", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
+      if (!customFieldsRes.ok) {
+        setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
+      } else {
+        const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
+        setCustomFieldGroups(
+          memberships.filter(
+            (membership): membership is ProfileCustomFieldGroup =>
+              membership &&
+              typeof membership === "object" &&
+              membership.role === "coach" &&
+              Array.isArray(membership.fields)
+          )
+        );
+      }
+    } else {
+      setCustomFieldGroups([]);
+    }
 
     // profile
     const profRes = await supabase
@@ -271,6 +329,36 @@ export default function PlayerProfilePage() {
       setError(error.message);
       setBusy(false);
       return;
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    const editableCustomFieldUpdates = customFieldGroups
+      .map((group) => ({
+        member_id: group.member_id,
+        values: Object.fromEntries(
+          group.fields
+            .filter((field) => field.editable_in_profile)
+            .map((field) => [field.id, field.value ?? null])
+        ),
+      }))
+      .filter((group) => Object.keys(group.values).length > 0);
+
+    if (token && editableCustomFieldUpdates.length > 0) {
+      const customFieldsRes = await fetch("/api/profile/custom-fields", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ updates: editableCustomFieldUpdates }),
+      });
+      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
+      if (!customFieldsRes.ok) {
+        setError(String(customFieldsJson?.error ?? "Impossible d’enregistrer les champs personnalisés."));
+        setBusy(false);
+        return;
+      }
     }
 
     if (nextPassword) {
@@ -583,6 +671,116 @@ export default function PlayerProfilePage() {
                 </div>
 
                 <div className="hr-soft" />
+
+                {customFieldGroups.length > 0 ? (
+                  <>
+                    <div style={{ display: "grid", gap: 14 }}>
+                      <div className="card-title" style={{ marginBottom: 0 }}>
+                        Paramètres organisationnels
+                      </div>
+
+                      {customFieldGroups.map((group) => (
+                        <div key={group.member_id} style={{ display: "grid", gap: 10 }}>
+                          <div className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
+                            {group.club_name}
+                          </div>
+                          <div className="grid-2">
+                            {group.fields.map((field) => (
+                              <Field key={`${group.member_id}-${field.id}`} label={field.label}>
+                                {field.field_type === "boolean" ? (
+                                  <select
+                                    value={field.value == null ? "" : field.value ? "yes" : "no"}
+                                    disabled={!field.editable_in_profile}
+                                    onChange={(e) =>
+                                      setCustomFieldGroups((previous) =>
+                                        previous.map((currentGroup) =>
+                                          currentGroup.member_id !== group.member_id
+                                            ? currentGroup
+                                            : {
+                                                ...currentGroup,
+                                                fields: currentGroup.fields.map((currentField) =>
+                                                  currentField.id !== field.id
+                                                    ? currentField
+                                                    : {
+                                                        ...currentField,
+                                                        value: e.target.value === "" ? null : e.target.value === "yes",
+                                                      }
+                                                ),
+                                              }
+                                        )
+                                      )
+                                    }
+                                  >
+                                    <option value="">—</option>
+                                    <option value="yes">Oui</option>
+                                    <option value="no">Non</option>
+                                  </select>
+                                ) : field.field_type === "select" ? (
+                                  <select
+                                    value={String(field.value ?? "")}
+                                    disabled={!field.editable_in_profile}
+                                    onChange={(e) =>
+                                      setCustomFieldGroups((previous) =>
+                                        previous.map((currentGroup) =>
+                                          currentGroup.member_id !== group.member_id
+                                            ? currentGroup
+                                            : {
+                                                ...currentGroup,
+                                                fields: currentGroup.fields.map((currentField) =>
+                                                  currentField.id !== field.id
+                                                    ? currentField
+                                                    : {
+                                                        ...currentField,
+                                                        value: e.target.value || null,
+                                                      }
+                                                ),
+                                              }
+                                        )
+                                      )
+                                    }
+                                  >
+                                    <option value="">—</option>
+                                    {field.options_json.map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    value={field.editable_in_profile ? String(field.value ?? "") : profileCustomFieldDisplayValue(field, field.value)}
+                                    disabled={!field.editable_in_profile}
+                                    onChange={(e) =>
+                                      setCustomFieldGroups((previous) =>
+                                        previous.map((currentGroup) =>
+                                          currentGroup.member_id !== group.member_id
+                                            ? currentGroup
+                                            : {
+                                                ...currentGroup,
+                                                fields: currentGroup.fields.map((currentField) =>
+                                                  currentField.id !== field.id
+                                                    ? currentField
+                                                    : {
+                                                        ...currentField,
+                                                        value: e.target.value || null,
+                                                      }
+                                                ),
+                                              }
+                                        )
+                                      )
+                                    }
+                                  />
+                                )}
+                              </Field>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="hr-soft" />
+                  </>
+                ) : null}
 
                 {/* Adresse */}
                 <div style={{ display: "grid", gap: 10 }}>

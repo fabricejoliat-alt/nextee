@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -42,6 +43,7 @@ function consentLabel(status: MembershipProfileRow["player_consent_status"]) {
 }
 
 export default function ManagerParentsPage() {
+  const searchParams = useSearchParams();
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
@@ -56,6 +58,8 @@ export default function ManagerParentsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestedClubId = searchParams.get("clubId");
+  const requestedParentUserId = searchParams.get("parentUserId");
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -109,7 +113,7 @@ export default function ManagerParentsPage() {
         setError(null);
         const list = await loadClubs();
         setClubs(list);
-        const first = list[0]?.id ?? "";
+        const first = (requestedClubId && list.find((club) => club.id === requestedClubId)?.id) ?? list[0]?.id ?? "";
         setClubId(first);
         if (first) await loadLinks(first);
         else setLoading(false);
@@ -124,7 +128,19 @@ export default function ManagerParentsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestedClubId]);
+
+  useEffect(() => {
+    if (!requestedClubId || !clubs.some((club) => club.id === requestedClubId) || requestedClubId === clubId) return;
+    setClubId(requestedClubId);
+    void loadLinks(requestedClubId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedClubId, clubs, clubId]);
+
+  useEffect(() => {
+    if (!requestedParentUserId) return;
+    setAttachmentFilter("unlinked");
+  }, [requestedParentUserId]);
 
   const playerMap = useMemo(() => {
     const m: Record<string, ProfileLite> = {};
@@ -311,7 +327,13 @@ export default function ManagerParentsPage() {
               <div style={{ display: "grid", gap: 8 }}>
                 {filteredPlayers.map((player) => {
                   const playerLinks = linksByPlayer[player.user_id] ?? [];
-                  const selectedParentId = pendingParentByPlayer[player.user_id] ?? "";
+                  const defaultRequestedParentId =
+                    requestedParentUserId &&
+                    !playerLinks.some((link) => link.guardian_user_id === requestedParentUserId) &&
+                    parents.some((parent) => parent.user_id === requestedParentUserId)
+                      ? requestedParentUserId
+                      : "";
+                  const selectedParentId = pendingParentByPlayer[player.user_id] ?? defaultRequestedParentId;
                   const availableParents = parentOptions.filter((option) => !playerLinks.some((l) => l.guardian_user_id === option.id));
                   return (
                     <div

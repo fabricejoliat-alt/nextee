@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 
@@ -13,6 +14,7 @@ type PlayerFieldDef = {
   options_json?: string[] | null;
   is_active: boolean;
   sort_order: number;
+  applies_to_roles?: Array<"manager" | "coach" | "player" | "parent">;
   legacy_binding?: "player_course_track" | "player_membership_paid" | "player_playing_right_paid" | null;
 };
 
@@ -147,6 +149,26 @@ function normalizeFieldLabelToken(raw: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function normalizeFieldRoles(raw: unknown) {
+  const fallback = ["player"] as Array<"manager" | "coach" | "player" | "parent">;
+  if (!Array.isArray(raw)) return fallback;
+  const roles = Array.from(
+    new Set(
+      raw
+        .map((item) => String(item ?? "").trim().toLowerCase())
+        .filter((item): item is "manager" | "coach" | "player" | "parent" =>
+          ["manager", "coach", "player", "parent"].includes(item)
+        )
+    )
+  );
+  return roles.length > 0 ? roles : fallback;
+}
+
+function fieldAppliesToPlayer(field: Pick<PlayerFieldDef, "legacy_binding" | "applies_to_roles">) {
+  if (field.legacy_binding) return true;
+  return normalizeFieldRoles(field.applies_to_roles).includes("player");
 }
 
 function csvCell(value: string) {
@@ -369,6 +391,7 @@ function buildImportPreview(
 }
 
 export default function ManagerUsersPage() {
+  const searchParams = useSearchParams();
   const [clubId, setClubId] = useState("");
   const [clubNamesById, setClubNamesById] = useState<Record<string, string>>({});
 
@@ -401,9 +424,13 @@ export default function ManagerUsersPage() {
   const [form, setForm] = useState<Partial<EditForm>>({});
   const [newField, setNewField] = useState<PlayerFieldForm>({ label: "", field_type: "text", options: "" });
 
+  const requestedRole = searchParams.get("role");
+  const requestedMemberId = searchParams.get("memberId");
+  const requestedSearch = searchParams.get("q");
+
   const canCreate = useMemo(() => cFirst.trim() && cLast.trim() && clubId, [cFirst, cLast, clubId]);
   const activePlayerFields = useMemo(
-    () => playerFields.filter((field) => field.is_active).sort((a, b) => a.sort_order - b.sort_order),
+    () => playerFields.filter((field) => field.is_active && fieldAppliesToPlayer(field)).sort((a, b) => a.sort_order - b.sort_order),
     [playerFields]
   );
   const importPreview = useMemo(
@@ -481,6 +508,25 @@ export default function ManagerUsersPage() {
     void loadMembers(clubId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
+
+  useEffect(() => {
+    if (requestedRole && ["all", "manager", "coach", "player", "parent"].includes(requestedRole)) {
+      const nextRole = requestedRole as "all" | "manager" | "coach" | "player" | "parent";
+      setRoleFilter(nextRole);
+      if (nextRole !== "all") setCRole(nextRole);
+    }
+  }, [requestedRole]);
+
+  useEffect(() => {
+    if (requestedSearch != null) setSearch(requestedSearch);
+  }, [requestedSearch]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!requestedMemberId || members.length === 0 || editingId === requestedMemberId) return;
+    const target = members.find((member) => member.id === requestedMemberId);
+    if (target) startEdit(target);
+  }, [requestedMemberId, members, editingId, playerFields]);
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -911,7 +957,7 @@ export default function ManagerUsersPage() {
 
   return (
     <div style={{ display: "grid", gap: 16, width: "min(980px, 100%)", margin: "0 auto", boxSizing: "border-box" }}>
-      <div>
+      <div id="users-header">
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Utilisateurs</h1>
         <div style={{ marginTop: 6, color: "var(--muted)", fontSize: 13 }}>
           Liste des utilisateurs rattachés au golf dont tu es manager.
@@ -932,7 +978,7 @@ export default function ManagerUsersPage() {
         </div>
       )}
 
-      <div className="card">
+      <div className="card" id="users-create">
         <h2 style={{ marginTop: 0 }}>Créer un utilisateur</h2>
 
         <form onSubmit={createUser} style={{ display: "grid", gap: 10, maxWidth: 640 }}>
@@ -980,7 +1026,7 @@ export default function ManagerUsersPage() {
         )}
       </div>
 
-      <div className="card">
+      <div className="card" id="users-import">
         <h2 style={{ marginTop: 0 }}>Importer des utilisateurs</h2>
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ color: "var(--muted)", fontSize: 13 }}>
@@ -1148,7 +1194,7 @@ export default function ManagerUsersPage() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" id="users-player-fields">
         <h2 style={{ marginTop: 0 }}>Paramètres joueurs de l’organisation</h2>
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ color: "var(--muted)", fontSize: 13 }}>
@@ -1267,7 +1313,7 @@ export default function ManagerUsersPage() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card" id="users-list">
         <h2 style={{ marginTop: 0 }}>Liste</h2>
         <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
           <div style={{ maxWidth: 420 }}>

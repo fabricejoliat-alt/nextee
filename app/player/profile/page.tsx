@@ -35,6 +35,23 @@ type ProfileRow = {
 
 type ClubMember = { club_id: string };
 type Club = { id: string; name: string | null };
+type ProfileCustomField = {
+  id: string;
+  field_key: string;
+  label: string;
+  field_type: "text" | "boolean" | "select";
+  options_json: string[];
+  visible_in_profile: boolean;
+  editable_in_profile: boolean;
+  value: string | boolean | null;
+};
+type ProfileCustomFieldGroup = {
+  member_id: string;
+  club_id: string;
+  club_name: string;
+  role: "player" | "parent" | "coach" | "manager";
+  fields: ProfileCustomField[];
+};
 
 function displayHello(firstName: string | null | undefined, helloLabel: string) {
   const f = (firstName ?? "").trim();
@@ -72,6 +89,17 @@ function normalizeDisplayEmail(raw: string | null | undefined) {
   return email;
 }
 
+function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
+  if (rawValue == null || rawValue === "") return "—";
+  if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
+  return String(rawValue);
+}
+
+function staticDisplayValue(rawValue: string | null | undefined) {
+  const value = String(rawValue ?? "").trim();
+  return value || "—";
+}
+
 /** Categorys juniors (SwissGolf-style):
  *  - enfants nés en 2016 et + : U10
  *  - 2014 et + : U12
@@ -100,6 +128,7 @@ export default function PlayerProfilePage() {
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [saveFlash, setSaveFlash] = useState(false);
 
   // Avatar upload busy is separate so user can still edit fields
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -116,6 +145,7 @@ export default function PlayerProfilePage() {
 
   // clubs (comme page player)
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [customFieldGroups, setCustomFieldGroups] = useState<ProfileCustomFieldGroup[]>([]);
   const heroClubLine = useMemo(() => {
     const names = clubs.map((c) => c.name).filter(Boolean) as string[];
     if (names.length === 0) return "—";
@@ -147,6 +177,7 @@ export default function PlayerProfilePage() {
 
   // ✅ Avatar
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const saveFlashTimeoutRef = useRef<number | null>(null);
 
   const avatarFallback =
     "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=240&q=60";
@@ -197,8 +228,31 @@ export default function PlayerProfilePage() {
       const meJson = await meRes.json().catch(() => ({}));
       const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
       setViewerRole(role === "parent" ? "parent" : "player");
+
+      const customFieldsRes = await fetch("/api/profile/custom-fields", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
+      if (!customFieldsRes.ok) {
+        setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
+      } else {
+        const effectiveRole = role === "parent" ? "parent" : "player";
+        const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
+        setCustomFieldGroups(
+          memberships.filter(
+            (membership): membership is ProfileCustomFieldGroup =>
+              membership &&
+              typeof membership === "object" &&
+              membership.role === effectiveRole &&
+              Array.isArray(membership.fields)
+          )
+        );
+      }
     } else {
       setViewerRole("player");
+      setCustomFieldGroups([]);
     }
 
     // profile
@@ -287,6 +341,7 @@ export default function PlayerProfilePage() {
     return () => {
       // cleanup when unmount (if crop src is a blob URL)
       if (cropImageSrc?.startsWith("blob:")) URL.revokeObjectURL(cropImageSrc);
+      if (saveFlashTimeoutRef.current != null) window.clearTimeout(saveFlashTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -343,6 +398,36 @@ export default function PlayerProfilePage() {
       return;
     }
 
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token ?? "";
+    const editableCustomFieldUpdates = customFieldGroups
+      .map((group) => ({
+        member_id: group.member_id,
+        values: Object.fromEntries(
+          group.fields
+            .filter((field) => field.editable_in_profile)
+            .map((field) => [field.id, field.value ?? null])
+        ),
+      }))
+      .filter((group) => Object.keys(group.values).length > 0);
+
+    if (token && editableCustomFieldUpdates.length > 0) {
+      const customFieldsRes = await fetch("/api/profile/custom-fields", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ updates: editableCustomFieldUpdates }),
+      });
+      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
+      if (!customFieldsRes.ok) {
+        setError(String(customFieldsJson?.error ?? "Impossible d’enregistrer les champs personnalisés."));
+        setBusy(false);
+        return;
+      }
+    }
+
     if (newPassword.trim()) {
       if (newPassword.trim().length < 8) {
         setError("Le mot de passe doit contenir au moins 8 caractères.");
@@ -367,7 +452,12 @@ export default function PlayerProfilePage() {
       setConfirmPassword("");
     }
 
-    setInfo(t("playerProfile.saved"));
+    setSaveFlash(true);
+    if (saveFlashTimeoutRef.current != null) window.clearTimeout(saveFlashTimeoutRef.current);
+    saveFlashTimeoutRef.current = window.setTimeout(() => {
+      setSaveFlash(false);
+      saveFlashTimeoutRef.current = null;
+    }, 2000);
     setBusy(false);
   }
 
@@ -478,6 +568,7 @@ export default function PlayerProfilePage() {
     () => (birthDate ? getJuniorCategory(birthDate) : "—"),
     [birthDate]
   );
+  const showOrganizationLabelInCustomFields = customFieldGroups.length > 1;
 
   return (
     <div className="player-dashboard-bg">
@@ -629,17 +720,14 @@ export default function PlayerProfilePage() {
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{t("common.profile")}</div>
 
-          <div className="glass-card">
+          <div style={{ display: "grid", gap: 14 }}>
             {loading ? (
-              <div style={{ opacity: 0.85, fontWeight: 800 }}>{t("common.loading")}</div>
+              <div className="glass-card">
+                <div style={{ opacity: 0.85, fontWeight: 800 }}>{t("common.loading")}</div>
+              </div>
             ) : (
-              <div style={{ display: "grid", gap: 16 }}>
-                {/* Identité */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>
-                    {t("playerProfile.identity")}
-                  </div>
-
+              <>
+                <SectionCard title={t("playerProfile.identity")}>
                   <div className="grid-2">
                     <Field label={t("playerProfile.firstName")}>
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -661,9 +749,7 @@ export default function PlayerProfilePage() {
                         />
                       </Field>
 
-                      <Field label={t("playerProfile.category")}>
-                        <input value={juniorCategory} disabled />
-                      </Field>
+                      <StaticField label={t("playerProfile.category")} value={juniorCategory} />
 
                       <div className="grid-2">
                         <Field label={t("playerProfile.sex")}>
@@ -705,37 +791,142 @@ export default function PlayerProfilePage() {
                       </div>
                     </>
                   )}
-                </div>
+                </SectionCard>
 
-                <div className="hr-soft" />
-
-                {/* Contact */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.contact")}</div>
-
+                <SectionCard title={t("playerProfile.contact")}>
                   <div className="grid-2">
                     <Field label={t("playerProfile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
-                    <Field label={t("playerProfile.emailLogin")}>
-                      <input value={email} disabled />
-                    </Field>
+                    <StaticField label={t("playerProfile.emailLogin")} value={email} />
                   </div>
 
-                  {viewerRole === "parent" && (
-                    <Field label="Username">
-                      <input value={username} disabled />
-                    </Field>
-                  )}
-                </div>
+                  {viewerRole === "parent" ? (
+                    <StaticField label="Username" value={username} />
+                  ) : null}
+                </SectionCard>
 
-                <div className="hr-soft" />
+                {customFieldGroups.length > 0 ? (
+                  <SectionCard title="Paramètres organisationnels">
+                    <div style={{ display: "grid", gap: 16 }}>
+                      {customFieldGroups.map((group) => (
+                        <div key={group.member_id} style={{ display: "grid", gap: 10 }}>
+                          {showOrganizationLabelInCustomFields ? (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 800,
+                                letterSpacing: 0.3,
+                                color: "rgba(0,0,0,0.48)",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {group.club_name}
+                            </div>
+                          ) : null}
+                          <div className="grid-2">
+                            {group.fields.map((field) => (
+                              field.editable_in_profile ? (
+                                <Field key={`${group.member_id}-${field.id}`} label={field.label}>
+                                  {field.field_type === "boolean" ? (
+                                    <select
+                                      value={field.value == null ? "" : field.value ? "yes" : "no"}
+                                      onChange={(e) =>
+                                        setCustomFieldGroups((previous) =>
+                                          previous.map((currentGroup) =>
+                                            currentGroup.member_id !== group.member_id
+                                              ? currentGroup
+                                              : {
+                                                  ...currentGroup,
+                                                  fields: currentGroup.fields.map((currentField) =>
+                                                    currentField.id !== field.id
+                                                      ? currentField
+                                                      : {
+                                                          ...currentField,
+                                                          value: e.target.value === "" ? null : e.target.value === "yes",
+                                                        }
+                                                  ),
+                                                }
+                                          )
+                                        )
+                                      }
+                                    >
+                                      <option value="">—</option>
+                                      <option value="yes">Oui</option>
+                                      <option value="no">Non</option>
+                                    </select>
+                                  ) : field.field_type === "select" ? (
+                                    <select
+                                      value={String(field.value ?? "")}
+                                      onChange={(e) =>
+                                        setCustomFieldGroups((previous) =>
+                                          previous.map((currentGroup) =>
+                                            currentGroup.member_id !== group.member_id
+                                              ? currentGroup
+                                              : {
+                                                  ...currentGroup,
+                                                  fields: currentGroup.fields.map((currentField) =>
+                                                    currentField.id !== field.id
+                                                      ? currentField
+                                                      : {
+                                                          ...currentField,
+                                                          value: e.target.value || null,
+                                                        }
+                                                  ),
+                                                }
+                                          )
+                                        )
+                                      }
+                                    >
+                                      <option value="">—</option>
+                                      {field.options_json.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      value={String(field.value ?? "")}
+                                      onChange={(e) =>
+                                        setCustomFieldGroups((previous) =>
+                                          previous.map((currentGroup) =>
+                                            currentGroup.member_id !== group.member_id
+                                              ? currentGroup
+                                              : {
+                                                  ...currentGroup,
+                                                  fields: currentGroup.fields.map((currentField) =>
+                                                    currentField.id !== field.id
+                                                      ? currentField
+                                                      : {
+                                                          ...currentField,
+                                                          value: e.target.value || null,
+                                                        }
+                                                  ),
+                                                }
+                                          )
+                                        )
+                                      }
+                                    />
+                                  )}
+                                </Field>
+                              ) : (
+                                <StaticField
+                                  key={`${group.member_id}-${field.id}`}
+                                  label={field.label}
+                                  value={profileCustomFieldDisplayValue(field, field.value)}
+                                />
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                ) : null}
 
-                {/* Adresse */}
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>{t("playerProfile.addressSection")}</div>
-
+                <SectionCard title={t("playerProfile.addressSection")}>
                   <Field label={t("playerProfile.address")}>
                     <input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </Field>
@@ -749,68 +940,52 @@ export default function PlayerProfilePage() {
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
                     </Field>
                   </div>
-                </div>
+                </SectionCard>
 
-                {(viewerRole === "player" || viewerRole === "parent") && (
-                  <>
-                    <div className="hr-soft" />
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="card-title" style={{ marginBottom: 0 }}>
-                        Mot de passe
-                      </div>
+                {(viewerRole === "player" || viewerRole === "parent") ? (
+                  <SectionCard title="Mot de passe">
+                    <Field label="Nouveau mot de passe">
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                      />
+                    </Field>
 
-                      <Field label="Nouveau mot de passe">
-                        <input
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          autoComplete="new-password"
-                          minLength={8}
-                        />
-                      </Field>
+                    <Field label="Confirmer le mot de passe">
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                      />
+                    </Field>
+                  </SectionCard>
+                ) : null}
 
-                      <Field label="Confirmer le mot de passe">
-                        <input
-                          type="password"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          autoComplete="new-password"
-                          minLength={8}
-                        />
-                      </Field>
-                    </div>
+                {viewerRole === "player" ? (
+                  <SectionCard title={t("playerProfile.administrative")}>
+                    <Field label={t("playerProfile.avsNo")}>
+                      <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
+                    </Field>
+                  </SectionCard>
+                ) : null}
 
-                  </>
-                )}
-
-                {viewerRole === "player" && (
-                  <>
-                    <div className="hr-soft" />
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="card-title" style={{ marginBottom: 0 }}>
-                        {t("playerProfile.administrative")}
-                      </div>
-
-                      <Field label={t("playerProfile.avsNo")}>
-                        <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
-                      </Field>
-                    </div>
-                  </>
-                )}
-
-                {/* ✅ ENREGISTRER à l’intérieur de la card */}
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                <div style={{ marginTop: 2 }}>
                   <button
-                    className="btn"
+                    className="cta-green"
                     type="button"
                     onClick={save}
                     disabled={!canSave}
-                    style={compactBtnStyle}
+                    style={{ width: "100%", justifyContent: "center" }}
                   >
-                    {busy ? t("playerProfile.saving") : t("common.save")}
+                    {busy ? t("playerProfile.saving") : saveFlash ? "Profil enregistré !" : t("common.save")}
                   </button>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -834,13 +1009,43 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const compactBtnStyle: React.CSSProperties = {
-  height: 34,
-  padding: "0 12px",
-  fontSize: 13,
-  fontWeight: 800,
-  borderRadius: 10,
-};
+function StaticField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ display: "grid", gap: 6, minWidth: 0, width: "100%" }}>
+      <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
+        {label}
+      </label>
+      <div
+        style={{
+          minHeight: 46,
+          borderRadius: 12,
+          padding: "12px 14px",
+          background: "rgba(15, 23, 42, 0.04)",
+          border: "1px solid rgba(15, 23, 42, 0.08)",
+          color: "#0f172a",
+          fontWeight: 700,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        {staticDisplayValue(value)}
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="glass-card" style={{ display: "grid", gap: 14 }}>
+      <div className="card-title" style={{ marginBottom: 0 }}>
+        {title}
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 /* =========================
    Crop Modal + Helpers

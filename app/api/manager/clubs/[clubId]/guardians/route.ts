@@ -162,8 +162,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         player_consent_status: consentStatusByPlayerId.get(id) ?? null,
         profiles: profileById.get(id) ?? null,
       })),
+      all_players: playerIds.map((id) => ({
+        user_id: id,
+        player_consent_status: consentStatusByPlayerId.get(id) ?? null,
+        profiles: profileById.get(id) ?? null,
+      })),
       parents: parentIds.map((id) => ({ user_id: id, profiles: profileById.get(id) ?? null })),
       links,
+      all_links: rawLinks.filter((r: any) => {
+        const playerId = String(r.player_id ?? "");
+        const guardianId = String(r.guardian_user_id ?? "");
+        return Boolean(playerId) && Boolean(guardianId) && parentIds.includes(guardianId);
+      }),
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

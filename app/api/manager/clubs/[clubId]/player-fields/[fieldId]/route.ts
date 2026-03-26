@@ -36,6 +36,30 @@ function normalizeOptions(raw: unknown) {
   return raw.map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
+function normalizeProfileVisibility(rawVisible: unknown, rawEditable: unknown) {
+  const visibleInProfile = Boolean(rawVisible);
+  return {
+    visible_in_profile: visibleInProfile,
+    editable_in_profile: visibleInProfile && Boolean(rawEditable),
+  };
+}
+
+const MEMBER_ROLES = ["manager", "coach", "player", "parent"] as const;
+type MemberRole = (typeof MEMBER_ROLES)[number];
+
+function normalizeFieldRoles(raw: unknown) {
+  const fallback: MemberRole[] = ["player"];
+  if (!Array.isArray(raw)) return fallback;
+  const roles = Array.from(
+    new Set(
+      raw
+        .map((item) => String(item ?? "").trim().toLowerCase())
+        .filter((item): item is MemberRole => MEMBER_ROLES.includes(item as MemberRole))
+    )
+  );
+  return roles.length > 0 ? roles : fallback;
+}
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: string; fieldId: string }> }) {
   try {
     const { clubId, fieldId } = await ctx.params;
@@ -46,7 +70,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const body = await req.json().catch(() => ({}));
     const { data: field, error: fieldError } = await supabaseAdmin
       .from("club_player_fields")
-      .select("id,legacy_binding,field_type")
+      .select("id,legacy_binding,field_type,applies_to_roles,visible_in_profile,editable_in_profile")
       .eq("id", fieldId)
       .eq("club_id", clubId)
       .maybeSingle();
@@ -73,6 +97,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       }
       patch.field_type = fieldType;
     }
+    if (!field.legacy_binding && Object.prototype.hasOwnProperty.call(body, "applies_to_roles")) {
+      patch.applies_to_roles = normalizeFieldRoles(body.applies_to_roles);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(body, "visible_in_profile") ||
+      Object.prototype.hasOwnProperty.call(body, "editable_in_profile")
+    ) {
+      const profileVisibility = normalizeProfileVisibility(
+        Object.prototype.hasOwnProperty.call(body, "visible_in_profile") ? body.visible_in_profile : (field as any).visible_in_profile,
+        Object.prototype.hasOwnProperty.call(body, "editable_in_profile") ? body.editable_in_profile : (field as any).editable_in_profile
+      );
+      patch.visible_in_profile = profileVisibility.visible_in_profile;
+      patch.editable_in_profile = profileVisibility.editable_in_profile;
+    }
     if (Object.prototype.hasOwnProperty.call(body, "options")) {
       const nextType = String(patch.field_type ?? field.field_type);
       const options = normalizeOptions(body.options);
@@ -87,11 +125,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       .update(patch)
       .eq("id", fieldId)
       .eq("club_id", clubId)
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,legacy_binding")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    return NextResponse.json({ field: { ...data, options_json: normalizeOptions((data as any).options_json) } });
+    return NextResponse.json({
+      field: {
+        ...data,
+        options_json: normalizeOptions((data as any).options_json),
+        applies_to_roles: normalizeFieldRoles((data as any).applies_to_roles),
+        ...normalizeProfileVisibility((data as any).visible_in_profile, (data as any).editable_in_profile),
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }

@@ -645,6 +645,7 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
               lastError: juniorLog?.last_error ?? null,
             }),
             junior_last_sent_at: juniorLog?.last_sent_at ?? null,
+            junior_last_activity_at: juniorAuth?.last_sign_in_at ?? null,
             junior_send_count: Number(juniorLog?.send_count ?? 0),
           };
         })
@@ -662,6 +663,7 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
           lastError: parentLog?.last_error ?? null,
         }),
         parent_last_sent_at: parentLog?.last_sent_at ?? null,
+        parent_last_activity_at: parentAuth?.last_sign_in_at ?? null,
         parent_send_count: Number(parentLog?.send_count ?? 0),
         linked_juniors: juniors,
       };

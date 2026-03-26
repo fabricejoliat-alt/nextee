@@ -10,12 +10,74 @@ type PlayerFieldDef = {
   options_json: string[] | null;
   is_active: boolean;
   sort_order: number;
+  applies_to_roles: Array<"manager" | "coach" | "player" | "parent">;
+  visible_in_profile: boolean;
+  editable_in_profile: boolean;
   legacy_binding: "player_course_track" | "player_membership_paid" | "player_playing_right_paid" | null;
 };
+
+const MEMBER_ROLES = ["manager", "coach", "player", "parent"] as const;
+type MemberRole = (typeof MEMBER_ROLES)[number];
 
 function normalizePlayerFieldOptions(raw: unknown) {
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function normalizeFieldRoles(raw: unknown) {
+  const fallback: MemberRole[] = ["player"];
+  if (!Array.isArray(raw)) return fallback;
+  const roles = Array.from(
+    new Set(
+      raw
+        .map((item) => String(item ?? "").trim().toLowerCase())
+        .filter((item): item is MemberRole => MEMBER_ROLES.includes(item as MemberRole))
+    )
+  );
+  return roles.length > 0 ? roles : fallback;
+}
+
+function normalizeProfileVisibility(rawVisible: unknown, rawEditable: unknown) {
+  const visibleInProfile = Boolean(rawVisible);
+  return {
+    visible_in_profile: visibleInProfile,
+    editable_in_profile: visibleInProfile && Boolean(rawEditable),
+  };
+}
+
+function normalizePlayerFieldToken(raw: unknown) {
+  return String(raw ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function isSionSpecificPlayerField(field: Pick<PlayerFieldDef, "field_key" | "label" | "legacy_binding">) {
+  if (
+    field.legacy_binding === "player_course_track" ||
+    field.legacy_binding === "player_membership_paid" ||
+    field.legacy_binding === "player_playing_right_paid"
+  ) {
+    return true;
+  }
+
+  const labelToken = normalizePlayerFieldToken(field.label).replace(/_/g, " ");
+  if (labelToken === "cours" || labelToken === "cotisation" || labelToken === "droit de jeu") {
+    return true;
+  }
+
+  const fieldKey = normalizePlayerFieldToken(field.field_key);
+  return (
+    fieldKey === "legacy_course_track" ||
+    fieldKey === "legacy_membership_paid" ||
+    fieldKey === "legacy_playing_right_paid" ||
+    fieldKey.startsWith("cours_") ||
+    fieldKey.startsWith("cotisation_") ||
+    fieldKey.startsWith("droit_de_jeu_")
+  );
 }
 
 function readLegacyPlayerFieldValue(field: PlayerFieldDef, member: any) {
@@ -25,27 +87,36 @@ function readLegacyPlayerFieldValue(field: PlayerFieldDef, member: any) {
   return null;
 }
 
+function fieldAppliesToRole(field: Pick<PlayerFieldDef, "legacy_binding" | "applies_to_roles">, role: string) {
+  if (field.legacy_binding) return role === "player";
+  return normalizeFieldRoles(field.applies_to_roles).includes(role as MemberRole);
+}
+
 async function fetchClubPlayerFields(supabaseAdmin: any, clubId: string) {
   const { data, error } = await supabaseAdmin
     .from("club_player_fields")
-    .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,legacy_binding")
+    .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
     .eq("club_id", clubId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
 
   if (error) throw error;
 
-  return ((data ?? []) as any[]).map((row) => ({
-    id: String(row.id),
-    club_id: String(row.club_id),
-    field_key: String(row.field_key ?? ""),
-    label: String(row.label ?? ""),
-    field_type: row.field_type as PlayerFieldDef["field_type"],
-    options_json: normalizePlayerFieldOptions(row.options_json),
-    is_active: Boolean(row.is_active),
-    sort_order: Number(row.sort_order ?? 0),
-    legacy_binding: (row.legacy_binding ?? null) as PlayerFieldDef["legacy_binding"],
-  })) satisfies PlayerFieldDef[];
+  return ((data ?? []) as any[])
+    .map((row) => ({
+      id: String(row.id),
+      club_id: String(row.club_id),
+      field_key: String(row.field_key ?? ""),
+      label: String(row.label ?? ""),
+      field_type: row.field_type as PlayerFieldDef["field_type"],
+      options_json: normalizePlayerFieldOptions(row.options_json),
+      is_active: Boolean(row.is_active),
+      sort_order: Number(row.sort_order ?? 0),
+      applies_to_roles: normalizeFieldRoles(row.applies_to_roles),
+      ...normalizeProfileVisibility(row.visible_in_profile, row.editable_in_profile),
+      legacy_binding: (row.legacy_binding ?? null) as PlayerFieldDef["legacy_binding"],
+    }))
+    .filter((field) => field.is_active || !isSionSpecificPlayerField(field)) satisfies PlayerFieldDef[];
 }
 
 function mustEnv(name: string) {
@@ -61,18 +132,21 @@ function normalizeAuthEmailInput(raw: string) {
   return email;
 }
 
-async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
-  const authEmailById = new Map<string, string | null>();
-  if (userIds.length === 0) return authEmailById;
+async function fetchAuthUsersByIds(supabaseAdmin: any, userIds: string[]) {
+  const authUserById = new Map<string, { email: string | null; last_sign_in_at: string | null }>();
+  if (userIds.length === 0) return authUserById;
 
   const authSchema = (supabaseAdmin as any).schema("auth");
-  const { data, error } = await authSchema.from("users").select("id,email").in("id", userIds);
+  const { data, error } = await authSchema.from("users").select("id,email,last_sign_in_at").in("id", userIds);
   if (!error) {
     const rows = Array.isArray(data) ? data : [];
     for (const row of rows) {
       const userId = String((row as any).id ?? "");
       if (!userId) continue;
-      authEmailById.set(userId, (row as any).email ?? null);
+      authUserById.set(userId, {
+        email: (row as any).email ?? null,
+        last_sign_in_at: (row as any).last_sign_in_at ?? null,
+      });
     }
   } else {
     const wanted = new Set(userIds);
@@ -88,7 +162,10 @@ async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
 
       for (const user of users) {
         if (!wanted.has(user.id)) continue;
-        authEmailById.set(user.id, user.email ?? null);
+        authUserById.set(user.id, {
+          email: user.email ?? null,
+          last_sign_in_at: user.last_sign_in_at ?? null,
+        });
         wanted.delete(user.id);
       }
 
@@ -98,11 +175,11 @@ async function fetchAuthEmailsByIds(supabaseAdmin: any, userIds: string[]) {
   }
 
   for (const userId of userIds) {
-    if (authEmailById.has(userId)) continue;
-    authEmailById.set(userId, null);
+    if (authUserById.has(userId)) continue;
+    authUserById.set(userId, { email: null, last_sign_in_at: null });
   }
 
-  return authEmailById;
+  return authUserById;
 }
 
 async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
@@ -275,7 +352,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       );
     }
 
-    const authEmailById = await fetchAuthEmailsByIds(supabaseAdmin, userIds);
+    const authUserById = await fetchAuthUsersByIds(supabaseAdmin, userIds);
 
     const hydratedMembers = members.map((m: any) => {
       const playerFieldValues = valuesByMemberId.get(String(m.id)) ?? {};
@@ -294,8 +371,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         player_membership_paid: m.player_membership_paid ?? null,
         player_playing_right_paid: m.player_playing_right_paid ?? null,
         player_consent_status: consentStatusByUserId.get(String(m.user_id)) ?? m.player_consent_status ?? null,
+        custom_field_values: playerFieldValues,
         player_field_values: playerFieldValues,
-        auth_email: authEmailById.get(String(m.user_id)) ?? null,
+        auth_email: authUserById.get(String(m.user_id))?.email ?? null,
+        auth_last_sign_in_at: authUserById.get(String(m.user_id))?.last_sign_in_at ?? null,
         profiles: profileById.get(String(m.user_id)) ?? null,
       };
     });
@@ -319,6 +398,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const memberId = String(body.memberId ?? "");
     const role = String(body.role ?? "").trim();
     const isActive = body.is_active;
+    const isPerformance = body.is_performance;
     const authEmailRaw = typeof body.auth_email === "string" ? body.auth_email : "";
     const authEmail = normalizeAuthEmailInput(authEmailRaw);
     const authPassword = typeof body.auth_password === "string" ? body.auth_password : "";
@@ -369,6 +449,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const memberPatch: Record<string, any> = {};
     if (role) memberPatch.role = role;
     if (typeof isActive === "boolean") memberPatch.is_active = isActive;
+    if (typeof isPerformance === "boolean") memberPatch.is_performance = isPerformance;
     const effectiveRole = role || (memberRow as any).role || "";
     const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const fieldById = new Map(playerFields.map((field) => [field.id, field]));
@@ -399,17 +480,29 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       if (consentSyncError) return NextResponse.json({ error: consentSyncError.message }, { status: 400 });
     }
 
-    if (effectiveRole !== "player") {
+    const fieldIdsToClear = playerFields.filter((field) => !fieldAppliesToRole(field, effectiveRole)).map((field) => field.id);
+    if (fieldIdsToClear.length > 0) {
       const { error: deleteFieldValuesError } = await supabaseAdmin
         .from("club_member_player_field_values")
         .delete()
-        .eq("club_member_id", memberId);
+        .eq("club_member_id", memberId)
+        .in("field_id", fieldIdsToClear);
       if (deleteFieldValuesError) return NextResponse.json({ error: deleteFieldValuesError.message }, { status: 400 });
-    } else if (has("player_field_values") && body.player_field_values && typeof body.player_field_values === "object") {
-      const playerFieldValues = body.player_field_values as Record<string, unknown>;
+    }
+
+    const customFieldValues =
+      has("custom_field_values") && body.custom_field_values && typeof body.custom_field_values === "object"
+        ? (body.custom_field_values as Record<string, unknown>)
+        : has("player_field_values") && body.player_field_values && typeof body.player_field_values === "object"
+        ? (body.player_field_values as Record<string, unknown>)
+        : null;
+
+    if (customFieldValues) {
+      const playerFieldValues = customFieldValues;
       for (const [fieldId, rawValue] of Object.entries(playerFieldValues)) {
         const field = fieldById.get(fieldId);
         if (!field) continue;
+        if (!fieldAppliesToRole(field, effectiveRole)) continue;
 
         if (field.legacy_binding) {
           if (field.legacy_binding === "player_course_track") {
