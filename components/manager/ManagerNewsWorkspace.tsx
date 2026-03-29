@@ -31,6 +31,20 @@ type GroupOption = {
   name: string;
 };
 
+type LinkedEventOption = {
+  id: string;
+  title: string;
+  event_type: string | null;
+  starts_at: string | null;
+};
+
+type LinkedCampOption = {
+  id: string;
+  title: string;
+  created_at: string | null;
+  status: string | null;
+};
+
 type AgeBandOption = {
   key: string;
   label: string;
@@ -54,6 +68,10 @@ type NewsRow = {
   created_at: string;
   updated_at: string;
   created_by_name: string | null;
+  linked_club_event_id: string | null;
+  linked_camp_id: string | null;
+  linked_club_event_label: string | null;
+  linked_camp_label: string | null;
   targets: NewsTarget[];
 };
 
@@ -66,6 +84,8 @@ type BootstrapResponse = {
     groups: GroupOption[];
     group_categories: string[];
     age_bands: AgeBandOption[];
+    club_events: LinkedEventOption[];
+    camps: LinkedCampOption[];
   };
   news: NewsRow[];
 };
@@ -79,6 +99,8 @@ type NewsFormState = {
   send_notification: boolean;
   send_email: boolean;
   include_linked_parents: boolean;
+  linked_club_event_id: string;
+  linked_camp_id: string;
   targets: NewsTarget[];
 };
 
@@ -101,6 +123,8 @@ function emptyForm(): NewsFormState {
     send_notification: true,
     send_email: false,
     include_linked_parents: false,
+    linked_club_event_id: "",
+    linked_camp_id: "",
     targets: [],
   };
 }
@@ -137,6 +161,25 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function eventTypeLabel(value: string | null) {
+  if (value === "training") return "Entraînement";
+  if (value === "interclub") return "Interclub";
+  if (value === "camp") return "Stage/Camp";
+  if (value === "session") return "Séance";
+  if (value === "event") return "Événement";
+  return "Événement";
+}
+
+function linkedEventOptionLabel(option: LinkedEventOption) {
+  const date = formatDateTime(option.starts_at);
+  return `${option.title} • ${eventTypeLabel(option.event_type)}${date !== "—" ? ` • ${date}` : ""}`;
+}
+
+function linkedCampOptionLabel(option: LinkedCampOption) {
+  const date = formatDateTime(option.created_at);
+  return `${option.title}${date !== "—" ? ` • ${date}` : ""}`;
 }
 
 function toDatetimeLocal(value: string | null | undefined) {
@@ -197,6 +240,8 @@ export default function ManagerNewsWorkspace() {
   const [groups, setGroups] = useState<GroupOption[]>([]);
   const [groupCategories, setGroupCategories] = useState<string[]>([]);
   const [ageBands, setAgeBands] = useState<AgeBandOption[]>([]);
+  const [linkedEvents, setLinkedEvents] = useState<LinkedEventOption[]>([]);
+  const [linkedCamps, setLinkedCamps] = useState<LinkedCampOption[]>([]);
   const [news, setNews] = useState<NewsRow[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
@@ -229,6 +274,8 @@ export default function ManagerNewsWorkspace() {
       setGroups(Array.isArray(json.target_options?.groups) ? json.target_options.groups : []);
       setGroupCategories(Array.isArray(json.target_options?.group_categories) ? json.target_options.group_categories : []);
       setAgeBands(Array.isArray(json.target_options?.age_bands) ? json.target_options.age_bands : []);
+      setLinkedEvents(Array.isArray(json.target_options?.club_events) ? json.target_options.club_events : []);
+      setLinkedCamps(Array.isArray(json.target_options?.camps) ? json.target_options.camps : []);
       setNews(Array.isArray(json.news) ? json.news : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Impossible de charger les actualités.");
@@ -237,6 +284,8 @@ export default function ManagerNewsWorkspace() {
       setGroups([]);
       setGroupCategories([]);
       setAgeBands([]);
+      setLinkedEvents([]);
+      setLinkedCamps([]);
       setNews([]);
     } finally {
       setLoading(false);
@@ -281,6 +330,8 @@ export default function ManagerNewsWorkspace() {
       send_notification: row.send_notification,
       send_email: row.send_email,
       include_linked_parents: row.include_linked_parents,
+      linked_club_event_id: row.linked_club_event_id ?? "",
+      linked_camp_id: row.linked_camp_id ?? "",
       targets: row.targets,
     });
     setFormOpen(true);
@@ -461,6 +512,52 @@ export default function ManagerNewsWorkspace() {
                 />
               </label>
             ) : null}
+
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à un événement club</span>
+                <select
+                  className="input"
+                  value={form.linked_club_event_id}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      linked_club_event_id: event.target.value,
+                      linked_camp_id: event.target.value ? "" : previous.linked_camp_id,
+                    }))
+                  }
+                >
+                  <option value="">Aucun</option>
+                  {linkedEvents.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {linkedEventOptionLabel(row)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à un stage/camp</span>
+                <select
+                  className="input"
+                  value={form.linked_camp_id}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      linked_camp_id: event.target.value,
+                      linked_club_event_id: event.target.value ? "" : previous.linked_club_event_id,
+                    }))
+                  }
+                >
+                  <option value="">Aucun</option>
+                  {linkedCamps.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {linkedCampOptionLabel(row)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
             <div style={{ display: "grid", gap: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Diffusion</div>
@@ -787,6 +884,13 @@ export default function ManagerNewsWorkspace() {
                         <div style={{ fontSize: 18, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{row.title}</div>
                         {row.summary ? (
                           <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.62)" }}>{row.summary}</div>
+                        ) : null}
+                        {row.linked_club_event_label || row.linked_camp_label ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.56)" }}>
+                            {row.linked_club_event_label
+                              ? `Événement lié: ${row.linked_club_event_label}`
+                              : `Stage/Camp lié: ${row.linked_camp_label}`}
+                          </div>
                         ) : null}
                       </div>
 

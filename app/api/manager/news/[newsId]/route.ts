@@ -3,11 +3,13 @@ import {
   createSupabaseAdmin,
   dispatchNews,
   getManagerContext,
+  normalizeLinkedItemId,
   normalizeNewsStatus,
   normalizePublication,
   normalizeSchedule,
   normalizeTargets,
   resolveNewsRecipients,
+  validateLinkedNewsContent,
 } from "@/app/api/manager/news/_lib";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: string }> }) {
@@ -21,7 +23,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
 
     const currentRes = await supabaseAdmin
       .from("club_news")
-      .select("id,club_id,title,summary,body,status,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at")
+      .select("id,club_id,title,summary,body,status,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,linked_club_event_id,linked_camp_id")
       .eq("id", newsId)
       .maybeSingle();
     if (currentRes.error) return NextResponse.json({ error: currentRes.error.message }, { status: 400 });
@@ -46,6 +48,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
       typeof body.include_linked_parents === "boolean"
         ? body.include_linked_parents
         : Boolean(currentRes.data.include_linked_parents);
+    const linkedClubEventId =
+      body.linked_club_event_id !== undefined
+        ? normalizeLinkedItemId(body.linked_club_event_id)
+        : (currentRes.data.linked_club_event_id == null ? null : String(currentRes.data.linked_club_event_id));
+    const linkedCampId =
+      body.linked_camp_id !== undefined
+        ? normalizeLinkedItemId(body.linked_camp_id)
+        : (currentRes.data.linked_camp_id == null ? null : String(currentRes.data.linked_camp_id));
     const targets = normalizeTargets(body.targets);
 
     if (!title) return NextResponse.json({ error: "Titre obligatoire." }, { status: 400 });
@@ -54,6 +64,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
     if (status === "scheduled" && !scheduledFor) {
       return NextResponse.json({ error: "Date de programmation obligatoire." }, { status: 400 });
     }
+    await validateLinkedNewsContent({ supabaseAdmin, clubId, linkedClubEventId, linkedCampId });
 
     const publishedAt =
       normalizedStatus === "published"
@@ -73,6 +84,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
         send_notification: sendNotification,
         send_email: sendEmail,
         include_linked_parents: includeLinkedParents,
+        linked_club_event_id: linkedClubEventId,
+        linked_camp_id: linkedCampId,
       })
       .eq("id", newsId);
     if (updateRes.error) return NextResponse.json({ error: updateRes.error.message }, { status: 400 });

@@ -5,11 +5,13 @@ import {
   fetchClubNewsList,
   fetchNewsTargetOptions,
   getManagerContext,
+  normalizeLinkedItemId,
   normalizeNewsStatus,
   normalizePublication,
   normalizeSchedule,
   normalizeTargets,
   resolveNewsRecipients,
+  validateLinkedNewsContent,
 } from "@/app/api/manager/news/_lib";
 
 export async function GET(req: NextRequest) {
@@ -34,6 +36,8 @@ export async function GET(req: NextRequest) {
           groups: [],
           group_categories: [],
           age_bands: [],
+          club_events: [],
+          camps: [],
         },
         news: [],
       });
@@ -73,6 +77,8 @@ export async function POST(req: NextRequest) {
     const sendNotification = body.send_notification !== false;
     const sendEmail = Boolean(body.send_email);
     const includeLinkedParents = Boolean(body.include_linked_parents);
+    const linkedClubEventId = normalizeLinkedItemId(body.linked_club_event_id);
+    const linkedCampId = normalizeLinkedItemId(body.linked_camp_id);
     const targets = normalizeTargets(body.targets);
 
     if (!clubId || !ctx.managedClubs.some((club) => club.id === clubId)) {
@@ -84,6 +90,7 @@ export async function POST(req: NextRequest) {
     if (status === "scheduled" && !scheduledFor) {
       return NextResponse.json({ error: "Date de programmation obligatoire." }, { status: 400 });
     }
+    await validateLinkedNewsContent({ supabaseAdmin, clubId, linkedClubEventId, linkedCampId });
 
     const publishedAt = normalizedStatus === "published" ? new Date().toISOString() : null;
 
@@ -102,6 +109,8 @@ export async function POST(req: NextRequest) {
         send_notification: sendNotification,
         send_email: sendEmail,
         include_linked_parents: includeLinkedParents,
+        linked_club_event_id: linkedClubEventId,
+        linked_camp_id: linkedCampId,
       })
       .select("id,last_notification_sent_at,last_email_sent_at")
       .single();

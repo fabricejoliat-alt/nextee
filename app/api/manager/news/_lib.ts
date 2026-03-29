@@ -14,6 +14,20 @@ export type ManagedClubOption = {
   name: string;
 };
 
+export type NewsLinkedEventOption = {
+  id: string;
+  title: string;
+  event_type: string | null;
+  starts_at: string | null;
+};
+
+export type NewsLinkedCampOption = {
+  id: string;
+  title: string;
+  created_at: string | null;
+  status: string | null;
+};
+
 export type NewsTargetOption = {
   clubs: ManagedClubOption[];
   members: Array<{
@@ -31,6 +45,8 @@ export type NewsTargetOption = {
     key: string;
     label: string;
   }>;
+  club_events: NewsLinkedEventOption[];
+  camps: NewsLinkedCampOption[];
 };
 
 export type ClubNewsRow = {
@@ -52,6 +68,10 @@ export type ClubNewsRow = {
   updated_at: string;
   created_by: string;
   created_by_name: string | null;
+  linked_club_event_id: string | null;
+  linked_camp_id: string | null;
+  linked_club_event_label: string | null;
+  linked_camp_label: string | null;
   targets: NewsTargetInput[];
 };
 
@@ -259,13 +279,31 @@ async function fetchAuthUsersByIds(supabaseAdmin: any, userIds: string[]) {
 export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: ManagedClubOption[], clubId: string) {
   const members = await fetchActiveClubMembers(supabaseAdmin, clubId);
 
-  const groupsRes = await supabaseAdmin
-    .from("coach_groups")
-    .select("id,name")
-    .eq("club_id", clubId)
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+  const [groupsRes, eventsRes, campsRes] = await Promise.all([
+    supabaseAdmin
+      .from("coach_groups")
+      .select("id,name")
+      .eq("club_id", clubId)
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
+    supabaseAdmin
+      .from("club_events")
+      .select("id,title,event_type,starts_at,status")
+      .eq("club_id", clubId)
+      .neq("status", "cancelled")
+      .order("starts_at", { ascending: false })
+      .limit(150),
+    supabaseAdmin
+      .from("club_camps")
+      .select("id,title,created_at,status")
+      .eq("club_id", clubId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(150),
+  ]);
   if (groupsRes.error) throw new Error(groupsRes.error.message);
+  if (eventsRes.error) throw new Error(eventsRes.error.message);
+  if (campsRes.error) throw new Error(campsRes.error.message);
 
   const groupIds = Array.from(new Set((groupsRes.data ?? []).map((row: any) => String(row.id ?? "")).filter(Boolean)));
   const categoriesRes =
@@ -294,13 +332,25 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
     })),
     group_categories: groupCategories,
     age_bands: [...NEWS_AGE_BANDS],
+    club_events: ((eventsRes.data ?? []) as any[]).map((row) => ({
+      id: String(row.id ?? ""),
+      title: String(row.title ?? "").trim() || "Événement",
+      event_type: row.event_type == null ? null : String(row.event_type),
+      starts_at: row.starts_at == null ? null : String(row.starts_at),
+    })),
+    camps: ((campsRes.data ?? []) as any[]).map((row) => ({
+      id: String(row.id ?? ""),
+      title: String(row.title ?? "").trim() || "Stage/Camp",
+      created_at: row.created_at == null ? null : String(row.created_at),
+      status: row.status == null ? null : String(row.status),
+    })),
   } satisfies NewsTargetOption;
 }
 
 export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
   const newsRes = await supabaseAdmin
     .from("club_news")
-    .select("id,club_id,title,summary,body,status,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by")
+    .select("id,club_id,title,summary,body,status,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by,linked_club_event_id,linked_camp_id")
     .eq("club_id", clubId)
     .order("updated_at", { ascending: false });
   if (newsRes.error) throw new Error(newsRes.error.message);
@@ -308,8 +358,10 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
   const newsRows = (newsRes.data ?? []) as any[];
   const newsIds = newsRows.map((row) => String(row.id ?? "")).filter(Boolean);
   const creatorIds = Array.from(new Set(newsRows.map((row) => String(row.created_by ?? "")).filter(Boolean)));
+  const linkedEventIds = Array.from(new Set(newsRows.map((row) => String(row.linked_club_event_id ?? "")).filter(Boolean)));
+  const linkedCampIds = Array.from(new Set(newsRows.map((row) => String(row.linked_camp_id ?? "")).filter(Boolean)));
 
-  const [targetsRes, creatorsRes] = await Promise.all([
+  const [targetsRes, creatorsRes, linkedEventsRes, linkedCampsRes] = await Promise.all([
     newsIds.length > 0
       ? supabaseAdmin
           .from("club_news_targets")
@@ -322,9 +374,17 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
           .select("id,first_name,last_name")
           .in("id", creatorIds)
       : ({ data: [], error: null } as const),
+    linkedEventIds.length > 0
+      ? supabaseAdmin.from("club_events").select("id,title,event_type,starts_at").in("id", linkedEventIds)
+      : ({ data: [], error: null } as const),
+    linkedCampIds.length > 0
+      ? supabaseAdmin.from("club_camps").select("id,title,created_at").in("id", linkedCampIds)
+      : ({ data: [], error: null } as const),
   ]);
   if (targetsRes.error) throw new Error(targetsRes.error.message);
   if (creatorsRes.error) throw new Error(creatorsRes.error.message);
+  if (linkedEventsRes.error) throw new Error(linkedEventsRes.error.message);
+  if (linkedCampsRes.error) throw new Error(linkedCampsRes.error.message);
 
   const targetsByNewsId = new Map<string, NewsTargetInput[]>();
   for (const row of targetsRes.data ?? []) {
@@ -341,6 +401,42 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
   const creatorNameById = new Map<string, string>();
   for (const row of creatorsRes.data ?? []) {
     creatorNameById.set(String((row as any).id ?? ""), fullName((row as any).first_name, (row as any).last_name));
+  }
+
+  const linkedEventLabelById = new Map<string, string>();
+  for (const row of linkedEventsRes.data ?? []) {
+    const startsAtValue = String((row as any).starts_at ?? "").trim();
+    const startsAt = startsAtValue ? new Date(startsAtValue) : null;
+    const dateLabel =
+      startsAt && !Number.isNaN(startsAt.getTime())
+        ? new Intl.DateTimeFormat("fr-CH", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(startsAt)
+        : null;
+    const rawTitle = String((row as any).title ?? "").trim() || "Événement";
+    const rawType = String((row as any).event_type ?? "").trim();
+    const suffix = [rawType || null, dateLabel].filter(Boolean).join(" • ");
+    linkedEventLabelById.set(String((row as any).id ?? ""), suffix ? `${rawTitle} • ${suffix}` : rawTitle);
+  }
+
+  const linkedCampLabelById = new Map<string, string>();
+  for (const row of linkedCampsRes.data ?? []) {
+    const createdAtValue = String((row as any).created_at ?? "").trim();
+    const createdAt = createdAtValue ? new Date(createdAtValue) : null;
+    const dateLabel =
+      createdAt && !Number.isNaN(createdAt.getTime())
+        ? new Intl.DateTimeFormat("fr-CH", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          }).format(createdAt)
+        : null;
+    const rawTitle = String((row as any).title ?? "").trim() || "Stage/Camp";
+    linkedCampLabelById.set(String((row as any).id ?? ""), dateLabel ? `${rawTitle} • ${dateLabel}` : rawTitle);
   }
 
   return newsRows.map((row) => ({
@@ -365,8 +461,50 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
     updated_at: String(row.updated_at ?? ""),
     created_by: String(row.created_by ?? ""),
     created_by_name: creatorNameById.get(String(row.created_by ?? "")) ?? null,
+    linked_club_event_id: row.linked_club_event_id == null ? null : String(row.linked_club_event_id),
+    linked_camp_id: row.linked_camp_id == null ? null : String(row.linked_camp_id),
+    linked_club_event_label: linkedEventLabelById.get(String(row.linked_club_event_id ?? "")) ?? null,
+    linked_camp_label: linkedCampLabelById.get(String(row.linked_camp_id ?? "")) ?? null,
     targets: targetsByNewsId.get(String(row.id ?? "")) ?? [],
   })) satisfies ClubNewsRow[];
+}
+
+export function normalizeLinkedItemId(raw: unknown) {
+  const value = String(raw ?? "").trim();
+  return value || null;
+}
+
+export async function validateLinkedNewsContent(args: {
+  supabaseAdmin: any;
+  clubId: string;
+  linkedClubEventId: string | null;
+  linkedCampId: string | null;
+}) {
+  if (args.linkedClubEventId && args.linkedCampId) {
+    throw new Error("Lie l’actualité soit à un événement, soit à un stage/camp.");
+  }
+
+  if (args.linkedClubEventId) {
+    const eventRes = await args.supabaseAdmin
+      .from("club_events")
+      .select("id")
+      .eq("id", args.linkedClubEventId)
+      .eq("club_id", args.clubId)
+      .maybeSingle();
+    if (eventRes.error) throw new Error(eventRes.error.message);
+    if (!eventRes.data) throw new Error("L’événement lié est invalide.");
+  }
+
+  if (args.linkedCampId) {
+    const campRes = await args.supabaseAdmin
+      .from("club_camps")
+      .select("id")
+      .eq("id", args.linkedCampId)
+      .eq("club_id", args.clubId)
+      .maybeSingle();
+    if (campRes.error) throw new Error(campRes.error.message);
+    if (!campRes.data) throw new Error("Le stage/camp lié est invalide.");
+  }
 }
 
 export function normalizeTargets(raw: unknown) {
