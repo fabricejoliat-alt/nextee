@@ -401,7 +401,7 @@ export default function ManagerNewsWorkspace() {
   if (loading) {
     return (
       <div style={{ display: "grid", gap: 16 }}>
-        <ListLoadingBlock lines={8} />
+        <ListLoadingBlock label="Chargement des actualités..." />
       </div>
     );
   }
