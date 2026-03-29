@@ -9,6 +9,8 @@ type TrainingSessionRow = {
   session_type: "club" | "private" | "individual";
   club_id: string | null;
   coach_user_id: string | null;
+  total_minutes?: number | null;
+  club_event_id?: string | null;
 };
 
 type TrainingItemRow = {
@@ -129,7 +131,30 @@ async function loadNonPerformanceSummary(args: NonPerformanceSummaryArgs) {
         .filter(Boolean)
     )
   );
-  if (attendeeEventIds.length === 0) return { minutes: 0, count: 0 };
+  let manualSessionsQuery = supabaseAdmin
+    .from("training_sessions")
+    .select("id,session_type,club_id,total_minutes,club_event_id")
+    .eq("user_id", playerId)
+    .in("session_type", ["private", "individual"])
+    .is("club_event_id", null)
+    .limit(2000);
+
+  if (from) manualSessionsQuery = manualSessionsQuery.gte("start_at", startOfDayISO(from));
+  if (to) manualSessionsQuery = manualSessionsQuery.lt("start_at", nextDayStartISO(to));
+  if (scope === "mine_club" && sharedClubIds.length > 0) manualSessionsQuery = manualSessionsQuery.in("club_id", sharedClubIds);
+
+  const manualSessionsRes = await manualSessionsQuery;
+  if (manualSessionsRes.error) throw new Error(manualSessionsRes.error.message);
+
+  const manualSessions = (manualSessionsRes.data ?? []) as TrainingSessionRow[];
+  const manualMinutes = manualSessions.reduce(
+    (sum, session) => sum + (Number(session.total_minutes ?? 0) || 0),
+    0
+  );
+
+  if (attendeeEventIds.length === 0) {
+    return { minutes: manualMinutes, count: manualSessions.length };
+  }
 
   let query = supabaseAdmin
     .from("club_events")
@@ -147,7 +172,10 @@ async function loadNonPerformanceSummary(args: NonPerformanceSummaryArgs) {
   if (eventsRes.error) throw new Error(eventsRes.error.message);
 
   const rows = (eventsRes.data ?? []) as Array<ClubEventRow & { club_id: string | null; status: string | null }>;
-  return { minutes: sumClubEventMinutes(rows), count: rows.length };
+  return {
+    minutes: sumClubEventMinutes(rows) + manualMinutes,
+    count: rows.length + manualSessions.length,
+  };
 }
 
 export async function GET(

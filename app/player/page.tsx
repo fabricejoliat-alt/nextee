@@ -657,12 +657,30 @@ export default function PlayerHomePage() {
     return trainingVolumeObjective * 4;
   }, [trainingVolumeObjective]);
 
+  const monthManualSessions = useMemo(
+    () =>
+      monthSessions.filter(
+        (session) =>
+          !session.club_event_id &&
+          (session.session_type === "individual" || session.session_type === "private")
+      ),
+    [monthSessions]
+  );
+  const monthManualMinutes = useMemo(
+    () =>
+      monthManualSessions.reduce(
+        (sum, session) => sum + (Number(session.total_minutes ?? 0) || 0),
+        0
+      ),
+    [monthManualSessions]
+  );
+
   const monthEffectiveMinutes = useMemo(() => {
     if (isPerformanceEnabled) {
       return monthItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
     }
-    return monthPlannedClubMinutes;
-  }, [isPerformanceEnabled, monthItems, monthPlannedClubMinutes]);
+    return monthPlannedClubMinutes + monthManualMinutes;
+  }, [isPerformanceEnabled, monthItems, monthPlannedClubMinutes, monthManualMinutes]);
 
   const trainingsSummary = useMemo(() => {
     const totalMinutes = monthEffectiveMinutes;

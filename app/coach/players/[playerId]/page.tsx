@@ -1472,17 +1472,30 @@ function presetToSelectValue(p: Preset): Preset {
   const avgDifficulty = useMemo(() => avg(filteredSessions.map((s) => s.difficulty)), [filteredSessions]);
   const avgSatisfaction = useMemo(() => avg(filteredSessions.map((s) => s.satisfaction)), [filteredSessions]);
 
+  const nonPerformanceManualSessions = useMemo(
+    () =>
+      filteredSessions.filter(
+        (session) =>
+          !session.club_event_id &&
+          (session.session_type === "individual" || session.session_type === "private")
+      ),
+    [filteredSessions]
+  );
+
   const byType = useMemo(() => {
     if (!isPerformanceEnabled) {
-      const clubCount = trainingVolumeSummary
-        ? trainingVolumeSummary.current.count
-        : plannedClubEventsCount;
-      return { club: clubCount, private: 0, individual: 0 } satisfies Record<SessionType, number>;
+      const manualPrivateCount = nonPerformanceManualSessions.filter((session) => session.session_type === "private").length;
+      const manualIndividualCount = nonPerformanceManualSessions.filter((session) => session.session_type === "individual").length;
+      return {
+        club: plannedClubEventsCount,
+        private: manualPrivateCount,
+        individual: manualIndividualCount,
+      } satisfies Record<SessionType, number>;
     }
     const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
     for (const s of filteredSessions) m[s.session_type] += 1;
     return m;
-  }, [isPerformanceEnabled, trainingVolumeSummary, plannedClubEventsCount, filteredSessions]);
+  }, [isPerformanceEnabled, plannedClubEventsCount, filteredSessions, nonPerformanceManualSessions]);
 
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};

@@ -1692,13 +1692,40 @@ function presetToSelectValue(p: Preset): Preset {
     return pickLocaleText(locale, "Mon volume d'entraînement", "Training volume");
   }, [locale, preset]);
   // ===== TRAININGS AGGREGATES (current + prev) =====
+  const nonPerformanceManualSessions = useMemo(
+    () =>
+      sessions.filter(
+        (session) =>
+          !session.club_event_id &&
+          (session.session_type === "individual" || session.session_type === "private")
+      ),
+    [sessions]
+  );
+  const nonPerformanceManualMinutes = useMemo(
+    () =>
+      nonPerformanceManualSessions.reduce(
+        (sum, session) => sum + (Number(session.total_minutes ?? 0) || 0),
+        0
+      ),
+    [nonPerformanceManualSessions]
+  );
+  const nonPerformanceManualBreakdown = useMemo(() => {
+    const counts: Record<"private" | "individual", number> = { private: 0, individual: 0 };
+    for (const session of nonPerformanceManualSessions) {
+      counts[session.session_type] += 1;
+    }
+    return counts;
+  }, [nonPerformanceManualSessions]);
   const totalMinutes = useMemo(() => {
     if (isPerformanceEnabled) return items.reduce((sum, it) => sum + (it.minutes || 0), 0);
-    return plannedClubMinutes;
-  }, [isPerformanceEnabled, items, plannedClubMinutes]);
+    return plannedClubMinutes + nonPerformanceManualMinutes;
+  }, [isPerformanceEnabled, items, plannedClubMinutes, nonPerformanceManualMinutes]);
   const displayedTrainingCount = useMemo(
-    () => (isPerformanceEnabled ? sessions.length : plannedClubEventsCount),
-    [isPerformanceEnabled, sessions.length, plannedClubEventsCount]
+    () =>
+      isPerformanceEnabled
+        ? sessions.length
+        : plannedClubEventsCount + nonPerformanceManualSessions.length,
+    [isPerformanceEnabled, sessions.length, plannedClubEventsCount, nonPerformanceManualSessions.length]
   );
   const trainingVolumeTarget = useMemo(
     () => pickTrainingVolumeTarget(playerHandicap, trainingVolumeRows),
@@ -1737,12 +1764,16 @@ function presetToSelectValue(p: Preset): Preset {
 
   const byType = useMemo(() => {
     if (!isPerformanceEnabled) {
-      return { club: plannedClubEventsCount, private: 0, individual: 0 } satisfies Record<SessionType, number>;
+      return {
+        club: plannedClubEventsCount,
+        private: nonPerformanceManualBreakdown.private,
+        individual: nonPerformanceManualBreakdown.individual,
+      } satisfies Record<SessionType, number>;
     }
     const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
     for (const s of sessions) m[s.session_type] += 1;
     return m;
-  }, [isPerformanceEnabled, sessions, plannedClubEventsCount]);
+  }, [isPerformanceEnabled, sessions, plannedClubEventsCount, nonPerformanceManualBreakdown]);
 
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};
