@@ -29,15 +29,6 @@ export async function resolveEffectivePlayerContext() {
   const meJson = await meRes.json().catch(() => ({}));
   const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
 
-  if (role !== "parent") {
-    return {
-      viewerUserId,
-      effectiveUserId: viewerUserId,
-      role: "player" as const,
-      childIds: [] as string[],
-    };
-  }
-
   const childrenRes = await fetch("/api/parent/children", {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
@@ -45,6 +36,16 @@ export async function resolveEffectivePlayerContext() {
   });
   const childrenJson = await childrenRes.json().catch(() => ({}));
   const children = (childrenRes.ok ? childrenJson?.children ?? [] : []) as ParentChildLite[];
+
+  const hasChildren = children.length > 0;
+  if (role !== "parent" && !hasChildren) {
+    return {
+      viewerUserId,
+      effectiveUserId: viewerUserId,
+      role: "player" as const,
+      childIds: [] as string[],
+    };
+  }
 
   if (children.length === 0) {
     return {

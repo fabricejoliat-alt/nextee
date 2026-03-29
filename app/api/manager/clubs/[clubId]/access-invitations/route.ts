@@ -529,10 +529,11 @@ async function loadClubDataset(supabaseAdmin: any, clubId: string) {
   }>;
 
   const playerIds = Array.from(new Set(rawPlayers.map((row) => String(row.user_id ?? "")).filter(Boolean)));
-  const parentIds = Array.from(new Set(rawParents.map((row) => String(row.user_id ?? "")).filter(Boolean)));
+  const clubParentIds = Array.from(new Set(rawParents.map((row) => String(row.user_id ?? "")).filter(Boolean)));
   const linkedParentIds = Array.from(
     new Set(rawLinks.map((row) => String(row.guardian_user_id ?? "")).filter(Boolean))
   );
+  const parentIds = Array.from(new Set([...clubParentIds, ...linkedParentIds]));
 
   const allProfileIds = Array.from(new Set([...playerIds, ...parentIds, ...linkedParentIds]));
   const profileById = new Map<

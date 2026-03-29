@@ -1656,15 +1656,16 @@ function presetToSelectValue(p: Preset): Preset {
     const byRound: Record<string, GolfHoleRow[]> = {};
     for (const h of holes) (byRound[h.round_id] ??= []).push(h);
 
-    const roundsWithCount: Record<string, number> = {};
-    for (const rid of Object.keys(byRound)) roundsWithCount[rid] = byRound[rid].length;
+    const roundsWithPlayedCount: Record<string, number> = {};
+    for (const rid of Object.keys(byRound)) {
+      roundsWithPlayedCount[rid] = byRound[rid].filter((h) => typeof h.score === "number").length;
+    }
 
-    const holesPlayed = holes.length;
+    const holesPlayed = holes.filter((h) => typeof h.score === "number").length;
 
-    // completed rounds: only if 18 holes exist in golf_round_holes
-    const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
+    // completed rounds: only if 18 holes have a played score
+    const completedRoundIds = new Set(Object.entries(roundsWithPlayedCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = rounds.filter((r) => completedRoundIds.has(r.id));
-    const completedHoles = holes.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
@@ -1686,9 +1687,15 @@ function presetToSelectValue(p: Preset): Preset {
       distDen += 1;
     }
 
-    // putts avg (per hole)
-    const puttVals = completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null));
-    const avgPuttsPerHole = avg(puttVals);
+    const avgPutts18 = avg(
+      completedRounds.map((r) => {
+        if (typeof r.total_putts === "number") return r.total_putts;
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
+        if (hs.length !== 18) return null;
+        const sumPutts = hs.reduce((sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0), 0);
+        return Number.isFinite(sumPutts) && sumPutts > 0 ? sumPutts : null;
+      })
+    );
 
     // fairways (par 4/5 only; count only where fairway_hit not null)
     let fwTot = 0;
@@ -1702,13 +1709,12 @@ function presetToSelectValue(p: Preset): Preset {
     }
     const fwPct = fwTot ? round1((fwHit / fwTot) * 100) : null;
 
-    // GIR avg: use golf_rounds.gir (assumed out of 18). Only for completed 18-hole rounds.
-    const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
-    const girAvg = avg(girVals);
-    const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
-    const scramblingKnownHoles = holes.filter(
+    const girKnownHoles = holes.filter(
       (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
     );
+    const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
+    const girPct = girKnownHoles.length ? round1((girHits / girKnownHoles.length) * 100) : null;
+    const scramblingKnownHoles = girKnownHoles;
     let scramblingOpp = 0;
     let scramblingSuccess = 0;
     for (const h of scramblingKnownHoles) {
@@ -1771,9 +1777,8 @@ function presetToSelectValue(p: Preset): Preset {
       avgScore18,
       dist,
       distDen,
-      avgPuttsPerHole,
+      avgPutts18,
       fwPct,
-      girAvg,
       girPct,
       scramblingPct,
       avgPar3,
@@ -1788,12 +1793,14 @@ function presetToSelectValue(p: Preset): Preset {
     const byRound: Record<string, GolfHoleRow[]> = {};
     for (const h of prevHoles) (byRound[h.round_id] ??= []).push(h);
 
-    const roundsWithCount: Record<string, number> = {};
-    for (const rid of Object.keys(byRound)) roundsWithCount[rid] = byRound[rid].length;
+    const roundsWithPlayedCount: Record<string, number> = {};
+    for (const rid of Object.keys(byRound)) {
+      roundsWithPlayedCount[rid] = byRound[rid].filter((h) => typeof h.score === "number").length;
+    }
 
-    const completedRoundIds = new Set(Object.entries(roundsWithCount).filter(([, n]) => n === 18).map(([rid]) => rid));
+    const holesPlayed = prevHoles.filter((h) => typeof h.score === "number").length;
+    const completedRoundIds = new Set(Object.entries(roundsWithPlayedCount).filter(([, n]) => n === 18).map(([rid]) => rid));
     const completedRounds = prevRounds.filter((r) => completedRoundIds.has(r.id));
-    const completedHoles = prevHoles.filter((h) => completedRoundIds.has(h.round_id));
 
     const avgScore18 = avg(
       completedRounds.map((r) => {
@@ -1813,7 +1820,15 @@ function presetToSelectValue(p: Preset): Preset {
       distDen += 1;
     }
 
-    const avgPuttsPerHole = avg(completedHoles.map((h) => (typeof h.putts === "number" ? h.putts : null)));
+    const avgPutts18 = avg(
+      completedRounds.map((r) => {
+        if (typeof r.total_putts === "number") return r.total_putts;
+        const hs = (byRound[r.id] ?? []).filter((h) => typeof h.score === "number");
+        if (hs.length !== 18) return null;
+        const sumPutts = hs.reduce((sum, h) => sum + (typeof h.putts === "number" ? h.putts : 0), 0);
+        return Number.isFinite(sumPutts) && sumPutts > 0 ? sumPutts : null;
+      })
+    );
 
     let fwTot = 0;
     let fwHit = 0;
@@ -1826,12 +1841,12 @@ function presetToSelectValue(p: Preset): Preset {
     }
     const fwPct = fwTot ? round1((fwHit / fwTot) * 100) : null;
 
-    const girVals = completedRounds.map((r) => (typeof r.gir === "number" ? r.gir : null));
-    const girAvg = avg(girVals);
-    const girPct = girAvg == null ? null : round1((girAvg / 18) * 100);
-    const scramblingKnownHoles = prevHoles.filter(
+    const girKnownHoles = prevHoles.filter(
       (h) => typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
     );
+    const girHits = girKnownHoles.filter((h) => isGirOnHole(h.par, h.score, h.putts)).length;
+    const girPct = girKnownHoles.length > 0 ? round1((girHits / girKnownHoles.length) * 100) : null;
+    const scramblingKnownHoles = girKnownHoles;
     let scramblingOpp = 0;
     let scramblingSuccess = 0;
     for (const h of scramblingKnownHoles) {
@@ -1886,12 +1901,12 @@ function presetToSelectValue(p: Preset): Preset {
     const avgBack = side.back.n ? round1(side.back.sum / side.back.n) : null;
 
     return {
+      holesPlayed,
       avgScore18,
       dist,
       distDen,
-      avgPuttsPerHole,
+      avgPutts18,
       fwPct,
-      girAvg,
       girPct,
       scramblingPct,
       avgPar3,
@@ -2069,8 +2084,8 @@ function presetToSelectValue(p: Preset): Preset {
       girPct: holeAgg.girPct,
       girArrow: delta(holeAgg.girPct, prevHoleAgg.girPct),
 
-      puttsPerHole: holeAgg.avgPuttsPerHole,
-      puttsArrow: delta(holeAgg.avgPuttsPerHole, prevHoleAgg.avgPuttsPerHole),
+      putts18: holeAgg.avgPutts18,
+      puttsArrow: delta(holeAgg.avgPutts18, prevHoleAgg.avgPutts18),
 
       fwPct: holeAgg.fwPct,
       fwArrow: delta(holeAgg.fwPct, prevHoleAgg.fwPct),
@@ -2079,6 +2094,12 @@ function presetToSelectValue(p: Preset): Preset {
       scramblingArrow: delta(holeAgg.scramblingPct, prevHoleAgg.scramblingPct),
     };
   }, [holeAgg, prevHoleAgg, prevRange]);
+
+  const playerAvatarUrl = useMemo(() => {
+    const base = playerProfile?.avatar_url?.trim() || "";
+    if (!base) return null;
+    return `${base}${base.includes("?") ? "&" : "?"}t=${Date.now()}`;
+  }, [playerProfile?.avatar_url]);
 
   // Card 4: Par3/4/5 averages + trends
   const parAvgUI = useMemo(() => {
@@ -3211,8 +3232,12 @@ function presetToSelectValue(p: Preset): Preset {
                 flexShrink: 0,
               }}
             >
-              {playerProfile?.avatar_url ? (
-                <img src={playerProfile.avatar_url} alt={fullName(playerProfile)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              {playerAvatarUrl ? (
+                <img
+                  src={playerAvatarUrl}
+                  alt={fullName(playerProfile)}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }}
+                />
               ) : (
                 initials(playerProfile)
               )}
@@ -3993,7 +4018,7 @@ function presetToSelectValue(p: Preset): Preset {
                       <div style={miniLeft}>{t("golfDashboard.holesPlayed")}</div>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         <div style={miniRight}>{holeAgg.holesPlayed}</div>
-                        {prevRange ? deltaArrow(holeAgg.holesPlayed - prevHoles.length) : null}
+                        {prevRange ? deltaArrow(holeAgg.holesPlayed - (prevHoleAgg.holesPlayed ?? 0)) : null}
                       </div>
                     </div>
                   </div>
@@ -4101,9 +4126,9 @@ function presetToSelectValue(p: Preset): Preset {
                   </div>
 
                   <div style={miniRow}>
-                    <div style={miniLeft}>{t("golfDashboard.avgPutts")}</div>
+                    <div style={miniLeft}>{pickLocaleText(locale, "Nombre de putts (sur 18 trous)", "Putts (18 holes)")}</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <div style={miniRight}>{keyKpisUI.puttsPerHole == null ? "—" : `${keyKpisUI.puttsPerHole}`}</div>
+                      <div style={miniRight}>{keyKpisUI.putts18 == null ? "—" : `${keyKpisUI.putts18}`}</div>
                       {prevRange ? deltaArrow(keyKpisUI.puttsArrow ?? null) : null}
                     </div>
                   </div>

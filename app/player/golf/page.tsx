@@ -60,6 +60,32 @@ type TrainingItemRow = {
   minutes: number;
 };
 
+type CoachEvaluationFeedbackRow = {
+  event_id: string;
+  engagement: number | null;
+  attitude: number | null;
+  performance: number | null;
+  player_note: string | null;
+};
+
+type CoachEvaluationEventRow = {
+  id: string;
+  starts_at: string;
+  event_type: string | null;
+  title: string | null;
+};
+
+type CoachEvaluationRow = {
+  event_id: string;
+  starts_at: string;
+  title: string | null;
+  event_type: string | null;
+  engagement: number | null;
+  attitude: number | null;
+  application: number | null;
+  player_note: string | null;
+};
+
 type GolfRoundRow = {
   id: string;
   start_at: string;
@@ -135,7 +161,7 @@ type PlayerDashboardDocument = {
 };
 
 type Preset = "week" | "month" | "last3" | "all" | "custom";
-type DashboardSection = "trainings" | "rounds" | "stats" | "thread" | "documents";
+type DashboardSection = "trainings" | "evaluations" | "rounds" | "stats" | "thread" | "documents";
 
 const LOOKBACK_DAYS = 14;
 
@@ -558,6 +584,8 @@ export default function GolfDashboardPage() {
 
   const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
   const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
+  const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
+  const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
   const [teamThreadId, setTeamThreadId] = useState<string>("");
   const [teamMessages, setTeamMessages] = useState<TeamThreadMessage[]>([]);
   const [teamComposer, setTeamComposer] = useState("");
@@ -791,14 +819,19 @@ export default function GolfDashboardPage() {
     }
   }
 
-  async function loadDocuments() {
+  async function loadDocuments(targetPlayerId?: string) {
     setLoadingDocuments(true);
     try {
-      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
+      const ctx = await resolveEffectivePlayerContext();
+      const playerId = String(targetPlayerId ?? effectivePlayerId ?? ctx.effectiveUserId).trim();
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token || !playerId) throw new Error("Missing context");
-      const res = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
+      const params = new URLSearchParams({ player_id: playerId });
+      if (ctx.role === "parent") {
+        params.set("child_id", ctx.effectiveUserId);
+      }
+      const res = await fetch(`/api/player/documents?${params.toString()}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
@@ -806,7 +839,8 @@ export default function GolfDashboardPage() {
       const json = await res.json().catch(() => ({} as any));
       if (!res.ok) throw new Error(String(json?.error ?? "Load documents error"));
       setDocuments((json?.documents ?? []) as PlayerDashboardDocument[]);
-    } catch {
+    } catch (e) {
+      console.warn("player golf documents load failed:", e);
       setDocuments([]);
     } finally {
       setLoadingDocuments(false);
@@ -975,9 +1009,18 @@ export default function GolfDashboardPage() {
   useEffect(() => {
     void getAuthToken();
     void ensureAndLoadTeamThread();
-    void loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!effectivePlayerId) return;
+    void loadDocuments(effectivePlayerId);
+  }, [effectivePlayerId]);
+
+  useEffect(() => {
+    if (activeSection !== "documents" || !effectivePlayerId) return;
+    void loadDocuments(effectivePlayerId);
+  }, [activeSection, effectivePlayerId]);
 
   useEffect(() => {
     if (!teamThreadId) return;
@@ -1354,6 +1397,7 @@ export default function GolfDashboardPage() {
   }, [effectivePlayerId, fromDate, toDate]);
 
   const shouldLoadRoundStats = activeSection === "stats" || activeSection === "rounds";
+  const shouldLoadTrainingData = activeSection === "trainings" || activeSection === "evaluations";
   const shouldLoadTrainLookback = activeSection === "stats" && isPerformanceEnabled;
 
   // ===== LOAD ROUNDS (current) =====
@@ -1559,6 +1603,74 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [effectivePlayerId, fromDate, toDate, shouldLoadTrainLookback]);
+
+  useEffect(() => {
+    (async () => {
+      if (activeSection !== "evaluations" || !effectivePlayerId) {
+        setCoachEvaluations([]);
+        setLoadingCoachEvaluations(false);
+        return;
+      }
+
+      setLoadingCoachEvaluations(true);
+      try {
+        const feedbackRes = await supabase
+          .from("club_event_coach_feedback")
+          .select("event_id,engagement,attitude,performance,player_note")
+          .eq("player_id", effectivePlayerId)
+          .eq("visible_to_player", true)
+          .limit(500);
+        if (feedbackRes.error) throw new Error(feedbackRes.error.message);
+
+        const feedbacks = (feedbackRes.data ?? []) as CoachEvaluationFeedbackRow[];
+        const eventIds = Array.from(new Set(feedbacks.map((row) => row.event_id).filter(Boolean)));
+        if (eventIds.length === 0) {
+          setCoachEvaluations([]);
+          return;
+        }
+
+        let eventsQuery = supabase
+          .from("club_events")
+          .select("id,starts_at,event_type,title")
+          .in("id", eventIds)
+          .in("event_type", ["training", "camp"])
+          .lt("starts_at", new Date().toISOString())
+          .limit(1000);
+        if (fromDate) eventsQuery = eventsQuery.gte("starts_at", startOfDayISO(fromDate));
+        if (toDate) eventsQuery = eventsQuery.lt("starts_at", nextDayStartISO(toDate));
+
+        const eventsRes = await eventsQuery;
+        if (eventsRes.error) throw new Error(eventsRes.error.message);
+
+        const events = (eventsRes.data ?? []) as CoachEvaluationEventRow[];
+        const eventById = new Map(events.map((event) => [event.id, event]));
+
+        const merged = feedbacks
+          .map((feedback) => {
+            const event = eventById.get(feedback.event_id);
+            if (!event) return null;
+            return {
+              event_id: feedback.event_id,
+              starts_at: event.starts_at,
+              title: event.title ?? null,
+              event_type: event.event_type ?? null,
+              engagement: feedback.engagement,
+              attitude: feedback.attitude,
+              application: feedback.performance,
+              player_note: String(feedback.player_note ?? "").trim() || null,
+            } as CoachEvaluationRow;
+          })
+          .filter((row): row is CoachEvaluationRow => Boolean(row))
+          .sort((a, b) => (a.starts_at > b.starts_at ? -1 : 1));
+
+        setCoachEvaluations(merged);
+      } catch {
+        setCoachEvaluations([]);
+      } finally {
+        setLoadingCoachEvaluations(false);
+      }
+    })();
+  }, [activeSection, effectivePlayerId, fromDate, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
     week: t("common.thisWeek"),
@@ -1729,6 +1841,63 @@ function presetToSelectValue(p: Preset): Preset {
       return { ...x, weekLabel: label };
     });
   }, [dateLocale, sessions]);
+
+  const avgCoachEngagement = useMemo(() => avg(coachEvaluations.map((row) => row.engagement)), [coachEvaluations]);
+  const avgCoachAttitude = useMemo(() => avg(coachEvaluations.map((row) => row.attitude)), [coachEvaluations]);
+  const avgCoachApplication = useMemo(() => avg(coachEvaluations.map((row) => row.application)), [coachEvaluations]);
+
+  const coachEvalTrendSeries = useMemo(() => {
+    const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
+    if (asc.length === 0) return [];
+    const linearTrendEnds = (key: "engagement" | "attitude" | "application") => {
+      const values = asc
+        .map((row, index) => ({ x: index, y: typeof row[key] === "number" ? row[key] : null }))
+        .filter((point): point is { x: number; y: number } => point.y != null);
+      if (values.length === 0) return { start: null as number | null, end: null as number | null };
+      if (values.length === 1) return { start: values[0].y, end: values[0].y };
+
+      const n = values.length;
+      const sumX = values.reduce((sum, point) => sum + point.x, 0);
+      const sumY = values.reduce((sum, point) => sum + point.y, 0);
+      const sumXY = values.reduce((sum, point) => sum + point.x * point.y, 0);
+      const sumXX = values.reduce((sum, point) => sum + point.x * point.x, 0);
+      const denom = n * sumXX - sumX * sumX;
+      if (denom === 0) return { start: values[0].y, end: values[n - 1].y };
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+      const start = Math.round((intercept + slope * values[0].x) * 10) / 10;
+      const end = Math.round((intercept + slope * values[n - 1].x) * 10) / 10;
+      return { start, end };
+    };
+
+    const engagement = linearTrendEnds("engagement");
+    const attitude = linearTrendEnds("attitude");
+    const application = linearTrendEnds("application");
+
+    return [
+      { point: "Début", engagement: engagement.start, attitude: attitude.start, application: application.start },
+      { point: "Fin", engagement: engagement.end, attitude: attitude.end, application: application.end },
+    ];
+  }, [coachEvaluations]);
+
+  const sessionIdByClubEventId = useMemo(() => {
+    const map = new Map<string, string>();
+    sessions.forEach((session) => {
+      const clubEventId = String(session.club_event_id ?? "").trim();
+      if (!clubEventId || map.has(clubEventId)) return;
+      map.set(clubEventId, session.id);
+    });
+    return map;
+  }, [sessions]);
+
+  const coachEvaluationNotes = useMemo(
+    () =>
+      coachEvaluations.filter((row) => String(row.player_note ?? "").trim()).map((row) => ({
+        ...row,
+        sessionId: sessionIdByClubEventId.get(row.event_id) ?? null,
+      })),
+    [coachEvaluations, sessionIdByClubEventId]
+  );
 
   // ===== MES PARCOURS AGGREGATES (CURRENT + PREV) =====
   const holeAgg = useMemo(() => {
@@ -2275,6 +2444,7 @@ function presetToSelectValue(p: Preset): Preset {
           >
             {[
               { id: "trainings" as DashboardSection, label: "Entrainements" },
+              { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
               { id: "rounds" as DashboardSection, label: "Parcours" },
               { id: "stats" as DashboardSection, label: "Statistiques" },
               { id: "thread" as DashboardSection, label: "Fil de discussion" },
@@ -2849,23 +3019,6 @@ function presetToSelectValue(p: Preset): Preset {
               )}
             </div>
 
-            {isPerformanceEnabled ? (
-              <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-                <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
-
-                {sessions.length === 0 ? (
-                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 14 }}>
-                    <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                    <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                    <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
-
-                    {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
-                  </div>
-                )}
-              </div>
-            ) : null}
           </div>
         </div>
         ) : null}
@@ -2920,34 +3073,6 @@ function presetToSelectValue(p: Preset): Preset {
         {activeSection === "trainings" && isPerformanceEnabled ? (
           <div className="glass-section">
             <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
-
-              {weekSeries.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-              ) : (
-                <div style={{ height: 280 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={weekSeries}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="weekLabel" />
-                      <YAxis domain={[0, 6]} />
-                      <Tooltip />
-                      <Legend />
-
-                      <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
-                      <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
-                      <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        {activeSection === "trainings" && isPerformanceEnabled ? (
-          <div className="glass-section">
-            <div className="glass-card">
               <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
 
               {topCats.length === 0 ? (
@@ -2972,6 +3097,150 @@ function presetToSelectValue(p: Preset): Preset {
               )}
             </div>
           </div>
+        ) : null}
+
+        {activeSection === "evaluations" ? (
+        <>
+          {isPerformanceEnabled ? (
+            <div className="glass-section">
+              <div className="glass-card">
+                <div className="card-title">Sensations du joueur (Moyenne)</div>
+
+                {sessions.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 14 }}>
+                    <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                    <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                    <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
+
+                    {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {isPerformanceEnabled ? (
+            <div className="glass-section">
+              <div className="glass-card">
+                <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
+
+                {weekSeries.length === 0 ? (
+                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+                ) : (
+                  <div style={{ height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={weekSeries}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="weekLabel" />
+                        <YAxis domain={[0, 6]} />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
+                        <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
+                        <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">Évaluations moyennes du coach</div>
+
+              {loadingCoachEvaluations ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              ) : coachEvaluations.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+              ) : (
+                <div style={{ display: "grid", gap: 14 }}>
+                  <RatingBar icon={<Flame size={16} />} label="Engagement" value={avgCoachEngagement} />
+                  <RatingBar icon={<Mountain size={16} />} label="Attitude" value={avgCoachAttitude} />
+                  <RatingBar icon={<Smile size={16} />} label="Application" value={avgCoachApplication} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">Tendances d’évaluation du coach</div>
+
+              {loadingCoachEvaluations ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              ) : coachEvaluations.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
+              ) : (
+                <div style={{ height: 280 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={coachEvalTrendSeries}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="point" />
+                      <YAxis domain={[0, 6]} />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot />
+                      <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} dot />
+                      <Line type="linear" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} dot />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="glass-section">
+            <div className="glass-card">
+              <div className="card-title">Notes du coach</div>
+
+              {loadingCoachEvaluations ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+              ) : coachEvaluationNotes.length === 0 ? (
+                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune note coach visible.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {coachEvaluationNotes.map((row) => (
+                    <div
+                      key={row.event_id}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.08)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.78)",
+                        padding: "10px 12px",
+                        display: "grid",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ fontWeight: 800, fontSize: 11, color: "rgba(0,0,0,0.62)" }}>
+                          {shortDate(row.starts_at, dateLocale)}
+                          {row.event_type ? ` • ${row.event_type === "camp" ? "Stage/Camp" : "Entraînement"}` : ""}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
+                          Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.45, color: "rgba(0,0,0,0.74)" }}>{row.player_note}</div>
+
+                      {row.sessionId ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                          <Link className="btn" href={`/player/golf/trainings/${row.sessionId}`}>
+                            Voir le détail de l’entraînement
+                          </Link>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
         ) : null}
 
         {activeSection === "rounds" ? (

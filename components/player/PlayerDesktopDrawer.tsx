@@ -209,15 +209,15 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
       const meJson = await meRes.json().catch(() => ({}));
       const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
+      const childrenRes = await fetch("/api/parent/children", { method: "GET", headers, cache: "no-store" });
+      const childrenJson = await childrenRes.json().catch(() => ({}));
+      const list = (childrenRes.ok ? (childrenJson?.children ?? []) : []) as ParentChildLite[];
 
       let resolvedViewerRole: "player" | "parent" = "player";
       let resolvedChildren: ParentChildLite[] = [];
       let resolvedSelectedChildId = "";
-      if (role === "parent") {
+      if (role === "parent" || list.length > 0) {
         resolvedViewerRole = "parent";
-        const childrenRes = await fetch("/api/parent/children", { method: "GET", headers, cache: "no-store" });
-        const childrenJson = await childrenRes.json().catch(() => ({}));
-        const list = (childrenRes.ok ? (childrenJson?.children ?? []) : []) as ParentChildLite[];
         resolvedChildren = list;
         const queryChildId = String(searchParams.get("child_id") ?? "").trim();
         const stored = window.localStorage.getItem("parent:selected_child_id");

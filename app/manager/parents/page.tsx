@@ -94,9 +94,9 @@ export default function ManagerParentsPage() {
       const res = await fetch(`/api/manager/clubs/${selectedClubId}/guardians`, { headers, cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error ?? "Load failed");
-      setPlayers((json.players ?? []) as MembershipProfileRow[]);
+      setPlayers(((json.all_players ?? json.players) ?? []) as MembershipProfileRow[]);
       setParents((json.parents ?? []) as MembershipProfileRow[]);
-      setLinks((json.links ?? []) as LinkRow[]);
+      setLinks(((json.all_links ?? json.links) ?? []) as LinkRow[]);
     } catch (e: any) {
       setError(e?.message ?? "Erreur de chargement.");
       setPlayers([]);

@@ -231,7 +231,15 @@ export default function PlayerProfilePage() {
       });
       const meJson = await meRes.json().catch(() => ({}));
       const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
-      setViewerRole(role === "parent" ? "parent" : "player");
+      const childrenRes = await fetch("/api/parent/children", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const childrenJson = await childrenRes.json().catch(() => ({}));
+      const hasChildren = Array.isArray(childrenJson?.children) && childrenJson.children.length > 0;
+      const effectiveRole = role === "parent" || hasChildren ? "parent" : "player";
+      setViewerRole(effectiveRole);
 
       const customFieldsRes = await fetch("/api/profile/custom-fields", {
         method: "GET",
@@ -242,7 +250,6 @@ export default function PlayerProfilePage() {
       if (!customFieldsRes.ok) {
         setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
       } else {
-        const effectiveRole = role === "parent" ? "parent" : "player";
         const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
         setCustomFieldGroups(
           memberships.filter(

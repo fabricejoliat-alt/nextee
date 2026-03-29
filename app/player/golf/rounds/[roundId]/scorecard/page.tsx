@@ -280,7 +280,7 @@ export default function ScorecardPage() {
       (acc, h) =>
         acc +
         (typeof h.par === "number" && typeof h.score === "number"
-          ? Math.max(0, h.score - h.par)
+          ? h.score - h.par
           : 0),
       0
     );

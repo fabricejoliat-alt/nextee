@@ -50,6 +50,7 @@ type MemberRow = {
   club_id: string;
   user_id: string;
   role: MemberRole;
+  synthetic?: boolean;
   is_active: boolean | null;
   is_performance: boolean | null;
   player_consent_status?: "granted" | "pending" | "adult" | null;
@@ -780,7 +781,45 @@ export default function UserManagementWorkspace({ section }: { section: Section 
 
   const activeMembers = useMemo(() => members.filter((member) => member.is_active !== false), [members]);
   const players = useMemo(() => activeMembers.filter((member) => member.role === "player"), [activeMembers]);
-  const parents = useMemo(() => activeMembers.filter((member) => member.role === "parent"), [activeMembers]);
+  const parents = useMemo(() => {
+    const directParents = activeMembers.filter((member) => member.role === "parent");
+    const byUserId = new Map(directParents.map((member) => [member.user_id, member]));
+
+    (guardianData?.parents ?? []).forEach((parent) => {
+      if (byUserId.has(parent.user_id)) return;
+      byUserId.set(parent.user_id, {
+        id: `synthetic-parent:${parent.user_id}`,
+        club_id: clubId,
+        user_id: parent.user_id,
+        role: "parent",
+        synthetic: true,
+        is_active: true,
+        is_performance: null,
+        auth_email: null,
+        auth_last_sign_in_at: null,
+        profiles: parent.profiles
+          ? {
+              id: parent.profiles.id,
+              first_name: parent.profiles.first_name ?? null,
+              last_name: parent.profiles.last_name ?? null,
+              username: null,
+              phone: null,
+              birth_date: parent.profiles.birth_date ?? null,
+              sex: null,
+              handedness: null,
+              handicap: null,
+              address: null,
+              postal_code: null,
+              city: null,
+              avs_no: null,
+              staff_function: null,
+            }
+          : null,
+      });
+    });
+
+    return Array.from(byUserId.values());
+  }, [activeMembers, guardianData, clubId]);
   const coaches = useMemo(() => activeMembers.filter((member) => member.role === "coach"), [activeMembers]);
   const managers = useMemo(() => activeMembers.filter((member) => member.role === "manager"), [activeMembers]);
 
@@ -854,6 +893,17 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     }
     return map;
   }, [allGuardianLinks, allPlayersFromGuardianApi]);
+
+  const linkedParentCountByPlayerId = useMemo(() => {
+    const map = new Map<string, number>();
+    allGuardianLinks.forEach((link) => {
+      const playerId = String(link.player_id ?? "");
+      const guardianId = String(link.guardian_user_id ?? "");
+      if (!playerId || !guardianId) return;
+      map.set(playerId, (map.get(playerId) ?? 0) + 1);
+    });
+    return map;
+  }, [allGuardianLinks]);
 
   function toggleSort(
     current: { key: string; dir: SortDirection },
@@ -1073,22 +1123,12 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       .sort((left, right) => {
         const leftAccount = playerAccountSummary(left);
         const rightAccount = playerAccountSummary(right);
-        const leftAccess = juniorAccessByPlayerId.get(left.user_id);
-        const rightAccess = juniorAccessByPlayerId.get(right.user_id);
-        const leftParentLinked = computeAge(left.profiles?.birth_date) != null && computeAge(left.profiles?.birth_date)! >= 18
-          ? "Majeur"
-          : leftAccess || unlinkedJuniorByPlayerId.has(left.user_id)
-          ? leftAccess
-            ? "Oui"
-            : "Non"
-          : "Non";
-        const rightParentLinked = computeAge(right.profiles?.birth_date) != null && computeAge(right.profiles?.birth_date)! >= 18
-          ? "Majeur"
-          : rightAccess || unlinkedJuniorByPlayerId.has(right.user_id)
-          ? rightAccess
-            ? "Oui"
-            : "Non"
-          : "Non";
+        const leftAge = computeAge(left.profiles?.birth_date);
+        const rightAge = computeAge(right.profiles?.birth_date);
+        const leftParentLinked =
+          leftAge != null && leftAge >= 18 ? "Majeur" : (linkedParentCountByPlayerId.get(left.user_id) ?? 0) > 0 ? "Oui" : "Non";
+        const rightParentLinked =
+          rightAge != null && rightAge >= 18 ? "Majeur" : (linkedParentCountByPlayerId.get(right.user_id) ?? 0) > 0 ? "Oui" : "Non";
 
         const leftValueByKey: Record<string, string | number | null | undefined> = {
           unique_id: left.user_id,
@@ -1117,7 +1157,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         const result = compareValues(leftValueByKey[playerSort.key], rightValueByKey[playerSort.key]);
         return playerSort.dir === "asc" ? result : -result;
       });
-  }, [players, playerSearch, playerSort, juniorAccessByPlayerId, unlinkedJuniorByPlayerId, activePlayerFields, getPlayerFieldValue, playerAccountSummary]);
+  }, [players, playerSearch, playerSort, activePlayerFields, getPlayerFieldValue, playerAccountSummary, linkedParentCountByPlayerId]);
 
   const filteredParents = useMemo(() => {
     const query = normalizeSearch(parentSearch);
@@ -1265,7 +1305,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       filteredPlayers.map((member) => {
         const age = computeAge(member.profiles?.birth_date);
         const parentLinked =
-          age != null && age >= 18 ? "Majeur" : juniorAccessByPlayerId.has(member.user_id) ? "Oui" : "Non";
+          age != null && age >= 18 ? "Majeur" : (linkedParentCountByPlayerId.get(member.user_id) ?? 0) > 0 ? "Oui" : "Non";
         const account = playerAccountSummary(member);
         return [
           member.user_id,
@@ -1725,12 +1765,10 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                 <div className="glass-card">
                   <div className="muted-uc">Parents liés</div>
                   <div className="big-number">
-                    {
-                      players.filter((member) => {
-                        const age = computeAge(member.profiles?.birth_date);
-                        return age != null && age >= 18 ? false : juniorAccessByPlayerId.has(member.user_id);
-                      }).length
-                    }
+                    {players.filter((member) => {
+                      const age = computeAge(member.profiles?.birth_date);
+                      return age != null && age >= 18 ? false : (linkedParentCountByPlayerId.get(member.user_id) ?? 0) > 0;
+                    }).length}
                   </div>
                 </div>
               </div>
@@ -2156,7 +2194,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                           const age = computeAge(member.profiles?.birth_date);
                           const account = playerAccountSummary(member);
                           const parentLinkText =
-                            age != null && age >= 18 ? "Majeur" : juniorAccessByPlayerId.has(member.user_id) ? "Oui" : "Non";
+                            age != null && age >= 18 ? "Majeur" : (linkedParentCountByPlayerId.get(member.user_id) ?? 0) > 0 ? "Oui" : "Non";
 
                           return (
                             <tr key={member.id}>
@@ -2337,15 +2375,17 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                               </td>
                               <td>
                                 <div className="user-mgmt-actions">
-                                  <button
-                                    type="button"
-                                    className="btn user-mgmt-icon-btn"
-                                    title="Éditer"
-                                    aria-label="Éditer"
-                                    onClick={() => openMemberEdit(member)}
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
+                                  {!member.synthetic ? (
+                                    <button
+                                      type="button"
+                                      className="btn user-mgmt-icon-btn"
+                                      title="Éditer"
+                                      aria-label="Éditer"
+                                      onClick={() => openMemberEdit(member)}
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                  ) : null}
                                   {children.length === 0 ? (
                                     <Link
                                       href={linkChildrenHref}

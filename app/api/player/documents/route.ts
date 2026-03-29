@@ -34,28 +34,42 @@ export async function GET(req: NextRequest) {
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const url = new URL(req.url);
     const requestedPlayerId = String(url.searchParams.get("player_id") ?? "").trim();
+    const requestedChildId = String(url.searchParams.get("child_id") ?? "").trim();
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
-    const playerId = requestedPlayerId || callerId;
+    let playerId = requestedPlayerId || callerId;
     if (!playerId) return NextResponse.json({ error: "Missing player_id" }, { status: 400 });
 
+    const parentLinksRes = await supabaseAdmin
+      .from("player_guardians")
+      .select("player_id,is_primary")
+      .eq("guardian_user_id", callerId);
+    if (parentLinksRes.error) return NextResponse.json({ error: parentLinksRes.error.message }, { status: 400 });
+
+    const parentLinks = (parentLinksRes.data ?? []).filter(
+      (row: any) => String(row?.player_id ?? "").trim().length > 0
+    ) as Array<{ player_id: string; is_primary?: boolean | null }>;
+    const linkedPlayerIds = new Set(parentLinks.map((row) => String(row.player_id ?? "").trim()).filter(Boolean));
+
+    if (linkedPlayerIds.size > 0) {
+      if (requestedChildId && linkedPlayerIds.has(requestedChildId)) {
+        playerId = requestedChildId;
+      } else if (!requestedPlayerId || requestedPlayerId === callerId) {
+        playerId =
+          parentLinks.find((row) => Boolean(row.is_primary))?.player_id ??
+          parentLinks[0]?.player_id ??
+          playerId;
+      }
+    }
+
     if (callerId !== playerId) {
-      const parentLinkRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("id")
-        .eq("player_id", playerId)
-        .eq("guardian_user_id", callerId)
-        .or("can_view.is.null,can_view.eq.true")
-        .limit(1)
-        .maybeSingle();
-      if (parentLinkRes.error) return NextResponse.json({ error: parentLinkRes.error.message }, { status: 400 });
-      if (!parentLinkRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      if (!linkedPlayerIds.has(playerId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     let docsQuery = supabaseAdmin
       .from("player_dashboard_documents")
       .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
-      .eq("coach_only", false)
+      .or("coach_only.is.null,coach_only.eq.false")
       .order("created_at", { ascending: false });
     if (requestedEventId) docsQuery = docsQuery.eq("club_event_id", requestedEventId);
     const docsRes = await docsQuery.limit(200);

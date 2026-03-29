@@ -21,7 +21,7 @@ type ClubMember = {
   id: string;
   club_id: string;
   user_id: string;
-  role: "manager" | "coach" | "player";
+  role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
   created_at: string | null;
 };
@@ -29,6 +29,20 @@ type ClubMember = {
 function fullName(p?: Profile | null) {
   if (!p) return "";
   return `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+}
+
+function roleLabel(role: ClubMember["role"] | "manager" | "coach" | "player" | "parent") {
+  if (role === "manager") return "Manager";
+  if (role === "coach") return "Coach";
+  if (role === "parent") return "Parent";
+  return "Joueur";
+}
+
+function consentLabel(status: string | null) {
+  if (status === "granted") return "accordé";
+  if (status === "pending") return "en attente";
+  if (status === "adult") return "majeur";
+  return "non défini";
 }
 
 type MutationResult = {
@@ -55,10 +69,15 @@ export default function OrganizationMembersAdmin() {
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
 
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedRole, setSelectedRole] = useState<"manager" | "coach" | "player">("player");
+  const [selectedRole, setSelectedRole] = useState<"manager" | "coach" | "player" | "parent">("player");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function getToken() {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  }
 
   async function loadAll() {
     setError(null);
@@ -161,36 +180,69 @@ export default function OrganizationMembersAdmin() {
 
     setBusy(true);
     try {
-      const { error } = await runWithTimeout(async () =>
-        await supabase.from("club_members").insert({
-          club_id: organizationId,
-          user_id: selectedUserId,
-          role: selectedRole,
-          is_active: true,
-        })
-      );
-
-      if (error) {
-        setError(error.message);
+      const picked = allUsers.find((u) => u.id === selectedUserId) ?? null;
+      const pickedName = fullName(picked) || "Sans nom";
+      const token = await getToken();
+      if (!token) {
+        setError("Pas de session. Reconnecte-toi.");
         return;
       }
 
-      const picked = allUsers.find((u) => u.id === selectedUserId);
-      if (picked) {
-        setProfilesById((prev) => ({ ...prev, [picked.id]: picked }));
+      let inheritedConsentStatus: string | null = null;
+      let linkedParentsCount = 0;
+      if (selectedRole === "player") {
+        const previewResponse = await fetch(`/api/admin/clubs/${organizationId}/add-existing-member-preview`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            user_id: selectedUserId,
+            role: selectedRole,
+          }),
+        });
+        const previewJson = await previewResponse.json().catch(() => ({}));
+        if (!previewResponse.ok) {
+          setError(String(previewJson?.error ?? "Erreur préparation import"));
+          return;
+        }
+        inheritedConsentStatus = String(previewJson?.consent_status ?? "").trim() || null;
+        const countValue = Number(previewJson?.linked_parents_count);
+        linkedParentsCount = Number.isFinite(countValue) ? countValue : 0;
       }
-      // Optimistic local add + async silent refresh for server truth.
-      const optimistic: ClubMember = {
-        id: `tmp-${Date.now()}-${selectedUserId}`,
-        club_id: organizationId,
-        user_id: selectedUserId,
-        role: selectedRole,
-        is_active: true,
-        created_at: new Date().toISOString(),
-      };
-      setMembers((prev) => [optimistic, ...prev]);
+
+      const confirmationMessage =
+        selectedRole === "player"
+          ? `Importer ${pickedName} comme ${roleLabel(selectedRole)} ?\nConsentement repris: ${consentLabel(inheritedConsentStatus)}\nParents liés repris: ${linkedParentsCount > 0 ? `${linkedParentsCount}` : "aucun"}`
+          : `Importer ${pickedName} comme ${roleLabel(selectedRole)} ?`;
+
+      if (!window.confirm(confirmationMessage)) {
+        setBusy(false);
+        return;
+      }
+
+      const response = await fetch(`/api/admin/clubs/${organizationId}/add-existing-member`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: selectedUserId,
+          role: selectedRole,
+        }),
+      });
+
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(String(json?.error ?? "Erreur ajout membre"));
+        return;
+      }
+
       setSelectedUserId("");
       setSelectedRole("player");
+      await loadAll();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur ajout membre");
     } finally {
@@ -245,7 +297,7 @@ export default function OrganizationMembersAdmin() {
   }
 
   function RoleBadge({ role }: { role: ClubMember["role"] }) {
-    const label = role === "manager" ? "Manager" : role === "coach" ? "Coach" : "Joueur";
+    const label = roleLabel(role);
 
     return (
       <span
@@ -325,13 +377,14 @@ export default function OrganizationMembersAdmin() {
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Rôle</span>
             <select
               value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value as "manager" | "coach" | "player")}
+              onChange={(e) => setSelectedRole(e.target.value as "manager" | "coach" | "player" | "parent")}
               style={inputStyle}
               disabled={!selectedUserId}
             >
               <option value="player">Joueur</option>
               <option value="coach">Coach</option>
               <option value="manager">Manager</option>
+              <option value="parent">Parent</option>
             </select>
           </label>
 
@@ -384,13 +437,14 @@ export default function OrganizationMembersAdmin() {
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <select
                       value={m.role}
-                      onChange={(e) => updateMember(m.id, { role: e.target.value as "manager" | "coach" | "player" })}
+                      onChange={(e) => updateMember(m.id, { role: e.target.value as "manager" | "coach" | "player" | "parent" })}
                       style={smallSelectStyle}
                       disabled={false}
                     >
                       <option value="player">Joueur</option>
                       <option value="coach">Coach</option>
                       <option value="manager">Manager</option>
+                      <option value="parent">Parent</option>
                     </select>
 
                     <button className="btn" onClick={() => updateMember(m.id, { is_active: !active })}>

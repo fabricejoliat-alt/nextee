@@ -176,6 +176,38 @@ async function resolveExistingPlayerConsentStatus(supabaseAdmin: any, userId: st
   return null;
 }
 
+async function syncLinkedParentsToClub(supabaseAdmin: any, clubId: string, playerUserId: string) {
+  const { data: links, error: linksError } = await supabaseAdmin
+    .from("player_guardians")
+    .select("guardian_user_id")
+    .eq("player_id", playerUserId);
+
+  if (linksError) throw new Error(linksError.message);
+
+  const guardianIds = Array.from(
+    new Set(
+      ((links ?? []) as Array<{ guardian_user_id: string | null }>)
+        .map((row) => String(row.guardian_user_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (guardianIds.length === 0) return;
+
+  const parentMembershipRows = guardianIds.map((guardianUserId) => ({
+    club_id: clubId,
+    user_id: guardianUserId,
+    role: "parent" as const,
+    is_active: true,
+  }));
+
+  const { error: parentMembershipError } = await supabaseAdmin
+    .from("club_members")
+    .upsert(parentMembershipRows, { onConflict: "club_id,user_id,role" });
+
+  if (parentMembershipError) throw new Error(parentMembershipError.message);
+}
+
 export async function POST(req: NextRequest, ctx: any) {
   try {
     const supabaseUrl = mustEnv("SUPABASE_URL");
@@ -367,6 +399,8 @@ const clubId: string | undefined = params?.clubId;
     }
 
     if (role === "player" && memberRow?.id) {
+      await syncLinkedParentsToClub(supabaseAdmin, clubId, userId);
+
       const fieldIds = Object.keys(playerFieldValues);
       if (fieldIds.length > 0) {
         const { data: fields, error: fieldsError } = await supabaseAdmin
