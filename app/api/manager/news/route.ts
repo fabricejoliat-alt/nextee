@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
           age_bands: [],
           club_events: [],
           camps: [],
+          group_player_user_ids_by_group_id: {},
+          group_coach_user_ids_by_group_id: {},
+          group_ids_by_category: {},
         },
         news: [],
       });
@@ -137,6 +140,8 @@ export async function POST(req: NextRequest) {
         callerId: ctx.callerId,
         clubId,
         newsId,
+        linkedClubEventId,
+        linkedCampId,
         title,
         summary,
         body: content,

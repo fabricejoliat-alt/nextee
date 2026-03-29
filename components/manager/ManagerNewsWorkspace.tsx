@@ -86,6 +86,9 @@ type BootstrapResponse = {
     age_bands: AgeBandOption[];
     club_events: LinkedEventOption[];
     camps: LinkedCampOption[];
+    group_player_user_ids_by_group_id: Record<string, string[]>;
+    group_coach_user_ids_by_group_id: Record<string, string[]>;
+    group_ids_by_category: Record<string, string[]>;
   };
   news: NewsRow[];
 };
@@ -198,6 +201,22 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
+function ageBandKeyFromBirthDate(birthDate: string | null | undefined) {
+  if (!birthDate) return null;
+  const date = new Date(birthDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const monthDelta = now.getMonth() - date.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < date.getDate())) age -= 1;
+  if (age <= 10) return "u10";
+  if (age <= 12) return "u12";
+  if (age <= 14) return "u14";
+  if (age <= 16) return "u16";
+  if (age <= 18) return "u18";
+  return "adult";
+}
+
 function targetKey(target: NewsTarget) {
   return `${target.target_type}:${target.target_value}`;
 }
@@ -242,6 +261,9 @@ export default function ManagerNewsWorkspace() {
   const [ageBands, setAgeBands] = useState<AgeBandOption[]>([]);
   const [linkedEvents, setLinkedEvents] = useState<LinkedEventOption[]>([]);
   const [linkedCamps, setLinkedCamps] = useState<LinkedCampOption[]>([]);
+  const [groupPlayerUserIdsByGroupId, setGroupPlayerUserIdsByGroupId] = useState<Record<string, string[]>>({});
+  const [groupCoachUserIdsByGroupId, setGroupCoachUserIdsByGroupId] = useState<Record<string, string[]>>({});
+  const [groupIdsByCategory, setGroupIdsByCategory] = useState<Record<string, string[]>>({});
   const [news, setNews] = useState<NewsRow[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
@@ -276,6 +298,9 @@ export default function ManagerNewsWorkspace() {
       setAgeBands(Array.isArray(json.target_options?.age_bands) ? json.target_options.age_bands : []);
       setLinkedEvents(Array.isArray(json.target_options?.club_events) ? json.target_options.club_events : []);
       setLinkedCamps(Array.isArray(json.target_options?.camps) ? json.target_options.camps : []);
+      setGroupPlayerUserIdsByGroupId(json.target_options?.group_player_user_ids_by_group_id ?? {});
+      setGroupCoachUserIdsByGroupId(json.target_options?.group_coach_user_ids_by_group_id ?? {});
+      setGroupIdsByCategory(json.target_options?.group_ids_by_category ?? {});
       setNews(Array.isArray(json.news) ? json.news : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Impossible de charger les actualités.");
@@ -286,6 +311,9 @@ export default function ManagerNewsWorkspace() {
       setAgeBands([]);
       setLinkedEvents([]);
       setLinkedCamps([]);
+      setGroupPlayerUserIdsByGroupId({});
+      setGroupCoachUserIdsByGroupId({});
+      setGroupIdsByCategory({});
       setNews([]);
     } finally {
       setLoading(false);
@@ -310,6 +338,38 @@ export default function ManagerNewsWorkspace() {
       managers: filteredMembers.filter((member) => member.role === "manager"),
     };
   }, [filteredMembers]);
+
+  const indirectlySelectedUserIds = useMemo(() => {
+    const selected = new Set<string>();
+    const selectedGroupIds = new Set(
+      form.targets.filter((target) => target.target_type === "group").map((target) => target.target_value)
+    );
+    const selectedCategoryValues = form.targets
+      .filter((target) => target.target_type === "group_category")
+      .map((target) => target.target_value);
+    const selectedAgeBands = new Set(
+      form.targets.filter((target) => target.target_type === "age_band").map((target) => target.target_value)
+    );
+
+    for (const category of selectedCategoryValues) {
+      for (const groupId of groupIdsByCategory[category] ?? []) selectedGroupIds.add(groupId);
+    }
+
+    for (const groupId of selectedGroupIds) {
+      for (const userId of groupPlayerUserIdsByGroupId[groupId] ?? []) selected.add(userId);
+      for (const userId of groupCoachUserIdsByGroupId[groupId] ?? []) selected.add(userId);
+    }
+
+    if (selectedAgeBands.size > 0) {
+      for (const member of members) {
+        if (member.role !== "player") continue;
+        const band = ageBandKeyFromBirthDate(member.birth_date);
+        if (band && selectedAgeBands.has(band)) selected.add(member.user_id);
+      }
+    }
+
+    return selected;
+  }, [form.targets, groupIdsByCategory, groupPlayerUserIdsByGroupId, groupCoachUserIdsByGroupId, members]);
 
   function openCreateForm() {
     setEditingNewsId(null);
@@ -776,7 +836,9 @@ export default function ManagerNewsWorkspace() {
                       <div style={{ display: "grid", gap: 8, maxHeight: 220, overflowY: "auto" }}>
                         {group.rows.map((member) => {
                           const target = { target_type: "user" as const, target_value: member.user_id };
-                          const checked = form.targets.some((item) => targetKey(item) === targetKey(target));
+                          const checked =
+                            form.targets.some((item) => targetKey(item) === targetKey(target)) ||
+                            indirectlySelectedUserIds.has(member.user_id);
                           return (
                             <label key={member.user_id} style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 700 }}>
                               <input

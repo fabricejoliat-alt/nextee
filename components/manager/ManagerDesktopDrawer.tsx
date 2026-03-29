@@ -100,7 +100,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: locale === "fr" ? "Configuration E-mail" : "Email configuration", icon: Mail, href: ROUTES.userManagementEmailConfiguration },
         ],
       },
-      { label: locale === "fr" ? "Actualités" : "News", icon: Newspaper, href: ROUTES.news },
+      { label: "News", icon: Newspaper, href: ROUTES.news },
       {
         label: locale === "fr" ? "Gestion des groupes" : "Group management",
         icon: Building2,

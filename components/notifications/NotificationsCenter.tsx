@@ -378,6 +378,36 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     const explicit = String(data.url ?? "").trim();
     if (explicit) return explicit;
 
+    if (String(notification?.kind ?? "") === "manager_news") {
+      const linkedCampId = String(data.linked_camp_id ?? "").trim();
+      const linkedClubEventId = String(data.linked_club_event_id ?? "").trim();
+      const linkedGroupId = String(data.linked_group_id ?? "").trim();
+
+      if (linkedCampId) {
+        if (homeHref.startsWith("/manager")) return `/manager/camps/new?campId=${encodeURIComponent(linkedCampId)}`;
+        if (homeHref.startsWith("/coach")) return "/coach/camps";
+        const childId = String(data.child_id ?? "").trim();
+        return childId ? `/player/camps?child_id=${encodeURIComponent(childId)}` : "/player/camps";
+      }
+
+      if (linkedClubEventId) {
+        if (homeHref.startsWith("/manager")) {
+          return linkedGroupId
+            ? `/manager/groups/${encodeURIComponent(linkedGroupId)}/planning/${encodeURIComponent(linkedClubEventId)}`
+            : "/manager/calendar";
+        }
+        if (homeHref.startsWith("/coach")) {
+          return linkedGroupId
+            ? `/coach/groups/${encodeURIComponent(linkedGroupId)}/planning/${encodeURIComponent(linkedClubEventId)}`
+            : "/coach/calendar";
+        }
+        const childId = String(data.child_id ?? "").trim();
+        let href = `/player/golf/trainings/new?club_event_id=${encodeURIComponent(linkedClubEventId)}`;
+        if (childId) href += `&child_id=${encodeURIComponent(childId)}`;
+        return href;
+      }
+    }
+
     if (String(notification?.kind ?? "") === "thread_message") {
       const threadId = String(data.thread_id ?? "").trim();
       const eventId = String(data.event_id ?? "").trim();
@@ -462,6 +492,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   const threadMeta = threadId ? threadMetaById[threadId] : null;
                   const threadUnreadCount = threadId ? Number(threadUnreadById[threadId] ?? 0) : 0;
                   const isEventThread = n?.kind === "thread_message" && threadMeta?.thread_type === "event";
+                  const managerNewsLinkedLabel =
+                    n?.kind === "manager_news"
+                      ? String(((n.data ?? {}) as Record<string, unknown>).linked_content_label ?? "").trim()
+                      : "";
                   const eventLine = isEventThread
                     ? formatEventNotificationLabel(
                         String(((n?.data ?? {}).event_title ?? threadTitleFromData) || "").trim(),
@@ -532,6 +566,21 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                             }}
                           >
                             {eventLine}
+                          </div>
+                        ) : null}
+                        {n?.kind === "manager_news" && managerNewsLinkedLabel ? (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 850,
+                              color: "rgba(0,0,0,0.7)",
+                              minWidth: 0,
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {tr("Contenu lié", "Linked content", "Verknüpfter Inhalt", "Contenuto collegato")}: {managerNewsLinkedLabel}
                           </div>
                         ) : null}
                         {n?.kind === "thread_message" && !isEventThread && threadTitle ? (

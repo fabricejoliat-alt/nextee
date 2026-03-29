@@ -63,6 +63,23 @@ function normalizePlayerFieldOptions(raw: unknown) {
   return raw.map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
+function normalizeLegacyCourseTrackValue(
+  field: { options_json?: string[] | null },
+  rawValue: unknown
+) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return null;
+
+  const configuredOptions = Array.isArray(field.options_json)
+    ? field.options_json.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+  if (configuredOptions.length > 0) {
+    return configuredOptions.includes(value) ? value : "__invalid__";
+  }
+
+  return value === "junior" || value === "competition" || value === "no_course" ? value : "__invalid__";
+}
+
 async function findAuthUserByEmail(supabaseAdmin: any, emailInput: string) {
   if (!emailInput) return null;
   const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
@@ -416,12 +433,7 @@ const clubId: string | undefined = params?.clubId;
           if (!field) continue;
 
           if (field.legacy_binding === "player_course_track") {
-            const next =
-              rawValue == null || String(rawValue).trim() === ""
-                ? null
-                : ["junior", "competition", "no_course"].includes(String(rawValue).trim())
-                ? String(rawValue).trim()
-                : "__invalid__";
+            const next = normalizeLegacyCourseTrackValue(field, rawValue);
             if (next === "__invalid__") {
               return NextResponse.json({ error: `Valeur invalide pour ${fieldId}` }, { status: 400 });
             }

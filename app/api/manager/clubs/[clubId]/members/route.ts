@@ -92,6 +92,20 @@ function fieldAppliesToRole(field: Pick<PlayerFieldDef, "legacy_binding" | "appl
   return normalizeFieldRoles(field.applies_to_roles).includes(role as MemberRole);
 }
 
+function normalizeLegacyCourseTrackValue(field: Pick<PlayerFieldDef, "label" | "options_json">, rawValue: unknown) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return null;
+
+  const configuredOptions = Array.isArray(field.options_json)
+    ? field.options_json.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+  if (configuredOptions.length > 0) {
+    return configuredOptions.includes(value) ? value : "__invalid__";
+  }
+
+  return value === "junior" || value === "competition" || value === "no_course" ? value : "__invalid__";
+}
+
 async function fetchClubPlayerFields(supabaseAdmin: any, clubId: string) {
   const { data, error } = await supabaseAdmin
     .from("club_player_fields")
@@ -410,17 +424,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
-    const playerCourseTrackRaw = has("player_course_track") ? String(body.player_course_track ?? "").trim().toLowerCase() : "";
-    const playerCourseTrack =
-      playerCourseTrackRaw === ""
-        ? null
-        : playerCourseTrackRaw === "junior" || playerCourseTrackRaw === "competition" || playerCourseTrackRaw === "no_course"
-        ? playerCourseTrackRaw
-        : "__invalid__";
-    if (playerCourseTrack === "__invalid__") {
-      return NextResponse.json({ error: "Invalid player course track" }, { status: 400 });
-    }
-
     const playerConsentStatusRaw = has("player_consent_status") ? String(body.player_consent_status ?? "").trim().toLowerCase() : "";
     const playerConsentStatus =
       playerConsentStatusRaw === ""
@@ -453,6 +456,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const effectiveRole = role || (memberRow as any).role || "";
     const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const fieldById = new Map(playerFields.map((field) => [field.id, field]));
+    const legacyCourseTrackField = playerFields.find((field) => field.legacy_binding === "player_course_track") ?? null;
+    const playerCourseTrack =
+      has("player_course_track") && legacyCourseTrackField
+        ? normalizeLegacyCourseTrackValue(legacyCourseTrackField, body.player_course_track)
+        : has("player_course_track")
+        ? normalizeLegacyCourseTrackValue({ label: "Cours", options_json: null }, body.player_course_track)
+        : undefined;
+    if (playerCourseTrack === "__invalid__") {
+      return NextResponse.json(
+        { error: `Valeur invalide pour ${legacyCourseTrackField?.label ?? "Cours"}` },
+        { status: 400 }
+      );
+    }
+
     if (effectiveRole === "player") {
       if (has("player_course_track")) memberPatch.player_course_track = playerCourseTrack;
       if (has("player_membership_paid")) memberPatch.player_membership_paid = playerMembershipPaid;
@@ -506,12 +523,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
 
         if (field.legacy_binding) {
           if (field.legacy_binding === "player_course_track") {
-            const next =
-              rawValue == null || String(rawValue).trim() === ""
-                ? null
-                : ["junior", "competition", "no_course"].includes(String(rawValue).trim())
-                ? String(rawValue).trim()
-                : "__invalid__";
+            const next = normalizeLegacyCourseTrackValue(field, rawValue);
             if (next === "__invalid__") {
               return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
             }

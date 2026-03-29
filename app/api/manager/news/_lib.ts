@@ -47,6 +47,9 @@ export type NewsTargetOption = {
   }>;
   club_events: NewsLinkedEventOption[];
   camps: NewsLinkedCampOption[];
+  group_player_user_ids_by_group_id: Record<string, string[]>;
+  group_coach_user_ids_by_group_id: Record<string, string[]>;
+  group_ids_by_category: Record<string, string[]>;
 };
 
 export type ClubNewsRow = {
@@ -282,7 +285,7 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
   const [groupsRes, eventsRes, campsRes] = await Promise.all([
     supabaseAdmin
       .from("coach_groups")
-      .select("id,name")
+      .select("id,name,head_coach_user_id")
       .eq("club_id", clubId)
       .eq("is_active", true)
       .order("name", { ascending: true }),
@@ -291,6 +294,7 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
       .select("id,title,event_type,starts_at,status")
       .eq("club_id", clubId)
       .neq("status", "cancelled")
+      .neq("event_type", "training")
       .order("starts_at", { ascending: false })
       .limit(150),
     supabaseAdmin
@@ -306,14 +310,29 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
   if (campsRes.error) throw new Error(campsRes.error.message);
 
   const groupIds = Array.from(new Set((groupsRes.data ?? []).map((row: any) => String(row.id ?? "")).filter(Boolean)));
-  const categoriesRes =
+  const [categoriesRes, groupPlayersRes, groupCoachesRes] = await Promise.all([
     groupIds.length > 0
-      ? await supabaseAdmin
+      ? supabaseAdmin
           .from("coach_group_categories")
           .select("group_id,category")
           .in("group_id", groupIds)
-      : ({ data: [], error: null } as const);
+      : ({ data: [], error: null } as const),
+    groupIds.length > 0
+      ? supabaseAdmin
+          .from("coach_group_players")
+          .select("group_id,player_user_id")
+          .in("group_id", groupIds)
+      : ({ data: [], error: null } as const),
+    groupIds.length > 0
+      ? supabaseAdmin
+          .from("coach_group_coaches")
+          .select("group_id,coach_user_id")
+          .in("group_id", groupIds)
+      : ({ data: [], error: null } as const),
+  ]);
   if (categoriesRes.error) throw new Error(categoriesRes.error.message);
+  if (groupPlayersRes.error) throw new Error(groupPlayersRes.error.message);
+  if (groupCoachesRes.error) throw new Error(groupCoachesRes.error.message);
 
   const groupCategories = Array.from(
     new Set(
@@ -322,6 +341,42 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
         .filter(Boolean)
     )
   ).sort((left, right) => left.localeCompare(right, "fr"));
+
+  const groupPlayerUserIdsByGroupId: Record<string, string[]> = {};
+  for (const row of groupPlayersRes.data ?? []) {
+    const groupId = String((row as any).group_id ?? "").trim();
+    const playerUserId = String((row as any).player_user_id ?? "").trim();
+    if (!groupId || !playerUserId) continue;
+    if (!groupPlayerUserIdsByGroupId[groupId]) groupPlayerUserIdsByGroupId[groupId] = [];
+    if (!groupPlayerUserIdsByGroupId[groupId].includes(playerUserId)) groupPlayerUserIdsByGroupId[groupId].push(playerUserId);
+  }
+
+  const groupCoachUserIdsByGroupId: Record<string, string[]> = {};
+  for (const group of groupsRes.data ?? []) {
+    const groupId = String((group as any).id ?? "").trim();
+    const headCoachUserId = String((group as any).head_coach_user_id ?? "").trim();
+    if (!groupId) continue;
+    if (!groupCoachUserIdsByGroupId[groupId]) groupCoachUserIdsByGroupId[groupId] = [];
+    if (headCoachUserId && !groupCoachUserIdsByGroupId[groupId].includes(headCoachUserId)) {
+      groupCoachUserIdsByGroupId[groupId].push(headCoachUserId);
+    }
+  }
+  for (const row of groupCoachesRes.data ?? []) {
+    const groupId = String((row as any).group_id ?? "").trim();
+    const coachUserId = String((row as any).coach_user_id ?? "").trim();
+    if (!groupId || !coachUserId) continue;
+    if (!groupCoachUserIdsByGroupId[groupId]) groupCoachUserIdsByGroupId[groupId] = [];
+    if (!groupCoachUserIdsByGroupId[groupId].includes(coachUserId)) groupCoachUserIdsByGroupId[groupId].push(coachUserId);
+  }
+
+  const groupIdsByCategory: Record<string, string[]> = {};
+  for (const row of categoriesRes.data ?? []) {
+    const groupId = String((row as any).group_id ?? "").trim();
+    const category = String((row as any).category ?? "").trim();
+    if (!groupId || !category) continue;
+    if (!groupIdsByCategory[category]) groupIdsByCategory[category] = [];
+    if (!groupIdsByCategory[category].includes(groupId)) groupIdsByCategory[category].push(groupId);
+  }
 
   return {
     clubs: managedClubs,
@@ -344,6 +399,9 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
       created_at: row.created_at == null ? null : String(row.created_at),
       status: row.status == null ? null : String(row.status),
     })),
+    group_player_user_ids_by_group_id: groupPlayerUserIdsByGroupId,
+    group_coach_user_ids_by_group_id: groupCoachUserIdsByGroupId,
+    group_ids_by_category: groupIdsByCategory,
   } satisfies NewsTargetOption;
 }
 
@@ -767,6 +825,8 @@ export async function dispatchNews(args: {
   callerId: string;
   clubId: string;
   newsId: string;
+  linkedClubEventId: string | null;
+  linkedCampId: string | null;
   title: string;
   summary: string | null;
   body: string;
@@ -785,6 +845,58 @@ export async function dispatchNews(args: {
   let lastNotificationSentAt = args.lastNotificationSentAt;
   let lastEmailSentAt = args.lastEmailSentAt;
 
+  let linkedGroupId: string | null = null;
+  let linkedContentLabel: string | null = null;
+  let linkedContentType: "event" | "camp" | null = null;
+
+  if (args.linkedClubEventId) {
+    const eventRes = await args.supabaseAdmin
+      .from("club_events")
+      .select("id,title,event_type,starts_at,group_id")
+      .eq("id", args.linkedClubEventId)
+      .maybeSingle();
+    if (!eventRes.error && eventRes.data) {
+      linkedGroupId = String((eventRes.data as any).group_id ?? "").trim() || null;
+      const rawTitle = String((eventRes.data as any).title ?? "").trim() || "Événement";
+      const rawType = String((eventRes.data as any).event_type ?? "").trim();
+      const startsAtValue = String((eventRes.data as any).starts_at ?? "").trim();
+      const startsAt = startsAtValue ? new Date(startsAtValue) : null;
+      const dateLabel =
+        startsAt && !Number.isNaN(startsAt.getTime())
+          ? new Intl.DateTimeFormat("fr-CH", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }).format(startsAt)
+          : null;
+      linkedContentLabel = [rawTitle, rawType || null, dateLabel].filter(Boolean).join(" • ");
+      linkedContentType = "event";
+    }
+  } else if (args.linkedCampId) {
+    const campRes = await args.supabaseAdmin
+      .from("club_camps")
+      .select("id,title,created_at")
+      .eq("id", args.linkedCampId)
+      .maybeSingle();
+    if (!campRes.error && campRes.data) {
+      const rawTitle = String((campRes.data as any).title ?? "").trim() || "Stage/Camp";
+      const createdAtValue = String((campRes.data as any).created_at ?? "").trim();
+      const createdAt = createdAtValue ? new Date(createdAtValue) : null;
+      const dateLabel =
+        createdAt && !Number.isNaN(createdAt.getTime())
+          ? new Intl.DateTimeFormat("fr-CH", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            }).format(createdAt)
+          : null;
+      linkedContentLabel = [rawTitle, dateLabel].filter(Boolean).join(" • ");
+      linkedContentType = "camp";
+    }
+  }
+
   if (args.sendNotification && !args.lastNotificationSentAt && args.recipientUserIds.length > 0) {
     try {
       const notificationId = await createServerNotification({
@@ -796,6 +908,11 @@ export async function dispatchNews(args: {
         data: {
           club_id: args.clubId,
           news_id: args.newsId,
+          linked_club_event_id: args.linkedClubEventId,
+          linked_camp_id: args.linkedCampId,
+          linked_group_id: linkedGroupId,
+          linked_content_type: linkedContentType,
+          linked_content_label: linkedContentLabel,
         },
         recipientUserIds: args.recipientUserIds,
       });

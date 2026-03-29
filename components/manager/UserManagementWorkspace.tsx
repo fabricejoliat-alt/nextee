@@ -117,6 +117,8 @@ type EditMemberForm = {
   custom_field_values: Record<string, string | boolean | null>;
 };
 
+type InlinePlayerFieldDrafts = Record<string, Record<string, string | boolean | null>>;
+
 type ProfileLite = {
   id: string;
   first_name: string | null;
@@ -451,6 +453,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
   const [playerEditOpen, setPlayerEditOpen] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [playerEditForm, setPlayerEditForm] = useState<EditPlayerForm | null>(null);
+  const [inlinePlayerFieldDrafts, setInlinePlayerFieldDrafts] = useState<InlinePlayerFieldDrafts>({});
+  const [savingInlinePlayerFieldKey, setSavingInlinePlayerFieldKey] = useState<string | null>(null);
   const [memberEditOpen, setMemberEditOpen] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [memberEditForm, setMemberEditForm] = useState<EditMemberForm | null>(null);
@@ -606,6 +610,45 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     setPlayerEditForm(null);
   }
 
+  function getMemberCustomFieldRawValue(member: MemberRow, field: PlayerFieldDef) {
+    return member.custom_field_values?.[field.id] ?? member.player_field_values?.[field.id] ?? null;
+  }
+
+  function getInlinePlayerFieldDraftValue(member: MemberRow, field: PlayerFieldDef) {
+    const memberDrafts = inlinePlayerFieldDrafts[member.id];
+    if (memberDrafts && Object.prototype.hasOwnProperty.call(memberDrafts, field.id)) {
+      return memberDrafts[field.id];
+    }
+    return getMemberCustomFieldRawValue(member, field);
+  }
+
+  function setInlinePlayerFieldDraft(memberId: string, fieldId: string, value: string | boolean | null) {
+    setInlinePlayerFieldDrafts((previous) => ({
+      ...previous,
+      [memberId]: {
+        ...(previous[memberId] ?? {}),
+        [fieldId]: value,
+      },
+    }));
+  }
+
+  function clearInlinePlayerFieldDraft(memberId: string, fieldId: string) {
+    setInlinePlayerFieldDrafts((previous) => {
+      if (!previous[memberId] || !Object.prototype.hasOwnProperty.call(previous[memberId], fieldId)) return previous;
+      const nextFields = { ...previous[memberId] };
+      delete nextFields[fieldId];
+      if (Object.keys(nextFields).length === 0) {
+        const next = { ...previous };
+        delete next[memberId];
+        return next;
+      }
+      return {
+        ...previous,
+        [memberId]: nextFields,
+      };
+    });
+  }
+
   function getActiveFieldsForRole(role: Exclude<MemberRole, "player">) {
     if (role === "parent") return activeParentFields;
     if (role === "coach") return activeCoachFields;
@@ -735,6 +778,93 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       setError(errorMessage(nextError, "Impossible d’enregistrer le joueur."));
     } finally {
       setBusyMemberId(null);
+    }
+  }
+
+  async function saveInlinePlayerField(member: MemberRow, field: PlayerFieldDef, rawValue: string | boolean | null) {
+    if (!clubId || savingInlinePlayerFieldKey) return;
+
+    const normalizedValue =
+      field.field_type === "text"
+        ? typeof rawValue === "string"
+          ? rawValue.trim() || null
+          : rawValue == null
+          ? null
+          : String(rawValue).trim() || null
+        : field.field_type === "boolean"
+        ? rawValue == null
+          ? null
+          : Boolean(rawValue)
+        : typeof rawValue === "string"
+        ? rawValue.trim() || null
+        : rawValue == null
+        ? null
+        : String(rawValue).trim() || null;
+
+    const currentValue = getMemberCustomFieldRawValue(member, field);
+    const currentNormalized =
+      field.field_type === "text"
+        ? typeof currentValue === "string"
+          ? currentValue.trim() || null
+          : currentValue == null
+          ? null
+          : String(currentValue).trim() || null
+        : field.field_type === "boolean"
+        ? currentValue == null
+          ? null
+          : Boolean(currentValue)
+        : typeof currentValue === "string"
+        ? currentValue.trim() || null
+        : currentValue == null
+        ? null
+        : String(currentValue).trim() || null;
+
+    if (currentNormalized === normalizedValue) {
+      clearInlinePlayerFieldDraft(member.id, field.id);
+      return;
+    }
+
+    const savingKey = `${member.id}:${field.id}`;
+    setSavingInlinePlayerFieldKey(savingKey);
+    setError(null);
+    try {
+      const headers = await authHeader();
+      const response = await fetch(`/api/manager/clubs/${clubId}/members`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({
+          memberId: member.id,
+          role: "player",
+          custom_field_values: {
+            [field.id]: normalizedValue,
+          },
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error ?? "Impossible d’enregistrer le champ.");
+
+      setMembers((previous) =>
+        previous.map((row) =>
+          row.id === member.id
+            ? {
+                ...row,
+                custom_field_values: {
+                  ...(row.custom_field_values ?? {}),
+                  [field.id]: normalizedValue,
+                },
+                player_field_values: {
+                  ...(row.player_field_values ?? {}),
+                  [field.id]: normalizedValue,
+                },
+              }
+            : row
+        )
+      );
+      clearInlinePlayerFieldDraft(member.id, field.id);
+    } catch (nextError: unknown) {
+      setError(errorMessage(nextError, `Impossible d’enregistrer "${field.label}".`));
+    } finally {
+      setSavingInlinePlayerFieldKey(null);
     }
   }
 
@@ -1295,10 +1425,14 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         "Nom",
         "Prénom",
         "Date de naissance",
+        "Adresse",
+        "Code postal",
+        "Localité",
+        "Numéro AVS",
         "Mode performance",
         "Consentement",
         "Parent lié",
-        "Paramètres",
+        ...activePlayerFields.map((field) => field.label),
         "Statut du compte",
         "Dernière activité",
       ],
@@ -1312,10 +1446,14 @@ export default function UserManagementWorkspace({ section }: { section: Section 
           member.profiles?.last_name ?? "",
           member.profiles?.first_name ?? "",
           member.profiles?.birth_date ?? "",
+          member.profiles?.address ?? "",
+          member.profiles?.postal_code ?? "",
+          member.profiles?.city ?? "",
+          member.profiles?.avs_no ?? "",
           member.is_performance ? "Oui" : "Non",
           consentLabel(member.player_consent_status),
           parentLinked,
-          buildPlayerParameters(member).join(" | "),
+          ...activePlayerFields.map((field) => getPlayerFieldValue(member, field)),
           account.label,
           account.lastActivity ? formatDateTime(account.lastActivity) : "",
         ];
@@ -2203,7 +2341,95 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                               <td>{consentLabel(member.player_consent_status)}</td>
                               <td>{parentLinkText}</td>
                               {activePlayerFields.map((field) => (
-                                <td key={field.id}>{getPlayerFieldValue(member, field)}</td>
+                                <td key={field.id}>
+                                  {(() => {
+                                    const draftValue = getInlinePlayerFieldDraftValue(member, field);
+                                    const savingThisField = savingInlinePlayerFieldKey === `${member.id}:${field.id}`;
+
+                                    if (field.field_type === "boolean") {
+                                      return (
+                                        <select
+                                          value={draftValue == null ? "" : draftValue ? "yes" : "no"}
+                                          onChange={(event) => {
+                                            const nextValue =
+                                              event.target.value === "" ? null : event.target.value === "yes";
+                                            setInlinePlayerFieldDraft(member.id, field.id, nextValue);
+                                            void saveInlinePlayerField(member, field, nextValue);
+                                          }}
+                                          disabled={savingThisField}
+                                          style={{
+                                            ...FIELD_INPUT_STYLE,
+                                            minHeight: 32,
+                                            padding: "4px 8px",
+                                            borderRadius: 10,
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          <option value="">Non défini</option>
+                                          <option value="yes">Oui</option>
+                                          <option value="no">Non</option>
+                                        </select>
+                                      );
+                                    }
+
+                                    if (field.field_type === "select") {
+                                      return (
+                                        <select
+                                          value={String(draftValue ?? "")}
+                                          onChange={(event) => {
+                                            const nextValue = event.target.value || null;
+                                            setInlinePlayerFieldDraft(member.id, field.id, nextValue);
+                                            void saveInlinePlayerField(member, field, nextValue);
+                                          }}
+                                          disabled={savingThisField}
+                                          style={{
+                                            ...FIELD_INPUT_STYLE,
+                                            minHeight: 32,
+                                            padding: "4px 8px",
+                                            borderRadius: 10,
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          <option value="">Non défini</option>
+                                          {(field.options_json ?? []).map((option) => (
+                                            <option key={option} value={option}>
+                                              {playerFieldDisplayValue(field, option)}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      );
+                                    }
+
+                                    return (
+                                      <input
+                                        value={String(draftValue ?? "")}
+                                        onChange={(event) => setInlinePlayerFieldDraft(member.id, field.id, event.target.value)}
+                                        onBlur={(event) => {
+                                          void saveInlinePlayerField(member, field, event.target.value);
+                                        }}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            void saveInlinePlayerField(member, field, (event.target as HTMLInputElement).value);
+                                            (event.target as HTMLInputElement).blur();
+                                          }
+                                        }}
+                                        disabled={savingThisField}
+                                        placeholder="—"
+                                        style={{
+                                          ...FIELD_INPUT_STYLE,
+                                          minHeight: 32,
+                                          padding: "4px 8px",
+                                          borderRadius: 10,
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                        }}
+                                      />
+                                    );
+                                  })()}
+                                </td>
                               ))}
                               <td>
                                 <div style={{ display: "grid", gap: 4 }}>

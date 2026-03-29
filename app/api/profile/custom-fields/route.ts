@@ -65,6 +65,20 @@ function fieldAppliesToRole(field: Pick<PlayerFieldDef, "legacy_binding" | "appl
   return normalizeFieldRoles(field.applies_to_roles).includes(role);
 }
 
+function normalizeLegacyCourseTrackValue(field: Pick<PlayerFieldDef, "options_json">, rawValue: unknown) {
+  const value = String(rawValue ?? "").trim();
+  if (!value) return null;
+
+  const configuredOptions = Array.isArray(field.options_json)
+    ? field.options_json.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+  if (configuredOptions.length > 0) {
+    return configuredOptions.includes(value) ? value : "__invalid__";
+  }
+
+  return value === "junior" || value === "competition" || value === "no_course" ? value : "__invalid__";
+}
+
 function readLegacyPlayerFieldValue(field: PlayerFieldDef, member: MembershipRow) {
   if (field.legacy_binding === "player_course_track") return member.player_course_track ?? null;
   if (field.legacy_binding === "player_membership_paid") return member.player_membership_paid ?? null;
@@ -283,12 +297,7 @@ export async function PATCH(req: NextRequest) {
 
         if (field.legacy_binding) {
           if (field.legacy_binding === "player_course_track") {
-            const next =
-              rawValue == null || String(rawValue).trim() === ""
-                ? null
-                : ["junior", "competition", "no_course"].includes(String(rawValue).trim())
-                ? String(rawValue).trim()
-                : "__invalid__";
+            const next = normalizeLegacyCourseTrackValue(field, rawValue);
             if (next === "__invalid__") {
               return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
             }

@@ -109,6 +109,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
         callerId: managerCtx.callerId,
         clubId,
         newsId,
+        linkedClubEventId,
+        linkedCampId,
         title,
         summary,
         body: content,

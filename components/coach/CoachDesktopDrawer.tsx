@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle, Trophy, Tent } from "lucide-react";
+import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle, Trophy, Tent, Newspaper } from "lucide-react";
 
 const ROUTES = {
   home: "/coach",
   groups: "/coach/groups",
   calendar: "/coach/calendar",
   camps: "/coach/camps",
+  news: "/coach/news",
   players: "/coach/players",
   om: "/coach/om",
   messages: "/coach/messages",
@@ -79,6 +80,7 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
     () => [
       { label: "Accueil", icon: Home, href: ROUTES.home },
       { label: "Messagerie", icon: MessageCircle, href: ROUTES.messages },
+      { label: "News", icon: Newspaper, href: ROUTES.news },
       { label: "Activités", icon: CalendarDays, href: ROUTES.calendar },
       { label: "Stages/camps", icon: Tent, href: ROUTES.camps },
       { label: "Mes groupes", icon: Users, href: ROUTES.groups },

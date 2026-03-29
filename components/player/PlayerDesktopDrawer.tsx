@@ -22,6 +22,7 @@ import {
   MessageCircle,
   ListChecks,
   Tent,
+  Newspaper,
 } from "lucide-react";
 
 /**
@@ -33,6 +34,7 @@ const ROUTES = {
   
   trainingsList: "/player/golf/trainings?type=all",
   messages: "/player/messages",
+  news: "/player/news",
   support: "/player/encadrement",
   trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
@@ -398,6 +400,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.messages,
       },
       {
+        label: "News",
+        icon: Newspaper,
+        href: ROUTES.news,
+      },
+      {
         label: locale === "fr" ? "Activités" : "Activity",
         icon: ClipboardList,
         href: ROUTES.trainingsList,
@@ -407,14 +414,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             {
               label:
                 locale === "fr"
-                  ? pendingEvalCount > 0
-                    ? `${pendingEvalCount > 1 ? "Activités" : "Activité"} à compléter (${pendingEvalCount})`
-                    : "Activité à compléter"
-                  : pendingEvalCount > 0
-                  ? `${pendingEvalCount > 1 ? "Activities" : "Activity"} to complete (${pendingEvalCount})`
+                  ? "Activité à compléter"
                   : "Activity to complete",
               icon: ListChecks,
               href: ROUTES.trainingsToComplete,
+              badgeCount: pendingEvalCount > 0 ? pendingEvalCount : 0,
             },
           ]
         : []),
@@ -507,7 +511,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         <nav className="drawer-nav">
           {nav.map((item) => {
             const Icon = item.icon;
-            const highlightToComplete = item.href === ROUTES.trainingsToComplete && pendingEvalCount > 0;
+            const badgeCount = "badgeCount" in item ? Number(item.badgeCount ?? 0) : 0;
             const activeTop = item.href
               ? isTrainingChildActive(pathname, searchParams, item.href)
               : item.children?.some((c) => isTrainingChildActive(pathname, searchParams, c.href));
@@ -521,13 +525,31 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                   onClick={onClose}
                 >
                   <span className="drawer-item-left">
-                    <Icon
-                      size={18}
-                      strokeWidth={2}
-                      color={highlightToComplete ? "#ef4444" : undefined}
-                    />
-                    <span style={highlightToComplete ? { color: "#ef4444", fontWeight: 900 } : undefined}>
+                    <Icon size={18} strokeWidth={2} />
+                    <span>
                       {item.label}
+                      {badgeCount > 0 ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 18,
+                            height: 18,
+                            marginLeft: 8,
+                            padding: "0 6px",
+                            borderRadius: 999,
+                            background: "#ef4444",
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 900,
+                            lineHeight: 1,
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          {badgeCount > 99 ? "99+" : badgeCount}
+                        </span>
+                      ) : null}
                     </span>
                   </span>
                 </Link>
