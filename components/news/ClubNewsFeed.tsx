@@ -8,6 +8,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type ClubNewsFeedScope = "player" | "coach";
 
@@ -48,6 +49,34 @@ function formatDate(iso: string | null, locale: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function compactLinkedLabel(label: string | null, contentType: NewsItem["linked_content_type"]) {
+  if (!label) return null;
+  const parts = label.split(" • ").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return label;
+
+  const monthPattern =
+    /(janv|janvier|feb|fev|fevr|fevrier|fév|févr|février|mar|mars|apr|avr|avril|may|mai|jun|juin|jul|juil|juillet|aug|aou|aoû|août|sep|sept|septembre|oct|octobre|nov|novembre|dec|déc|décembre|january|february|march|april|june|july|august|september|october|november|december|januar|februar|marz|märz|april|mai|juni|juli|august|september|oktober|november|dezember|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
+
+  const isDateLikeSegment = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(,\s*\d{1,2}:\d{2})?$/.test(normalized)) return true;
+    if (/^\d{4}[./-]\d{1,2}[./-]\d{1,2}( \d{1,2}:\d{2})?$/.test(normalized)) return true;
+    if (monthPattern.test(normalized) && /\d/.test(normalized)) return true;
+    if (/\b\d{1,2}:\d{2}\b/.test(normalized) && /\d/.test(normalized)) return true;
+    if (/\b20\d{2}\b/.test(normalized) && /\d/.test(normalized)) return true;
+    return false;
+  };
+
+  while (parts.length > 1 && isDateLikeSegment(parts[parts.length - 1] ?? "")) {
+    parts.pop();
+  }
+
+  if (contentType === "event") return parts.join(" • ");
+  if (contentType === "camp") return parts[0] ?? label;
+  return label;
 }
 
 export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleDe, titleIt }: Props) {
@@ -178,6 +207,7 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
               {news.map((item) => {
                 const openHref = resolveOpenHref(item);
                 const publishedLabel = formatDate(item.published_at ?? item.scheduled_for ?? item.created_at, dateLocale);
+                const linkedLabel = compactLinkedLabel(item.linked_content_label, item.linked_content_type);
 
                 return (
                   <article
@@ -203,9 +233,9 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
                         </div>
                       ) : null}
 
-                      {item.linked_content_label ? (
+                      {linkedLabel ? (
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <span className="pill-soft">{item.linked_content_label}</span>
+                          <span className="pill-soft">{linkedLabel}</span>
                         </div>
                       ) : null}
 
@@ -219,9 +249,10 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
                         </div>
                       ) : null}
 
-                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap", fontWeight: 700, lineHeight: 1.65 }}>
-                        {item.body}
-                      </div>
+                      <div
+                        style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", fontWeight: 700, lineHeight: 1.65 }}
+                        dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(item.body) }}
+                      />
 
                       {openHref ? (
                         <div style={{ display: "flex", justifyContent: "flex-end" }}>

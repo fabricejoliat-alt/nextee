@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
     const summary = String(body.summary ?? "").trim() || null;
     const content = String(body.body ?? "").trim();
     const status = normalizeNewsStatus(body.status);
+    const visibleOnHome = Boolean(body.visible_on_home);
     const scheduledFor = normalizeSchedule(body.scheduled_for);
     const normalizedStatus = normalizePublication(status, scheduledFor);
     const sendNotification = body.send_notification !== false;
@@ -88,7 +89,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Club invalide." }, { status: 400 });
     }
     if (!title) return NextResponse.json({ error: "Titre obligatoire." }, { status: 400 });
-    if (!content) return NextResponse.json({ error: "Contenu obligatoire." }, { status: 400 });
     if (targets.length === 0) return NextResponse.json({ error: "Ajoute au moins une cible." }, { status: 400 });
     if (status === "scheduled" && !scheduledFor) {
       return NextResponse.json({ error: "Date de programmation obligatoire." }, { status: 400 });
@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
         summary,
         body: content,
         status: normalizedStatus,
+        visible_on_home: visibleOnHome,
         scheduled_for: normalizedStatus === "scheduled" ? scheduledFor : null,
         published_at: publishedAt,
         send_notification: sendNotification,

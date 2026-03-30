@@ -184,6 +184,21 @@ type PlayVolumeSummary = {
   scramblingPct: number | null;
 };
 
+type HomeNewsItem = {
+  id: string;
+  title: string;
+  summary: string | null;
+  body: string;
+  visible_on_home: boolean;
+  published_at: string | null;
+  scheduled_for: string | null;
+  created_at: string;
+  linked_club_event_id: string | null;
+  linked_camp_id: string | null;
+  linked_content_type: "event" | "camp" | null;
+  linked_content_label: string | null;
+};
+
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
 const playerHomeCacheKey = (userId: string) => `page-cache:player-home:v3:${userId}`;
 
@@ -423,6 +438,19 @@ function fmtHourLabel(iso: string, locale: string) {
   return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
 }
 
+function formatDate(iso: string | null, locale: string) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function hasDisplayableTime(iso: string) {
   const d = new Date(iso);
   return d.getHours() !== 0 || d.getMinutes() !== 0;
@@ -548,6 +576,14 @@ function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) 
   return session.session_type;
 }
 
+function compactHomeNewsLinkedLabel(label: string | null, contentType: HomeNewsItem["linked_content_type"]) {
+  if (!label) return null;
+  const parts = label.split(" • ").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return label;
+  if (contentType === "camp") return parts[0] ?? label;
+  return parts.join(" • ");
+}
+
 export default function PlayerHomePage() {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -601,6 +637,8 @@ export default function PlayerHomePage() {
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [upcomingIndex, setUpcomingIndex] = useState(0);
+  const [latestNews, setLatestNews] = useState<HomeNewsItem | null>(null);
+  const [newsLoading, setNewsLoading] = useState(true);
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
@@ -770,6 +808,34 @@ export default function PlayerHomePage() {
     }
   }
 
+  async function loadLatestNews(userId: string, role: "player" | "parent") {
+    try {
+      setNewsLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) {
+        setLatestNews(null);
+        return;
+      }
+
+      const query = new URLSearchParams();
+      if (role === "parent" && userId) query.set("child_id", userId);
+      const res = await fetch(`/api/player/news?${query.toString()}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Failed to load news"));
+      const rows = Array.isArray(json?.news) ? (json.news as HomeNewsItem[]) : [];
+      setLatestNews(rows.find((row) => Boolean(row.visible_on_home)) ?? null);
+    } catch {
+      setLatestNews(null);
+    } finally {
+      setNewsLoading(false);
+    }
+  }
+
   async function loadLatestMarketplace(clubIds: string[]) {
     if (latestItems.length === 0) setMarketplaceLoading(true);
     try {
@@ -893,6 +959,7 @@ export default function PlayerHomePage() {
       setViewerRole(ctx.role === "parent" ? "parent" : "player");
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
+      void loadLatestNews(effectiveUid, ctx.role === "parent" ? "parent" : "player");
       void loadRollingPlayVolume(effectiveUid, viewerUid);
       const performanceEnabled = await isEffectivePlayerPerformanceEnabled(effectiveUid);
       setIsPerformanceEnabled(performanceEnabled);
@@ -957,6 +1024,7 @@ export default function PlayerHomePage() {
       setLoading(false);
       setUpcomingLoading(false);
       setHeroLoading(false);
+      setNewsLoading(false);
       return;
     }
 
@@ -1383,6 +1451,8 @@ export default function PlayerHomePage() {
       setPlayVolumeLoading(false);
       setUpcomingActivities([]);
       setUpcomingLoading(false);
+      setLatestNews(null);
+      setNewsLoading(false);
     } finally {
       setLoading(false);
     }
@@ -1539,8 +1609,8 @@ export default function PlayerHomePage() {
     const ids = Array.from(
       new Set(
         upcomingActivities
-          .filter((x) => x.kind === "event")
-          .map((x) => String((x as any).event?.id ?? ""))
+          .filter((x): x is Extract<HomeUpcomingItem, { kind: "event" }> => x.kind === "event")
+          .map((x) => String(x.event?.id ?? ""))
           .filter(Boolean)
       )
     );
@@ -1709,23 +1779,34 @@ export default function PlayerHomePage() {
     [focusFromRounds.fwPctAvg, focusFromRounds.girPctAvg, focusFromRounds.puttAvg, focusFromRounds.scramblingPct, locale, t]
   );
   const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
-  const activityCategoryLabel = (cat: string) => {
-    const map: Record<string, string> = {
-      warmup_mobility: t("cat.warmup_mobility"),
-      long_game: t("cat.long_game"),
-      short_game_all: t("cat.short_game_all"),
-      putting: t("cat.putting"),
-      wedging: t("cat.wedging"),
-      pitching: t("cat.pitching"),
-      chipping: t("cat.chipping"),
-      bunker: t("cat.bunker"),
-      course: t("cat.course"),
-      mental: t("cat.mental"),
-      fitness: t("cat.fitness"),
-      other: t("cat.other"),
-    };
-    return map[cat] ?? cat;
-  };
+  const latestNewsDate = latestNews
+    ? formatDate(latestNews.published_at ?? latestNews.scheduled_for ?? latestNews.created_at, dateLocale)
+    : "";
+  const latestNewsLinkedLabel = compactHomeNewsLinkedLabel(
+    latestNews?.linked_content_label ?? null,
+    latestNews?.linked_content_type ?? null
+  );
+  const latestNewsOpenHref = useMemo(() => {
+    if (!latestNews) return null;
+    if (latestNews.linked_camp_id) {
+      if (viewerRole === "parent" && effectiveUserId) {
+        return `/player/camps?child_id=${encodeURIComponent(effectiveUserId)}`;
+      }
+      return "/player/camps";
+    }
+    if (latestNews.linked_club_event_id) {
+      const params = new URLSearchParams({ club_event_id: latestNews.linked_club_event_id });
+      if (viewerRole === "parent" && effectiveUserId) params.set("child_id", effectiveUserId);
+      return `/player/golf/trainings/new?${params.toString()}`;
+    }
+    return null;
+  }, [latestNews, viewerRole, effectiveUserId]);
+  const allNewsHref = useMemo(() => {
+    if (viewerRole === "parent" && effectiveUserId) {
+      return `/player/news?child_id=${encodeURIComponent(effectiveUserId)}`;
+    }
+    return "/player/news";
+  }, [viewerRole, effectiveUserId]);
 
   return (
     <div className="player-dashboard-bg player-home-page">
@@ -1771,6 +1852,64 @@ export default function PlayerHomePage() {
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
+        {newsLoading || latestNews ? (
+          <section className="glass-section" style={{ marginTop: 14 }}>
+            <div className="section-title">News</div>
+
+            <div className="glass-card">
+              {newsLoading ? (
+                <div aria-live="polite" aria-busy="true" style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ height: 12, width: "34%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  </div>
+                  <div className="hr-soft" style={{ margin: "2px 0" }} />
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ height: 14, width: "64%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                    <div style={{ height: 10, width: "52%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+                  </div>
+                </div>
+              ) : latestNews ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                      <div>{latestNewsDate}</div>
+                    </div>
+                    {latestNewsOpenHref ? (
+                      <Link className="btn" href={latestNewsOpenHref}>
+                        {pickLocaleText(locale, "Ouvrir", "Open")}
+                      </Link>
+                    ) : null}
+                  </div>
+
+                  <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
+                      {latestNews.title}
+                    </div>
+                    {latestNews.summary ? (
+                      <div style={{ color: "rgba(0,0,0,0.74)", fontWeight: 800, fontSize: 12 }}>
+                        {latestNews.summary}
+                      </div>
+                    ) : null}
+                    {latestNewsLinkedLabel ? (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span className="pill-soft">{latestNewsLinkedLabel}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+              <Link className="btn" href={allNewsHref}>
+                {pickLocaleText(locale, "Toutes les news", "All news")}
+              </Link>
+            </div>
+          </section>
+        ) : null}
+
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</div>
 
@@ -1805,9 +1944,6 @@ export default function PlayerHomePage() {
                   const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
                   const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
                   const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
-                  const isTraining = e.event_type === "training";
-                  const eventStructure = eventStructureByEventId[e.id] ?? [];
-                  const showEventStructure = isAttendanceEvent && eventStructure.length > 0;
                   let eventTitle = eventType;
                   const customName = (e.title ?? "").trim();
                   if (e.event_type === "training") {
@@ -1867,25 +2003,6 @@ export default function PlayerHomePage() {
                       {e.location_text ? (
                         <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
                           📍 {e.location_text}
-                        </div>
-                      ) : null}
-                      {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
-                      {showEventStructure ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                            {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
-                          </div>
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                            {eventStructure.map((p, i) => {
-                              const extra = (p.note ?? "").trim();
-                              return (
-                                <li key={`${p.event_id}-${i}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                  {activityCategoryLabel(p.category)} — {p.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
                         </div>
                       ) : null}
                       {e.event_type === "training" ? (
@@ -1958,11 +2075,6 @@ export default function PlayerHomePage() {
                   const s = currentUpcoming.session;
                   const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
                   const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
-                  const sessionStructure =
-                    normalizedSessionType === "club" && s.club_event_id
-                      ? eventStructureByEventId[String(s.club_event_id)] ?? []
-                      : [];
-                  const showSessionStructure = sessionStructure.length > 0;
                   const sessionTitle =
                     normalizedSessionType === "club"
                       ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
@@ -1982,28 +2094,6 @@ export default function PlayerHomePage() {
                       {s.location_text ? (
                         <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
                           📍 {s.location_text}
-                        </div>
-                      ) : null}
-                      {showSessionStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
-                      {showSessionStructure ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                            {pickLocaleText(locale, "Structure planifiée:", "Planned structure:")}
-                          </div>
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                            {sessionStructure.map((p, i) => {
-                              const extra = (p.note ?? "").trim();
-                              return (
-                                <li
-                                  key={`${p.event_id ?? s.club_event_id ?? "session"}-${i}`}
-                                  style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}
-                                >
-                                  {activityCategoryLabel(p.category)} — {p.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
                         </div>
                       ) : null}
                     </div>

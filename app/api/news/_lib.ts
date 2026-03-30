@@ -10,6 +10,7 @@ export type VisibleNewsRow = {
   summary: string | null;
   body: string;
   status: string;
+  visible_on_home: boolean;
   published_at: string | null;
   scheduled_for: string | null;
   created_at: string;
@@ -45,36 +46,14 @@ function fullName(first: string | null | undefined, last: string | null | undefi
 }
 
 function formatEventLabel(row: any) {
-  const startsAtValue = String(row?.starts_at ?? "").trim();
-  const startsAt = startsAtValue ? new Date(startsAtValue) : null;
-  const dateLabel =
-    startsAt && !Number.isNaN(startsAt.getTime())
-      ? new Intl.DateTimeFormat("fr-CH", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(startsAt)
-      : null;
   const rawTitle = String(row?.title ?? "").trim() || "Evenement";
   const rawType = String(row?.event_type ?? "").trim();
-  return [rawTitle, rawType || null, dateLabel].filter(Boolean).join(" • ");
+  return [rawTitle, rawType || null].filter(Boolean).join(" • ");
 }
 
 function formatCampLabel(row: any) {
-  const createdAtValue = String(row?.created_at ?? "").trim();
-  const createdAt = createdAtValue ? new Date(createdAtValue) : null;
-  const dateLabel =
-    createdAt && !Number.isNaN(createdAt.getTime())
-      ? new Intl.DateTimeFormat("fr-CH", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        }).format(createdAt)
-      : null;
   const rawTitle = String(row?.title ?? "").trim() || "Stage/Camp";
-  return [rawTitle, dateLabel].filter(Boolean).join(" • ");
+  return rawTitle;
 }
 
 function publicationDateValue(row: VisibleNewsRow) {
@@ -144,7 +123,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
   const newsRes = await supabaseAdmin
     .from("club_news")
     .select(
-      "id,club_id,title,summary,body,status,published_at,scheduled_for,created_at,updated_at,linked_club_event_id,linked_camp_id,include_linked_parents"
+      "id,club_id,title,summary,body,status,visible_on_home,published_at,scheduled_for,created_at,updated_at,linked_club_event_id,linked_camp_id,include_linked_parents"
     )
     .in("club_id", clubIds)
     .in("status", ["published", "scheduled"])
@@ -218,6 +197,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
         summary: row.summary == null ? null : String(row.summary),
         body: String(row.body ?? ""),
         status: String(row.status ?? "draft"),
+        visible_on_home: Boolean(row.visible_on_home),
         published_at: row.published_at == null ? null : String(row.published_at),
         scheduled_for: row.scheduled_for == null ? null : String(row.scheduled_for),
         created_at: String(row.created_at ?? ""),

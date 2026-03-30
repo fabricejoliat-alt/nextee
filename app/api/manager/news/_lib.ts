@@ -59,6 +59,7 @@ export type ClubNewsRow = {
   summary: string | null;
   body: string;
   status: NewsStatus;
+  visible_on_home: boolean;
   scheduled_for: string | null;
   published_at: string | null;
   send_notification: boolean;
@@ -408,7 +409,7 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
 export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
   const newsRes = await supabaseAdmin
     .from("club_news")
-    .select("id,club_id,title,summary,body,status,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by,linked_club_event_id,linked_camp_id")
+    .select("id,club_id,title,summary,body,status,visible_on_home,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by,linked_club_event_id,linked_camp_id")
     .eq("club_id", clubId)
     .order("updated_at", { ascending: false });
   if (newsRes.error) throw new Error(newsRes.error.message);
@@ -504,6 +505,7 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
     summary: row.summary == null ? null : String(row.summary),
     body: String(row.body ?? ""),
     status: String(row.status ?? "draft") as NewsStatus,
+    visible_on_home: Boolean(row.visible_on_home),
     scheduled_for: row.scheduled_for ?? null,
     published_at: row.published_at ?? null,
     send_notification: Boolean(row.send_notification),

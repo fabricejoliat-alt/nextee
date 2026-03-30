@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CalendarClock, Mail, Pencil, PlusCircle, Search, Trash2, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 
 type NewsStatus = "draft" | "scheduled" | "published" | "archived";
 type NewsTargetType = "role" | "user" | "group" | "group_category" | "age_band";
@@ -57,6 +59,7 @@ type NewsRow = {
   summary: string | null;
   body: string;
   status: NewsStatus;
+  visible_on_home: boolean;
   scheduled_for: string | null;
   published_at: string | null;
   send_notification: boolean;
@@ -98,6 +101,7 @@ type NewsFormState = {
   summary: string;
   body: string;
   status: NewsStatus;
+  visible_on_home: boolean;
   scheduled_for: string;
   send_notification: boolean;
   send_email: boolean;
@@ -107,21 +111,13 @@ type NewsFormState = {
   targets: NewsTarget[];
 };
 
-const FIELD_INPUT_STYLE: CSSProperties = {
-  width: "100%",
-  border: "1px solid rgba(0,0,0,0.10)",
-  borderRadius: 12,
-  padding: "10px 12px",
-  background: "#fff",
-  minHeight: 42,
-};
-
 function emptyForm(): NewsFormState {
   return {
     title: "",
     summary: "",
     body: "",
     status: "draft",
+    visible_on_home: false,
     scheduled_for: "",
     send_notification: true,
     send_email: false,
@@ -176,13 +172,11 @@ function eventTypeLabel(value: string | null) {
 }
 
 function linkedEventOptionLabel(option: LinkedEventOption) {
-  const date = formatDateTime(option.starts_at);
-  return `${option.title} • ${eventTypeLabel(option.event_type)}${date !== "—" ? ` • ${date}` : ""}`;
+  return `${option.title} • ${eventTypeLabel(option.event_type)}`;
 }
 
 function linkedCampOptionLabel(option: LinkedCampOption) {
-  const date = formatDateTime(option.created_at);
-  return `${option.title}${date !== "—" ? ` • ${date}` : ""}`;
+  return option.title;
 }
 
 function toDatetimeLocal(value: string | null | undefined) {
@@ -270,13 +264,13 @@ export default function ManagerNewsWorkspace() {
   const [memberSearch, setMemberSearch] = useState("");
   const [form, setForm] = useState<NewsFormState>(emptyForm);
 
-  async function authHeaders() {
+  const authHeaders = useCallback(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token ?? "";
     return token ? { Authorization: `Bearer ${token}` } : {};
-  }
+  }, []);
 
-  async function load(clubId?: string) {
+  const load = useCallback(async (clubId?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -318,11 +312,11 @@ export default function ManagerNewsWorkspace() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [authHeaders]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const filteredMembers = useMemo(() => {
     const query = normalizeSearch(memberSearch);
@@ -384,8 +378,9 @@ export default function ManagerNewsWorkspace() {
     setForm({
       title: row.title,
       summary: row.summary ?? "",
-      body: row.body,
+      body: normalizeCampRichTextHtml(row.body),
       status: row.status,
+      visible_on_home: row.visible_on_home,
       scheduled_for: toDatetimeLocal(row.scheduled_for),
       send_notification: row.send_notification,
       send_email: row.send_email,
@@ -413,6 +408,7 @@ export default function ManagerNewsWorkspace() {
       const payload = {
         club_id: selectedClubId,
         ...form,
+        body: normalizeCampRichTextHtml(form.body),
       };
       const res = await fetch(editingNewsId ? `/api/manager/news/${editingNewsId}` : "/api/manager/news", {
         method: editingNewsId ? "PATCH" : "POST",
@@ -422,8 +418,8 @@ export default function ManagerNewsWorkspace() {
         },
         body: JSON.stringify(payload),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String((json as any)?.error ?? "Enregistrement impossible."));
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(String(json.error ?? "Enregistrement impossible."));
 
       setFormOpen(false);
       setEditingNewsId(null);
@@ -449,8 +445,8 @@ export default function ManagerNewsWorkspace() {
         method: "DELETE",
         headers,
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String((json as any)?.error ?? "Suppression impossible."));
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(String(json.error ?? "Suppression impossible."));
       setMessage("Actualité supprimée.");
       await load(selectedClubId);
     } catch (deleteError) {
@@ -542,7 +538,7 @@ export default function ManagerNewsWorkspace() {
             </div>
 
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Accroche courte</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Accroche courte (optionnel)</span>
               <input
                 className="input"
                 value={form.summary}
@@ -551,15 +547,14 @@ export default function ManagerNewsWorkspace() {
               />
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Contenu</span>
-              <textarea
+            <div style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Contenu (optionnel)</span>
+              <TiptapSimpleEditor
                 value={form.body}
-                onChange={(event) => setForm((previous) => ({ ...previous, body: event.target.value }))}
-                style={{ ...FIELD_INPUT_STYLE, minHeight: 180, resize: "vertical" }}
+                onChange={(value) => setForm((previous) => ({ ...previous, body: value }))}
                 placeholder="Contenu de l’actualité"
               />
-            </label>
+            </div>
 
             {form.status === "scheduled" ? (
               <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
@@ -644,6 +639,14 @@ export default function ManagerNewsWorkspace() {
                   onChange={(event) => setForm((previous) => ({ ...previous, include_linked_parents: event.target.checked }))}
                 />
                 Inclure les parents liés des joueurs ciblés
+              </label>
+              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={form.visible_on_home}
+                  onChange={(event) => setForm((previous) => ({ ...previous, visible_on_home: event.target.checked }))}
+                />
+                Afficher sur l’accueil
               </label>
             </div>
 
@@ -942,6 +945,23 @@ export default function ManagerNewsWorkspace() {
                           <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
                             Créée par {row.created_by_name ?? "Manager"}
                           </span>
+                          {row.visible_on_home ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                borderRadius: 999,
+                                padding: "7px 10px",
+                                fontSize: 12,
+                                fontWeight: 900,
+                                background: "rgba(59,130,246,0.10)",
+                                color: "#1d4ed8",
+                              }}
+                            >
+                              Accueil
+                            </span>
+                          ) : null}
                         </div>
                         <div style={{ fontSize: 18, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{row.title}</div>
                         {row.summary ? (
@@ -968,9 +988,10 @@ export default function ManagerNewsWorkspace() {
                       </div>
                     </div>
 
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.78)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                      {row.body}
-                    </div>
+                    <div
+                      style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.78)", lineHeight: 1.6 }}
+                      dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(row.body) }}
+                    />
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
                       <div
