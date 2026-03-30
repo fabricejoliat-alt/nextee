@@ -438,17 +438,48 @@ function fmtHourLabel(iso: string, locale: string) {
   return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
 }
 
-function formatDate(iso: string | null, locale: string) {
+function formatNewsPublishedLabel(iso: string | null, locale: string) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(locale, {
-    day: "2-digit",
+  if (locale === "fr") {
+    const datePart = new Intl.DateTimeFormat("fr-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News du ${datePart} à ${String(date.getHours()).padStart(2, "0")}h${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (locale === "de") {
+    const datePart = new Intl.DateTimeFormat("de-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News vom ${datePart} um ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (locale === "it") {
+    const datePart = new Intl.DateTimeFormat("it-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News del ${datePart} alle ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
     month: "long",
     year: "numeric",
-    hour: "2-digit",
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
     minute: "2-digit",
   }).format(date);
+  return `News from ${datePart} at ${timePart}`;
 }
 
 function hasDisplayableTime(iso: string) {
@@ -1780,7 +1811,7 @@ export default function PlayerHomePage() {
   );
   const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
   const latestNewsDate = latestNews
-    ? formatDate(latestNews.published_at ?? latestNews.scheduled_for ?? latestNews.created_at, dateLocale)
+    ? formatNewsPublishedLabel(latestNews.published_at ?? latestNews.scheduled_for ?? latestNews.created_at, locale)
     : "";
   const latestNewsLinkedLabel = compactHomeNewsLinkedLabel(
     latestNews?.linked_content_label ?? null,

@@ -38,17 +38,48 @@ type Props = {
   titleIt?: string;
 };
 
-function formatDate(iso: string | null, locale: string) {
+function formatNewsPublishedLabel(iso: string | null, locale: string) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(locale, {
-    day: "2-digit",
+  if (locale === "fr") {
+    const datePart = new Intl.DateTimeFormat("fr-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News du ${datePart} à ${String(date.getHours()).padStart(2, "0")}h${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (locale === "de") {
+    const datePart = new Intl.DateTimeFormat("de-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News vom ${datePart} um ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (locale === "it") {
+    const datePart = new Intl.DateTimeFormat("it-CH", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return `News del ${datePart} alle ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
     month: "long",
     year: "numeric",
-    hour: "2-digit",
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
     minute: "2-digit",
   }).format(date);
+  return `News from ${datePart} at ${timePart}`;
 }
 
 function compactLinkedLabel(label: string | null, contentType: NewsItem["linked_content_type"]) {
@@ -88,8 +119,6 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
     if (locale === "it") return it ?? en;
     return en;
   };
-  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -206,7 +235,7 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
             <div className="marketplace-list marketplace-list-top">
               {news.map((item) => {
                 const openHref = resolveOpenHref(item);
-                const publishedLabel = formatDate(item.published_at ?? item.scheduled_for ?? item.created_at, dateLocale);
+                const publishedLabel = formatNewsPublishedLabel(item.published_at ?? item.scheduled_for ?? item.created_at, locale);
                 const linkedLabel = compactLinkedLabel(item.linked_content_label, item.linked_content_type);
 
                 return (
