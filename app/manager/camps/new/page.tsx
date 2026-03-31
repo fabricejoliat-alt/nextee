@@ -25,6 +25,11 @@ type CampSummary = {
   group_ids: string[];
   player_ids: string[];
   coach_ids: string[];
+  player_registrations?: Array<{
+    player_id: string;
+    registration_status: "invited" | "registered" | "declined";
+    day_status_by_day_index: Record<string, "present" | "absent">;
+  }>;
   days: Array<{
     event_id?: string | null;
     starts_at: string | null;
@@ -33,6 +38,11 @@ type CampSummary = {
     practical_info: string | null;
     coach_ids?: string[];
   }>;
+};
+
+type PlayerRegistrationDraft = {
+  registration_status: "invited" | "registered" | "declined";
+  day_status_by_day_index: Record<string, "present" | "absent">;
 };
 
 type DayDraft = {
@@ -76,6 +86,40 @@ function nextAfternoon(offsetDays = 0) {
   return toInputDateTime(date);
 }
 
+function normalizeRegistrationStatus(value: unknown): PlayerRegistrationDraft["registration_status"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "registered" || normalized === "declined") return normalized;
+  return "invited";
+}
+
+function normalizePresenceStatus(value: unknown): "present" | "absent" {
+  return String(value ?? "").trim().toLowerCase() === "absent" ? "absent" : "present";
+}
+
+function buildPlayerRegistrationDrafts(
+  playerIds: string[],
+  dayCount: number,
+  source:
+    | Record<string, { registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }>
+    | Array<{ player_id: string; registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }>
+) {
+  const sourceMap: Record<string, { registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }> =
+    Array.isArray(source)
+      ? Object.fromEntries(source.map((entry) => [String(entry.player_id ?? "").trim(), entry]))
+      : source;
+  const next: Record<string, PlayerRegistrationDraft> = {};
+  playerIds.forEach((playerId) => {
+    const entry = sourceMap[playerId] ?? null;
+    next[playerId] = {
+      registration_status: normalizeRegistrationStatus(entry?.registration_status),
+      day_status_by_day_index: Object.fromEntries(
+        Array.from({ length: dayCount }, (_, index) => [String(index), normalizePresenceStatus(entry?.day_status_by_day_index?.[String(index)])])
+      ),
+    };
+  });
+  return next;
+}
+
 export default function ManagerCampEditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -99,6 +143,7 @@ export default function ManagerCampEditorPage() {
   const [notes, setNotes] = useState("");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
+  const [playerRegistrations, setPlayerRegistrations] = useState<Record<string, PlayerRegistrationDraft>>({});
   const [headCoachId, setHeadCoachId] = useState("");
   const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
   const [days, setDays] = useState<DayDraft[]>([
@@ -112,27 +157,6 @@ export default function ManagerCampEditorPage() {
     },
   ]);
 
-  function resetForm(nextClubId?: string) {
-    setEditingCampId(null);
-    setTitle("");
-    setNotes("");
-    setSelectedGroupIds([]);
-    setSelectedPlayerIds([]);
-    setHeadCoachId("");
-    setSelectedCoachIds([]);
-    setDays([
-      {
-        event_id: null,
-        starts_at: nextMorning(1),
-        ends_at: nextAfternoon(1),
-        location_text: "",
-        practical_info: "",
-        coach_ids: [],
-      },
-    ]);
-    if (nextClubId) setClubId(nextClubId);
-  }
-
   function applyCampToForm(camp: CampSummary) {
     setEditingCampId(camp.id);
     setClubId(camp.club_id);
@@ -140,6 +164,7 @@ export default function ManagerCampEditorPage() {
     setNotes(normalizeCampRichTextHtml(camp.notes ?? ""));
     setSelectedGroupIds(camp.group_ids ?? []);
     setSelectedPlayerIds(camp.player_ids ?? []);
+    setPlayerRegistrations(buildPlayerRegistrationDrafts(camp.player_ids ?? [], camp.days?.length ?? 0, camp.player_registrations ?? []));
     setHeadCoachId(String(camp.head_coach_user_id ?? camp.head_coach?.id ?? ""));
     setSelectedCoachIds(camp.coach_ids ?? []);
     setDays(
@@ -257,20 +282,19 @@ export default function ManagerCampEditorPage() {
     });
   }
 
-  async function load() {
-    setLoading(true);
-    setError(null);
-    try {
-      await Promise.all([loadContext(), loadCamps()]);
-    } catch (err: any) {
-      setError(err?.message ?? "Erreur de chargement");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void load();
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        await Promise.all([loadContext(), loadCamps()]);
+      } catch (err: any) {
+        setError(err?.message ?? "Erreur de chargement");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -315,6 +339,10 @@ export default function ManagerCampEditorPage() {
   }, [suggestedPlayerIds, playerMembers]);
 
   useEffect(() => {
+    setPlayerRegistrations((current) => buildPlayerRegistrationDrafts(selectedPlayerIds, days.length, current));
+  }, [selectedPlayerIds, days.length]);
+
+  useEffect(() => {
     setSelectedCoachIds((current) => current.filter((coachId) => coachMembers.some((coach) => coach.id === coachId)));
     if (headCoachId && !coachMembers.some((coach) => coach.id === headCoachId)) setHeadCoachId("");
   }, [coachMembers, headCoachId]);
@@ -345,6 +373,17 @@ export default function ManagerCampEditorPage() {
     setDays((current) => current.filter((_, dayIndex) => dayIndex !== index));
   }
 
+  function updatePlayerRegistration(playerId: string, patch: Partial<PlayerRegistrationDraft>) {
+    setPlayerRegistrations((current) => ({
+      ...current,
+      [playerId]: {
+        registration_status: current[playerId]?.registration_status ?? "invited",
+        day_status_by_day_index: current[playerId]?.day_status_by_day_index ?? {},
+        ...patch,
+      },
+    }));
+  }
+
   async function saveCamp() {
     setSaving(true);
     setError(null);
@@ -364,6 +403,11 @@ export default function ManagerCampEditorPage() {
           notes: normalizeCampRichTextHtml(notes),
           group_ids: selectedGroupIds,
           player_ids: selectedPlayerIds,
+          player_registrations: selectedPlayerIds.map((playerId) => ({
+            player_id: playerId,
+            registration_status: playerRegistrations[playerId]?.registration_status ?? "invited",
+            day_status_by_day_index: playerRegistrations[playerId]?.day_status_by_day_index ?? {},
+          })),
           head_coach_user_id: headCoachId,
           coach_ids: selectedCoachIds,
           days,
@@ -454,6 +498,82 @@ export default function ManagerCampEditorPage() {
                   ))}
                 </div>
               </div>
+
+              {selectedPlayerIds.length > 0 ? (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <div style={{ fontWeight: 900 }}>Inscriptions des juniors</div>
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.58)", fontWeight: 700 }}>
+                      Choisis si le junior est seulement invité, déjà inscrit, ou décliné. Si le junior est inscrit, tu peux définir les jours présents/absents.
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {selectedPlayerIds.map((playerId) => {
+                      const player = playerMembers.find((entry) => entry.id === playerId) ?? null;
+                      const registration = playerRegistrations[playerId] ?? {
+                        registration_status: "invited" as const,
+                        day_status_by_day_index: {},
+                      };
+                      return (
+                        <div key={playerId} className="glass-card" style={{ display: "grid", gap: 10, border: "1px solid rgba(0,0,0,0.08)" }}>
+                          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 260px)" }}>
+                            <div style={{ fontWeight: 900 }}>{fullName(player)}</div>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span style={{ fontWeight: 800 }}>Statut d’inscription</span>
+                              <select
+                                className="input"
+                                value={registration.registration_status}
+                                onChange={(e) =>
+                                  updatePlayerRegistration(playerId, {
+                                    registration_status: normalizeRegistrationStatus(e.target.value),
+                                  })
+                                }
+                              >
+                                <option value="invited">Invité</option>
+                                <option value="registered">Inscrit</option>
+                                <option value="declined">Refusé</option>
+                              </select>
+                            </label>
+                          </div>
+
+                          {registration.registration_status === "registered" ? (
+                            <div style={{ display: "grid", gap: 8 }}>
+                              <div style={{ fontWeight: 800 }}>Présence par journée</div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                {days.map((_, index) => (
+                                  <label key={`${playerId}-${index}`} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontWeight: 800 }}>Jour {index + 1}</span>
+                                    <select
+                                      className="input"
+                                      style={{ minWidth: 120 }}
+                                      value={registration.day_status_by_day_index[String(index)] ?? "present"}
+                                      onChange={(e) =>
+                                        updatePlayerRegistration(playerId, {
+                                          day_status_by_day_index: {
+                                            ...registration.day_status_by_day_index,
+                                            [String(index)]: normalizePresenceStatus(e.target.value),
+                                          },
+                                        })
+                                      }
+                                    >
+                                      <option value="present">Présent</option>
+                                      <option value="absent">Absent</option>
+                                    </select>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>
+                              Les présences par jour seront activées dès que ce junior passe au statut inscrit.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                 <label style={{ display: "grid", gap: 6 }}>

@@ -18,8 +18,27 @@ export type CampCreateDayInput = {
   coach_ids?: string[];
 };
 
+type CampPlayerRegistrationInput = {
+  player_id?: string | null;
+  registration_status?: string | null;
+  day_status_by_day_index?: Record<string, string | null | undefined> | null;
+};
+
+const VALID_CAMP_REGISTRATION_STATUSES = new Set(["invited", "registered", "declined"]);
+const VALID_CAMP_DAY_STATUSES = new Set(["present", "absent"]);
+
 function uniqIds(values: unknown) {
   return uniq(Array.isArray(values) ? values.map((value) => String(value ?? "").trim()) : []);
+}
+
+function normalizeRegistrationStatus(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  return VALID_CAMP_REGISTRATION_STATUSES.has(normalized) ? normalized : "invited";
+}
+
+function normalizeDayStatus(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase();
+  return VALID_CAMP_DAY_STATUSES.has(normalized) ? normalized : "present";
 }
 
 export async function GET(req: NextRequest) {
@@ -98,17 +117,17 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds)
         : ({ data: [], error: null } as const),
       eventIds.length
-        ? supabaseAdmin
-            .from("club_event_attendees")
-            .select("event_id,player_id,status")
-            .in("event_id", eventIds)
-            .eq("status", "present")
+        ? supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds)
         : ({ data: [], error: null } as const),
     ]);
     if (dayCoachAssignmentsRes.error) return NextResponse.json({ error: dayCoachAssignmentsRes.error.message }, { status: 400 });
     if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
 
-    const participantIds = uniq((participantAttendanceRes.data ?? []).map((row: any) => row.player_id));
+    const participantIds = uniq(
+      (participantAttendanceRes.data ?? [])
+        .filter((row: any) => String(row.status ?? "not_registered") === "present")
+        .map((row: any) => row.player_id)
+    );
     const participantProfilesRes = participantIds.length
       ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", participantIds)
       : ({ data: [], error: null } as const);
@@ -120,10 +139,19 @@ export async function GET(req: NextRequest) {
     (clubRes.data ?? []).forEach((club: any) => clubNameById.set(String(club.id), String(club.name ?? "Club")));
 
     const daysByCampId: Record<string, any[]> = {};
+    const dayIndexByEventId: Record<string, number> = {};
     const dayCoachIdsByEventId: Record<string, string[]> = {};
     const participantProfileById = new Map<string, any>();
     (participantProfilesRes.data ?? []).forEach((profile: any) => participantProfileById.set(String(profile.id), profile));
     const participantsByEventId: Record<string, any[]> = {};
+    const playerRegistrationsByCampId: Record<
+      string,
+      Array<{ player_id: string; registration_status: string; day_status_by_day_index: Record<string, string> }>
+    > = {};
+    const playerRegistrationByCampAndPlayer: Record<
+      string,
+      Record<string, { player_id: string; registration_status: string; day_status_by_day_index: Record<string, string> }>
+    > = {};
     (dayCoachAssignmentsRes.data ?? []).forEach((row: any) => {
       const eventId = String(row.event_id ?? "").trim();
       const coachId = String(row.coach_id ?? "").trim();
@@ -143,6 +171,7 @@ export async function GET(req: NextRequest) {
     (dayRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
       if (!campId) return;
+      dayIndexByEventId[String(row.event_id ?? "").trim()] = Number(row.day_index ?? 0);
       if (!daysByCampId[campId]) daysByCampId[campId] = [];
       daysByCampId[campId].push({
         event_id: String(row.event_id ?? ""),
@@ -175,11 +204,36 @@ export async function GET(req: NextRequest) {
       if (!campId) return;
       if (!statsByCampId[campId]) statsByCampId[campId] = { invited: 0, registered: 0, coaches: 0 };
       statsByCampId[campId].invited += 1;
-      if (String(row.registration_status ?? "") === "registered") statsByCampId[campId].registered += 1;
+      const registrationStatus = normalizeRegistrationStatus(row.registration_status);
+      if (registrationStatus === "registered") statsByCampId[campId].registered += 1;
       if (playerId) {
         if (!playerIdsByCampId[campId]) playerIdsByCampId[campId] = [];
         playerIdsByCampId[campId].push(playerId);
+        if (!playerRegistrationsByCampId[campId]) playerRegistrationsByCampId[campId] = [];
+        if (!playerRegistrationByCampAndPlayer[campId]) playerRegistrationByCampAndPlayer[campId] = {};
+        const registration = {
+          player_id: playerId,
+          registration_status: registrationStatus,
+          day_status_by_day_index: {} as Record<string, string>,
+        };
+        playerRegistrationsByCampId[campId].push(registration);
+        playerRegistrationByCampAndPlayer[campId][playerId] = registration;
       }
+    });
+    (participantAttendanceRes.data ?? []).forEach((row: any) => {
+      const eventId = String(row.event_id ?? "").trim();
+      const playerId = String(row.player_id ?? "").trim();
+      const dayIndex = dayIndexByEventId[eventId];
+      if (!eventId || !playerId || dayIndex == null) return;
+      const status = String(row.status ?? "").trim().toLowerCase();
+      if (status !== "present" && status !== "absent") return;
+      Object.entries(daysByCampId).forEach(([campId, campDays]) => {
+        const dayExists = campDays.some((day) => String(day.event_id ?? "").trim() === eventId);
+        if (!dayExists) return;
+        const registration = playerRegistrationByCampAndPlayer[campId]?.[playerId];
+        if (!registration) return;
+        registration.day_status_by_day_index[String(dayIndex)] = status;
+      });
     });
     (coachRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
@@ -204,6 +258,10 @@ export async function GET(req: NextRequest) {
           group_ids: uniq(groupIdsByCampId[String(camp.id)] ?? []),
           player_ids: uniq(playerIdsByCampId[String(camp.id)] ?? []),
           coach_ids: uniq(coachIdsByCampId[String(camp.id)] ?? []),
+          player_registrations: (playerRegistrationsByCampId[String(camp.id)] ?? []).map((registration) => ({
+            ...registration,
+            day_status_by_day_index: registration.day_status_by_day_index ?? {},
+          })),
           days: (daysByCampId[String(camp.id)] ?? [])
             .map((day) => ({
               ...day,
@@ -233,6 +291,7 @@ export async function POST(req: NextRequest) {
     const playerIds = uniqIds(body?.player_ids);
     const coachIds = uniqIds(body?.coach_ids);
     const days = (Array.isArray(body?.days) ? body.days : []) as CampCreateDayInput[];
+    const playerRegistrations = (Array.isArray(body?.player_registrations) ? body.player_registrations : []) as CampPlayerRegistrationInput[];
 
     if (!clubId) return NextResponse.json({ error: "club_id required" }, { status: 400 });
     if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
@@ -266,6 +325,29 @@ export async function POST(req: NextRequest) {
 
     const campId = String(campRes.data.id);
     const primaryGroupId = groupIds[0];
+    const registrationByPlayerId = new Map<
+      string,
+      { registration_status: string; registered_at: string | null; day_status_by_day_index: Record<string, string> }
+    >();
+    playerIds.forEach((playerId) => {
+      registrationByPlayerId.set(playerId, {
+        registration_status: "invited",
+        registered_at: null,
+        day_status_by_day_index: {},
+      });
+    });
+    playerRegistrations.forEach((registration) => {
+      const playerId = normalizeText(registration?.player_id);
+      if (!playerId || !registrationByPlayerId.has(playerId)) return;
+      const registrationStatus = normalizeRegistrationStatus(registration?.registration_status);
+      const next = registrationByPlayerId.get(playerId)!;
+      next.registration_status = registrationStatus;
+      next.registered_at = registrationStatus === "registered" ? new Date().toISOString() : null;
+      const rawDayStatuses = registration?.day_status_by_day_index ?? {};
+      Object.entries(rawDayStatuses).forEach(([dayIndex, status]) => {
+        next.day_status_by_day_index[String(dayIndex)] = normalizeDayStatus(status);
+      });
+    });
 
     if (groupIds.length > 0) {
       const groupsInsert = await supabaseAdmin
@@ -279,7 +361,8 @@ export async function POST(req: NextRequest) {
         playerIds.map((playerId) => ({
           camp_id: campId,
           player_id: playerId,
-          registration_status: "invited",
+          registration_status: registrationByPlayerId.get(playerId)?.registration_status ?? "invited",
+          registered_at: registrationByPlayerId.get(playerId)?.registered_at ?? null,
         }))
       );
       if (playersInsert.error) return NextResponse.json({ error: playersInsert.error.message }, { status: 400 });
@@ -316,7 +399,13 @@ export async function POST(req: NextRequest) {
         headCoachUserId,
         coachIds: uniq([...allCoachIds, ...uniqIds(day?.coach_ids)]),
         playerIds,
-        attendeeStatusByPlayerId: Object.fromEntries(playerIds.map((playerId) => [playerId, "not_registered"])),
+        attendeeStatusByPlayerId: Object.fromEntries(
+          playerIds.map((playerId) => {
+            const registration = registrationByPlayerId.get(playerId);
+            if (registration?.registration_status !== "registered") return [playerId, "not_registered"];
+            return [playerId, registration.day_status_by_day_index[String(index)] ?? "present"];
+          })
+        ),
         callerUserId: caller.userId,
         dayIndex: index,
       });
