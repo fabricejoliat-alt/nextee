@@ -77,6 +77,7 @@ export default function CoachCampsPage() {
   const [registrationCamp, setRegistrationCamp] = useState<CampRow | null>(null);
   const [registrationSaving, setRegistrationSaving] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [registrationSearch, setRegistrationSearch] = useState("");
   const [playerRegistrationsDraft, setPlayerRegistrationsDraft] = useState<
     Record<string, { registration_status: "invited" | "registered" | "declined"; day_status_by_day_index: Record<string, "present" | "absent"> }>
   >({});
@@ -94,8 +95,8 @@ export default function CoachCampsPage() {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les stages."));
         setCamps((json?.camps ?? []) as CampRow[]);
-      } catch (err: any) {
-        setError(err?.message ?? "Erreur de chargement");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Erreur de chargement");
         setCamps([]);
       } finally {
         setLoading(false);
@@ -123,6 +124,7 @@ export default function CoachCampsPage() {
   function openRegistrationModal(camp: CampRow) {
     setRegistrationCamp(camp);
     setRegistrationError(null);
+    setRegistrationSearch("");
     setPlayerRegistrationsDraft(
       Object.fromEntries(
         (camp.player_registrations ?? []).map((registration) => [
@@ -144,6 +146,7 @@ export default function CoachCampsPage() {
   function closeRegistrationModal() {
     setRegistrationCamp(null);
     setRegistrationError(null);
+    setRegistrationSearch("");
     setPlayerRegistrationsDraft({});
   }
 
@@ -238,11 +241,30 @@ export default function CoachCampsPage() {
       });
       setCamps((current) => current.map((camp) => (camp.id === updatedCamp.id ? updatedCamp : camp)));
       closeRegistrationModal();
-    } catch (err: any) {
-      setRegistrationError(err?.message ?? "Impossible d’enregistrer les inscriptions.");
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : "Impossible d’enregistrer les inscriptions.");
     } finally {
       setRegistrationSaving(false);
     }
+  }
+
+  function normalizeSearchText(value: string) {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function matchesRegistrationSearch(profile: ProfileLite | null, query: string) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return true;
+    const first = normalizeSearchText(String(profile?.first_name ?? ""));
+    const last = normalizeSearchText(String(profile?.last_name ?? ""));
+    const full = `${first} ${last}`.trim();
+    const compact = `${first}${last}`.trim();
+    const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+    return tokens.every((token) => full.includes(token) || compact.includes(token) || first.includes(token) || last.includes(token));
   }
 
   return (
@@ -349,11 +371,22 @@ export default function CoachCampsPage() {
               {registrationError ? <div className="marketplace-error">{registrationError}</div> : null}
 
               <div style={{ display: "grid", gap: 10, overflowY: "auto", minHeight: 0, paddingRight: 2, overscrollBehavior: "contain" }}>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontWeight: 800 }}>Rechercher un junior</span>
+                  <input
+                    className="input"
+                    value={registrationSearch}
+                    onChange={(e) => setRegistrationSearch(e.target.value)}
+                    placeholder="Prénom, nom, ou les deux"
+                  />
+                </label>
+
                 {(registrationCamp.available_players ?? []).length > 0 ? (
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{ fontWeight: 800 }}>Ajouter un junior</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {registrationCamp.available_players
+                        .filter((player) => matchesRegistrationSearch(player, registrationSearch))
                         .filter((player) => !playerRegistrationsDraft[player.id])
                         .map((player) => (
                           <button
@@ -392,6 +425,13 @@ export default function CoachCampsPage() {
                         null;
                       return fullName(playerA).localeCompare(fullName(playerB), "fr");
                     })
+                    .filter(([playerId]) => {
+                      const player =
+                        registrationCamp.player_registrations.find((entry) => entry.player_id === playerId)?.player ??
+                        registrationCamp.available_players.find((entry) => entry.id === playerId) ??
+                        null;
+                      return matchesRegistrationSearch(player, registrationSearch);
+                    })
                     .map(([playerId, draft]) => {
                       const player =
                         registrationCamp.player_registrations.find((entry) => entry.player_id === playerId)?.player ??
@@ -400,24 +440,21 @@ export default function CoachCampsPage() {
                       const registration = { player_id: playerId, player };
                       return (
                         <div key={registration.player_id} className="glass-card" style={{ display: "grid", gap: 10, border: "1px solid rgba(0,0,0,0.08)" }}>
-                          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 260px)" }}>
-                            <div style={{ fontWeight: 950 }}>{fullName(registration.player)}</div>
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={{ fontWeight: 800 }}>Statut d’inscription</span>
-                              <select
-                                className="input"
-                                value={draft.registration_status}
-                                onChange={(e) =>
-                                  updateRegistrationDraft(registration.player_id, {
-                                    registration_status: normalizeRegistrationStatus(e.target.value),
-                                  })
-                                }
-                              >
-                                <option value="invited">Invité</option>
-                                <option value="registered">Inscrit</option>
-                                <option value="declined">Refusé</option>
-                              </select>
-                            </label>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <div style={{ fontWeight: 950, lineHeight: 1.2 }}>{fullName(registration.player)}</div>
+                            <select
+                              className="input"
+                              value={draft.registration_status}
+                              onChange={(e) =>
+                                updateRegistrationDraft(registration.player_id, {
+                                  registration_status: normalizeRegistrationStatus(e.target.value),
+                                })
+                              }
+                            >
+                              <option value="invited">Invité</option>
+                              <option value="registered">Inscrit</option>
+                              <option value="declined">Refusé</option>
+                            </select>
                           </div>
                           {draft.registration_status === "registered" ? (
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
