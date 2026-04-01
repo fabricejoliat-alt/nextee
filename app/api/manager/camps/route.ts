@@ -162,7 +162,8 @@ export async function GET(req: NextRequest) {
     (participantAttendanceRes.data ?? []).forEach((row: any) => {
       const eventId = String(row.event_id ?? "").trim();
       const playerId = String(row.player_id ?? "").trim();
-      if (!eventId || !playerId) return;
+      const status = String(row.status ?? "not_registered").trim().toLowerCase();
+      if (!eventId || !playerId || status !== "present") return;
       const profile = participantProfileById.get(playerId);
       if (!profile) return;
       if (!participantsByEventId[eventId]) participantsByEventId[eventId] = [];

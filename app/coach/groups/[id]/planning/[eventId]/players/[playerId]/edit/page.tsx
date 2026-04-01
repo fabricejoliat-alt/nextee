@@ -43,10 +43,12 @@ type CoachFeedbackRow = {
   private_note: string | null;
   player_note: string | null;
 };
-type AttendanceStatus = "expected" | "present" | "absent" | "excused";
-type TrainingSessionRow = {
+type CoachLite = {
   id: string;
+  first_name: string | null;
+  last_name: string | null;
 };
+type AttendanceStatus = "expected" | "present" | "absent" | "excused";
 type TrainingItemRow = {
   id: string;
   session_id: string;
@@ -185,6 +187,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
+  const [feedbackLocked, setFeedbackLocked] = useState(false);
+  const [lockedByCoach, setLockedByCoach] = useState<CoachLite | null>(null);
   const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
   const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
   const [sessionItems, setSessionItems] = useState<TrainingItemRow[]>([]);
@@ -235,6 +239,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setEventStructureItems((json?.eventStructureItems ?? []) as EventStructureItemRow[]);
       setPlayerPlannedStructureItems((json?.playerPlannedStructureItems ?? []) as PlayerPlannedStructureItemRow[]);
       setSessionItems((json?.sessionItems ?? []) as TrainingItemRow[]);
+      setFeedbackLocked(Boolean(json?.feedbackLocked));
+      setLockedByCoach((json?.lockedByCoach ?? null) as CoachLite | null);
       setOrderedPlayerIds(
         Array.isArray(json?.orderedPlayerIds)
           ? (json.orderedPlayerIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
@@ -512,11 +518,14 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const canSave = useMemo(() => {
     if (busy || loading) return false;
     if (!event || !player) return false;
+    if (feedbackLocked) return false;
     return true;
-  }, [busy, loading, event, player]);
+  }, [busy, loading, event, player, feedbackLocked]);
   const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
   const plannedLabel = playerPlannedStructureItems.length > 0 ? "Planifiée pour ce joueur" : "Planifiée commune au groupe";
   const canShowStructure = event?.event_type === "training" || event?.event_type === "camp";
+  const evaluationLocked = busy || feedbackLocked;
+  const lockedByCoachName = lockedByCoach ? nameOf(lockedByCoach.first_name, lockedByCoach.last_name) : "un autre coach";
 
   const nextPlayerId = useMemo(() => {
     const idx = orderedPlayerIds.indexOf(playerId);
@@ -525,6 +534,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }, [orderedPlayerIds, playerId]);
 
   async function save(goNext = false) {
+    if (feedbackLocked) return;
     setBusy(true);
     setError(null);
 
@@ -612,6 +622,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }
 
   async function setPresence(next: "present" | "absent") {
+    if (feedbackLocked) return;
     if (attendanceBusy || busy) return;
     const prev = attendanceStatus;
     setAttendanceStatus(next);
@@ -717,7 +728,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   <AttendanceToggle
                     checked={attendanceStatus === "present"}
                     onToggle={handlePresenceToggle}
-                    disabled={attendanceBusy || busy}
+                    disabled={attendanceBusy || evaluationLocked}
                     ariaLabel="Basculer présence"
                     leftLabel="Absent"
                     rightLabel="Présent"
@@ -945,6 +956,21 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
+                {feedbackLocked ? (
+                  <div
+                    style={{
+                      border: "1px solid rgba(234,179,8,0.28)",
+                      borderRadius: 12,
+                      background: "rgba(250,204,21,0.12)",
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "rgba(113,63,18,1)",
+                    }}
+                  >
+                    Cette évaluation a déjà été saisie par {lockedByCoachName}. Elle est maintenant verrouillée pour les autres coachs.
+                  </div>
+                ) : null}
                 <div
                   style={{
                     border: "1px solid rgba(0,0,0,0.10)",
@@ -978,7 +1004,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                               key={`eng-${v}`}
                               type="button"
                               onClick={() => setDraft((p) => ({ ...p, engagement: p.engagement === v ? null : v }))}
-                              disabled={busy}
+                              disabled={evaluationLocked}
                               aria-pressed={active}
                               style={{
                                 width: "100%",
@@ -988,7 +1014,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                                 background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
                                 color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
                                 fontWeight: 900,
-                                cursor: busy ? "not-allowed" : "pointer",
+                                cursor: evaluationLocked ? "not-allowed" : "pointer",
                               }}
                             >
                               {v}
@@ -1008,7 +1034,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                               key={`att-${v}`}
                               type="button"
                               onClick={() => setDraft((p) => ({ ...p, attitude: p.attitude === v ? null : v }))}
-                              disabled={busy}
+                              disabled={evaluationLocked}
                               aria-pressed={active}
                               style={{
                                 width: "100%",
@@ -1018,7 +1044,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                                 background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
                                 color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
                                 fontWeight: 900,
-                                cursor: busy ? "not-allowed" : "pointer",
+                                cursor: evaluationLocked ? "not-allowed" : "pointer",
                               }}
                             >
                               {v}
@@ -1038,7 +1064,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                               key={`perf-${v}`}
                               type="button"
                               onClick={() => setDraft((p) => ({ ...p, performance: p.performance === v ? null : v }))}
-                              disabled={busy}
+                              disabled={evaluationLocked}
                               aria-pressed={active}
                               style={{
                                 width: "100%",
@@ -1048,7 +1074,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                                 background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
                                 color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
                                 fontWeight: 900,
-                                cursor: busy ? "not-allowed" : "pointer",
+                                cursor: evaluationLocked ? "not-allowed" : "pointer",
                               }}
                             >
                               {v}
@@ -1070,7 +1096,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <textarea
                       value={draft.player_note ?? ""}
                       onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
-                      disabled={busy}
+                      disabled={evaluationLocked}
                       style={{ minHeight: 90 }}
                       placeholder="Feedback pour le joueur…"
                     />
@@ -1085,7 +1111,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   <textarea
                     value={draft.private_note ?? ""}
                     onChange={(e) => setDraft((p) => ({ ...p, private_note: e.target.value }))}
-                    disabled={busy}
+                    disabled={evaluationLocked}
                     style={{ minHeight: 90 }}
                     placeholder="Notes privées..."
                   />

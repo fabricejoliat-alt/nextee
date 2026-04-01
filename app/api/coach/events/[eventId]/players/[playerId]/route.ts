@@ -61,7 +61,7 @@ export async function GET(
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const [playerRes, eventStructureRes, playerStructureRes, sessionRes, attendeeRes, feedbackRes, attendanceRes, playerFeedbackRes] = await Promise.all([
+    const [playerRes, eventStructureRes, playerStructureRes, sessionRes, attendeeRes, feedbackRes, otherCoachFeedbackRes, attendanceRes, playerFeedbackRes] = await Promise.all([
       supabaseAdmin
         .from("profiles")
         .select("id,first_name,last_name,handicap,avatar_url")
@@ -96,6 +96,13 @@ export async function GET(
         .eq("coach_id", callerId)
         .maybeSingle(),
       supabaseAdmin
+        .from("club_event_coach_feedback")
+        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
+        .eq("event_id", eventId)
+        .eq("player_id", playerId)
+        .neq("coach_id", callerId)
+        .limit(1),
+      supabaseAdmin
         .from("club_event_attendees")
         .select("status")
         .eq("event_id", eventId)
@@ -117,8 +124,21 @@ export async function GET(
     if (sessionRes.error) return NextResponse.json({ error: sessionRes.error.message }, { status: 400 });
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+    if (otherCoachFeedbackRes.error) return NextResponse.json({ error: otherCoachFeedbackRes.error.message }, { status: 400 });
     if (attendanceRes.error) return NextResponse.json({ error: attendanceRes.error.message }, { status: 400 });
     if (playerFeedbackRes.error) return NextResponse.json({ error: playerFeedbackRes.error.message }, { status: 400 });
+
+    const lockedFeedback = ((otherCoachFeedbackRes.data?.[0] as any) ?? null);
+    let lockedByCoach: { id: string; first_name: string | null; last_name: string | null } | null = null;
+    if (lockedFeedback?.coach_id) {
+      const lockedByCoachRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name")
+        .eq("id", String(lockedFeedback.coach_id))
+        .maybeSingle();
+      if (lockedByCoachRes.error) return NextResponse.json({ error: lockedByCoachRes.error.message }, { status: 400 });
+      lockedByCoach = (lockedByCoachRes.data as any) ?? null;
+    }
 
     const session = ((sessionRes.data?.[0] as any) ?? null);
     const sessionId = String(session?.id ?? "").trim();
@@ -203,6 +223,8 @@ export async function GET(
       sessionItems,
       orderedPlayerIds,
       feedback: feedbackRes.data ?? null,
+      feedbackLocked: Boolean(lockedFeedback),
+      lockedByCoach,
       attendanceStatus: String((attendanceRes.data as any)?.status ?? "present"),
       linkedDocuments,
     });
@@ -254,6 +276,29 @@ export async function POST(
       String(event.club_id ?? "").trim()
     );
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const otherCoachFeedbackRes = await supabaseAdmin
+      .from("club_event_coach_feedback")
+      .select("coach_id")
+      .eq("event_id", eventId)
+      .eq("player_id", playerId)
+      .neq("coach_id", callerId)
+      .limit(1);
+    if (otherCoachFeedbackRes.error) return NextResponse.json({ error: otherCoachFeedbackRes.error.message }, { status: 400 });
+    const lockedByCoachId = String((otherCoachFeedbackRes.data?.[0] as any)?.coach_id ?? "").trim();
+    if (lockedByCoachId) {
+      const lockedByCoachRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name")
+        .eq("id", lockedByCoachId)
+        .maybeSingle();
+      if (lockedByCoachRes.error) return NextResponse.json({ error: lockedByCoachRes.error.message }, { status: 400 });
+      const coachName = `${String(lockedByCoachRes.data?.first_name ?? "").trim()} ${String(lockedByCoachRes.data?.last_name ?? "").trim()}`.trim() || "un autre coach";
+      return NextResponse.json(
+        { error: `Évaluation déjà saisie par ${coachName}.`, code: "feedback_locked_by_other_coach", locked_by_coach_id: lockedByCoachId },
+        { status: 409 }
+      );
+    }
 
     if (attendanceStatus) {
       if (!["expected", "present", "absent", "excused"].includes(attendanceStatus)) {
