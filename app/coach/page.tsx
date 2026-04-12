@@ -15,6 +15,8 @@ type EventLite = {
   id: string;
   group_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title: string | null;
+  camp_day_index: number | null;
   starts_at: string;
   ends_at: string | null;
   location_text: string | null;
@@ -205,6 +207,17 @@ export default function CoachHomePage() {
     return tr("Événement", "Event");
   }
 
+  function eventCardTitle(event: EventLite) {
+    if (event.event_type === "camp") {
+      const baseTitle = String(event.title ?? "").trim() || eventTypeLabel(event.event_type);
+      if (typeof event.camp_day_index === "number" && Number.isFinite(event.camp_day_index)) {
+        return `${baseTitle} • ${tr(`Jour ${event.camp_day_index + 1}`, `Day ${event.camp_day_index + 1}`)}`;
+      }
+      return baseTitle;
+    }
+    return `${eventTypeLabel(event.event_type)} • ${groupNameById[event.group_id] ?? tr("Groupe", "Group")}`;
+  }
+
   function displayHello() {
     const first = (me?.first_name ?? "").trim();
     if (!first) return `${tr("Salut", "Hello")} 👋`;
@@ -312,7 +325,7 @@ export default function CoachHomePage() {
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                            {eventCardTitle(e)}
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
@@ -400,7 +413,7 @@ export default function CoachHomePage() {
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {eventTypeLabel(e.event_type)} • {groupNameById[e.group_id] ?? tr("Groupe", "Group")}
+                            {eventCardTitle(e)}
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>

@@ -187,7 +187,6 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
-  const [feedbackLocked, setFeedbackLocked] = useState(false);
   const [lockedByCoach, setLockedByCoach] = useState<CoachLite | null>(null);
   const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
   const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
@@ -239,7 +238,6 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setEventStructureItems((json?.eventStructureItems ?? []) as EventStructureItemRow[]);
       setPlayerPlannedStructureItems((json?.playerPlannedStructureItems ?? []) as PlayerPlannedStructureItemRow[]);
       setSessionItems((json?.sessionItems ?? []) as TrainingItemRow[]);
-      setFeedbackLocked(Boolean(json?.feedbackLocked));
       setLockedByCoach((json?.lockedByCoach ?? null) as CoachLite | null);
       setOrderedPlayerIds(
         Array.isArray(json?.orderedPlayerIds)
@@ -518,13 +516,12 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const canSave = useMemo(() => {
     if (busy || loading) return false;
     if (!event || !player) return false;
-    if (feedbackLocked) return false;
     return true;
-  }, [busy, loading, event, player, feedbackLocked]);
+  }, [busy, loading, event, player]);
   const displayedPlannedItems = playerPlannedStructureItems.length > 0 ? playerPlannedStructureItems : eventStructureItems;
   const plannedLabel = playerPlannedStructureItems.length > 0 ? "Planifiée pour ce joueur" : "Planifiée commune au groupe";
   const canShowStructure = event?.event_type === "training" || event?.event_type === "camp";
-  const evaluationLocked = busy || feedbackLocked;
+  const evaluationLocked = busy;
   const lockedByCoachName = lockedByCoach ? nameOf(lockedByCoach.first_name, lockedByCoach.last_name) : "un autre coach";
 
   const nextPlayerId = useMemo(() => {
@@ -534,7 +531,6 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }, [orderedPlayerIds, playerId]);
 
   async function save(goNext = false) {
-    if (feedbackLocked) return;
     setBusy(true);
     setError(null);
 
@@ -622,7 +618,6 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }
 
   async function setPresence(next: "present" | "absent") {
-    if (feedbackLocked) return;
     if (attendanceBusy || busy) return;
     const prev = attendanceStatus;
     setAttendanceStatus(next);
@@ -956,19 +951,19 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
-                {feedbackLocked ? (
+                {lockedByCoach ? (
                   <div
                     style={{
-                      border: "1px solid rgba(234,179,8,0.28)",
+                      border: "1px solid rgba(59,130,246,0.24)",
                       borderRadius: 12,
-                      background: "rgba(250,204,21,0.12)",
+                      background: "rgba(59,130,246,0.08)",
                       padding: "10px 12px",
                       fontSize: 12,
                       fontWeight: 800,
-                      color: "rgba(113,63,18,1)",
+                      color: "rgba(30,64,175,1)",
                     }}
                   >
-                    Cette évaluation a déjà été saisie par {lockedByCoachName}. Elle est maintenant verrouillée pour les autres coachs.
+                    Cette évaluation a déjà été saisie par {lockedByCoachName}. Elle est partagée: vous pouvez la compléter ou la mettre à jour.
                   </div>
                 ) : null}
                 <div

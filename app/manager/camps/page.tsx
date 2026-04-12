@@ -40,6 +40,7 @@ function fmtRange(startIso: string | null, endIso: string | null) {
   const start = new Date(startIso);
   const end = endIso ? new Date(endIso) : null;
   const dateLabel = new Intl.DateTimeFormat("fr-CH", {
+    timeZone: "Europe/Zurich",
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
@@ -48,7 +49,11 @@ function fmtRange(startIso: string | null, endIso: string | null) {
     minute: "2-digit",
   }).format(start);
   if (!end) return dateLabel;
-  const timeLabel = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(end);
+  const timeLabel = new Intl.DateTimeFormat("fr-CH", {
+    timeZone: "Europe/Zurich",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(end);
   return `${dateLabel} → ${timeLabel}`;
 }
 

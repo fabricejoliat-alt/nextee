@@ -11,6 +11,8 @@ type EventLite = {
   id: string;
   group_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title: string | null;
+  camp_day_index?: number | null;
   starts_at: string;
   ends_at: string | null;
   location_text: string | null;
@@ -91,14 +93,14 @@ export async function GET(req: NextRequest) {
       const [groupUpcomingRes, groupPastRes, groupsRes] = await Promise.all([
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
           .in("group_id", groupIds)
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
           .limit(80),
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
           .in("group_id", groupIds)
           .in("event_type", ["training", "interclub", "camp"])
           .lt("starts_at", nowIso)
@@ -129,7 +131,7 @@ export async function GET(req: NextRequest) {
     if (eventIdsFromAssign.length > 0) {
       const assignedEventsRes = await supabaseAdmin
         .from("club_events")
-        .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+        .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
         .in("id", eventIdsFromAssign)
         .order("starts_at", { ascending: false });
       if (assignedEventsRes.error) return NextResponse.json({ error: assignedEventsRes.error.message }, { status: 400 });
@@ -167,8 +169,32 @@ export async function GET(req: NextRequest) {
     }
 
     const allEvents = Object.values(rowsById);
-    const upcomingEvents = sortByStartsAtAsc(allEvents.filter((e) => new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 5);
-    const pastEvents = allEvents
+    const campEventIds = allEvents
+      .filter((event) => event.event_type === "camp")
+      .map((event) => String(event.id ?? "").trim())
+      .filter(Boolean);
+    let campDayIndexByEventId: Record<string, number> = {};
+    if (campEventIds.length > 0) {
+      const campDaysRes = await supabaseAdmin
+        .from("club_camp_days")
+        .select("event_id,day_index")
+        .in("event_id", campEventIds);
+      if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+      campDayIndexByEventId = (campDaysRes.data ?? []).reduce<Record<string, number>>((acc, row: any) => {
+        const eventId = String(row?.event_id ?? "").trim();
+        if (!eventId) return acc;
+        acc[eventId] = typeof row?.day_index === "number" ? row.day_index : 0;
+        return acc;
+      }, {});
+    }
+
+    const allEventsWithCampDay = allEvents.map((event) => ({
+      ...event,
+      camp_day_index:
+        event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
+    }));
+    const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 5);
+    const pastEvents = allEventsWithCampDay
       .filter((e) => ["training", "interclub", "camp"].includes(String(e.event_type ?? "")) && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
       .slice(0, 120);
@@ -186,7 +212,7 @@ export async function GET(req: NextRequest) {
     const pastIds = pastEvents.map((e) => e.id);
     const [attendeesRes, feedbackRes] = await Promise.all([
       supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", pastIds),
-      supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id").eq("coach_id", coachId).in("event_id", pastIds),
+      supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id").in("event_id", pastIds),
     ]);
     if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });

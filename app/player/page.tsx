@@ -1883,54 +1883,41 @@ export default function PlayerHomePage() {
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
-        {newsLoading || latestNews ? (
+        {latestNews ? (
           <section className="glass-section" style={{ marginTop: 14 }}>
             <div className="section-title">News</div>
 
             <div className="glass-card">
-              {newsLoading ? (
-                <div aria-live="polite" aria-busy="true" style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ height: 12, width: "34%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                    <div>{latestNewsDate}</div>
                   </div>
-                  <div className="hr-soft" style={{ margin: "2px 0" }} />
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ height: 14, width: "64%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                    <div style={{ height: 10, width: "52%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                  </div>
+                  {latestNewsOpenHref ? (
+                    <Link className="btn" href={latestNewsOpenHref}>
+                      {pickLocaleText(locale, "Ouvrir", "Open")}
+                    </Link>
+                  ) : null}
                 </div>
-              ) : latestNews ? (
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                    <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                      <div>{latestNewsDate}</div>
-                    </div>
-                    {latestNewsOpenHref ? (
-                      <Link className="btn" href={latestNewsOpenHref}>
-                        {pickLocaleText(locale, "Ouvrir", "Open")}
-                      </Link>
-                    ) : null}
-                  </div>
 
-                  <div className="hr-soft" style={{ margin: "1px 0" }} />
+                <div className="hr-soft" style={{ margin: "1px 0" }} />
 
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
-                      {latestNews.title}
-                    </div>
-                    {latestNews.summary ? (
-                      <div style={{ color: "rgba(0,0,0,0.74)", fontWeight: 800, fontSize: 12 }}>
-                        {latestNews.summary}
-                      </div>
-                    ) : null}
-                    {latestNewsLinkedLabel ? (
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span className="pill-soft">{latestNewsLinkedLabel}</span>
-                      </div>
-                    ) : null}
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
+                    {latestNews.title}
                   </div>
+                  {latestNews.summary ? (
+                    <div style={{ color: "rgba(0,0,0,0.74)", fontWeight: 800, fontSize: 12 }}>
+                      {latestNews.summary}
+                    </div>
+                  ) : null}
+                  {latestNewsLinkedLabel ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <span className="pill-soft">{latestNewsLinkedLabel}</span>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
             </div>
 
             <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>

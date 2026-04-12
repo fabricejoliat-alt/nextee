@@ -6,6 +6,11 @@ type CoachPlayerAccessResult = {
   sharedEventIds: string[];
 };
 
+type CampCoachPlayerAccessResult = {
+  allowed: boolean;
+  clubId: string | null;
+};
+
 export async function resolveCoachPlayerAccess(
   supabaseAdmin: any,
   callerId: string,
@@ -139,5 +144,70 @@ export async function resolveCoachPlayerAccess(
     canAccessSensitiveSections: sharedGroupIds.length > 0,
     sharedGroupIds,
     sharedEventIds,
+  };
+}
+
+export async function resolveCampCoachPlayerAccess(
+  supabaseAdmin: any,
+  callerId: string,
+  playerId: string,
+  clubEventId: string
+): Promise<CampCoachPlayerAccessResult> {
+  const normalizedEventId = String(clubEventId ?? "").trim();
+  if (!normalizedEventId) {
+    return { allowed: false, clubId: null };
+  }
+
+  const eventRes = await supabaseAdmin
+    .from("club_events")
+    .select("id,club_id,event_type")
+    .eq("id", normalizedEventId)
+    .maybeSingle();
+  if (eventRes.error) throw new Error(eventRes.error.message);
+
+  const event = eventRes.data as { id?: string | null; club_id?: string | null; event_type?: string | null } | null;
+  const clubId = String(event?.club_id ?? "").trim() || null;
+  if (!event?.id || event?.event_type !== "camp" || !clubId) {
+    return { allowed: false, clubId };
+  }
+
+  const [staffRes, dayRes] = await Promise.all([
+    supabaseAdmin
+      .from("club_members")
+      .select("club_id")
+      .eq("user_id", callerId)
+      .eq("club_id", clubId)
+      .eq("is_active", true)
+      .in("role", ["coach", "manager"])
+      .maybeSingle(),
+    supabaseAdmin
+      .from("club_camp_days")
+      .select("camp_id")
+      .eq("event_id", normalizedEventId)
+      .maybeSingle(),
+  ]);
+  if (staffRes.error) throw new Error(staffRes.error.message);
+  if (dayRes.error) throw new Error(dayRes.error.message);
+  if (!staffRes.data) {
+    return { allowed: false, clubId };
+  }
+
+  const campId = String((dayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
+  if (!campId) {
+    return { allowed: false, clubId };
+  }
+
+  const registrationRes = await supabaseAdmin
+    .from("club_camp_players")
+    .select("player_id")
+    .eq("camp_id", campId)
+    .eq("player_id", playerId)
+    .eq("registration_status", "registered")
+    .maybeSingle();
+  if (registrationRes.error) throw new Error(registrationRes.error.message);
+
+  return {
+    allowed: Boolean(registrationRes.data),
+    clubId,
   };
 }

@@ -41,6 +41,7 @@ type TournamentScoreRow = {
   score_net: number | string;
   total_points_net: number | string;
   total_points_brut: number | string;
+  occurred_on: string;
   calculated_at: string;
 };
 type RoundMeta = {
@@ -230,16 +231,15 @@ export default function PlayerOrderOfMeritPage() {
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setDetailsLoading(true);
 
-    const fromStart = `${rangeFrom}T00:00:00`;
-    const toEnd = `${rangeTo}T23:59:59`;
     const [scoreRes, bonusRes] = await Promise.all([
       supabase
         .from("om_tournament_scores")
-        .select("round_id,competition_level,competition_format,rounds_18_count,score_gross,score_net,total_points_net,total_points_brut,calculated_at")
+        .select("round_id,competition_level,competition_format,rounds_18_count,score_gross,score_net,total_points_net,total_points_brut,occurred_on,calculated_at")
         .eq("organization_id", orgId)
         .eq("player_id", playerId)
-        .gte("calculated_at", fromStart)
-        .lte("calculated_at", toEnd)
+        .gte("occurred_on", rangeFrom)
+        .lte("occurred_on", rangeTo)
+        .order("occurred_on", { ascending: false })
         .order("calculated_at", { ascending: false }),
       supabase
         .from("om_bonus_entries")
@@ -343,7 +343,11 @@ export default function PlayerOrderOfMeritPage() {
     });
 
     const scoreCards: PointDetailCard[] = Array.from(scoreGroups.values()).map((arr) => {
-      const sorted = [...arr].sort((a, b) => String(b.calculated_at).localeCompare(String(a.calculated_at)));
+      const sorted = [...arr].sort((a, b) => {
+        const byOccurredOn = String(b.occurred_on).localeCompare(String(a.occurred_on));
+        if (byOccurredOn !== 0) return byOccurredOn;
+        return String(b.calculated_at).localeCompare(String(a.calculated_at));
+      });
       const s = sorted[0];
       const round = roundById.get(s.round_id);
       const course = round?.course_name?.trim() || "—";
@@ -359,7 +363,7 @@ export default function PlayerOrderOfMeritPage() {
         .filter((v): v is string => Boolean(v))
         .map((v) => String(v).slice(0, 10))
         .sort();
-      const dateStart = roundDates[0] ?? String(round?.start_at ?? s.calculated_at).slice(0, 10);
+      const dateStart = roundDates[0] ?? String(round?.start_at ?? s.occurred_on).slice(0, 10);
       const dateEnd = roundDates[roundDates.length - 1] ?? dateStart;
       const dateLabel =
         dateStart === dateEnd
@@ -368,7 +372,7 @@ export default function PlayerOrderOfMeritPage() {
 
       return {
         id: `score-${s.round_id}`,
-        date: round?.start_at ?? s.calculated_at,
+        date: round?.start_at ?? s.occurred_on,
         dateLabel,
         title: competition,
         subtitle,

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
-import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 
 const DOCUMENTS_BUCKET = "marketplace";
 const MAX_DOCUMENT_SIZE_BYTES = 500 * 1024 * 1024;
@@ -36,11 +36,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
-    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
     const url = new URL(req.url);
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
+    const campAccess = requestedEventId
+      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, requestedEventId)
+      : { allowed: false, clubId: null };
+    const allowedSharedClubIds = Array.from(
+      new Set([
+        ...access.sharedClubIds,
+        ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
+      ])
+    );
+    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    if (allowedSharedClubIds.length === 0 || !canAccessDocuments) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     let docsQuery = supabaseAdmin
       .from("player_dashboard_documents")
@@ -106,9 +116,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
-    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
@@ -129,7 +136,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       const organizationIdFromBody = String(body?.organization_id ?? "").trim();
       const coachOnlyFromBody = String(body?.coach_only ?? "false").trim() === "true";
       const clubEventIdFromBody = String(body?.club_event_id ?? "").trim() || null;
-      if (!organizationIdFromBody || !access.sharedClubIds.includes(organizationIdFromBody)) {
+      const campAccess = clubEventIdFromBody
+        ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, clubEventIdFromBody)
+        : { allowed: false, clubId: null };
+      const allowedSharedClubIds = Array.from(
+        new Set([
+          ...access.sharedClubIds,
+          ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
+        ])
+      );
+      const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+      if (!canAccessDocuments) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      if (!organizationIdFromBody || !allowedSharedClubIds.includes(organizationIdFromBody)) {
         return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
       }
       if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
@@ -193,7 +213,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     const clubEventId = String(form.get("club_event_id") ?? "").trim() || null;
     const providedName = String(form.get("file_name") ?? "").trim();
     const file = form.get("file");
-    if (!organizationId || !access.sharedClubIds.includes(organizationId)) {
+    const campAccess = clubEventId
+      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, clubEventId)
+      : { allowed: false, clubId: null };
+    const allowedSharedClubIds = Array.from(
+      new Set([
+        ...access.sharedClubIds,
+        ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
+      ])
+    );
+    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    if (!canAccessDocuments) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (!organizationId || !allowedSharedClubIds.includes(organizationId)) {
       return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
     }
     if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });

@@ -14,6 +14,7 @@ type EventRow = {
   group_id: string;
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title: string | null;
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number;
@@ -21,6 +22,13 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+};
+type CampDayRow = {
+  camp_id: string;
+  day_index: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_text: string | null;
 };
 function eventTypeLabel(v: string | null | undefined) {
   if (v === "training") return "Entraînement";
@@ -60,6 +68,11 @@ type ProfileLite = {
 
 type AttendeeUiRow = AttendeeDbRow & {
   profile?: ProfileLite | null;
+};
+type PlayerEvaluationSummary = {
+  player_id: string;
+  coach_id: string | null;
+  coach_name: string | null;
 };
 type EventStructureItemRow = {
   category: string;
@@ -207,6 +220,7 @@ export default function CoachEventDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [campDay, setCampDay] = useState<CampDayRow | null>(null);
   const [clubName, setClubName] = useState("");
   const [groupName, setGroupName] = useState("");
 
@@ -223,7 +237,7 @@ export default function CoachEventDetailPage() {
   const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
-  const [evaluatedPlayerIds, setEvaluatedPlayerIds] = useState<Set<string>>(new Set());
+  const [evaluatedPlayersById, setEvaluatedPlayersById] = useState<Map<string, PlayerEvaluationSummary>>(new Map());
   const [copyingStructure, setCopyingStructure] = useState(false);
   const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
 
@@ -316,6 +330,7 @@ export default function CoachEventDetailPage() {
       if (!ev?.id) throw new Error("Événement introuvable.");
 
       setEvent(ev);
+      setCampDay((detailJson?.campDay ?? null) as CampDayRow | null);
       setClubName(String(detailJson?.clubName ?? "Club"));
       setGroupName(String(detailJson?.groupName ?? "Groupe"));
       setMeId(String(detailJson?.meId ?? ""));
@@ -327,11 +342,20 @@ export default function CoachEventDetailPage() {
           : []
       );
       setStructureItems(Array.isArray(detailJson?.structureItems) ? (detailJson.structureItems as EventStructureItemRow[]) : []);
-      setEvaluatedPlayerIds(
-        new Set(
-          Array.isArray(detailJson?.evaluatedPlayerIds)
-            ? (detailJson.evaluatedPlayerIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
-            : []
+      setEvaluatedPlayersById(
+        new Map(
+          (
+            Array.isArray(detailJson?.evaluatedPlayers)
+              ? (detailJson.evaluatedPlayers as PlayerEvaluationSummary[])
+              : []
+          )
+            .map((row) => ({
+              player_id: String(row?.player_id ?? "").trim(),
+              coach_id: String(row?.coach_id ?? "").trim() || null,
+              coach_name: String(row?.coach_name ?? "").trim() || null,
+            }))
+            .filter((row) => row.player_id)
+            .map((row) => [row.player_id, row] as const)
         )
       );
 
@@ -387,6 +411,7 @@ export default function CoachEventDetailPage() {
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
       setEvent(null);
+      setCampDay(null);
       setClubName("");
       setGroupName("");
       setAttendees([]);
@@ -421,6 +446,18 @@ export default function CoachEventDetailPage() {
     () => coaches.filter((c) => !selectedCoachIds.includes(c.id)),
     [coaches, selectedCoachIds]
   );
+  const eventCardTitle = useMemo(() => {
+    if (!event) return pickLocaleText(locale, "Événement", "Event");
+    if (event.event_type === "camp") {
+      const campTitle = String(event.title ?? "").trim() || eventTypeLabelLocalized(event.event_type, locale);
+      const dayLabel =
+        campDay && Number.isFinite(campDay.day_index)
+          ? `${pickLocaleText(locale, "Jour", "Day")} ${campDay.day_index + 1}`
+          : null;
+      return dayLabel ? `${campTitle} • ${dayLabel}` : campTitle;
+    }
+    return `${eventTypeLabelLocalized(event.event_type, locale)} — ${groupName || pickLocaleText(locale, "Groupe", "Group")}`;
+  }, [campDay, event, groupName, locale]);
 
   async function addCoach(coachId: string) {
     if (!event) return;
@@ -530,7 +567,7 @@ export default function CoachEventDetailPage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                {event ? eventTypeLabelLocalized(event.event_type, locale) : tr("Événement", "Event")} — {groupName || tr("Groupe", "Group")}
+                {event ? eventCardTitle : tr("Événement", "Event")}
               </div>
             </div>
 
@@ -558,7 +595,7 @@ export default function CoachEventDetailPage() {
               <div style={{ display: "grid", gap: 12 }}>
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    {eventTypeLabelLocalized(event.event_type, locale)} — {groupName || tr("Groupe", "Group")}
+                    {eventCardTitle}
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <span className="pill-soft">{clubName || t("common.club")}</span>
@@ -823,7 +860,8 @@ export default function CoachEventDetailPage() {
                         event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
                       const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent" && isEventPast;
                       const canStructurePlayer = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
-                      const alreadyEvaluated = evaluatedPlayerIds.has(a.player_id);
+                      const evaluationSummary = evaluatedPlayersById.get(a.player_id) ?? null;
+                      const alreadyEvaluated = Boolean(evaluationSummary);
 
                       return (
                         <div
@@ -866,6 +904,20 @@ export default function CoachEventDetailPage() {
 
                           {canOpenPlayerDetail ? (
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                              {evaluationSummary ? (
+                                <span
+                                  className="pill-soft"
+                                  title={
+                                    evaluationSummary.coach_name
+                                      ? tr(`Évalué par ${evaluationSummary.coach_name}`, `Evaluated by ${evaluationSummary.coach_name}`)
+                                      : tr("Déjà évalué", "Already evaluated")
+                                  }
+                                >
+                                  {evaluationSummary.coach_name
+                                    ? tr(`Évalué par ${evaluationSummary.coach_name}`, `Evaluated by ${evaluationSummary.coach_name}`)
+                                    : tr("Évalué", "Evaluated")}
+                                </span>
+                              ) : null}
                               <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${a.player_id}`}>
                                 <ArrowRight size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                 {tr("Voir", "View")}

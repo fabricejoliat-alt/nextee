@@ -17,6 +17,7 @@ type EventRow = {
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
   title: string | null;
+  camp_day_index: number | null;
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number | null;
@@ -70,6 +71,22 @@ function eventTypeLabel(v: EventRow["event_type"], locale: string) {
   if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
   if (v === "session") return pickLocaleText(l, "Séance", "Session");
   return pickLocaleText(l, "Événement", "Event");
+}
+
+function eventCardTitle(event: EventRow, groupNames: Record<string, string>, locale: string) {
+  const groupLabel = groupNames[event.group_id] ?? pickLocaleText(locale as "fr" | "en" | "de" | "it", "Groupe", "Group");
+  if (event.event_type === "camp") {
+    const baseTitle = String(event.title ?? "").trim() || eventTypeLabel(event.event_type, locale);
+    if (typeof event.camp_day_index === "number" && Number.isFinite(event.camp_day_index)) {
+      return `${baseTitle} • ${pickLocaleText(
+        locale as "fr" | "en" | "de" | "it",
+        `Jour ${event.camp_day_index + 1}`,
+        `Day ${event.camp_day_index + 1}`
+      )}`;
+    }
+    return baseTitle;
+  }
+  return `${eventTypeLabel(event.event_type, locale)} • ${groupLabel}`;
 }
 
 function isArchiveGroupLabel(label: string) {
@@ -341,8 +358,7 @@ export default function CoachCalendarPage() {
             ) : (
               <div className="marketplace-list marketplace-list-top">
                 {pagedListEvents.map((e) => {
-                  const groupLabel = groupNames[e.group_id] ?? tr("Groupe", "Group");
-                  const titleLabel = `${eventTypeLabel(e.event_type, locale)} • ${groupLabel}`;
+                  const titleLabel = eventCardTitle(e, groupNames, locale);
                   const endIso = e.ends_at ?? e.starts_at;
                   const oneDay = sameDay(e.starts_at, endIso);
                   return (

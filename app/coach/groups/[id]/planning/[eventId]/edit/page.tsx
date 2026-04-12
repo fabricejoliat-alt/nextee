@@ -11,7 +11,6 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
-type ClubRow = { id: string; name: string | null };
 
 type EventRow = {
   id: string;
@@ -76,6 +75,11 @@ type ProfileLite = {
   last_name: string | null;
   handicap?: number | null;
   avatar_url?: string | null;
+};
+type EventAttendeeLite = {
+  player_id: string;
+  status: "expected" | "present" | "absent" | "excused" | null;
+  profile: ProfileLite | null;
 };
 type TrainingItemDraft = {
   category: string;
@@ -335,6 +339,7 @@ export default function CoachEventEditPage() {
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [coachIdsSelected, setCoachIdsSelected] = useState<string[]>([]);
   const [clubMembers, setClubMembers] = useState<ClubMemberLite[]>([]);
+  const [readonlyParticipants, setReadonlyParticipants] = useState<EventAttendeeLite[]>([]);
 
   // players (same design as planning page)
   const [players, setPlayers] = useState<ProfileLite[]>([]);
@@ -346,6 +351,7 @@ export default function CoachEventEditPage() {
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
   const isDurationOnlyOccurrenceType = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training";
   const showsStructureEditor = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training" || v === "camp";
+  const participantsManagedElsewhere = (event?.event_type ?? eventType) === "camp";
 
   const occDate = useMemo(() => {
     if (!startsAtLocal.includes("T")) return ymdToday();
@@ -452,9 +458,6 @@ export default function CoachEventEditPage() {
     const delCoaches = await supabase.from("club_event_coaches").delete().in("event_id", eventIds);
     if (delCoaches.error) throw new Error(delCoaches.error.message);
 
-    const delAttendees = await supabase.from("club_event_attendees").delete().in("event_id", eventIds);
-    if (delAttendees.error) throw new Error(delAttendees.error.message);
-
     if (coachIdsSelected.length > 0) {
       const coachRows = eventIds.flatMap((eid) =>
         coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid }))
@@ -465,14 +468,19 @@ export default function CoachEventEditPage() {
       if (insCoaches.error) throw new Error(insCoaches.error.message);
     }
 
-    if (attendeeIdsSelected.length > 0) {
-      const attendeeRows = eventIds.flatMap((eid) =>
-        attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-      );
-      const insAttendees = await supabase
-        .from("club_event_attendees")
-        .upsert(attendeeRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-      if (insAttendees.error) throw new Error(insAttendees.error.message);
+    if (!participantsManagedElsewhere) {
+      const delAttendees = await supabase.from("club_event_attendees").delete().in("event_id", eventIds);
+      if (delAttendees.error) throw new Error(delAttendees.error.message);
+
+      if (attendeeIdsSelected.length > 0) {
+        const attendeeRows = eventIds.flatMap((eid) =>
+          attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
+        );
+        const insAttendees = await supabase
+          .from("club_event_attendees")
+          .upsert(attendeeRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
+        if (insAttendees.error) throw new Error(insAttendees.error.message);
+      }
     }
   }
 
@@ -616,39 +624,44 @@ export default function CoachEventEditPage() {
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
       if (uErr || !uRes.user) throw new Error("Session invalide.");
-      setMeId(uRes.user.id);
+      const sessionRes = await supabase.auth.getSession();
+      const accessToken = sessionRes.data.session?.access_token;
+      if (!accessToken) throw new Error("Session invalide.");
 
-      // event
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
+      const detailRes = await fetch(`/api/coach/events/${eventId}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const detailJson = await detailRes.json().catch(() => ({}));
+      if (!detailRes.ok) {
+        throw new Error(
+          typeof detailJson?.error === "string" && detailJson.error.trim()
+            ? detailJson.error
+            : "Événement introuvable."
+        );
+      }
 
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Événement introuvable.");
-      const ev = eRes.data as EventRow;
+      const ev = (detailJson?.event ?? null) as EventRow | null;
+      if (!ev) throw new Error("Événement introuvable.");
+
+      setMeId(String(detailJson?.meId ?? uRes.user.id));
+      setReadonlyParticipants(
+        Array.isArray(detailJson?.attendees) ? (detailJson.attendees as EventAttendeeLite[]) : []
+      );
+
       setEvent(ev);
-      setCampDay(null);
+      const day = ((detailJson?.campDay ?? null) as CampDayRow | null) ?? null;
+      setCampDay(day);
 
       let effectiveStartIso = ev.starts_at;
       let effectiveEndIso = ev.ends_at ?? new Date(new Date(ev.starts_at).getTime() + ev.duration_minutes * 60000).toISOString();
       let effectiveLocationText = ev.location_text ?? "";
 
-      if ((ev.event_type ?? "training") === "camp") {
-        const campDayRes = await supabase
-          .from("club_camp_days")
-          .select("camp_id,day_index,starts_at,ends_at,location_text")
-          .eq("event_id", eventId)
-          .maybeSingle();
-        if (campDayRes.error) throw new Error(campDayRes.error.message);
-        if (campDayRes.data) {
-          const day = campDayRes.data as CampDayRow;
-          setCampDay(day);
-          effectiveStartIso = day.starts_at ?? effectiveStartIso;
-          effectiveEndIso = day.ends_at ?? effectiveEndIso;
-          effectiveLocationText = day.location_text ?? effectiveLocationText;
-        }
+      if ((ev.event_type ?? "training") === "camp" && day) {
+        effectiveStartIso = day.starts_at ?? effectiveStartIso;
+        effectiveEndIso = day.ends_at ?? effectiveEndIso;
+        effectiveLocationText = day.location_text ?? effectiveLocationText;
       }
 
       setStartsAtLocal(isoToLocalInput(effectiveStartIso));
@@ -659,22 +672,19 @@ export default function CoachEventEditPage() {
       setLocationText(effectiveLocationText);
       setCoachNote(ev.coach_note ?? "");
 
-      // group
-      const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
-      if (gRes.error) throw new Error(gRes.error.message);
-      if (!gRes.data) throw new Error("Groupe introuvable.");
-      setGroup(gRes.data as GroupRow);
-
-      // club name
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
-      if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
-      else setClubName("Club");
+      const groupRow: GroupRow = {
+        id: groupId,
+        name: String(detailJson?.groupName ?? "").trim() || "Groupe",
+        club_id: ev.club_id,
+      };
+      setGroup(groupRow);
+      setClubName(String(detailJson?.clubName ?? "").trim() || "Club");
 
       // all active club members (for guests)
       const cmRes = await supabase
         .from("club_members")
         .select("user_id, role")
-        .eq("club_id", gRes.data.club_id)
+        .eq("club_id", groupRow.club_id)
         .eq("is_active", true);
       if (cmRes.error) throw new Error(cmRes.error.message);
       const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
@@ -744,13 +754,12 @@ export default function CoachEventEditPage() {
 
       if (coRes.error) throw new Error(coRes.error.message);
 
-      const coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
+      let coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
         id: r.coach_user_id,
         first_name: r.profiles?.first_name ?? null,
         last_name: r.profiles?.last_name ?? null,
         avatar_url: r.profiles?.avatar_url ?? null,
       }));
-      setCoaches(coList);
 
       // ✅ group players (BD: coach_group_players.player_user_id)
       const plRes = await supabase
@@ -770,14 +779,40 @@ export default function CoachEventEditPage() {
       plList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
       setPlayers(plList);
 
-      // selected coaches on event (BD: club_event_coaches.coach_id)
-      const ecRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", eventId);
-      if (!ecRes.error) setCoachIdsSelected((ecRes.data ?? []).map((r: any) => r.coach_id as string));
-      else setCoachIdsSelected([]);
+      const selectedCoachIds = Array.isArray(detailJson?.selectedCoachIds)
+        ? (detailJson.selectedCoachIds as string[])
+        : [];
+      const missingCoachIds = selectedCoachIds.filter((id) => !coList.some((c) => c.id === id));
+      if (missingCoachIds.length > 0) {
+        const missingCoachProfiles = await supabase
+          .from("profiles")
+          .select("id,first_name,last_name,avatar_url")
+          .in("id", missingCoachIds);
+        if (missingCoachProfiles.error) throw new Error(missingCoachProfiles.error.message);
+        coList = [
+          ...coList,
+          ...((missingCoachProfiles.data ?? []) as Array<{
+            id: string;
+            first_name: string | null;
+            last_name: string | null;
+            avatar_url: string | null;
+          }>).map((p) => ({
+            id: p.id,
+            first_name: p.first_name ?? null,
+            last_name: p.last_name ?? null,
+            avatar_url: p.avatar_url ?? null,
+          })),
+        ];
+      }
+      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr"));
+      setCoaches(coList);
+      setCoachIdsSelected(selectedCoachIds);
 
-      // selected attendees -> selectedPlayers map
-      const eaRes = await supabase.from("club_event_attendees").select("player_id").eq("event_id", eventId);
-      const selectedIds = !eaRes.error ? (eaRes.data ?? []).map((r: any) => r.player_id as string) : [];
+      const selectedIds = Array.isArray(detailJson?.attendees)
+        ? (detailJson.attendees as Array<{ player_id?: string | null }>)
+            .map((row) => String(row.player_id ?? "").trim())
+            .filter(Boolean)
+        : [];
       setInitialSelectedAttendeeIds(selectedIds);
 
       const defaultSelected: Record<string, ProfileLite> = {};
@@ -794,18 +829,16 @@ export default function CoachEventEditPage() {
       });
       setSelectedGuests(guestsSelected);
 
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (!structRes.error) {
-        const rows = (structRes.data ?? []) as Array<{ category: string; minutes: number; note: string | null }>;
-        setStructureItems(rows.map((r) => ({ category: r.category ?? "", minutes: String(r.minutes ?? ""), note: r.note ?? "" })));
-      } else {
-        setStructureItems([]);
-      }
+      const structureRows = Array.isArray(detailJson?.structureItems)
+        ? (detailJson.structureItems as Array<{ category: string; minutes: number; note: string | null }>)
+        : [];
+      setStructureItems(
+        structureRows.map((r) => ({
+          category: r.category ?? "",
+          minutes: String(r.minutes ?? ""),
+          note: r.note ?? "",
+        }))
+      );
 
       setLoading(false);
     } catch (e: any) {
@@ -817,6 +850,7 @@ export default function CoachEventEditPage() {
       setCoaches([]);
       setPlayers([]);
       setClubMembers([]);
+      setReadonlyParticipants([]);
       setCoachIdsSelected([]);
       setSelectedPlayers({});
       setSelectedGuests({});
@@ -846,6 +880,7 @@ export default function CoachEventEditPage() {
   }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
 
   async function syncPlayerChangesOnFuturePlannedEvents() {
+    if (participantsManagedElsewhere) return;
     if (!groupId) return;
     if (attendeesAddedOnSave.length === 0 && attendeesRemovedOnSave.length === 0) return;
 
@@ -1024,22 +1059,33 @@ export default function CoachEventEditPage() {
       }
 
       // replace attendees
-      const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
-      if (delA.error) throw new Error(delA.error.message);
-      if (attendeeIdsSelected.length > 0) {
-        const insA = await supabase
-          .from("club_event_attendees")
-          .upsert(
-            attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })),
-            { onConflict: "event_id,player_id", ignoreDuplicates: true }
-          );
-        if (insA.error) throw new Error(insA.error.message);
+      if (!participantsManagedElsewhere) {
+        const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
+        if (delA.error) throw new Error(delA.error.message);
+        if (attendeeIdsSelected.length > 0) {
+          const insA = await supabase
+            .from("club_event_attendees")
+            .upsert(
+              attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })),
+              { onConflict: "event_id,player_id", ignoreDuplicates: true }
+            );
+          if (insA.error) throw new Error(insA.error.message);
+        }
       }
 
       await replaceStructureForEvent(eventId);
 
-      if (hasPlayerVisibleChange && attendeeIdsSelected.length > 0 && meId) {
-        const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
+      if (hasPlayerVisibleChange && meId) {
+        const recipientIds = participantsManagedElsewhere
+          ? Array.from(
+              new Set(
+                readonlyParticipants
+                  .filter((row) => row.status !== "absent")
+                  .map((row) => row.player_id)
+                  .filter(Boolean)
+              )
+            )
+          : attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
         if (recipientIds.length > 0) {
           const oldStart = new Date(event.starts_at);
           const oldEnd = event.ends_at
@@ -1257,7 +1303,7 @@ export default function CoachEventEditPage() {
 
       await syncPlayerChangesOnFuturePlannedEvents();
 
-      if (attendeeIdsSelected.length > 0 && meId) {
+      if (!participantsManagedElsewhere && attendeeIdsSelected.length > 0 && meId) {
         const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
         const summary =
           locale === "fr"
@@ -1921,253 +1967,292 @@ export default function CoachEventEditPage() {
                   </div>
                 </div>
 
-                {/* Joueurs attendus */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Joueurs attendus
-                  </div>
+                {participantsManagedElsewhere ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <Users size={16} /> Participants
+                    </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy || players.length === 0 || allPlayersSelected}
-                      onClick={() => {
-                        const map: Record<string, ProfileLite> = {};
-                        players.forEach((p) => (map[p.id] = p));
-                        setSelectedPlayers(map);
-                      }}
-                    >
-                      Tout sélectionner
-                    </button>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                      Les participants d’un stage/camp se gèrent depuis le module d’inscription du stage.
+                    </div>
 
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
-                      onClick={() => setSelectedPlayers({})}
-                    >
-                      Tout désélectionner
-                    </button>
-                  </div>
-
-                  <div style={{ position: "relative" }}>
-                    <Search
-                      size={18}
-                      style={{
-                        position: "absolute",
-                        left: 14,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        opacity: 0.7,
-                      }}
-                    />
-                    <input
-                      value={queryPlayers}
-                      onChange={(e) => setQueryPlayers(e.target.value)}
-                      disabled={busy}
-                      placeholder="Rechercher un joueur (nom, handicap)…"
-                      style={{ paddingLeft: 44 }}
-                    />
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
-
-                    {players.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
-                    ) : selectedPlayersList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
+                    {readonlyParticipants.length === 0 ? (
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun participant inscrit.</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
-                        {selectedPlayersList.map((p) => (
-                          <div key={p.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(p)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                  Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => toggleSelectedPlayer(p)}
-                              disabled={busy}
-                              style={{ padding: "10px 12px" }}
-                              aria-label="Retirer"
-                              title="Retirer"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
-
-                    {players.length > 0 && candidatesPlayers.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
-                    ) : candidatesPlayers.length > 0 ? (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {candidatesPlayers.map((p) => (
-                          <div key={p.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(p)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                  Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="glass-btn"
-                              onClick={() => toggleSelectedPlayer(p)}
-                              disabled={busy}
-                              style={{
-                                width: 44,
-                                height: 42,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: "rgba(255,255,255,0.70)",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                              }}
-                              aria-label="Ajouter joueur"
-                              title="Ajouter"
-                            >
-                              <PlusCircle size={18} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Invités */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Invités
-                  </div>
-
-                  <div style={{ position: "relative" }}>
-                    <Search
-                      size={18}
-                      style={{
-                        position: "absolute",
-                        left: 14,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        opacity: 0.7,
-                      }}
-                    />
-                    <input
-                      value={queryGuests}
-                      onChange={(e) => setQueryGuests(e.target.value)}
-                      disabled={busy}
-                      placeholder="Rechercher un invité (nom, rôle)…"
-                      style={{ paddingLeft: 44 }}
-                    />
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedGuestsList.length})</div>
-                    {selectedGuestsList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun invité sélectionné.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {selectedGuestsList.map((m) => (
-                          <div key={m.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(m as any)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => toggleSelectedGuest(m)}
-                              disabled={busy}
-                              style={{ padding: "10px 12px" }}
-                              aria-label="Retirer invité"
-                              title="Retirer"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {queryGuests.trim().length > 0 ? (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Ajouter ({candidateGuests.length})</div>
-                      {candidateGuests.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {candidateGuests.map((m) => (
-                            <div key={m.id} style={lightRowCardStyle}>
+                        {readonlyParticipants.map((participant) => {
+                          const p = participant.profile ?? null;
+                          return (
+                            <div key={participant.player_id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(m as any)}
+                                  {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
+                                    Handicap {typeof p?.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                  </div>
                                 </div>
                               </div>
-
-                              <button
-                                type="button"
-                                className="glass-btn"
-                                onClick={() => toggleSelectedGuest(m)}
-                                disabled={busy}
-                                style={{
-                                  width: 44,
-                                  height: 42,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  background: "rgba(255,255,255,0.70)",
-                                  border: "1px solid rgba(0,0,0,0.08)",
-                                }}
-                                aria-label="Ajouter invité"
-                                title="Ajouter"
-                              >
-                                <PlusCircle size={18} />
-                              </button>
                             </div>
-                          ))}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Joueurs attendus */}
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Users size={16} /> Joueurs attendus
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={busy || players.length === 0 || allPlayersSelected}
+                          onClick={() => {
+                            const map: Record<string, ProfileLite> = {};
+                            players.forEach((p) => (map[p.id] = p));
+                            setSelectedPlayers(map);
+                          }}
+                        >
+                          Tout sélectionner
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
+                          onClick={() => setSelectedPlayers({})}
+                        >
+                          Tout désélectionner
+                        </button>
+                      </div>
+
+                      <div style={{ position: "relative" }}>
+                        <Search
+                          size={18}
+                          style={{
+                            position: "absolute",
+                            left: 14,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            opacity: 0.7,
+                          }}
+                        />
+                        <input
+                          value={queryPlayers}
+                          onChange={(e) => setQueryPlayers(e.target.value)}
+                          disabled={busy}
+                          placeholder="Rechercher un joueur (nom, handicap)…"
+                          style={{ paddingLeft: 44 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
+
+                        {players.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
+                        ) : selectedPlayersList.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {selectedPlayersList.map((p) => (
+                              <div key={p.id} style={lightRowCardStyle}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                  <div style={avatarBoxStyle} aria-hidden="true">
+                                    {avatarNode(p)}
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                    <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
+                                      Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="btn btn-danger soft"
+                                  onClick={() => toggleSelectedPlayer(p)}
+                                  disabled={busy}
+                                  style={{ padding: "10px 12px" }}
+                                  aria-label="Retirer"
+                                  title="Retirer"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
+
+                        {players.length > 0 && candidatesPlayers.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                        ) : candidatesPlayers.length > 0 ? (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {candidatesPlayers.map((p) => (
+                              <div key={p.id} style={lightRowCardStyle}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                  <div style={avatarBoxStyle} aria-hidden="true">
+                                    {avatarNode(p)}
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                    <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
+                                      Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="glass-btn"
+                                  onClick={() => toggleSelectedPlayer(p)}
+                                  disabled={busy}
+                                  style={{
+                                    width: 44,
+                                    height: 42,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: "rgba(255,255,255,0.70)",
+                                    border: "1px solid rgba(0,0,0,0.08)",
+                                  }}
+                                  aria-label="Ajouter joueur"
+                                  title="Ajouter"
+                                >
+                                  <PlusCircle size={18} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Invités */}
+                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                      <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Users size={16} /> Invités
+                      </div>
+
+                      <div style={{ position: "relative" }}>
+                        <Search
+                          size={18}
+                          style={{
+                            position: "absolute",
+                            left: 14,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            opacity: 0.7,
+                          }}
+                        />
+                        <input
+                          value={queryGuests}
+                          onChange={(e) => setQueryGuests(e.target.value)}
+                          disabled={busy}
+                          placeholder="Rechercher un invité (nom, rôle)…"
+                          style={{ paddingLeft: 44 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div className="pill-soft">Sélection ({selectedGuestsList.length})</div>
+                        {selectedGuestsList.length === 0 ? (
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun invité sélectionné.</div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {selectedGuestsList.map((m) => (
+                              <div key={m.id} style={lightRowCardStyle}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                  <div style={avatarBoxStyle} aria-hidden="true">
+                                    {avatarNode(m as any)}
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                    <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="btn btn-danger soft"
+                                  onClick={() => toggleSelectedGuest(m)}
+                                  disabled={busy}
+                                  style={{ padding: "10px 12px" }}
+                                  aria-label="Retirer invité"
+                                  title="Retirer"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {queryGuests.trim().length > 0 ? (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div className="pill-soft">Ajouter ({candidateGuests.length})</div>
+                          {candidateGuests.length === 0 ? (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                          ) : (
+                            <div style={{ display: "grid", gap: 10 }}>
+                              {candidateGuests.map((m) => (
+                                <div key={m.id} style={lightRowCardStyle}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                                    <div style={avatarBoxStyle} aria-hidden="true">
+                                      {avatarNode(m as any)}
+                                    </div>
+                                    <div style={{ minWidth: 0 }}>
+                                      <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    className="glass-btn"
+                                    onClick={() => toggleSelectedGuest(m)}
+                                    disabled={busy}
+                                    style={{
+                                      width: 44,
+                                      height: 42,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      background: "rgba(255,255,255,0.70)",
+                                      border: "1px solid rgba(0,0,0,0.08)",
+                                    }}
+                                    aria-label="Ajouter invité"
+                                    title="Ajouter"
+                                  >
+                                    <PlusCircle size={18} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          Saisis une recherche pour ajouter des invités.
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Saisis une recherche pour ajouter des invités.
-                    </div>
-                  )}
-                </div>
+                  </>
+                )}
 
                 {/* Save */}
                 {editScope === "occurrence" ? (

@@ -13,6 +13,7 @@ type EventRow = {
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
   title: string | null;
+  camp_day_index?: number | null;
   starts_at: string;
   ends_at: string | null;
   duration_minutes: number | null;
@@ -82,19 +83,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ events: [], groupNameById: {}, clubNameById: {} });
     }
 
+    const campEventIds = events
+      .filter((event) => event.event_type === "camp")
+      .map((event) => String(event.id ?? "").trim())
+      .filter(Boolean);
     const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
     const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
 
-    const [groupsRes, clubsRes] = await Promise.all([
+    const [groupsRes, clubsRes, campDaysRes] = await Promise.all([
       gIds.length > 0
         ? supabaseAdmin.from("coach_groups").select("id,name").in("id", gIds)
         : Promise.resolve({ data: [], error: null } as const),
       cIds.length > 0
         ? supabaseAdmin.from("clubs").select("id,name").in("id", cIds)
         : Promise.resolve({ data: [], error: null } as const),
+      campEventIds.length > 0
+        ? supabaseAdmin.from("club_camp_days").select("event_id,day_index").in("event_id", campEventIds)
+        : Promise.resolve({ data: [], error: null } as const),
     ]);
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
+    if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
 
     const groupNameById: Record<string, string> = {};
     (groupsRes.data ?? []).forEach((g: { id: string; name: string | null }) => {
@@ -106,8 +115,19 @@ export async function GET(req: NextRequest) {
       clubNameById[c.id] = c.name ?? "Club";
     });
 
+    const campDayIndexByEventId: Record<string, number> = {};
+    (campDaysRes.data ?? []).forEach((day: { event_id: string | null; day_index: number | null }) => {
+      const eventId = String(day.event_id ?? "").trim();
+      if (!eventId) return;
+      campDayIndexByEventId[eventId] = typeof day.day_index === "number" ? day.day_index : 0;
+    });
+
     return NextResponse.json({
-      events,
+      events: events.map((event) => ({
+        ...event,
+        camp_day_index:
+          event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
+      })),
       groupNameById,
       clubNameById,
     });
@@ -116,4 +136,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

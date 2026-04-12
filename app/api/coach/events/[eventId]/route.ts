@@ -173,7 +173,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+      .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
@@ -185,7 +185,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes] = await Promise.all([
+    const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
       clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
       groupId ? supabaseAdmin.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
       supabaseAdmin.from("club_event_attendees").select("player_id,status").eq("event_id", eventId),
@@ -196,7 +196,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         .eq("event_id", eventId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
-      supabaseAdmin.from("club_event_coach_feedback").select("player_id").eq("event_id", eventId).eq("coach_id", callerId),
+      supabaseAdmin.from("club_event_coach_feedback").select("player_id,coach_id").eq("event_id", eventId),
+      event.event_type === "camp"
+        ? supabaseAdmin
+            .from("club_camp_days")
+            .select("camp_id,day_index,starts_at,ends_at,location_text")
+            .eq("event_id", eventId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null } as const),
     ]);
 
     if (clubRes.error) return NextResponse.json({ error: clubRes.error.message }, { status: 400 });
@@ -205,9 +212,35 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
     if (structureRes.error) return NextResponse.json({ error: structureRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+    if (campDayRes.error) return NextResponse.json({ error: campDayRes.error.message }, { status: 400 });
 
-    const attendeeRows = (attendeesRes.data ?? []) as Array<{ player_id: string; status: "expected" | "present" | "absent" | "excused" }>;
+    let attendeeRows = (attendeesRes.data ?? []) as Array<{ player_id: string; status: "expected" | "present" | "absent" | "excused" }>;
+    if (event.event_type === "camp") {
+      const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
+      if (campId) {
+        const registeredPlayersRes = await supabaseAdmin
+          .from("club_camp_players")
+          .select("player_id")
+          .eq("camp_id", campId)
+          .eq("registration_status", "registered");
+        if (registeredPlayersRes.error) {
+          return NextResponse.json({ error: registeredPlayersRes.error.message }, { status: 400 });
+        }
+        const registeredPlayerIds = new Set(
+          ((registeredPlayersRes.data ?? []) as Array<{ player_id: string | null }>)
+            .map((row) => String(row.player_id ?? "").trim())
+            .filter(Boolean)
+        );
+        attendeeRows = attendeeRows.filter((row) => registeredPlayerIds.has(String(row.player_id ?? "").trim()));
+      }
+    }
     const playerIds = uniq(attendeeRows.map((row) => row.player_id));
+    const feedbackRows = ((feedbackRes.data ?? []) as Array<{ player_id: string | null; coach_id: string | null }>)
+      .map((row) => ({
+        player_id: String(row.player_id ?? "").trim(),
+        coach_id: String(row.coach_id ?? "").trim() || null,
+      }))
+      .filter((row) => row.player_id);
     const selectedCoachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => String(row.coach_id ?? "").trim()));
 
     const [profilesRes, clubCoachesRes] = await Promise.all([
@@ -245,6 +278,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const coachIds = uniq([
       ...((clubCoachesRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim())),
       ...selectedCoachIds,
+      ...feedbackRows.map((row) => String(row.coach_id ?? "").trim()),
     ]);
     const coachesById: Record<string, { id: string; first_name: string | null; last_name: string | null }> = {};
     if (coachIds.length > 0) {
@@ -270,15 +304,36 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       return aName.localeCompare(bName, "fr");
     });
 
+    const evaluatedByPlayer = new Map<string, { player_id: string; coach_id: string | null }>();
+    feedbackRows.forEach((row) => {
+      if (!evaluatedByPlayer.has(row.player_id)) {
+        evaluatedByPlayer.set(row.player_id, row);
+      }
+    });
+
+    const evaluatedPlayers = Array.from(evaluatedByPlayer.values()).map((row) => {
+      const coach = row.coach_id ? coachesById[row.coach_id] ?? null : null;
+      const coachName = coach
+        ? `${String(coach.first_name ?? "").trim()} ${String(coach.last_name ?? "").trim()}`.trim() || null
+        : null;
+      return {
+        player_id: row.player_id,
+        coach_id: row.coach_id,
+        coach_name: coachName,
+      };
+    });
+
     return NextResponse.json({
       event,
+      campDay: campDayRes.data ?? null,
       clubName: String((clubRes.data as any)?.name ?? "Club"),
       groupName: String((groupRes.data as any)?.name ?? "Groupe"),
       attendees,
       coaches,
       selectedCoachIds,
       structureItems: structureRes.data ?? [],
-      evaluatedPlayerIds: uniq((feedbackRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim())),
+      evaluatedPlayerIds: evaluatedPlayers.map((row) => row.player_id),
+      evaluatedPlayers,
       meId: callerId,
     });
   } catch (e: unknown) {

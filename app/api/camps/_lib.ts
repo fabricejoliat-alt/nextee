@@ -44,21 +44,52 @@ export function minutesBetween(startIso: string, endIso: string) {
   return Math.round((end - start) / 60000);
 }
 
+function formatDateInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(values.year ?? 0),
+    month: Number(values.month ?? 0),
+    day: Number(values.day ?? 0),
+    hour: Number(values.hour ?? 0),
+    minute: Number(values.minute ?? 0),
+  };
+}
+
 export function localDateTimeInputToIso(value: string) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
   if (!match) return "";
   const [, year, month, day, hour, minute] = match;
-  const date = new Date(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    0,
-    0
-  );
+  const wanted = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+  };
+
+  let timestamp = Date.UTC(wanted.year, wanted.month - 1, wanted.day, wanted.hour, wanted.minute, 0, 0);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const actual = formatDateInTimeZone(new Date(timestamp), "Europe/Zurich");
+    const wantedUtc = Date.UTC(wanted.year, wanted.month - 1, wanted.day, wanted.hour, wanted.minute, 0, 0);
+    const actualUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, 0, 0);
+    const diffMs = wantedUtc - actualUtc;
+    if (diffMs === 0) break;
+    timestamp += diffMs;
+  }
+
+  const date = new Date(timestamp);
   return Number.isFinite(date.getTime()) ? date.toISOString() : "";
 }
 
