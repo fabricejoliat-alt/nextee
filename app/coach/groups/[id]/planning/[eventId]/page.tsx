@@ -418,7 +418,7 @@ export default function CoachEventDetailPage() {
       setCoaches([]);
       setSelectedCoachIds([]);
       setStructureItems([]);
-      setEvaluatedPlayerIds(new Set());
+      setEvaluatedPlayersById(new Map());
       setMeId("");
       setEventThreadId("");
       setEventThreadMessages([]);
