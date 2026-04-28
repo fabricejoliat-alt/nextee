@@ -23,6 +23,7 @@ import {
   ListChecks,
   Tent,
   Newspaper,
+  ShieldCheck,
 } from "lucide-react";
 
 /**
@@ -44,6 +45,7 @@ const ROUTES = {
   roundsNew: "/player/golf/rounds/new",
   camps: "/player/camps",
   om: "/player/om",
+  validations: "/player/validations",
 
   marketplaceAll: "/player/marketplace",
   marketplaceMine: "/player/marketplace/mine",
@@ -445,6 +447,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         label: locale === "fr" ? "Stages/camps" : "Camps",
         icon: Tent,
         href: ROUTES.camps,
+      },
+      {
+        label: locale === "fr" ? "Validations" : "Validations",
+        icon: ShieldCheck,
+        href: ROUTES.validations,
       },
       ...(performanceEnabled
         ? [

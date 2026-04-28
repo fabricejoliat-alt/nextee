@@ -44,6 +44,27 @@ export default function AdminSettingsPage() {
             gap: 10,
           }}
         >
+          <div style={{ fontSize: 15, fontWeight: 900 }}>Validations</div>
+          <div style={{ fontSize: 13, color: "rgba(0,0,0,0.62)", fontWeight: 700 }}>
+            Gérer les exercices, textes et futures illustrations du module Player.
+          </div>
+          <div>
+            <Link href="/admin/validations" className="btn">
+              Ouvrir Validations
+            </Link>
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid rgba(0,0,0,0.10)",
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.65)",
+            padding: 14,
+            display: "grid",
+            gap: 10,
+          }}
+        >
           <div style={{ fontSize: 15, fontWeight: 900 }}>Notifications</div>
           <div style={{ fontSize: 13, color: "rgba(0,0,0,0.62)", fontWeight: 700 }}>
             Gérer les templates des messages envoyés (centre notifications + push PWA).

@@ -17,6 +17,7 @@ export default function PlayerMobileMenu() {
   const NAV: NavItem[] = [
     { href: "/player", label: t("nav.home") },
     { href: "/player/golf", label: t("player.myGolf") },
+    { href: "/player/validations", label: locale === "fr" ? "Validations" : "Validations" },
     { href: "/player/encadrement", label: locale === "fr" ? "Encadrement" : "Support team" },
     { href: "/player/marketplace", label: t("nav.marketplace") },
     { href: "/player/profile", label: t("common.profile") },
