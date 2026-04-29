@@ -108,7 +108,7 @@ export default function PlayerValidationsPage() {
       ),
       heroText: labelByLocale(
         locale,
-        "Chaque exercice se debloque une fois que le precedent est valide. Cette progression t'aide a renforcer ton jeu, mieux gerer le stress et gagner en regularite sur le parcours.",
+        "Chaque exercice se débloque une fois que le précédent est validé. Cette progression t'aide à renforcer ton jeu, mieux gérer le stress et gagner en régularite sur le parcours.",
         "Each exercise unlocks once the previous one is validated. This progression helps strengthen your game, manage stress better, and become more consistent on the course."
       ),
       loading: labelByLocale(locale, "Chargement des validations…", "Loading validations…"),
