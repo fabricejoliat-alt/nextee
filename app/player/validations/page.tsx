@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, Lock, ShieldCheck, Target, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
   getValidationBadgeColors,
@@ -83,6 +82,188 @@ function BadgePill({ locale, badge }: { locale: string; badge: ValidationSection
       <ShieldCheck size={14} />
       {getValidationBadgeLabel(locale, badge)}
     </span>
+  );
+}
+
+function SkeletonLine({ width, height = 12, radius = 999 }: { width: string; height?: number; radius?: number }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        background: "linear-gradient(90deg, rgba(15,23,42,0.07), rgba(15,23,42,0.12), rgba(15,23,42,0.07))",
+        backgroundSize: "200% 100%",
+        animation: "validationSkeletonShimmer 1.4s ease-in-out infinite",
+      }}
+    />
+  );
+}
+
+function ValidationsPageSkeleton() {
+  return (
+    <>
+      <div style={{ display: "grid", gap: 14 }}>
+        <div
+          style={{
+            borderWidth: 1,
+            borderStyle: "solid",
+            borderColor: "rgba(0,0,0,0.08)",
+            background: "rgba(255,255,255,0.72)",
+            borderRadius: 16,
+            padding: "18px 16px",
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "grid", gap: 8 }}>
+            <SkeletonLine width="68%" height={22} radius={10} />
+            <SkeletonLine width="100%" height={12} />
+            <SkeletonLine width="92%" height={12} />
+            <SkeletonLine width="78%" height={12} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <SkeletonLine width="132px" height={12} />
+              <SkeletonLine width="94px" height={34} radius={12} />
+            </div>
+            <SkeletonLine width="90px" height={12} />
+          </div>
+          <div
+            aria-hidden="true"
+            style={{
+              height: 10,
+              borderRadius: 999,
+              background: "rgba(15,23,42,0.08)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: "44%",
+                height: "100%",
+                borderRadius: 999,
+                background: "linear-gradient(90deg, rgba(22,101,52,0.45), rgba(21,128,61,0.7))",
+              }}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid rgba(15,23,42,0.08)",
+            borderRadius: 18,
+            padding: 16,
+            background: "rgba(255,255,255,0.92)",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <SkeletonLine width="104px" height={14} />
+            <SkeletonLine width="88px" height={28} radius={999} />
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {[0, 1, 2, 3].map((index) => (
+              <div
+                key={`validation-skeleton-section-${index}`}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(15,23,42,0.08)",
+                  background: "white",
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <SkeletonLine width={`${52 + index * 8}%`} height={12} />
+                  <SkeletonLine width="42px" height={12} />
+                </div>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    height: 8,
+                    borderRadius: 999,
+                    background: "rgba(15,23,42,0.08)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${28 + index * 14}%`,
+                      height: "100%",
+                      borderRadius: 999,
+                      background: "linear-gradient(90deg, rgba(22,101,52,0.35), rgba(21,128,61,0.6))",
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <section className="glass-section" style={{ marginTop: 14 }}>
+        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+          <SkeletonLine width="180px" height={16} />
+          {[0, 1].map((index) => (
+            <div
+              key={`validation-skeleton-exercise-${index}`}
+              style={{
+                border: "1px solid rgba(15,23,42,0.08)",
+                borderRadius: 18,
+                padding: 16,
+                background: "rgba(255,255,255,0.96)",
+                display: "grid",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div style={{ display: "grid", gap: 8, flex: 1 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <SkeletonLine width="34px" height={34} radius={999} />
+                    <SkeletonLine width={index === 0 ? "52%" : "44%"} height={16} radius={8} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <SkeletonLine width="86px" height={28} radius={999} />
+                    <SkeletonLine width="70px" height={28} radius={999} />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                {[0, 1, 2].map((cardIndex) => (
+                  <div
+                    key={`validation-skeleton-detail-${index}-${cardIndex}`}
+                    style={{
+                      border: "1px solid rgba(15,23,42,0.08)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.94)",
+                      display: "grid",
+                      gap: 8,
+                    }}
+                  >
+                    <SkeletonLine width="72px" height={10} />
+                    <SkeletonLine width="100%" height={12} radius={8} />
+                    <SkeletonLine width="78%" height={12} radius={8} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <style>{`
+        @keyframes validationSkeletonShimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+    </>
   );
 }
 
@@ -337,7 +518,7 @@ export default function PlayerValidationsPage() {
 
           {loading || !dashboard ? (
             <div style={{ marginTop: 12 }}>
-              <ListLoadingBlock label={txt.loading} />
+              <ValidationsPageSkeleton />
             </div>
           ) : (
             <div style={{ marginTop: 12 }}>

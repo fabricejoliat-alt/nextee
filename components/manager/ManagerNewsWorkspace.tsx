@@ -335,6 +335,9 @@ export default function ManagerNewsWorkspace() {
 
   const indirectlySelectedUserIds = useMemo(() => {
     const selected = new Set<string>();
+    const selectedRoles = new Set(
+      form.targets.filter((target) => target.target_type === "role").map((target) => target.target_value)
+    );
     const selectedGroupIds = new Set(
       form.targets.filter((target) => target.target_type === "group").map((target) => target.target_value)
     );
@@ -352,6 +355,12 @@ export default function ManagerNewsWorkspace() {
     for (const groupId of selectedGroupIds) {
       for (const userId of groupPlayerUserIdsByGroupId[groupId] ?? []) selected.add(userId);
       for (const userId of groupCoachUserIdsByGroupId[groupId] ?? []) selected.add(userId);
+    }
+
+    if (selectedRoles.size > 0) {
+      for (const member of members) {
+        if (selectedRoles.has(member.role)) selected.add(member.user_id);
+      }
     }
 
     if (selectedAgeBands.size > 0) {
