@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, Lock, ShieldCheck, Sparkles, Target, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, Lock, ShieldCheck, Target, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -90,6 +90,7 @@ export default function PlayerValidationsPage() {
   const { locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState("");
+  const [deletingAttemptId, setDeletingAttemptId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<ValidationDashboardPayload | null>(null);
@@ -108,7 +109,7 @@ export default function PlayerValidationsPage() {
       ),
       heroText: labelByLocale(
         locale,
-        "Chaque exercice se débloque une fois que le précédent est validé. Cette progression t'aide à renforcer ton jeu, mieux gérer le stress et gagner en régularite sur le parcours.",
+        "Chaque exercice se débloque une fois que le précédent est validé. Cette progression t'aide à renforcer ton jeu, mieux gérer le stress et gagner en régularité sur le parcours.",
         "Each exercise unlocks once the previous one is validated. This progression helps strengthen your game, manage stress better, and become more consistent on the course."
       ),
       loading: labelByLocale(locale, "Chargement des validations…", "Loading validations…"),
@@ -134,6 +135,13 @@ export default function PlayerValidationsPage() {
         "Read-only access for this profile."
       ),
       saved: labelByLocale(locale, "Essai enregistré.", "Attempt saved."),
+      deleted: labelByLocale(locale, "Tentative supprimée.", "Attempt deleted."),
+      deleteAttempt: labelByLocale(locale, "Supprimer", "Delete"),
+      deleteAttemptConfirm: labelByLocale(
+        locale,
+        "Supprimer cette tentative ? Si c'était la dernière réussite de cet exercice, les défis suivants seront à nouveau masqués.",
+        "Delete this attempt? If it was the last successful attempt for this exercise, the following challenges will be hidden again."
+      ),
       sectionScore: labelByLocale(locale, "Score section", "Section score"),
       globalScore: labelByLocale(locale, "Score global", "Overall score"),
     }),
@@ -145,33 +153,39 @@ export default function PlayerValidationsPage() {
     return data.session?.access_token ?? "";
   }
 
-  async function loadDashboard() {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("Pas de session.");
-      const ctx = await resolveEffectivePlayerContext();
-      const qs = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
-      const res = await fetch(`/api/player/validations${qs}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Erreur de chargement.");
-      const payload = json as ValidationDashboardPayload;
-      setDashboard(payload);
-      setSelectedSectionId((current) => current || payload.sections[0]?.id || "");
-    } catch (err: unknown) {
-      setDashboard(null);
-      setError(err instanceof Error ? err.message : "Erreur de chargement.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    loadDashboard();
+    let active = true;
+
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("Pas de session.");
+        const ctx = await resolveEffectivePlayerContext();
+        const qs = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
+        const res = await fetch(`/api/player/validations${qs}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error ?? "Erreur de chargement.");
+        if (!active) return;
+        const payload = json as ValidationDashboardPayload;
+        setDashboard(payload);
+        setSelectedSectionId((current) => current || payload.sections[0]?.id || "");
+      } catch (err: unknown) {
+        if (!active) return;
+        setDashboard(null);
+        setError(err instanceof Error ? err.message : "Erreur de chargement.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const selectedSection = useMemo(
@@ -255,6 +269,36 @@ export default function PlayerValidationsPage() {
       setError(err instanceof Error ? err.message : "Erreur d'enregistrement.");
     } finally {
       setSubmittingId("");
+    }
+  }
+
+  async function deleteAttempt(attemptId: string) {
+    if (!dashboard?.can_record_attempts || !attemptId) return;
+    if (!window.confirm(txt.deleteAttemptConfirm)) return;
+
+    setDeletingAttemptId(attemptId);
+    setError(null);
+    setInfo(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Pas de session.");
+      const ctx = await resolveEffectivePlayerContext();
+      const qs = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
+      const res = await fetch(`/api/player/validations/attempts/${encodeURIComponent(attemptId)}${qs}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Erreur de suppression.");
+      const payload = json.dashboard as ValidationDashboardPayload;
+      setDashboard(payload);
+      setInfo(txt.deleted);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de suppression.");
+    } finally {
+      setDeletingAttemptId("");
     }
   }
 
@@ -645,16 +689,46 @@ export default function PlayerValidationsPage() {
                                       ) : null}
                                       <div
                                         style={{
-                                          display: "inline-flex",
+                                          display: "flex",
                                           alignItems: "center",
-                                          gap: 6,
-                                          fontSize: 12,
-                                          color: "rgba(15,23,42,0.62)",
-                                          fontWeight: 800,
+                                          gap: 8,
+                                          flexWrap: "wrap",
                                         }}
                                       >
-                                        <Clock3 size={14} />
-                                        {formatAttemptDate(locale, attempt.attempted_at)}
+                                        <div
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: 6,
+                                            fontSize: 12,
+                                            color: "rgba(15,23,42,0.62)",
+                                            fontWeight: 800,
+                                          }}
+                                        >
+                                          <Clock3 size={14} />
+                                          {formatAttemptDate(locale, attempt.attempted_at)}
+                                        </div>
+                                        {dashboard.can_record_attempts ? (
+                                          <button
+                                            type="button"
+                                            className="btn"
+                                            onClick={() => deleteAttempt(attempt.id)}
+                                            disabled={deletingAttemptId === attempt.id}
+                                            aria-label={txt.deleteAttempt}
+                                            title={txt.deleteAttempt}
+                                            style={{
+                                              width: 40,
+                                              minHeight: 40,
+                                              padding: 0,
+                                              background: "white",
+                                              color: "#991b1b",
+                                              border: "1px solid rgba(185,28,28,0.22)",
+                                              justifyContent: "center",
+                                            }}
+                                          >
+                                            <Trash2 size={18} />
+                                          </button>
+                                        ) : null}
                                       </div>
                                     </div>
                                   ))}

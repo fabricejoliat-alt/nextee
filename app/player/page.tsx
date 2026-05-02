@@ -514,10 +514,22 @@ function priceLabel(it: Item, t: (key: string) => string) {
   return `${it.price} CHF`;
 }
 
-function compactMeta(it: Item) {
+function marketplaceConditionLabel(locale: string, value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  if (locale !== "fr") return normalized;
+  if (normalized === "New") return "Neuf";
+  if (normalized === "Like new") return "Comme neuf";
+  if (normalized === "Good condition") return "Bon état";
+  if (normalized === "To repair") return "À réparer";
+  return normalized;
+}
+
+function compactMeta(it: Item, locale: string) {
   const parts: string[] = [];
   if (it.category) parts.push(it.category);
-  if (it.condition) parts.push(it.condition);
+  const conditionLabel = marketplaceConditionLabel(locale, it.condition);
+  if (conditionLabel) parts.push(conditionLabel);
   const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
   if (bm) parts.push(bm);
   return parts.join(" • ");
@@ -2543,7 +2555,7 @@ export default function PlayerHomePage() {
             <div className="marketplace-list" style={{ marginTop: 10 }}>
               {latestItems.map((it) => {
                 const img = thumbByItemId[it.id] || placeholderThumb;
-                const meta = compactMeta(it);
+                const meta = compactMeta(it, locale);
 
                 return (
                   <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">

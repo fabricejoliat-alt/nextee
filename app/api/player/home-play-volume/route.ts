@@ -41,6 +41,13 @@ function roundPlayedHolesFromRound(round: {
   return 18;
 }
 
+function isGirOnHole(par: number | null, score: number | null, putts: number | null) {
+  if (typeof par !== "number") return false;
+  if (typeof score !== "number") return false;
+  if (typeof putts !== "number") return false;
+  return score - putts <= par - 2;
+}
+
 function estimatedScramblingPct(rounds: Array<{
   id: string;
   gir: number | null;
@@ -68,6 +75,28 @@ function estimatedScramblingPct(rounds: Array<{
     opp += roundOpp;
     success += roundSuccess;
   }
+  if (opp <= 0) return null;
+  return Math.round((success / opp) * 1000) / 10;
+}
+
+function scramblingPctFromHoles(holes: Array<{
+  par: number | null;
+  score: number | null;
+  putts: number | null;
+}>) {
+  const knownHoles = holes.filter(
+    (hole) => typeof hole.par === "number" && typeof hole.score === "number" && typeof hole.putts === "number"
+  );
+  if (knownHoles.length === 0) return null;
+
+  let opp = 0;
+  let success = 0;
+  for (const hole of knownHoles) {
+    if (isGirOnHole(hole.par, hole.score, hole.putts)) continue;
+    opp += 1;
+    if ((hole.score as number) <= (hole.par as number)) success += 1;
+  }
+
   if (opp <= 0) return null;
   return Math.round((success / opp) * 1000) / 10;
 }
@@ -155,6 +184,22 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const roundIds = rounds.map((round) => round.id).filter(Boolean);
+    const holesRes = roundIds.length
+      ? await supabaseAdmin
+          .from("golf_round_holes")
+          .select("round_id,par,score,putts")
+          .in("round_id", roundIds)
+      : { data: [], error: null };
+    if (holesRes.error) return NextResponse.json({ error: holesRes.error.message }, { status: 400 });
+
+    const holes = (holesRes.data ?? []) as Array<{
+      round_id: string;
+      par: number | null;
+      score: number | null;
+      putts: number | null;
+    }>;
+
     let holesPlayed = 0;
     let girPctSum = 0;
     let girPctCount = 0;
@@ -181,7 +226,7 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const scramblingPct = estimatedScramblingPct(rounds);
+    const scramblingPct = scramblingPctFromHoles(holes) ?? estimatedScramblingPct(rounds);
 
     return NextResponse.json({
       roundsCount: rounds.length,
@@ -191,7 +236,7 @@ export async function GET(req: NextRequest) {
       puttAvg: puttCount > 0 ? Math.round((puttSum / puttCount) * 10) / 10 : null,
       scramblingPct,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

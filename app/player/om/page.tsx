@@ -71,6 +71,17 @@ type ClubEventMeta = {
   event_type: string | null;
   coach_note: string | null;
 };
+type HoleScoreRow = {
+  round_id: string | null;
+  score: number | string | null;
+};
+type ClubMemberClubRow = {
+  club_id: string | null;
+};
+type ClubNameRow = {
+  id: string | null;
+  name: string | null;
+};
 type PointDetailCard = {
   id: string;
   date: string;
@@ -286,7 +297,7 @@ export default function PlayerOrderOfMeritPage() {
     if (roundIds.length > 0) {
       const holesRes = await supabase.from("golf_round_holes").select("round_id,score").in("round_id", roundIds);
       if (holesRes.error) throw new Error(holesRes.error.message);
-      (holesRes.data ?? []).forEach((h: any) => {
+      ((holesRes.data ?? []) as HoleScoreRow[]).forEach((h) => {
         const rid = String(h?.round_id ?? "");
         const score = typeof h?.score === "number" ? h.score : Number(h?.score);
         if (!rid || !Number.isFinite(score)) return;
@@ -354,7 +365,7 @@ export default function PlayerOrderOfMeritPage() {
       const competition = round?.competition_name?.trim() || levelLabel(s.competition_level);
       const isMatchPlay = s.competition_format === "match_play_individual";
 
-      let subtitle = isMatchPlay
+      const subtitle = isMatchPlay
         ? `${labelByLocale(locale, "Match play", "Match play", "Matchplay", "Match play")} · ${course} · ${labelByLocale(locale, "Score", "Score", "Score", "Score")}: ${round?.match_score_text ?? "—"} · ${labelByLocale(locale, "Résultat", "Result", "Ergebnis", "Risultato")}: ${formatResult(locale, round?.om_match_result ?? null)}`
         : `${levelLabel(s.competition_level)} · ${course} · ${labelByLocale(locale, "Tours", "Rounds", "Runden", "Giri")}: ${s.rounds_18_count}x18`;
 
@@ -440,13 +451,13 @@ export default function PlayerOrderOfMeritPage() {
       if (mRes.error) throw new Error(mRes.error.message);
 
       const clubIds = Array.from(
-        new Set((mRes.data ?? []).map((r: any) => String(r?.club_id ?? "")).filter(Boolean))
+        new Set(((mRes.data ?? []) as ClubMemberClubRow[]).map((r) => String(r?.club_id ?? "")).filter(Boolean))
       );
-      let clubNameById = new Map<string, string>();
+      const clubNameById = new Map<string, string>();
       if (clubIds.length > 0) {
         const clubsRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
         if (clubsRes.error) throw new Error(clubsRes.error.message);
-        (clubsRes.data ?? []).forEach((c: any) => {
+        ((clubsRes.data ?? []) as ClubNameRow[]).forEach((c) => {
           const id = String(c?.id ?? "");
           if (!id) return;
           clubNameById.set(id, String(c?.name ?? "Club"));
@@ -465,8 +476,8 @@ export default function PlayerOrderOfMeritPage() {
       } else {
         setPointDetails([]);
       }
-    } catch (e: any) {
-      setError(String(e?.message ?? "Error"));
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "Error");
     }
   }
 
@@ -488,8 +499,8 @@ export default function PlayerOrderOfMeritPage() {
     (async () => {
       try {
         await Promise.all([loadRanking(organizationId, rankingFrom, rankingTo), loadPointDetails(effectiveUserId, organizationId, rankingFrom, rankingTo)]);
-      } catch (e: any) {
-        setError(String(e?.message ?? "Error"));
+      } catch (error: unknown) {
+        setError(error instanceof Error ? error.message : "Error");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

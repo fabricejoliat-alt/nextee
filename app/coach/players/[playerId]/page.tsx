@@ -10,6 +10,12 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import {
+  getValidationBadgeColors,
+  getValidationBadgeLabel,
+  type ValidationBadge,
+  type ValidationDashboardPayload,
+} from "@/lib/validations";
+import {
   ResponsiveContainer,
   LineChart,
   Line,
@@ -28,6 +34,8 @@ import {
   Smile,
   CalendarRange,
   SlidersHorizontal,
+  ChevronDown,
+  ShieldCheck,
   X,
   Upload,
   FileText,
@@ -139,7 +147,7 @@ type OmTournamentScoreRow = {
 type Preset = "week" | "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
-type DashboardSection = "trainings" | "competition" | "stats" | "planning" | "evaluations" | "thread" | "documents";
+type DashboardSection = "trainings" | "competition" | "stats" | "planning" | "evaluations" | "thread" | "documents" | "validations";
 type Role = "coach" | "manager" | "player";
 type ClubMemberRow = { club_id: string; role: Role; is_active: boolean | null };
 type ProfileLite = {
@@ -536,6 +544,35 @@ function shortDate(iso: string, locale: string) {
   return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "2-digit" }).format(new Date(iso));
 }
 
+function validationProgressRatio(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+}
+
+function ValidationBadgePill({ locale, badge }: { locale: string; badge: ValidationBadge }) {
+  const colors = getValidationBadgeColors(badge);
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 900,
+        letterSpacing: 0.2,
+        background: colors.background,
+        color: colors.color,
+        border: badge === "none" ? "1px solid rgba(15,23,42,0.08)" : "none",
+      }}
+    >
+      <ShieldCheck size={14} />
+      {getValidationBadgeLabel(locale, badge)}
+    </span>
+  );
+}
+
 function initials(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
   const l = (p?.last_name ?? "").trim();
@@ -624,6 +661,9 @@ export default function GolfDashboardPage() {
   const [teamComposer, setTeamComposer] = useState("");
   const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
   const [activeSection, setActiveSection] = useState<DashboardSection>("trainings");
+  const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
+  const [loadingValidations, setLoadingValidations] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const [selectedCompetitionRoundId, setSelectedCompetitionRoundId] = useState<string>("");
   const [trainingVolumeLevelFromDb, setTrainingVolumeLevelFromDb] = useState<string | null>(null);
@@ -637,6 +677,8 @@ export default function GolfDashboardPage() {
       setCanLoadData(false);
       setCanAccessSensitiveSections(false);
       setError(null);
+      setValidationDashboard(null);
+      setValidationError(null);
 
       try {
         if (!playerId) throw new Error("Joueur introuvable.");
@@ -692,6 +734,7 @@ export default function GolfDashboardPage() {
         setSharedClubNames([]);
         setSharedClubIds([]);
         setCoachId("");
+        setValidationDashboard(null);
         setLoading(false);
         setLoadingPrev(false);
         setLoadingRounds(false);
@@ -712,8 +755,93 @@ export default function GolfDashboardPage() {
     }
   }, [activeSection, canAccessSensitiveSections]);
 
+  const visibleSectionTabs = useMemo(
+    () =>
+      [
+        { id: "trainings" as DashboardSection, label: "Entrainements" },
+        { id: "competition" as DashboardSection, label: "Compétitions" },
+        { id: "stats" as DashboardSection, label: "Statistiques" },
+        { id: "planning" as DashboardSection, label: "Planification" },
+        { id: "validations" as DashboardSection, label: "Validations" },
+        { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
+        { id: "thread" as DashboardSection, label: "Fil de discussion" },
+        { id: "documents" as DashboardSection, label: "Documents" },
+      ].filter(
+        (tab) => canAccessSensitiveSections || (tab.id !== "evaluations" && tab.id !== "thread" && tab.id !== "documents")
+      ),
+    [canAccessSensitiveSections]
+  );
+
+  useEffect(() => {
+    if (!canLoadData || activeSection !== "validations" || !playerId) return;
+    if (validationDashboard?.effective_player_id === playerId) return;
+
+    let active = true;
+
+    void (async () => {
+      setLoadingValidations(true);
+      setValidationError(null);
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) throw new Error("Session invalide.");
+
+        const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/validations`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Erreur de chargement des validations."));
+        if (!active) return;
+        setValidationDashboard(json as ValidationDashboardPayload);
+      } catch (e: unknown) {
+        if (!active) return;
+        setValidationDashboard(null);
+        setValidationError(e instanceof Error ? e.message : "Erreur de chargement des validations.");
+      } finally {
+        if (active) setLoadingValidations(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [activeSection, canLoadData, playerId, validationDashboard?.effective_player_id]);
+
   const shouldLoadTrainingData = canLoadData && activeSection === "trainings";
   const shouldLoadRoundData = canLoadData && (activeSection === "competition" || activeSection === "stats");
+
+  const validationAttemptCount = useMemo(() => {
+    if (!validationDashboard) return 0;
+    return validationDashboard.sections.reduce(
+      (sum, section) => sum + section.exercises.reduce((exerciseSum, exercise) => exerciseSum + exercise.attempts.length, 0),
+      0
+    );
+  }, [validationDashboard]);
+
+  const validationSectionSummaries = useMemo(() => {
+    if (!validationDashboard) return [];
+    return validationDashboard.sections.map((section) => {
+      const latestAttemptAt = section.exercises.reduce<string | null>((latest, exercise) => {
+        return exercise.attempts.reduce<string | null>((latestAttempt, attempt) => {
+          if (!attempt.attempted_at) return latestAttempt;
+          if (!latestAttempt) return attempt.attempted_at;
+          return new Date(attempt.attempted_at).getTime() > new Date(latestAttempt).getTime()
+            ? attempt.attempted_at
+            : latestAttempt;
+        }, latest);
+      }, null);
+
+      return {
+        id: section.id,
+        name: section.name,
+        validatedCount: section.validated_count,
+        totalCount: section.total_count,
+        badge: section.badge,
+        latestAttemptAt,
+      };
+    });
+  }, [validationDashboard]);
 
   useEffect(() => {
     const now = new Date();
@@ -3052,6 +3180,134 @@ function presetToSelectValue(p: Preset): Preset {
     );
   }
 
+  function renderValidationsCard() {
+    const title = pickLocaleText(locale, "Validation des défis", "Challenge validation");
+    const overallLabel = pickLocaleText(locale, "Progression globale", "Overall progress");
+    const attemptsLabel = pickLocaleText(locale, "tentatives", "attempts");
+    const sectionsLabel = pickLocaleText(locale, "Secteurs", "Sections");
+    const lastAttemptLabel = pickLocaleText(locale, "Dernière tentative", "Last attempt");
+    const noAttemptLabel = pickLocaleText(locale, "Aucune tentative", "No attempt");
+
+    if (loadingValidations) {
+      return (
+        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+          <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+        </div>
+      );
+    }
+
+    if (validationError) {
+      return (
+        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+          <div className="marketplace-error" style={{ marginTop: 0 }}>{validationError}</div>
+        </div>
+      );
+    }
+
+    if (!validationDashboard) {
+      return (
+        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+          <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="glass-card" style={{ display: "grid", gap: 14 }}>
+        <div
+          style={{
+            borderWidth: 1,
+            borderStyle: "solid",
+            borderColor: "rgba(0,0,0,0.08)",
+            background: "rgba(255,255,255,0.72)",
+            borderRadius: 16,
+            padding: "18px 16px",
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+            <ValidationBadgePill locale={locale} badge={validationDashboard.overall_badge} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: 0 }}>{overallLabel}</div>
+              <div className="big-number" style={{ lineHeight: 1.05, marginTop: 6 }}>
+                {validationDashboard.overall_validated_count}/{validationDashboard.overall_total_count}
+              </div>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>
+              {validationAttemptCount} {attemptsLabel}
+            </div>
+          </div>
+          <div className="bar">
+            <span
+              style={{
+                width: `${validationProgressRatio(
+                  validationDashboard.overall_validated_count,
+                  validationDashboard.overall_total_count
+                )}%`,
+                background: "linear-gradient(90deg, var(--green-light), var(--green-dark))",
+              }}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid rgba(15,23,42,0.08)",
+            borderRadius: 18,
+            padding: 16,
+            background: "rgba(255,255,255,0.92)",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div className="card-title" style={{ marginBottom: 0 }}>{sectionsLabel}</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {validationSectionSummaries.map((section) => (
+              <div
+                key={section.id}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid rgba(15,23,42,0.08)",
+                  background: "white",
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div className="bar-row" style={{ flex: 1, marginBottom: 0 }}>
+                    <span>{section.name}</span>
+                    <span>{section.validatedCount}/{section.totalCount}</span>
+                  </div>
+                  <ValidationBadgePill locale={locale} badge={section.badge} />
+                </div>
+                <div className="bar">
+                  <span
+                    style={{
+                      width: `${validationProgressRatio(section.validatedCount, section.totalCount)}%`,
+                      background: "linear-gradient(90deg, var(--green-light), var(--green-dark))",
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(15,23,42,0.62)" }}>
+                  {lastAttemptLabel}: {section.latestAttemptAt ? shortDate(section.latestAttemptAt, dateLocale) : noAttemptLabel}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderFilterCard() {
     return (
       <div className="glass-card" style={{ padding: 14 }}>
@@ -3270,57 +3526,72 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card coach-player-tabs-card">
-            <div
-              className="coach-player-tabs"
+        <div className="glass-section" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none" }}>
+          <div
+            style={{
+              position: "relative",
+              borderRadius: 16,
+              background: "linear-gradient(135deg, rgb(233, 238, 234), rgb(221, 228, 223))",
+              border: "1px solid rgb(198, 208, 200)",
+              boxShadow: "0 10px 28px rgba(15,23,42,0.08)",
+              overflow: "hidden",
+            }}
+          >
+            <select
+              value={activeSection}
+              onChange={(event) => setActiveSection(event.target.value as DashboardSection)}
               style={{
+                width: "100%",
+                minHeight: 52,
+                border: "none",
+                padding: "0 50px 0 16px",
+                background: "transparent",
+                fontWeight: 900,
+                fontSize: 15,
+                color: "rgba(15,23,42,0.92)",
+                outline: "none",
+                appearance: "none",
+                WebkitAppearance: "none",
+                cursor: "pointer",
+              }}
+              aria-label="Sous-menu joueur"
+            >
+              {visibleSectionTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                width: 48,
+                height: "100%",
                 display: "flex",
-                gap: 8,
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--green-dark)",
+                background: "linear-gradient(135deg, rgb(215, 223, 216), rgb(198, 208, 200))",
+                pointerEvents: "none",
               }}
             >
-              {[
-                { id: "trainings" as DashboardSection, label: "Entrainements" },
-                { id: "competition" as DashboardSection, label: "Compétitions" },
-                { id: "stats" as DashboardSection, label: "Statistiques" },
-                { id: "planning" as DashboardSection, label: "Planification" },
-                { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
-                { id: "thread" as DashboardSection, label: "Fil de discussion" },
-                { id: "documents" as DashboardSection, label: "Documents" },
-              ]
-                .filter((tab) =>
-                  canAccessSensitiveSections || (tab.id !== "evaluations" && tab.id !== "thread" && tab.id !== "documents")
-                )
-                .map((tab) => {
-                const isActive = activeSection === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className="btn"
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => setActiveSection(tab.id)}
-                    style={{
-                      flexShrink: 0,
-                      minHeight: 36,
-                      borderRadius: 10,
-                      fontWeight: 850,
-                      transition: "all 150ms ease",
-                      boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
-                      background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
-                      borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
-                      color: isActive ? "white" : "rgba(0,0,0,0.78)",
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
+              <ChevronDown size={18} strokeWidth={2.4} />
             </div>
           </div>
         </div>
 
-        <div className="glass-section">{renderFilterCard()}</div>
+        {activeSection !== "validations" ? (
+          <div className="glass-section">{renderFilterCard()}</div>
+        ) : null}
+
+        {activeSection === "validations" ? (
+          <div className="glass-section">
+            {renderValidationsCard()}
+          </div>
+        ) : null}
 
         {activeSection === "thread" ? (
           <div className="glass-section">
