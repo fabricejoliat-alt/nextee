@@ -1899,7 +1899,22 @@ export default function PlayerHomePage() {
           <section className="glass-section" style={{ marginTop: 14 }}>
             <div className="section-title">News</div>
 
-            <div className="glass-card">
+            <div
+              className="glass-card"
+              role="link"
+              tabIndex={0}
+              onClick={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest("a,button,input,textarea,select")) return;
+                router.push(allNewsHref);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                router.push(allNewsHref);
+              }}
+              style={{ cursor: "pointer" }}
+            >
               <div style={{ display: "grid", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                   <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
@@ -1919,7 +1934,7 @@ export default function PlayerHomePage() {
                     {latestNews.title}
                   </div>
                   {latestNews.summary ? (
-                    <div style={{ color: "rgba(0,0,0,0.74)", fontWeight: 800, fontSize: 12 }}>
+                    <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
                       {latestNews.summary}
                     </div>
                   ) : null}
