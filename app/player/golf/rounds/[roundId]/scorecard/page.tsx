@@ -18,6 +18,7 @@ type Round = {
   om_competition_level: string | null;
   om_competition_format: string | null;
   om_rounds_18_count: number | null;
+  score_entry_mode: "full" | "hole_only" | null;
   course_name: string | null;
   tee_name: string | null;
 
@@ -187,9 +188,7 @@ export default function ScorecardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select(
-        "id,user_id,start_at,round_type,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus"
-      )
+      .select("id,user_id,start_at,round_type,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -298,6 +297,7 @@ export default function ScorecardPage() {
       doubleBogeys = 0,
       doublesPlus = 0;
 
+    const useStats = round?.score_entry_mode !== "hole_only";
     let girCount = 0;
     let puttsTotal = 0;
     let scramblingOpportunities = 0;
@@ -313,13 +313,15 @@ export default function ScorecardPage() {
       else if (d === 2) doubleBogeys++;
       else if (d >= 3) doublesPlus++;
 
-      if (isGIR(h.par, h.score, h.putts)) girCount++;
-      else if (typeof h.putts === "number") {
-        // Scrambling: par (or better) after missing GIR.
-        scramblingOpportunities += 1;
-        if ((h.score as number) <= (h.par as number)) scramblingSuccesses += 1;
+      if (useStats) {
+        if (isGIR(h.par, h.score, h.putts)) girCount++;
+        else if (typeof h.putts === "number") {
+          // Scrambling: par (or better) after missing GIR.
+          scramblingOpportunities += 1;
+          if ((h.score as number) <= (h.par as number)) scramblingSuccesses += 1;
+        }
+        if (typeof h.putts === "number") puttsTotal += h.putts;
       }
-      if (typeof h.putts === "number") puttsTotal += h.putts;
     });
 
     const gir = typeof round?.gir === "number" ? round.gir : filled.length ? girCount : null;
@@ -338,7 +340,7 @@ export default function ScorecardPage() {
       pars: typeof round?.pars === "number" ? round.pars : pars,
       bogeys: typeof round?.bogeys === "number" ? round.bogeys : bogeys,
       doubleBogeys,
-      doublesPlus: typeof round?.doubles_plus === "number" ? round.doubles_plus : doublesPlus,
+      doublesPlus,
       gir,
       putts,
       scramblingPct,
@@ -502,30 +504,33 @@ export default function ScorecardPage() {
                       {/* ✅ chips/pills */}
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <span style={pillGrey}>Par {h.par ?? "—"}</span>
+                        {round.score_entry_mode !== "hole_only" ? (
+                          <>
+                            <span
+                              style={
+                                !fwKnown
+                                  ? pillGrey
+                                  : fwHit
+                                  ? pillGreen
+                                  : pillRed
+                              }
+                            >
+                              FW {!fwKnown ? "—" : fwHit ? t("roundsScorecard.hit") : t("roundsScorecard.miss")}
+                            </span>
 
-                        <span
-                          style={
-                            !fwKnown
-                              ? pillGrey
-                              : fwHit
-                              ? pillGreen
-                              : pillRed
-                          }
-                        >
-                          FW {!fwKnown ? "—" : fwHit ? t("roundsScorecard.hit") : t("roundsScorecard.miss")}
-                        </span>
-
-                        <span
-                          style={
-                            !girKnown
-                              ? pillGrey
-                              : gir
-                              ? pillGreen
-                              : pillRed
-                          }
-                        >
-                          GIR {!girKnown ? "—" : gir ? t("roundsScorecard.yes") : t("roundsScorecard.no")}
-                        </span>
+                            <span
+                              style={
+                                !girKnown
+                                  ? pillGrey
+                                  : gir
+                                  ? pillGreen
+                                  : pillRed
+                              }
+                            >
+                              GIR {!girKnown ? "—" : gir ? t("roundsScorecard.yes") : t("roundsScorecard.no")}
+                            </span>
+                          </>
+                        ) : null}
                       </div>
 
                       {!!h.note?.trim() && (
@@ -540,9 +545,10 @@ export default function ScorecardPage() {
         </div>
 
         {/* Stats */}
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-            <div style={{ fontWeight: 1000, fontSize: 16 }}>{t("roundsScorecard.statistics")}</div>
+        {round.score_entry_mode !== "hole_only" ? (
+          <div className="glass-section">
+            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+              <div style={{ fontWeight: 1000, fontSize: 16 }}>{t("roundsScorecard.statistics")}</div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={statBox}>
@@ -565,7 +571,7 @@ export default function ScorecardPage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={statBox}>
-                <div style={statLabel}>Double bogey +</div>
+                <div style={statLabel}>Autre score</div>
                 <div style={statValue}>{computed.doublesPlus ?? 0}</div>
               </div>
 
@@ -607,8 +613,9 @@ export default function ScorecardPage() {
               <div style={statLabel}>{pickLocaleText(locale, "Trous joués", "Holes played")}</div>
               <div style={statValue}>{computed.holesPlayed ?? 0}</div>
             </div>
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );

@@ -22,6 +22,7 @@ type Round = {
   om_competition_level: string | null;
   om_rounds_18_count: number | null;
   om_competition_format: "stroke_play_individual" | "match_play_individual" | null;
+  score_entry_mode: "full" | "hole_only" | null;
   om_match_result: "won" | "lost" | null;
   match_score_text: string | null;
   match_opponent_handicap: number | null;
@@ -162,7 +163,7 @@ export default function RoundsListPage() {
       const q = supabase
         .from("golf_rounds")
         .select(
-          "id,user_id,start_at,round_type,competition_name,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
+          "id,user_id,start_at,round_type,competition_name,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,score_entry_mode,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
           { count: "exact" }
         )
         .eq("user_id", uid)
@@ -513,6 +514,7 @@ export default function RoundsListPage() {
                   const c = computedByRoundId[r.id];
                   const playedHoles = (holesByRoundId[r.id] ?? []).filter((h) => typeof h.score === "number").length;
                   const isMatchPlay = r.round_type === "competition" && r.om_competition_format === "match_play_individual";
+                  const useStats = r.score_entry_mode !== "hole_only";
                   const configParts: string[] = [];
                   if (r.course_name) configParts.push(r.course_name);
                   if (r.tee_name) configParts.push(r.tee_name);
@@ -604,10 +606,14 @@ export default function RoundsListPage() {
                             <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
                               {pickLocaleText(locale, "Trous joués", "Holes played")}:{" "}
                               <span style={{ fontWeight: 900 }}>{playedHoles || "—"}</span>
-                              {" • "}
-                              {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
-                              {" • "}
-                              GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                              {useStats ? (
+                                <>
+                                  {" • "}
+                                  {t("rounds.putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
+                                  {" • "}
+                                  GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
+                                </>
+                              ) : null}
                               {c?.parTotal ? (
                                 <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.55)" }}> • Par {c.parTotal}</span>
                               ) : null}

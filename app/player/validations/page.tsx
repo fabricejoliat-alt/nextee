@@ -1,8 +1,8 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, Lock, ShieldCheck, Target, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ClipboardList, Clock3, Flag, Lock, ShieldCheck, Target, Trash2, Unlock, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -732,7 +732,7 @@ export default function PlayerValidationsPage() {
                                       </>
                                     ) : exercise.is_unlocked ? (
                                       <>
-                                        <Target size={14} />
+                                        <Unlock size={14} />
                                         {txt.unlocked}
                                       </>
                                     ) : (
@@ -768,12 +768,16 @@ export default function PlayerValidationsPage() {
                             </div>
 
                             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                              {exercise.objective ? <DetailCard label={txt.objective} value={exercise.objective} /> : null}
+                              {exercise.objective ? <DetailCard icon={<Target size={14} />} label={txt.objective} value={exercise.objective} /> : null}
                               {(exercise.detailed_description || exercise.short_description) ? (
-                                <DetailCard label={txt.instruction} value={exercise.detailed_description || exercise.short_description || ""} />
+                                <DetailCard
+                                  icon={<ClipboardList size={14} />}
+                                  label={txt.instruction}
+                                  value={exercise.detailed_description || exercise.short_description || ""}
+                                />
                               ) : null}
-                              {exercise.equipment ? <DetailCard label={txt.equipment} value={exercise.equipment} /> : null}
-                              {exercise.validation_rule_text ? <DetailCard label={txt.validation} value={exercise.validation_rule_text} /> : null}
+                              {exercise.equipment ? <DetailCard icon={<Flag size={14} />} label={txt.equipment} value={exercise.equipment} /> : null}
+                              {exercise.validation_rule_text ? <DetailCard icon={<ShieldCheck size={14} />} label={txt.validation} value={exercise.validation_rule_text} /> : null}
                             </div>
 
                             <div style={{ display: "grid", gap: 10 }}>
@@ -934,7 +938,7 @@ export default function PlayerValidationsPage() {
   );
 }
 
-function DetailCard({ label, value }: { label: string; value: string }) {
+function DetailCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div
       style={{
@@ -946,7 +950,10 @@ function DetailCard({ label, value }: { label: string; value: string }) {
         gap: 6,
       }}
     >
-      <div style={{ fontSize: 12, color: "rgba(15,23,42,0.56)", fontWeight: 900 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "rgba(15,23,42,0.56)", fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", color: "#166534" }}>{icon}</span>
+        <span>{label}</span>
+      </div>
       <div style={{ fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: "rgba(15,23,42,0.88)" }}>{value}</div>
     </div>
   );

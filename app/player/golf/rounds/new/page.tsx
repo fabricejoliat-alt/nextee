@@ -223,6 +223,7 @@ export default function NewRoundPage() {
   const [omCompetitionFormat, setOmCompetitionFormat] = useState<OmCompetitionFormat>("stroke_play_individual");
   const [omRounds18Count, setOmRounds18Count] = useState<1 | 2 | 3 | 4>(1);
   const [omSingleNine, setOmSingleNine] = useState(false);
+  const [omScoreEntryMode, setOmScoreEntryMode] = useState<"full" | "hole_only">("full");
   const [omMatchPlayWins, setOmMatchPlayWins] = useState<string>("0");
   const [omMatchResult, setOmMatchResult] = useState<OmMatchResult>("won");
   const [opponentHandicap, setOpponentHandicap] = useState<string>("");
@@ -451,6 +452,7 @@ export default function NewRoundPage() {
     if (roundType === "competition" && !isMatchPlayCompetition && !omCompetitionLevel) return false;
     if (roundType === "competition" && !omCompetitionFormat) return false;
     if (roundType === "competition" && !(omRounds18Count >= 1 && omRounds18Count <= 4)) return false;
+    if (roundType === "competition" && omCompetitionFormat !== "match_play_individual" && !omScoreEntryMode) return false;
     if (isMultiRoundStrokePlay) {
       for (let i = 0; i < omRounds18Count; i += 1) {
         const d = multiRoundDates[i] ?? "";
@@ -663,6 +665,7 @@ export default function NewRoundPage() {
       om_competition_level: roundType === "competition" ? (isMatchPlayCompetition ? null : omCompetitionLevel) : null,
       om_competition_format: roundType === "competition" ? omCompetitionFormat : null,
       om_rounds_18_count: roundType === "competition" ? (isMatchPlayCompetition ? null : omRounds18Count) : null,
+      score_entry_mode: roundType === "competition" ? (isMatchPlayCompetition ? "full" : omScoreEntryMode) : "full",
       om_match_play_wins:
         roundType === "competition"
           ? isMatchPlayCompetition
@@ -888,6 +891,16 @@ export default function NewRoundPage() {
                         </select>
                       </label>
                     )}
+
+                    {roundType === "competition" && !isMatchPlayCompetition ? (
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>Saisie des résultats</span>
+                        <select value={omScoreEntryMode} onChange={(e) => setOmScoreEntryMode(e.target.value as "full" | "hole_only")} disabled={busy}>
+                          <option value="full">Score du trou et statistiques</option>
+                          <option value="hole_only">Score du trou uniquement</option>
+                        </select>
+                      </label>
+                    ) : null}
 
                     {isMultiRoundStrokePlay ? (
                       <div style={{ display: "grid", gap: 8 }}>

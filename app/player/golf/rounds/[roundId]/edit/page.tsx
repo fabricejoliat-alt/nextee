@@ -19,6 +19,7 @@ type Round = {
   om_competition_level: string | null;
   om_competition_format: string | null;
   om_rounds_18_count: number | null;
+  score_entry_mode: "full" | "hole_only" | null;
   om_miss_cut: boolean | null;
   course_name: string | null;
   tee_name: string | null;
@@ -267,9 +268,7 @@ export default function EditRoundWizardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select(
-        "id,user_id,start_at,round_type,course_source,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,om_miss_cut,course_name,tee_name,slope_rating,course_rating"
-      )
+      .select("id,user_id,start_at,round_type,course_source,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,om_miss_cut,course_name,tee_name,slope_rating,course_rating")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -369,7 +368,8 @@ export default function EditRoundWizardPage() {
         const score = existing?.score ?? (typeof par === "number" ? par : null);
 
         // ✅ if putts missing, default 2 only when score exists
-        const puttsRaw = existing?.putts ?? (typeof score === "number" ? 2 : null);
+        const useStats = loadedRound.score_entry_mode !== "hole_only";
+        const puttsRaw = useStats ? existing?.putts ?? (typeof score === "number" ? 2 : null) : null;
 
         const constrained = applyConstraints(
           {
@@ -379,7 +379,7 @@ export default function EditRoundWizardPage() {
             stroke_index: existing?.stroke_index ?? null,
             score,
             putts: puttsRaw,
-            fairway_hit: existing?.fairway_hit ?? null,
+            fairway_hit: useStats ? existing?.fairway_hit ?? null : null,
             note: existing?.note ?? null,
           },
           {}
@@ -418,6 +418,7 @@ export default function EditRoundWizardPage() {
   const hole = holes[holeIdx];
   const isLastHole = holeIdx === holes.length - 1;
   const fairwayChosen = hole?.fairway_hit !== null;
+  const useStats = round?.score_entry_mode !== "hole_only";
   const isManualCourse = round?.course_source === "manual";
   const isPar3 = hole?.par === 3;
   const missLabel = isPar3 ? t("roundsEdit.missGreen") : t("roundsEdit.missFairway");
@@ -439,7 +440,7 @@ export default function EditRoundWizardPage() {
       setUxError("Le PAR du trou est obligatoire.");
       return;
     }
-    if (!fairwayChosen) {
+    if (useStats && !fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
@@ -452,7 +453,7 @@ export default function EditRoundWizardPage() {
       setUxError("Le PAR du trou est obligatoire.");
       return;
     }
-    if (!fairwayChosen) {
+    if (useStats && !fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
@@ -465,7 +466,7 @@ export default function EditRoundWizardPage() {
       setUxError("Le PAR du trou est obligatoire.");
       return;
     }
-    if (!fairwayChosen) {
+    if (useStats && !fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
@@ -482,7 +483,7 @@ export default function EditRoundWizardPage() {
       setUxError("Le PAR du trou est obligatoire.");
       return;
     }
-    if (!fairwayChosen) {
+    if (useStats && !fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
@@ -769,104 +770,108 @@ export default function EditRoundWizardPage() {
                   </div>
                 </div>
 
-                {/* PUTTS */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>{t("rounds.putts")}</div>
+                {useStats ? (
+                  <>
+                    {/* PUTTS */}
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={fieldLabelStyle}>{t("rounds.putts")}</div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "56px 1fr 56px",
-                      gap: 10,
-                      alignItems: "center",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        const cur = hole.putts ?? 2;
-                        commitPatch({ putts: clampInt(cur - 1, 0, maxPuttsNow) });
-                      }}
-                      style={miniBtnStyle}
-                      disabled={saving}
-                    >
-                      –
-                    </button>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "56px 1fr 56px",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            const cur = hole.putts ?? 2;
+                            commitPatch({ putts: clampInt(cur - 1, 0, maxPuttsNow) });
+                          }}
+                          style={miniBtnStyle}
+                          disabled={saving}
+                        >
+                          –
+                        </button>
 
-                    <input
-                      className="input"
-                      inputMode="numeric"
-                      value={String(hole.putts ?? 2)}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? 0 : Number(e.target.value);
-                        commitPatch({ putts: clampInt(v, 0, maxPuttsNow) });
-                      }}
-                      style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
-                      disabled={saving}
-                    />
+                        <input
+                          className="input"
+                          inputMode="numeric"
+                          value={String(hole.putts ?? 2)}
+                          onChange={(e) => {
+                            const v = e.target.value === "" ? 0 : Number(e.target.value);
+                            commitPatch({ putts: clampInt(v, 0, maxPuttsNow) });
+                          }}
+                          style={{ textAlign: "center", fontWeight: 950, fontSize: 18, height: 50 }}
+                          disabled={saving}
+                        />
 
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        const cur = hole.putts ?? 2;
-                        commitPatch({ putts: clampInt(cur + 1, 0, maxPuttsNow) });
-                      }}
-                      style={miniBtnStyle}
-                      disabled={saving}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            const cur = hole.putts ?? 2;
+                            commitPatch({ putts: clampInt(cur + 1, 0, maxPuttsNow) });
+                          }}
+                          style={miniBtnStyle}
+                          disabled={saving}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
 
-                {/* FAIRWAY */}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={fieldLabelStyle}>{isPar3 ? t("roundsEdit.green") : t("roundsEdit.fairway")}</div>
+                    {/* FAIRWAY */}
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={fieldLabelStyle}>{isPar3 ? t("roundsEdit.green") : t("roundsEdit.fairway")}</div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        setUxError(null);
-                        commitPatch({ fairway_hit: false });
-                      }}
-                      style={{
-                        ...fairwayBtnBase,
-                        ...(missSelected ? fairwayMissSelected : fairwayUnselected),
-                      }}
-                      aria-pressed={missSelected}
-                      disabled={saving}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <XCircle size={18} />
-                        {missLabel}
-                      </span>
-                    </button>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setUxError(null);
+                            commitPatch({ fairway_hit: false });
+                          }}
+                          style={{
+                            ...fairwayBtnBase,
+                            ...(missSelected ? fairwayMissSelected : fairwayUnselected),
+                          }}
+                          aria-pressed={missSelected}
+                          disabled={saving}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <XCircle size={18} />
+                            {missLabel}
+                          </span>
+                        </button>
 
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        setUxError(null);
-                        commitPatch({ fairway_hit: true });
-                      }}
-                      style={{
-                        ...fairwayBtnBase,
-                        ...(hitSelected ? fairwayHitSelected : fairwayUnselected),
-                      }}
-                      aria-pressed={hitSelected}
-                      disabled={saving}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <CheckCircle2 size={18} />
-                        {hitLabel}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            setUxError(null);
+                            commitPatch({ fairway_hit: true });
+                          }}
+                          style={{
+                            ...fairwayBtnBase,
+                            ...(hitSelected ? fairwayHitSelected : fairwayUnselected),
+                          }}
+                          aria-pressed={hitSelected}
+                          disabled={saving}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <CheckCircle2 size={18} />
+                            {hitLabel}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
 
                 {/* NAV / FINISH */}
                 <div
