@@ -122,6 +122,15 @@ export async function GET(req: NextRequest) {
       campDayIndexByEventId[eventId] = typeof day.day_index === "number" ? day.day_index : 0;
     });
 
+    const campTitleByGroupId: Record<string, string> = {};
+    events.forEach((event) => {
+      if (event.event_type !== "camp") return;
+      const groupId = String(event.group_id ?? "").trim();
+      const campTitle = String(event.title ?? "").trim();
+      if (!groupId || !campTitle || campTitleByGroupId[groupId]) return;
+      campTitleByGroupId[groupId] = campTitle;
+    });
+
     return NextResponse.json({
       events: events.map((event) => ({
         ...event,
@@ -130,6 +139,7 @@ export async function GET(req: NextRequest) {
       })),
       groupNameById,
       clubNameById,
+      campTitleByGroupId,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

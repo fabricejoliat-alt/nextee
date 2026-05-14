@@ -118,6 +118,7 @@ export default function CoachCalendarPage() {
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
+  const [campTitlesByGroupId, setCampTitlesByGroupId] = useState<Record<string, string>>({});
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
@@ -145,6 +146,7 @@ export default function CoachCalendarPage() {
 
         setEvents((json?.events ?? []) as EventRow[]);
         setGroupNames((json?.groupNameById ?? {}) as Record<string, string>);
+        setCampTitlesByGroupId((json?.campTitleByGroupId ?? {}) as Record<string, string>);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : tr("Erreur chargement", "Loading error"));
         setEvents([]);
@@ -225,10 +227,10 @@ export default function CoachCalendarPage() {
   const groupOptions = useMemo(() => {
     const uniq = Array.from(new Set(events.map((e) => e.group_id).filter(Boolean)));
     return uniq
-      .map((id) => ({ id, label: groupNames[id] ?? tr("Groupe", "Group") }))
+      .map((id) => ({ id, label: campTitlesByGroupId[id] ?? groupNames[id] ?? tr("Groupe", "Group") }))
       .filter((g) => !isArchiveGroupLabel(g.label))
       .sort((a, b) => a.label.localeCompare(b.label, dateLocale));
-  }, [events, groupNames, locale]);
+  }, [events, groupNames, campTitlesByGroupId, locale]);
 
   const listTotalPages = Math.max(1, Math.ceil(listEvents.length / PAGE_SIZE));
   const pagedListEvents = useMemo(() => {
