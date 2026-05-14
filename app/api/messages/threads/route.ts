@@ -621,7 +621,9 @@ export async function GET(req: NextRequest) {
         } else if (staffOrgIds.has(String(t.organization_id ?? ""))) {
           displayTitle = profileNameById.get(String(t.player_id ?? "")) ?? displayTitle;
         } else {
-          displayTitle = profileNameById.get(String(t.created_by ?? "")) ?? "Coach";
+          const coachName = profileNameById.get(String(t.created_by ?? "")) ?? "Coach";
+          const playerName = profileNameById.get(String(t.player_id ?? "")) ?? "";
+          displayTitle = playerName ? `Discussion avec ${coachName}` : `Discussion avec ${coachName}`;
         }
       }
       const threadGroupId = String(t.group_id ?? "").trim();

@@ -79,34 +79,46 @@ export async function GET(req: NextRequest) {
     }
 
     const events = Object.values(rowsById).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-    if (events.length === 0) {
-      return NextResponse.json({ events: [], groupNameById: {}, clubNameById: {} });
-    }
-
+    const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
+    const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
     const campEventIds = events
       .filter((event) => event.event_type === "camp")
       .map((event) => String(event.id ?? "").trim())
       .filter(Boolean);
-    const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
-    const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
 
-    const [groupsRes, clubsRes, campDaysRes] = await Promise.all([
+    const [groupsRes, clubsRes, campDaysRes, coachGroupsRes] = await Promise.all([
       gIds.length > 0
-        ? supabaseAdmin.from("coach_groups").select("id,name").in("id", gIds)
+        ? supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", gIds)
         : Promise.resolve({ data: [], error: null } as const),
       cIds.length > 0
         ? supabaseAdmin.from("clubs").select("id,name").in("id", cIds)
         : Promise.resolve({ data: [], error: null } as const),
       campEventIds.length > 0
-        ? supabaseAdmin.from("club_camp_days").select("event_id,day_index").in("event_id", campEventIds)
+        ? supabaseAdmin.from("club_camp_days").select("camp_id,event_id,day_index").in("event_id", campEventIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      groupIds.length > 0
+        ? supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", groupIds)
         : Promise.resolve({ data: [], error: null } as const),
     ]);
+    const coachClubIds = Array.from(
+      new Set(
+        ((coachGroupsRes.data ?? []) as Array<{ club_id: string | null }>).map((r) => String(r.club_id ?? "").trim()).filter(Boolean)
+      )
+    );
+    const campsRes = coachClubIds.length > 0
+      ? await supabaseAdmin.from("club_camps").select("id,club_id,title").in("club_id", coachClubIds)
+      : ({ data: [], error: null } as const);
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+    if (coachGroupsRes.error) return NextResponse.json({ error: coachGroupsRes.error.message }, { status: 400 });
+    if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
 
     const groupNameById: Record<string, string> = {};
     (groupsRes.data ?? []).forEach((g: { id: string; name: string | null }) => {
+      groupNameById[g.id] = g.name ?? "Groupe";
+    });
+    (coachGroupsRes.data ?? []).forEach((g: { id: string; name: string | null }) => {
       groupNameById[g.id] = g.name ?? "Groupe";
     });
 
@@ -116,10 +128,13 @@ export async function GET(req: NextRequest) {
     });
 
     const campDayIndexByEventId: Record<string, number> = {};
-    (campDaysRes.data ?? []).forEach((day: { event_id: string | null; day_index: number | null }) => {
+    const campIdByEventId: Record<string, string> = {};
+    (campDaysRes.data ?? []).forEach((day: { camp_id: string | null; event_id: string | null; day_index: number | null }) => {
       const eventId = String(day.event_id ?? "").trim();
       if (!eventId) return;
       campDayIndexByEventId[eventId] = typeof day.day_index === "number" ? day.day_index : 0;
+      const campId = String(day.camp_id ?? "").trim();
+      if (campId) campIdByEventId[eventId] = campId;
     });
 
     const campTitleByGroupId: Record<string, string> = {};
@@ -130,16 +145,22 @@ export async function GET(req: NextRequest) {
       if (!groupId || !campTitle || campTitleByGroupId[groupId]) return;
       campTitleByGroupId[groupId] = campTitle;
     });
+    const campNameById: Record<string, string> = {};
+    (campsRes.data ?? []).forEach((camp: { id: string; title: string | null }) => {
+      campNameById[camp.id] = camp.title ?? "Stage";
+    });
 
     return NextResponse.json({
       events: events.map((event) => ({
         ...event,
         camp_day_index:
           event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
+        camp_id: event.event_type === "camp" ? (campIdByEventId[String(event.id ?? "").trim()] ?? null) : null,
       })),
       groupNameById,
       clubNameById,
       campTitleByGroupId,
+      campNameById,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

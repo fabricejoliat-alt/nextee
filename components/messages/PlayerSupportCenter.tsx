@@ -139,6 +139,7 @@ export default function PlayerSupportCenter() {
     const normalized = email.toLowerCase();
     // Hide technical auth placeholders when no real email was provided.
     if (normalized.endsWith("@users.noreply.supabase.io")) return null;
+    if (normalized.endsWith("@noemail.local")) return null;
     return email;
   }
 

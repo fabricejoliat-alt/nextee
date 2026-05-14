@@ -14,6 +14,7 @@ type FilterMode = "upcoming" | "past";
 type EventRow = {
   id: string;
   group_id: string;
+  camp_id: string | null;
   club_id: string;
   event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
   title: string | null;
@@ -118,7 +119,7 @@ export default function CoachCalendarPage() {
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
-  const [campTitlesByGroupId, setCampTitlesByGroupId] = useState<Record<string, string>>({});
+  const [campNamesById, setCampNamesById] = useState<Record<string, string>>({});
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
 
   const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
@@ -146,7 +147,7 @@ export default function CoachCalendarPage() {
 
         setEvents((json?.events ?? []) as EventRow[]);
         setGroupNames((json?.groupNameById ?? {}) as Record<string, string>);
-        setCampTitlesByGroupId((json?.campTitleByGroupId ?? {}) as Record<string, string>);
+        setCampNamesById((json?.campNameById ?? {}) as Record<string, string>);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : tr("Erreur chargement", "Loading error"));
         setEvents([]);
@@ -199,7 +200,12 @@ export default function CoachCalendarPage() {
       if (e.status !== "scheduled") return false;
       const groupLabel = groupNames[e.group_id] ?? tr("Groupe", "Group");
       if (isArchiveGroupLabel(groupLabel)) return false;
-      if (groupFilter !== "all" && e.group_id !== groupFilter) return false;
+      if (groupFilter === "all") return true;
+      if (groupFilter.startsWith("group:")) {
+        const groupId = groupFilter.slice("group:".length);
+        return e.group_id === groupId && e.event_type !== "camp";
+      }
+      if (groupFilter.startsWith("camp:")) return e.camp_id === groupFilter.slice("camp:".length);
       return true;
     });
   }, [events, groupNames, groupFilter, locale]);
@@ -224,13 +230,27 @@ export default function CoachCalendarPage() {
     return list;
   }, [baseFilteredEvents, filterMode, nowTs]);
 
+  const groupEventStats = useMemo(() => {
+    const stats: Record<string, { hasCamp: boolean; hasNonCamp: boolean }> = {};
+    events.forEach((event) => {
+      const groupId = String(event.group_id ?? "").trim();
+      if (!groupId) return;
+      if (!stats[groupId]) stats[groupId] = { hasCamp: false, hasNonCamp: false };
+      if (event.event_type === "camp") stats[groupId].hasCamp = true;
+      else stats[groupId].hasNonCamp = true;
+    });
+    return stats;
+  }, [events]);
+
   const groupOptions = useMemo(() => {
-    const uniq = Array.from(new Set(events.map((e) => e.group_id).filter(Boolean)));
-    return uniq
-      .map((id) => ({ id, label: campTitlesByGroupId[id] ?? groupNames[id] ?? tr("Groupe", "Group") }))
+    const groupOptionsList = Object.entries(groupNames)
+      .filter(([id]) => !groupEventStats[id]?.hasCamp || groupEventStats[id]?.hasNonCamp)
+      .map(([id, label]) => ({ id: `group:${id}`, label }));
+    const campOptionsList = Object.entries(campNamesById).map(([id, label]) => ({ id: `camp:${id}`, label: `${tr("Stage", "Camp")} - ${label}` }));
+    return [...groupOptionsList, ...campOptionsList]
       .filter((g) => !isArchiveGroupLabel(g.label))
       .sort((a, b) => a.label.localeCompare(b.label, dateLocale));
-  }, [events, groupNames, campTitlesByGroupId, locale]);
+  }, [groupNames, campNamesById, groupEventStats, locale]);
 
   const listTotalPages = Math.max(1, Math.ceil(listEvents.length / PAGE_SIZE));
   const pagedListEvents = useMemo(() => {

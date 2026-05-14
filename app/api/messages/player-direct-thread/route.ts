@@ -61,44 +61,108 @@ export async function POST(req: NextRequest) {
     const threadSelect =
       "id,organization_id,thread_type,title,group_id,event_id,player_id,player_thread_scope,created_by,is_locked,is_active,created_at,updated_at";
 
+    const getGuardians = async () => {
+      const guardiansRes = await supabaseAdmin
+        .from("player_guardians")
+        .select("guardian_user_id,can_view")
+        .eq("player_id", effectivePlayerId)
+        .or("can_view.is.null,can_view.eq.true");
+      if (guardiansRes.error) throw new Error(guardiansRes.error.message);
+      return Array.from(
+        new Set((guardiansRes.data ?? []).map((r: any) => String(r.guardian_user_id ?? "").trim()).filter(Boolean))
+      );
+    };
+
+    async function threadMatchesExpectedParticipants(threadId: string, guardianIds: string[]) {
+      const participantsRes = await supabaseAdmin
+        .from("thread_participants")
+        .select("user_id")
+        .eq("thread_id", threadId);
+      if (participantsRes.error) throw new Error(participantsRes.error.message);
+
+      const participants = Array.from(
+        new Set((participantsRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim()).filter(Boolean))
+      );
+      const allowed = new Set([effectivePlayerId, staffUserId, ...guardianIds]);
+      if (!participants.includes(effectivePlayerId) || !participants.includes(staffUserId)) return false;
+      for (const uid of participants) {
+        if (!allowed.has(uid)) return false;
+      }
+      return true;
+    }
+
+    async function sanitizeThreadParticipants(threadId: string, guardianIds: string[]) {
+      const participantsRes = await supabaseAdmin
+        .from("thread_participants")
+        .select("user_id")
+        .eq("thread_id", threadId);
+      if (participantsRes.error) throw new Error(participantsRes.error.message);
+
+      const allowed = new Set([effectivePlayerId, staffUserId, ...guardianIds]);
+      const toRemove = Array.from(
+        new Set(
+          (participantsRes.data ?? [])
+            .map((row: any) => String(row.user_id ?? "").trim())
+            .filter((uid: string) => Boolean(uid) && !allowed.has(uid))
+        )
+      );
+      if (toRemove.length > 0) {
+        await supabaseAdmin.from("thread_participants").delete().eq("thread_id", threadId).in("user_id", toRemove);
+      }
+    }
+
+    const normalizeDirectThread = async (threadId: string) => {
+      const normalizedRes = await supabaseAdmin
+        .from("message_threads")
+        .update({
+          title: "Discussion",
+          player_thread_scope: "direct",
+          is_active: true,
+          created_by: staffUserId,
+        })
+        .eq("id", threadId)
+        .select(threadSelect)
+        .single();
+      if (normalizedRes.error) throw new Error(normalizedRes.error.message);
+      return normalizedRes.data;
+    };
+
     const findExistingThreadForPair = async () => {
-      const threadsRes = await supabaseAdmin
+      const guardianIds = await getGuardians();
+      const exactRes = await supabaseAdmin
         .from("message_threads")
         .select(threadSelect)
         .eq("organization_id", organizationId)
         .eq("thread_type", "player")
         .eq("player_id", effectivePlayerId)
-        .eq("player_thread_scope", "direct")
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false });
-      if (threadsRes.error) throw new Error(threadsRes.error.message);
-      const threads = (threadsRes.data ?? []) as any[];
-      if (threads.length === 0) return null;
-
-      const threadIds = threads.map((t) => String((t as any).id ?? "").trim()).filter(Boolean);
-      if (threadIds.length === 0) return null;
-
-      const participantsRes = await supabaseAdmin
-        .from("thread_participants")
-        .select("thread_id,user_id")
-        .in("thread_id", threadIds)
-        .in("user_id", [effectivePlayerId, staffUserId]);
-      if (participantsRes.error) throw new Error(participantsRes.error.message);
-
-      const usersByThread = new Map<string, Set<string>>();
-      for (const row of participantsRes.data ?? []) {
-        const tid = String((row as any).thread_id ?? "").trim();
-        const uid = String((row as any).user_id ?? "").trim();
-        if (!tid || !uid) continue;
-        if (!usersByThread.has(tid)) usersByThread.set(tid, new Set<string>());
-        usersByThread.get(tid)!.add(uid);
+        .eq("created_by", staffUserId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (exactRes.error) throw new Error(exactRes.error.message);
+      if (exactRes.data) {
+        const normalized = await normalizeDirectThread(String(exactRes.data.id ?? "").trim());
+        await sanitizeThreadParticipants(String(normalized.id ?? ""), guardianIds);
+        return normalized;
       }
 
-      for (const t of threads) {
-        const tid = String((t as any).id ?? "").trim();
-        const users = usersByThread.get(tid);
-        if (!users) continue;
-        if (users.has(effectivePlayerId) && users.has(staffUserId)) return t;
+      const candidatesRes = await supabaseAdmin
+        .from("message_threads")
+        .select(threadSelect)
+        .eq("organization_id", organizationId)
+        .eq("thread_type", "player")
+        .eq("player_id", effectivePlayerId)
+        .order("updated_at", { ascending: false });
+      if (candidatesRes.error) throw new Error(candidatesRes.error.message);
+
+      for (const candidate of candidatesRes.data ?? []) {
+        const threadId = String((candidate as any).id ?? "").trim();
+        if (!threadId) continue;
+        if (await threadMatchesExpectedParticipants(threadId, guardianIds)) {
+          const normalized = await normalizeDirectThread(threadId);
+          await sanitizeThreadParticipants(threadId, guardianIds);
+          return normalized;
+        }
       }
 
       return null;
@@ -106,46 +170,23 @@ export async function POST(req: NextRequest) {
 
     let thread = await findExistingThreadForPair();
     if (!thread) {
-      const insertRes = await supabaseAdmin
-        .from("message_threads")
-        .insert({
-          organization_id: organizationId,
-          thread_type: "player",
-          title: "Discussion",
-          player_id: effectivePlayerId,
-          player_thread_scope: "direct",
-          created_by: staffUserId,
-          is_locked: false,
-          is_active: true,
-        })
-        .select(threadSelect)
-        .single();
+      const insertPayload = {
+        organization_id: organizationId,
+        thread_type: "player",
+        title: "Discussion",
+        player_id: effectivePlayerId,
+        player_thread_scope: "direct",
+        created_by: staffUserId,
+        is_locked: false,
+        is_active: true,
+      };
+      const insertRes = await supabaseAdmin.from("message_threads").insert(insertPayload).select(threadSelect).single();
       if (insertRes.error) {
-        // Retry on unique race / legacy uniqueness by re-resolving via participants pair.
         const retryThread = await findExistingThreadForPair();
-        if (!retryThread) {
-          const fallbackRes = await supabaseAdmin
-            .from("message_threads")
-            .select(threadSelect)
-            .eq("organization_id", organizationId)
-            .eq("thread_type", "player")
-            .eq("player_id", effectivePlayerId)
-            .eq("player_thread_scope", "direct")
-            .eq("is_active", true)
-            .order("updated_at", { ascending: false })
-            .limit(50);
-          if (fallbackRes.error) {
-            return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
-          }
-          const fallbackRows = (fallbackRes.data ?? []) as any[];
-          if (fallbackRows.length === 1) {
-            // Legacy uniqueness mode: one direct thread per player/org.
-            thread = fallbackRows[0] as any;
-          } else {
-            return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
-          }
-        } else {
+        if (retryThread) {
           thread = retryThread as any;
+        } else {
+          return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
         }
       } else {
         thread = insertRes.data as any;
@@ -155,23 +196,32 @@ export async function POST(req: NextRequest) {
     const threadId = String((thread as any)?.id ?? "").trim();
     if (!threadId) return NextResponse.json({ error: "Thread not found" }, { status: 400 });
 
-    const guardiansRes = await supabaseAdmin
-      .from("player_guardians")
-      .select("guardian_user_id,can_view")
-      .eq("player_id", effectivePlayerId)
-      .or("can_view.is.null,can_view.eq.true");
-    if (guardiansRes.error) return NextResponse.json({ error: guardiansRes.error.message }, { status: 400 });
+    const guardianIds = await getGuardians();
 
     const participantRows: Array<{ thread_id: string; user_id: string; can_post: boolean }> = [
       { thread_id: threadId, user_id: effectivePlayerId, can_post: true },
       { thread_id: threadId, user_id: staffUserId, can_post: true },
-      ...((guardiansRes.data ?? [])
-        .map((r: any) => String(r.guardian_user_id ?? "").trim())
-        .filter(Boolean)
-        .map((guardianId) => ({ thread_id: threadId, user_id: guardianId, can_post: true }))),
+      ...guardianIds.map((guardianId) => ({ thread_id: threadId, user_id: guardianId, can_post: true })),
     ];
     if (participantRows.length > 0) {
-      await supabaseAdmin.from("thread_participants").upsert(participantRows, { onConflict: "thread_id,user_id" });
+      const participantUserIds = Array.from(new Set(participantRows.map((row) => row.user_id)));
+      await supabaseAdmin.from("thread_participants").delete().eq("thread_id", threadId).in("user_id", participantUserIds);
+      await supabaseAdmin.from("thread_participants").insert(participantRows);
+    }
+
+    const existingParticipantsRes = await supabaseAdmin.from("thread_participants").select("user_id").eq("thread_id", threadId);
+    if (!existingParticipantsRes.error) {
+      const allowed = new Set([effectivePlayerId, staffUserId, ...guardianIds]);
+      const toRemove = Array.from(
+        new Set(
+          (existingParticipantsRes.data ?? [])
+            .map((r: any) => String(r.user_id ?? "").trim())
+            .filter((uid: string) => Boolean(uid) && !allowed.has(uid))
+        )
+      );
+      if (toRemove.length > 0) {
+        await supabaseAdmin.from("thread_participants").delete().eq("thread_id", threadId).in("user_id", toRemove);
+      }
     }
 
     return NextResponse.json({ thread });
