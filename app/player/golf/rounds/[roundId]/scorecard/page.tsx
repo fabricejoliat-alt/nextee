@@ -14,6 +14,7 @@ type Round = {
   start_at: string;
   round_type: "training" | "competition";
   competition_name: string | null;
+  notes: string | null;
   om_organization_id: string | null;
   om_competition_level: string | null;
   om_competition_format: string | null;
@@ -188,7 +189,7 @@ export default function ScorecardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select("id,user_id,start_at,round_type,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus")
+      .select("id,user_id,start_at,round_type,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -442,6 +443,12 @@ export default function ScorecardPage() {
                     <span style={kvVal}>{typeof round.course_rating === "number" ? round.course_rating : "—"}</span>
                   </div>
                 </div>
+
+                {round.notes?.trim() ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", lineHeight: 1.45 }}>
+                    <span style={{ fontWeight: 950 }}>Notes:</span> {round.notes}
+                  </div>
+                ) : null}
               </div>
 
               <div style={{ textAlign: "right" }}>

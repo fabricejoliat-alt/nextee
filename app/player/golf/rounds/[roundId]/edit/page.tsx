@@ -15,6 +15,7 @@ type Round = {
   round_type: "training" | "competition";
   course_source: string | null;
   competition_name: string | null;
+  notes: string | null;
   om_organization_id: string | null;
   om_competition_level: string | null;
   om_competition_format: string | null;
@@ -101,8 +102,6 @@ export default function EditRoundWizardPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [dateSaving, setDateSaving] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
   const [uxError, setUxError] = useState<string | null>(null);
   const [nextRoundId, setNextRoundId] = useState<string | null>(null);
@@ -111,6 +110,7 @@ export default function EditRoundWizardPage() {
 
   const [round, setRound] = useState<Round | null>(null);
   const [roundDate, setRoundDate] = useState("");
+  const [notes, setNotes] = useState("");
   const [holes, setHoles] = useState<Hole[]>(
     Array.from({ length: 18 }, (_, i) => ({
       hole_no: i + 1,
@@ -268,7 +268,7 @@ export default function EditRoundWizardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select("id,user_id,start_at,round_type,course_source,competition_name,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,om_miss_cut,course_name,tee_name,slope_rating,course_rating")
+      .select("id,user_id,start_at,round_type,course_source,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,om_miss_cut,course_name,tee_name,slope_rating,course_rating")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -287,6 +287,7 @@ export default function EditRoundWizardPage() {
     const loadedRound = rRes.data as Round;
     setRound(loadedRound);
     setRoundDate(localYmdFromIso(loadedRound.start_at));
+    setNotes(loadedRound.notes ?? "");
 
     setNextRoundId(null);
     setTournamentRounds([]);
@@ -546,19 +547,25 @@ export default function EditRoundWizardPage() {
     router.push("/player/golf/rounds");
   }
 
-  async function saveRoundDate() {
-    if (!roundId || !round || !roundDate) return;
-    setDateSaving(true);
+  async function saveRoundMeta() {
+    if (!roundId || !round) return;
+    setSaving(true);
     setError(null);
     try {
       const nextStartAt = replaceIsoDateKeepingTime(round.start_at, roundDate);
-      const upd = await supabase.from("golf_rounds").update({ start_at: nextStartAt }).eq("id", roundId);
+      const upd = await supabase
+        .from("golf_rounds")
+        .update({
+          start_at: nextStartAt,
+          notes: notes.trim() || null,
+        })
+        .eq("id", roundId);
       if (upd.error) throw new Error(upd.error.message);
-      setRound((prev) => (prev ? { ...prev, start_at: nextStartAt } : prev));
+      setRound((prev) => (prev ? { ...prev, start_at: nextStartAt, notes: notes.trim() || null } : prev));
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
     } finally {
-      setDateSaving(false);
+      setSaving(false);
     }
   }
 
@@ -609,32 +616,6 @@ export default function EditRoundWizardPage() {
 
           {error && <div className="marketplace-error">{error}</div>}
           {uxError && <div className="marketplace-error">{uxError}</div>}
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
-              Date du parcours
-            </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <input
-                className="input"
-                type="date"
-                value={roundDate}
-                onChange={(e) => setRoundDate(e.target.value)}
-                disabled={saving || dateSaving}
-                style={{ maxWidth: 220 }}
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={saveRoundDate}
-                disabled={saving || dateSaving || !roundDate || roundDate === localYmdFromIso(round.start_at)}
-              >
-                {dateSaving ? "Enregistrement..." : "Enregistrer la date"}
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="glass-section">
@@ -973,6 +954,44 @@ export default function EditRoundWizardPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                Date du parcours
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  className="input"
+                  type="date"
+                  value={roundDate}
+                  onChange={(e) => setRoundDate(e.target.value)}
+                  disabled={saving}
+                  style={{ maxWidth: 220 }}
+                />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                Hydratation, alimentation, etc.
+              </div>
+              <textarea
+                className="input"
+                rows={4}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={saving}
+                placeholder="Hydratation, alimentation, sensations, remarques..."
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={saveRoundMeta}
+                disabled={saving || !roundDate}
+                style={{ width: "fit-content" }}
+              >
+                Enregistrer
+              </button>
+            </div>
           </div>
 
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>

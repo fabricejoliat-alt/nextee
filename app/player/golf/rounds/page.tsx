@@ -16,6 +16,7 @@ type Round = {
   start_at: string;
   round_type: "training" | "competition";
   competition_name: string | null;
+  notes: string | null;
   course_name: string | null;
   tee_name: string | null;
   om_organization_id: string | null;
@@ -163,7 +164,7 @@ export default function RoundsListPage() {
       const q = supabase
         .from("golf_rounds")
         .select(
-          "id,user_id,start_at,round_type,competition_name,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,score_entry_mode,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
+          "id,user_id,start_at,round_type,competition_name,notes,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,score_entry_mode,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
           { count: "exact" }
         )
         .eq("user_id", uid)
@@ -519,6 +520,7 @@ export default function RoundsListPage() {
                   if (r.course_name) configParts.push(r.course_name);
                   if (r.tee_name) configParts.push(r.tee_name);
                   const configLine = configParts.filter(Boolean).join(" • ");
+                  const hydrationLine = r.notes?.trim() ? r.notes.trim() : "";
 
                   return (
                     <Link
@@ -584,6 +586,12 @@ export default function RoundsListPage() {
                           </div>
 
                           <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                          {hydrationLine ? (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", lineHeight: 1.45 }}>
+                              <span style={{ fontWeight: 950 }}>Notes:</span> {hydrationLine}
+                            </div>
+                          ) : null}
 
                           {/* Stats rapides (comme avant) */}
                           {isMatchPlay ? (

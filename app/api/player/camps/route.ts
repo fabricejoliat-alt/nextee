@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, resolvePlayerAccess, uniq } from "@/app/api/camps/_lib";
 
+function isoDateInTimeZone(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function campVisibleUntilDate(days: any[]) {
+  const timestamps = days
+    .map((day) => day.ends_at ?? day.starts_at ?? null)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) return null;
+  return new Date(Math.max(...timestamps));
+}
+
 export async function GET(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -127,15 +147,27 @@ export async function GET(req: NextRequest) {
       });
     });
 
+    const todayInZurich = isoDateInTimeZone(new Date(), "Europe/Zurich");
+
     return NextResponse.json({
       effectiveUserId: access.effectiveUserId,
-      camps: camps.map((camp: any) => ({
-        ...camp,
-        club_name: clubNameById.get(String(camp.club_id ?? "").trim()) ?? "Club",
-        head_coach: headCoachById.get(String(camp.head_coach_user_id ?? "").trim()) ?? null,
-        registration_status: registrationByCampId[String(camp.id)] ?? "invited",
-        days: (daysByCampId[String(camp.id)] ?? []).sort((a, b) => a.day_index - b.day_index),
-      })),
+      camps: camps
+        .map((camp: any) => {
+          const campDays = (daysByCampId[String(camp.id)] ?? []).sort((a, b) => a.day_index - b.day_index);
+          return {
+            ...camp,
+            club_name: clubNameById.get(String(camp.club_id ?? "").trim()) ?? "Club",
+            head_coach: headCoachById.get(String(camp.head_coach_user_id ?? "").trim()) ?? null,
+            registration_status: registrationByCampId[String(camp.id)] ?? "invited",
+            days: campDays,
+          };
+        })
+        .filter((camp: any) => {
+          const visibleUntil = campVisibleUntilDate(camp.days);
+          if (!visibleUntil) return true;
+          const visibleUntilDate = isoDateInTimeZone(visibleUntil, "Europe/Zurich");
+          return todayInZurich <= visibleUntilDate;
+        }),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? "Server error" }, { status: 500 });

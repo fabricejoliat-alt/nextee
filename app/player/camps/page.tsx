@@ -295,7 +295,22 @@ export default function PlayerCampsPage() {
               <CampCardSkeleton />
             </div>
           ) : camps.length === 0 ? (
-            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>Aucun stage/camp disponible.</div>
+            <div
+              style={{
+                border: "1px solid rgba(0,0,0,0.10)",
+                borderRadius: 18,
+                background: "rgba(255,255,255,0.90)",
+                color: "#000000",
+                textShadow: "none",
+                WebkitTextFillColor: "#000000",
+                fontWeight: 800,
+                padding: "16px 18px",
+                boxShadow: "none",
+                transition: "none",
+              }}
+            >
+              Aucun stage/camp disponible.
+            </div>
           ) : (
             <div className="marketplace-list marketplace-list-top">
               {camps.map((camp) => {
