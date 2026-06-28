@@ -50,6 +50,25 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     return fallback;
   }
 
+  function normalizeNotificationHref(href: string | null | undefined) {
+    const value = String(href ?? "").trim();
+    if (!value) return null;
+    if (value.startsWith("/")) return value;
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.trim().toLowerCase();
+      if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+      }
+      if (typeof window !== "undefined" && parsed.origin === window.location.origin) {
+        return `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+      }
+      return parsed.toString();
+    } catch {
+      return value;
+    }
+  }
+
   function formatEventNotificationLabel(title?: string | null, startsAt?: string | null) {
     const safeTitle = String(title ?? "").trim() || tr("Événement", "Event", "Ereignis", "Evento");
     const safeStartsAt = String(startsAt ?? "").trim();
@@ -376,7 +395,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   function resolveNotificationHref(notification: NotificationRow | null) {
     const data = (notification?.data ?? {}) as Record<string, unknown>;
     const explicit = String(data.url ?? "").trim();
-    if (explicit) return explicit;
+    if (explicit) return normalizeNotificationHref(explicit);
 
     if (String(notification?.kind ?? "") === "manager_news") {
       const linkedCampId = String(data.linked_camp_id ?? "").trim();
@@ -436,7 +455,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
         ) {
           return `/coach/players/${encodeURIComponent(String(meta.player_id))}`;
         }
-        return `${homeHref}/messages?thread_id=${encodeURIComponent(threadId)}`;
+        return normalizeNotificationHref(`${homeHref}/messages?thread_id=${encodeURIComponent(threadId)}`);
       }
     }
     return null;

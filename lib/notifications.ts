@@ -15,18 +15,35 @@ export type AppNotificationInput = {
   recipientUserIds: string[];
 };
 
-function withChildId(url: string | undefined, childId: string) {
-  if (!url) return undefined;
+function normalizeNotificationUrl(url: string | undefined) {
+  const value = String(url ?? "").trim();
+  if (!value) return undefined;
+  if (value.startsWith("/")) return value;
   try {
-    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    const parsed = new URL(value);
+    const host = parsed.hostname.trim().toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || "/";
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+function withChildId(url: string | undefined, childId: string) {
+  const normalizedUrl = normalizeNotificationUrl(url);
+  if (!normalizedUrl) return undefined;
+  try {
+    const u = new URL(normalizedUrl, typeof window !== "undefined" ? window.location.origin : "http://localhost");
     u.searchParams.set("child_id", childId);
-    if (u.origin === "http://localhost" && url.startsWith("/")) {
+    if (u.origin === "http://localhost" && normalizedUrl.startsWith("/")) {
       return `${u.pathname}${u.search}${u.hash}`;
     }
     return u.toString();
   } catch {
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}child_id=${encodeURIComponent(childId)}`;
+    const sep = normalizedUrl.includes("?") ? "&" : "?";
+    return `${normalizedUrl}${sep}child_id=${encodeURIComponent(childId)}`;
   }
 }
 
@@ -52,7 +69,16 @@ export async function createAppNotification(input: AppNotificationInput) {
   const recipients = Array.from(new Set(input.recipientUserIds.filter(Boolean))).filter((id) => id !== input.actorUserId);
   if (recipients.length === 0) return { ok: true as const, notificationId: null as string | null };
 
-  const notificationId = await insertNotificationRow(input);
+  const normalizedUrl = normalizeNotificationUrl(input.data?.url as string | undefined);
+  const normalizedInput = {
+    ...input,
+    data: {
+      ...(input.data ?? {}),
+      ...(normalizedUrl ? { url: normalizedUrl } : {}),
+    },
+  };
+
+  const notificationId = await insertNotificationRow(normalizedInput);
 
   const rIns = await supabase
     .from("notification_recipients")
@@ -63,9 +89,9 @@ export async function createAppNotification(input: AppNotificationInput) {
   // Fire-and-forget web push dispatch (PWA) for recipients.
   dispatchPush({
     notificationId,
-    title: input.title,
-    body: input.body ?? null,
-    url: (input.data?.url as string | undefined) ?? undefined,
+    title: normalizedInput.title,
+    body: normalizedInput.body ?? null,
+    url: normalizedUrl,
     recipientUserIds: recipients,
   }).catch(() => {});
 
@@ -103,18 +129,18 @@ export async function createAppNotification(input: AppNotificationInput) {
 
       for (const target of parentTargets) {
         const childName = nameByPlayerId.get(target.playerId) ?? "Joueur";
-        const childUrl = withChildId(input.data?.url as string | undefined, target.playerId);
+        const childUrl = withChildId(normalizedUrl, target.playerId);
         const parentData = {
-          ...(input.data ?? {}),
-          url: childUrl ?? (input.data?.url as string | undefined),
+          ...(normalizedInput.data ?? {}),
+          url: childUrl ?? normalizedUrl,
           child_id: target.playerId,
           child_name: childName,
         };
-        const parentTitle = `${input.title} — ${childName}`;
-        const parentBody = input.body ?? null;
+        const parentTitle = `${normalizedInput.title} — ${childName}`;
+        const parentBody = normalizedInput.body ?? null;
 
         const parentNotificationId = await insertNotificationRow({
-          ...input,
+          ...normalizedInput,
           title: parentTitle,
           body: parentBody,
           data: parentData,

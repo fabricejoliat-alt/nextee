@@ -2,6 +2,25 @@ self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
+function normalizeNotificationUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) return '/';
+  if (value.startsWith('/')) return value;
+  try {
+    const parsed = new URL(value);
+    const host = String(parsed.hostname || '').trim().toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
+    }
+    if (self.location && parsed.origin === self.location.origin) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
+    }
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
@@ -22,7 +41,7 @@ self.addEventListener('push', (event) => {
     icon: data.icon || '/icon-192.png',
     badge: data.badge || '/icon-192.png',
     data: {
-      url: data.url || '/',
+      url: normalizeNotificationUrl(data.url),
     },
   };
 
@@ -50,7 +69,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification?.data?.url || '/';
+  const targetUrl = normalizeNotificationUrl(event.notification?.data?.url);
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
