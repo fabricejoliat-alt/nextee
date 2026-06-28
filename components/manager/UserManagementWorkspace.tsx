@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  X,
   Trash2,
   Upload,
   User,
@@ -189,6 +190,9 @@ type AccessData = {
 };
 
 type SortDirection = "asc" | "desc";
+type PlayerColumnKey = "last_name" | "first_name" | "consent" | "parent_linked" | "account_status" | `field:${string}`;
+
+type PlayerColumnConfig = Record<PlayerColumnKey, boolean>;
 
 const SECTION_LINKS: Array<{ key: Section; label: string; href: string; icon: typeof Users }> = [
   { key: "players", label: "Joueurs", href: "/manager/user-management/players", icon: Users },
@@ -198,6 +202,15 @@ const SECTION_LINKS: Array<{ key: Section; label: string; href: string; icon: ty
   { key: "custom-fields", label: "Champs personnalisés", href: "/manager/user-management/custom-fields", icon: Settings2 },
   { key: "email-configuration", label: "Configuration E-mail", href: "/manager/user-management/email-configuration", icon: Mail },
 ];
+
+const PLAYER_COLUMNS_STORAGE_KEY = "manager-user-management-player-columns";
+const PLAYER_COLUMN_DEFAULTS: PlayerColumnConfig = {
+  last_name: true,
+  first_name: false,
+  consent: true,
+  parent_linked: true,
+  account_status: true,
+};
 
 const FIELD_INPUT_STYLE: CSSProperties = {
   width: "100%",
@@ -256,6 +269,10 @@ function normalizeAuthEmailInput(raw?: string | null) {
   if (!email) return "";
   if (email.endsWith("@noemail.local")) return "";
   return email;
+}
+
+function playerFieldColumnKey(fieldId: string) {
+  return `field:${fieldId}` as PlayerColumnKey;
 }
 
 function fullName(profile?: { first_name: string | null; last_name: string | null } | null) {
@@ -472,6 +489,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
   const [parentSort, setParentSort] = useState<{ key: string; dir: SortDirection }>({ key: "last_name", dir: "asc" });
   const [coachSort, setCoachSort] = useState<{ key: string; dir: SortDirection }>({ key: "last_name", dir: "asc" });
   const [managerSort, setManagerSort] = useState<{ key: string; dir: SortDirection }>({ key: "last_name", dir: "asc" });
+  const [playerColumnsOpen, setPlayerColumnsOpen] = useState(false);
+  const [playerColumns, setPlayerColumns] = useState<PlayerColumnConfig>(PLAYER_COLUMN_DEFAULTS);
   const canCreatePlayer = useMemo(
     () => Boolean(clubId && playerCreateForm.first_name.trim() && playerCreateForm.last_name.trim()),
     [clubId, playerCreateForm.first_name, playerCreateForm.last_name]
@@ -896,6 +915,47 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     () => playerFields.filter((field) => field.is_active && fieldAppliesToRole(field, "player")).sort((a, b) => a.sort_order - b.sort_order),
     [playerFields]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(PLAYER_COLUMNS_STORAGE_KEY);
+    let next: PlayerColumnConfig = { ...PLAYER_COLUMN_DEFAULTS };
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Partial<Record<string, boolean>>;
+        Object.entries(parsed).forEach(([key, value]) => {
+          if (typeof value !== "boolean") return;
+          if (key === "last_name" || key === "first_name" || key === "consent" || key === "parent_linked" || key === "account_status") {
+            next[key] = value;
+            return;
+          }
+          if (key.startsWith("field:")) {
+            next[key as PlayerColumnKey] = value;
+          }
+        });
+      } catch {
+        next = { ...PLAYER_COLUMN_DEFAULTS };
+      }
+    }
+
+    activePlayerFields.forEach((field) => {
+      const key = playerFieldColumnKey(field.id);
+      if (!(key in next)) next[key] = false;
+    });
+
+    setPlayerColumns(next);
+  }, [activePlayerFields]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next: Record<string, boolean> = { ...playerColumns };
+    activePlayerFields.forEach((field) => {
+      const key = playerFieldColumnKey(field.id);
+      if (!(key in next)) next[key] = true;
+    });
+    window.localStorage.setItem(PLAYER_COLUMNS_STORAGE_KEY, JSON.stringify(next));
+  }, [activePlayerFields, playerColumns]);
+
   const activeParentFields = useMemo(
     () => playerFields.filter((field) => field.is_active && fieldAppliesToRole(field, "parent")).sort((a, b) => a.sort_order - b.sort_order),
     [playerFields]
@@ -908,6 +968,23 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     () => playerFields.filter((field) => field.is_active && fieldAppliesToRole(field, "manager")).sort((a, b) => a.sort_order - b.sort_order),
     [playerFields]
   );
+
+  const visibleActivePlayerFields = useMemo(
+    () => activePlayerFields.filter((field) => playerColumns[playerFieldColumnKey(field.id)] !== false),
+    [activePlayerFields, playerColumns]
+  );
+
+  const showPlayerColumn = useCallback(
+    (key: PlayerColumnKey) => playerColumns[key] !== false,
+    [playerColumns]
+  );
+
+  const togglePlayerColumn = useCallback((key: PlayerColumnKey) => {
+    setPlayerColumns((previous) => ({
+      ...previous,
+      [key]: !(previous[key] ?? true),
+    }));
+  }, []);
 
   const activeMembers = useMemo(() => members.filter((member) => member.is_active !== false), [members]);
   const players = useMemo(() => activeMembers.filter((member) => member.role === "player"), [activeMembers]);
@@ -1024,16 +1101,44 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     return map;
   }, [allGuardianLinks, allPlayersFromGuardianApi]);
 
-  const linkedParentCountByPlayerId = useMemo(() => {
-    const map = new Map<string, number>();
+  const parentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    parents.forEach((parent) => {
+      map.set(parent.user_id, fullName(parent.profiles));
+    });
+    (guardianData?.parents ?? []).forEach((parent) => {
+      if (!map.has(parent.user_id)) map.set(parent.user_id, fullName(parent.profiles));
+    });
+    return map;
+  }, [guardianData, parents]);
+
+  const linkedParentNamesByPlayerId = useMemo(() => {
+    const map = new Map<string, string[]>();
     allGuardianLinks.forEach((link) => {
       const playerId = String(link.player_id ?? "");
       const guardianId = String(link.guardian_user_id ?? "");
       if (!playerId || !guardianId) return;
-      map.set(playerId, (map.get(playerId) ?? 0) + 1);
+      const current = map.get(playerId) ?? [];
+      const parentName = parentNameById.get(guardianId);
+      if (parentName && parentName !== "—") current.push(parentName);
+      map.set(playerId, current);
+    });
+    for (const [playerId, names] of map.entries()) {
+      map.set(
+        playerId,
+        Array.from(new Set(names.filter((name) => name !== "—"))).sort((a, b) => a.localeCompare(b, "fr"))
+      );
+    }
+    return map;
+  }, [allGuardianLinks, parentNameById]);
+
+  const linkedParentCountByPlayerId = useMemo(() => {
+    const map = new Map<string, number>();
+    linkedParentNamesByPlayerId.forEach((names, playerId) => {
+      map.set(playerId, names.length);
     });
     return map;
-  }, [allGuardianLinks]);
+  }, [linkedParentNamesByPlayerId]);
 
   function toggleSort(
     current: { key: string; dir: SortDirection },
@@ -2298,15 +2403,20 @@ export default function UserManagementWorkspace({ section }: { section: Section 
 
             <div className="glass-section">
               <div className="glass-card" style={{ overflow: "hidden" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 10px" }}>
+                  <button type="button" className="btn" onClick={() => setPlayerColumnsOpen(true)}>
+                    <Settings2 size={14} />
+                    Colonnes
+                  </button>
+                </div>
                 <div className="user-mgmt-table-wrap">
                   <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--players">
                     <thead>
                       <tr>
-                        <th><SortHeader label="Nom" sortKey="last_name" sort={playerSort} onToggle={() => toggleSort(playerSort, "last_name", setPlayerSort)} /></th>
-                        <th><SortHeader label="Prénom" sortKey="first_name" sort={playerSort} onToggle={() => toggleSort(playerSort, "first_name", setPlayerSort)} /></th>
-                        <th><SortHeader label="Consentement" sortKey="consent" sort={playerSort} onToggle={() => toggleSort(playerSort, "consent", setPlayerSort)} /></th>
-                        <th><SortHeader label="Parent lié" sortKey="parent_linked" sort={playerSort} onToggle={() => toggleSort(playerSort, "parent_linked", setPlayerSort)} /></th>
-                        {activePlayerFields.map((field) => (
+                        <th><SortHeader label="Nom / Prénom" sortKey="last_name" sort={playerSort} onToggle={() => toggleSort(playerSort, "last_name", setPlayerSort)} /></th>
+                        {showPlayerColumn("consent") ? <th><SortHeader label="Consentement" sortKey="consent" sort={playerSort} onToggle={() => toggleSort(playerSort, "consent", setPlayerSort)} /></th> : null}
+                        {showPlayerColumn("parent_linked") ? <th><SortHeader label="Parent(s) lié(s)" sortKey="parent_linked" sort={playerSort} onToggle={() => toggleSort(playerSort, "parent_linked", setPlayerSort)} /></th> : null}
+                        {visibleActivePlayerFields.map((field) => (
                           <th key={field.id}>
                             <SortHeader
                               label={field.label}
@@ -2316,14 +2426,14 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                             />
                           </th>
                         ))}
-                        <th><SortHeader label="Activité" sortKey="account_status" sort={playerSort} onToggle={() => toggleSort(playerSort, "account_status", setPlayerSort)} /></th>
+                        {showPlayerColumn("account_status") ? <th><SortHeader label="Activité" sortKey="account_status" sort={playerSort} onToggle={() => toggleSort(playerSort, "account_status", setPlayerSort)} /></th> : null}
                         <th aria-label="Actions" />
                       </tr>
                     </thead>
                     <tbody>
                       {filteredPlayers.length === 0 ? (
                         <tr>
-                          <td colSpan={7 + activePlayerFields.length}>
+                          <td colSpan={2 + (showPlayerColumn("consent") ? 1 : 0) + (showPlayerColumn("parent_linked") ? 1 : 0) + visibleActivePlayerFields.length + (showPlayerColumn("account_status") ? 1 : 0)}>
                             <div className="marketplace-empty">Aucun joueur actif trouvé.</div>
                           </td>
                         </tr>
@@ -2331,16 +2441,19 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                         filteredPlayers.map((member) => {
                           const age = computeAge(member.profiles?.birth_date);
                           const account = playerAccountSummary(member);
+                          const parentLinkNames = linkedParentNamesByPlayerId.get(member.user_id) ?? [];
                           const parentLinkText =
-                            age != null && age >= 18 ? "Majeur" : (linkedParentCountByPlayerId.get(member.user_id) ?? 0) > 0 ? "Oui" : "Non";
+                            age != null && age >= 18 ? "Majeur" : parentLinkNames.length > 0 ? parentLinkNames.join("\n") : "—";
+                          const fullPlayerName = [member.profiles?.last_name, member.profiles?.first_name].filter(Boolean).join(" ") || "—";
 
                           return (
                             <tr key={member.id}>
-                              <td>{member.profiles?.last_name ?? "—"}</td>
-                              <td>{member.profiles?.first_name ?? "—"}</td>
-                              <td>{consentLabel(member.player_consent_status)}</td>
-                              <td>{parentLinkText}</td>
-                              {activePlayerFields.map((field) => (
+                              <td>{fullPlayerName}</td>
+                              {showPlayerColumn("consent") ? <td>{consentLabel(member.player_consent_status)}</td> : null}
+                              {showPlayerColumn("parent_linked") ? (
+                                <td style={{ whiteSpace: "pre-line", lineHeight: 1.35 }}>{parentLinkText}</td>
+                              ) : null}
+                              {visibleActivePlayerFields.map((field) => (
                                 <td key={field.id}>
                                   {(() => {
                                     const draftValue = getInlinePlayerFieldDraftValue(member, field);
@@ -2431,7 +2544,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                                   })()}
                                 </td>
                               ))}
-                              <td>
+                              {showPlayerColumn("account_status") ? (
+                                <td>
                                 <div style={{ display: "grid", gap: 4 }}>
                                   {age != null && age >= 18 ? (
                                     <div style={{ display: "grid", gap: 2 }}>
@@ -2453,7 +2567,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                                     </>
                                   )}
                                 </div>
-                              </td>
+                                </td>
+                              ) : null}
                               <td>
                                 <div className="user-mgmt-actions">
                                   <button
@@ -2475,6 +2590,137 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                   </table>
                 </div>
               </div>
+              {playerColumnsOpen ? (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  onClick={() => setPlayerColumnsOpen(false)}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 1200,
+                    background: "rgba(15,23,42,0.42)",
+                    display: "grid",
+                    placeItems: "center",
+                    padding: 16,
+                  }}
+                >
+                  <div
+                    onClick={(event) => event.stopPropagation()}
+                    style={{
+                      width: "min(560px, 100%)",
+                      borderRadius: 18,
+                      background: "#fff",
+                      border: "1px solid rgba(0,0,0,0.12)",
+                      boxShadow: "0 20px 50px rgba(0,0,0,0.24)",
+                      padding: 18,
+                      display: "grid",
+                      gap: 16,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <div style={{ fontSize: 18, fontWeight: 950 }}>Colonnes affichées</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>
+                          Choisis les colonnes visibles dans le tableau des joueurs.
+                        </div>
+                      </div>
+                      <button type="button" className="btn user-mgmt-icon-btn" onClick={() => setPlayerColumnsOpen(false)} aria-label="Fermer">
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, cursor: "pointer", color: "#000" }}>
+                        <input
+                          type="checkbox"
+                          checked={showPlayerColumn("last_name")}
+                          onChange={() => togglePlayerColumn("last_name")}
+                        />
+                        <span>Nom / Prénom</span>
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, cursor: "pointer", color: "#000" }}>
+                        <input
+                          type="checkbox"
+                          checked={showPlayerColumn("consent")}
+                          onChange={() => togglePlayerColumn("consent")}
+                        />
+                        <span>Consentement</span>
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, cursor: "pointer", color: "#000" }}>
+                        <input
+                          type="checkbox"
+                          checked={showPlayerColumn("parent_linked")}
+                          onChange={() => togglePlayerColumn("parent_linked")}
+                        />
+                        <span>Parent(s) lié(s)</span>
+                      </label>
+                      {activePlayerFields.map((field) => {
+                        const key = playerFieldColumnKey(field.id);
+                        return (
+                          <label key={field.id} style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, cursor: "pointer", color: "#000" }}>
+                            <input
+                              type="checkbox"
+                              checked={showPlayerColumn(key)}
+                              onChange={() => togglePlayerColumn(key)}
+                            />
+                            <span>{field.label}</span>
+                          </label>
+                        );
+                      })}
+                      <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, cursor: "pointer", color: "#000" }}>
+                        <input
+                          type="checkbox"
+                          checked={showPlayerColumn("account_status")}
+                          onChange={() => togglePlayerColumn("account_status")}
+                        />
+                        <span>Activité</span>
+                      </label>
+                    </div>
+
+                    <div className="user-mgmt-actions" style={{ justifyContent: "space-between" }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const next: PlayerColumnConfig = {
+                            last_name: true,
+                            first_name: true,
+                            consent: true,
+                            parent_linked: true,
+                            account_status: true,
+                          };
+                          activePlayerFields.forEach((field) => {
+                            next[playerFieldColumnKey(field.id)] = true;
+                          });
+                          setPlayerColumns(next);
+                        }}
+                      >
+                        Tout afficher
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          const next: PlayerColumnConfig = {
+                            last_name: true,
+                            first_name: true,
+                            consent: false,
+                            parent_linked: false,
+                            account_status: false,
+                          };
+                          activePlayerFields.forEach((field) => {
+                            next[playerFieldColumnKey(field.id)] = false;
+                          });
+                          setPlayerColumns(next);
+                        }}
+                      >
+                        Tout masquer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </>
         ) : null}

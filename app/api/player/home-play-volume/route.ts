@@ -50,6 +50,7 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
 
 function estimatedScramblingPct(rounds: Array<{
   id: string;
+  score_entry_mode: string | null;
   gir: number | null;
   eagles: number | null;
   birdies: number | null;
@@ -62,6 +63,7 @@ function estimatedScramblingPct(rounds: Array<{
   let opp = 0;
   let success = 0;
   for (const round of rounds) {
+    if (round.score_entry_mode === "hole_only") continue;
     const played = roundPlayedHolesFromRound(round);
     const gir = typeof round.gir === "number" ? round.gir : null;
     if (!played || gir == null) continue;
@@ -151,7 +153,7 @@ export async function GET(req: NextRequest) {
     const { curStart, curEnd } = rollingYearWindows(new Date());
     const roundsRes = await supabaseAdmin
       .from("golf_rounds")
-      .select("id,start_at,gir,fairways_hit,fairways_total,total_putts,eagles,birdies,pars,bogeys,doubles_plus")
+      .select("id,start_at,score_entry_mode,gir,fairways_hit,fairways_total,total_putts,eagles,birdies,pars,bogeys,doubles_plus")
       .eq("user_id", effectiveUserId)
       .gte("start_at", curStart.toISOString())
       .lt("start_at", curEnd.toISOString())
@@ -162,6 +164,7 @@ export async function GET(req: NextRequest) {
     const rounds = (roundsRes.data ?? []) as Array<{
       id: string;
       start_at: string | null;
+      score_entry_mode: string | null;
       gir: number | null;
       fairways_hit: number | null;
       fairways_total: number | null;
@@ -212,6 +215,10 @@ export async function GET(req: NextRequest) {
       const played = roundPlayedHolesFromRound(round);
       holesPlayed += played;
 
+      if (round.score_entry_mode === "hole_only") {
+        return;
+      }
+
       if (typeof round.gir === "number" && played > 0) {
         girPctSum += (round.gir / played) * 100;
         girPctCount += 1;
@@ -226,7 +233,12 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const scramblingPct = scramblingPctFromHoles(holes) ?? estimatedScramblingPct(rounds);
+    const scrambleEligibleRoundIds = new Set(
+      rounds.filter((round) => round.score_entry_mode !== "hole_only").map((round) => round.id)
+    );
+    const scramblingPct =
+      scramblingPctFromHoles(holes.filter((hole) => scrambleEligibleRoundIds.has(hole.round_id))) ??
+      estimatedScramblingPct(rounds);
 
     return NextResponse.json({
       roundsCount: rounds.length,

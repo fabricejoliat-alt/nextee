@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, getCaller, resolveCoachClubIds, uniq } from "@/app/api/camps/_lib";
 
+type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
+
 function normalizeRegistrationStatus(value: unknown) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return ["invited", "registered", "declined"].includes(normalized) ? normalized : "invited";
@@ -103,11 +105,14 @@ export async function GET(req: NextRequest) {
     > = {};
     (daysRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
+      const eventId = String(row.event_id ?? "").trim();
       if (!campId) return;
-      dayIndexByEventId[String(row.event_id ?? "").trim()] = Number(row.day_index ?? 0);
+      if (eventId) {
+        dayIndexByEventId[eventId] = Number(row.day_index ?? 0);
+      }
       if (!daysByCampId[campId]) daysByCampId[campId] = [];
       daysByCampId[campId].push({
-        event_id: String(row.event_id ?? ""),
+        event_id: eventId,
         day_index: Number(row.day_index ?? 0),
         practical_info: row.practical_info ?? null,
         starts_at: row.starts_at ?? null,
@@ -116,6 +121,7 @@ export async function GET(req: NextRequest) {
         status: row.club_events?.status ?? "scheduled",
         group_id: String(row.club_events?.group_id ?? ""),
         counts: { present: 0, not_registered: 0, absent: 0, excused: 0 },
+        participants_count: 0,
         participants: [] as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>,
       });
     });
@@ -139,9 +145,10 @@ export async function GET(req: NextRequest) {
       if (!playerRegistrationsByCampId[campId]) playerRegistrationsByCampId[campId] = [];
       if (!playerRegistrationByCampAndPlayer[campId]) playerRegistrationByCampAndPlayer[campId] = {};
       const profile = campPlayerProfileById.get(playerId) ?? null;
+      const normalizedRegistrationStatus = normalizeRegistrationStatus(row.registration_status);
       const registration = {
         player_id: playerId,
-        registration_status: normalizeRegistrationStatus(row.registration_status),
+        registration_status: normalizedRegistrationStatus,
         day_status_by_day_index: {} as Record<string, string>,
         player: profile
           ? {
@@ -183,17 +190,18 @@ export async function GET(req: NextRequest) {
 
     const eventIds = Array.from(dayByEventId.keys());
     if (eventIds.length > 0) {
-      const attendeesRes = await supabaseAdmin
-        .from("club_event_attendees")
-        .select("event_id,player_id,status")
-        .in("event_id", eventIds);
+      const [attendeesRes, participantAttendanceRes] = await Promise.all([
+        supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds),
+        supabaseAdmin
+          .from("club_event_attendees")
+          .select("event_id,player_id,status")
+          .in("event_id", eventIds)
+          .eq("status", "present"),
+      ]);
       if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+      if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
 
-      const participantIds = uniq(
-        (attendeesRes.data ?? [])
-          .filter((attendee: any) => String(attendee.status ?? "not_registered") === "present")
-          .map((attendee: any) => String(attendee.player_id ?? "").trim())
-      );
+      const participantIds = uniq((participantAttendanceRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
       const participantProfilesRes = participantIds.length
         ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", participantIds)
         : ({ data: [], error: null } as const);
@@ -202,6 +210,22 @@ export async function GET(req: NextRequest) {
       const participantById = new Map<string, any>();
       (participantProfilesRes.data ?? []).forEach((profile: any) => {
         participantById.set(String(profile.id ?? "").trim(), profile);
+      });
+
+      const participantsByEventId: Record<string, ProfileLite[]> = {};
+      (participantAttendanceRes.data ?? []).forEach((row: any) => {
+        const eventId = String(row.event_id ?? "").trim();
+        const playerId = String(row.player_id ?? "").trim();
+        if (!eventId || !playerId) return;
+        if (!participantsByEventId[eventId]) participantsByEventId[eventId] = [];
+        const participant = participantById.get(playerId);
+        if (!participant) return;
+        participantsByEventId[eventId].push({
+          id: playerId,
+          first_name: participant.first_name ?? null,
+          last_name: participant.last_name ?? null,
+          avatar_url: participant.avatar_url ?? null,
+        });
       });
 
       (attendeesRes.data ?? []).forEach((attendee: any) => {
@@ -213,19 +237,6 @@ export async function GET(req: NextRequest) {
         else if (status === "absent") day.counts.absent += 1;
         else if (status === "excused") day.counts.excused += 1;
         else day.counts.not_registered += 1;
-
-        if (status === "present") {
-          const playerId = String(attendee.player_id ?? "").trim();
-          const participant = participantById.get(playerId);
-          if (participant) {
-            day.participants.push({
-              id: playerId,
-              first_name: participant.first_name ?? null,
-              last_name: participant.last_name ?? null,
-              avatar_url: participant.avatar_url ?? null,
-            });
-          }
-        }
 
         const dayIndex = dayIndexByEventId[eventId];
         if (dayIndex != null && (status === "present" || status === "absent")) {
@@ -241,11 +252,12 @@ export async function GET(req: NextRequest) {
 
       Object.values(daysByCampId).forEach((days) => {
         days.forEach((day) => {
-          day.participants.sort((a: any, b: any) => {
+          day.participants = (participantsByEventId[String(day.event_id)] ?? []).sort((a: any, b: any) => {
             const aName = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
             const bName = `${b.first_name ?? ""} ${b.last_name ?? ""}`.trim();
             return aName.localeCompare(bName, "fr");
           });
+          day.participants_count = day.participants.length;
         });
       });
     }

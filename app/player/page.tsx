@@ -1938,11 +1938,6 @@ export default function PlayerHomePage() {
                       {latestNews.summary}
                     </div>
                   ) : null}
-                  {latestNewsLinkedLabel ? (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span className="pill-soft">{latestNewsLinkedLabel}</span>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </div>

@@ -21,19 +21,20 @@ type CampRow = {
     day_status_by_day_index: Record<string, "present" | "absent">;
     player: ProfileLite | null;
   }>;
-  days: Array<{
-    event_id: string;
-    day_index: number;
+    days: Array<{
+      event_id: string;
+      day_index: number;
     practical_info: string | null;
     starts_at: string | null;
     ends_at: string | null;
     location_text: string | null;
-    status: string;
-    group_id: string;
-    counts: { present: number; not_registered: number; absent: number; excused: number };
-    participants: ProfileLite[];
-  }>;
-};
+      status: string;
+      group_id: string;
+      counts: { present: number; not_registered: number; absent: number; excused: number };
+      participants_count: number;
+      participants: ProfileLite[];
+    }>;
+  };
 
 function fullName(profile?: { first_name: string | null; last_name: string | null } | null) {
   const first = String(profile?.first_name ?? "").trim();
@@ -82,26 +83,28 @@ export default function CoachCampsPage() {
     Record<string, { registration_status: "invited" | "registered" | "declined"; day_status_by_day_index: Record<string, "present" | "absent"> }>
   >({});
 
+  async function loadCamps() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const res = await fetch("/api/coach/camps", {
+        headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les stages."));
+      setCamps((json?.camps ?? []) as CampRow[]);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de chargement");
+      setCamps([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data } = await supabase.auth.getSession();
-        const res = await fetch("/api/coach/camps", {
-          headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les stages."));
-        setCamps((json?.camps ?? []) as CampRow[]);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Erreur de chargement");
-        setCamps([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void loadCamps();
   }, []);
 
   useEffect(() => {
@@ -187,59 +190,7 @@ export default function CoachCampsPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "Impossible d’enregistrer les inscriptions."));
 
-      const updatedCamp: CampRow = {
-        ...registrationCamp,
-        player_registrations: Object.entries(playerRegistrationsDraft)
-          .filter(([playerId, registration]) => {
-            const existed = (registrationCamp.player_registrations ?? []).some((entry) => entry.player_id === playerId);
-            return existed || registration.registration_status !== "invited";
-          })
-          .map(([playerId, registration]) => {
-            const existing = (registrationCamp.player_registrations ?? []).find((entry) => entry.player_id === playerId) ?? null;
-            const player =
-              existing?.player ??
-              registrationCamp.available_players.find((entry) => entry.id === playerId) ??
-              null;
-            return {
-              player_id: playerId,
-              registration_status: registration.registration_status,
-              day_status_by_day_index: registration.day_status_by_day_index ?? {},
-              player,
-            };
-          })
-          .sort((a, b) => fullName(a.player).localeCompare(fullName(b.player), "fr")),
-      };
-      updatedCamp.days = updatedCamp.days.map((day) => {
-        const participants = updatedCamp.player_registrations
-          .filter((registration) => {
-            if (registration.registration_status !== "registered") return false;
-            return (registration.day_status_by_day_index?.[String(day.day_index)] ?? "present") === "present";
-          })
-          .map((registration) => registration.player)
-          .filter((player): player is ProfileLite => Boolean(player))
-          .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
-
-        const counts = updatedCamp.player_registrations.reduce(
-          (acc, registration) => {
-            if (registration.registration_status !== "registered") {
-              acc.not_registered += 1;
-              return acc;
-            }
-            const dayStatus = registration.day_status_by_day_index?.[String(day.day_index)] ?? "present";
-            if (dayStatus === "absent") acc.absent += 1;
-            else acc.present += 1;
-            return acc;
-          },
-          { present: 0, not_registered: 0, absent: 0, excused: 0 }
-        );
-
-        return {
-          ...day,
-          participants,
-          counts,
-        };
-      });
-      setCamps((current) => current.map((camp) => (camp.id === updatedCamp.id ? updatedCamp : camp)));
+      await loadCamps();
       closeRegistrationModal();
     } catch (err: unknown) {
       setRegistrationError(err instanceof Error ? err.message : "Impossible d’enregistrer les inscriptions.");
@@ -284,47 +235,52 @@ export default function CoachCampsPage() {
             <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>Aucun stage/camp.</div>
           ) : (
             <div className="marketplace-list marketplace-list-top">
-              {camps.map((camp) => (
-                <div key={camp.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div className="marketplace-item-title" style={{ fontSize: 15, fontWeight: 950 }}>{camp.title}</div>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>{camp.club_name}</div>
-                      <div style={{ fontSize: 12, fontWeight: 800 }}>Head coach: {fullName(camp.head_coach)}</div>
-                    </div>
-                    {camp.notes?.trim() ? (
-                      <div
-                        style={{ fontSize: 12, color: "rgba(0,0,0,0.72)" }}
-                        dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
-                      />
-                    ) : null}
-                    <div style={{ display: "flex", justifyContent: "flex-start", gap: 8, flexWrap: "wrap" }}>
-                      <button type="button" className="btn" onClick={() => openRegistrationModal(camp)}>
-                        Gérer les juniors
-                      </button>
-                    </div>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {camp.days.map((day) => (
-                        <div key={day.event_id} className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.08)", display: "grid", gap: 4 }}>
-                          <div style={{ fontWeight: 900 }}>Jour {day.day_index + 1}</div>
-                          <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtRange(day.starts_at, day.ends_at)}</div>
-                          {day.location_text ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>📍 {day.location_text}</div> : null}
-                          {day.practical_info ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>{day.practical_info}</div> : null}
-                          <div style={{ display: "flex", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                            <Link className="btn" href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}>
-                              Voir
-                            </Link>
-                            <button type="button" className="btn" onClick={() => setParticipantsDay(day)}>
-                              <Users size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                              Participants ({day.counts.present})
-                            </button>
+              {camps.map((camp) => {
+                return (
+                  <div key={camp.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <div className="marketplace-item-title" style={{ fontSize: 15, fontWeight: 950 }}>{camp.title}</div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>{camp.club_name}</div>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>Head coach: {fullName(camp.head_coach)}</div>
+                      </div>
+                      {camp.notes?.trim() ? (
+                        <div
+                          style={{ fontSize: 12, color: "rgba(0,0,0,0.72)" }}
+                          dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
+                        />
+                      ) : null}
+                      <div style={{ display: "flex", justifyContent: "flex-start", gap: 8, flexWrap: "wrap" }}>
+                        <button type="button" className="btn" onClick={() => openRegistrationModal(camp)}>
+                          Gérer les juniors
+                        </button>
+                      </div>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {camp.days.map((day) => (
+                          <div key={day.event_id} className="glass-card" style={{ border: "1px solid rgba(0,0,0,0.08)", display: "grid", gap: 4 }}>
+                            <div style={{ fontWeight: 900 }}>Jour {day.day_index + 1}</div>
+                            <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtRange(day.starts_at, day.ends_at)}</div>
+                            {day.location_text ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>📍 {day.location_text}</div> : null}
+                            {day.practical_info ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>{day.practical_info}</div> : null}
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.52)", wordBreak: "break-all" }}>
+                              Requête: GET /api/coach/camps • camp_id={camp.id} • event_id={day.event_id}
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                              <Link className="btn" href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}>
+                                Voir
+                              </Link>
+                              <button type="button" className="btn" onClick={() => setParticipantsDay(day)}>
+                                <Users size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                                Participants ({day.participants_count})
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           </div>
@@ -535,7 +491,7 @@ export default function CoachCampsPage() {
                 <div style={{ display: "grid", gap: 4 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>Participants</div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
-                    Jour {participantsDay.day_index + 1} • {participantsDay.counts.present} présent{participantsDay.counts.present > 1 ? "s" : ""}
+                    Jour {participantsDay.day_index + 1} • {participantsDay.participants_count} participant{participantsDay.participants_count > 1 ? "s" : ""}
                   </div>
                 </div>
                 <button type="button" className="btn btn-ghost" onClick={() => setParticipantsDay(null)} aria-label="Fermer">
