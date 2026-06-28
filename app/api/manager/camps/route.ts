@@ -24,6 +24,13 @@ type CampPlayerRegistrationInput = {
   day_status_by_day_index?: Record<string, string | null | undefined> | null;
 };
 
+type ProfileLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+};
+
 const VALID_CAMP_REGISTRATION_STATUSES = new Set(["invited", "registered", "declined"]);
 const VALID_CAMP_DAY_STATUSES = new Set(["present", "absent"]);
 
