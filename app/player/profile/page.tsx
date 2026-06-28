@@ -116,6 +116,11 @@ function normalizeEmailInput(raw: string | null | undefined) {
   return String(raw ?? "").trim().toLowerCase();
 }
 
+function toErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
   if (rawValue == null || rawValue === "") return "—";
   if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
