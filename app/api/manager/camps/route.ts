@@ -63,20 +63,21 @@ export async function GET(req: NextRequest) {
 
     const campsRes = await supabaseAdmin
       .from("club_camps")
-      .select("id,club_id,title,notes,status,head_coach_user_id,created_at,updated_at")
+      .select("id,club_id,title,notes,status,head_coach_user_id,created_at")
       .in("club_id", managedClubIds)
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
 
     const camps = campsRes.data ?? [];
     const campIds = uniq(camps.map((camp: any) => camp.id));
+    const clubIds = uniq(camps.map((camp: any) => camp.club_id));
     const headCoachIds = uniq(camps.map((camp: any) => camp.head_coach_user_id));
 
-    const [dayRes, playerRes, coachRes, groupRes, profileRes, clubRes] = await Promise.all([
+    const [daysRes, campPlayersRes, clubRes, profileRes, clubPlayerMembershipsRes] = await Promise.all([
       campIds.length
         ? supabaseAdmin
             .from("club_camp_days")
-            .select("camp_id,event_id,day_index,practical_info,starts_at,ends_at,location_text,club_events:event_id(id,status)")
+            .select("camp_id,event_id,day_index,practical_info,starts_at,ends_at,location_text,club_events:event_id(id,status,group_id)")
             .in("camp_id", campIds)
             .order("day_index", { ascending: true })
         : ({ data: [], error: null } as const),
@@ -86,157 +87,159 @@ export async function GET(req: NextRequest) {
             .select("camp_id,player_id,registration_status")
             .in("camp_id", campIds)
         : ({ data: [], error: null } as const),
-      campIds.length
-        ? supabaseAdmin
-            .from("club_camp_coaches")
-            .select("camp_id,coach_id,is_head")
-            .in("camp_id", campIds)
-        : ({ data: [], error: null } as const),
-      campIds.length
-        ? supabaseAdmin
-            .from("club_camp_groups")
-            .select("camp_id,group_id")
-            .in("camp_id", campIds)
-        : ({ data: [], error: null } as const),
+      clubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
       headCoachIds.length
         ? supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", headCoachIds)
         : ({ data: [], error: null } as const),
-      managedClubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", managedClubIds) : ({ data: [], error: null } as const),
+      clubIds.length
+        ? supabaseAdmin
+            .from("club_members")
+            .select("club_id,user_id")
+            .in("club_id", clubIds)
+            .eq("role", "player")
+            .eq("is_active", true)
+        : ({ data: [], error: null } as const),
     ]);
-
-    if (dayRes.error) return NextResponse.json({ error: dayRes.error.message }, { status: 400 });
-    if (playerRes.error) return NextResponse.json({ error: playerRes.error.message }, { status: 400 });
-    if (coachRes.error) return NextResponse.json({ error: coachRes.error.message }, { status: 400 });
-    if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
-    if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
+    if (daysRes.error) return NextResponse.json({ error: daysRes.error.message }, { status: 400 });
+    if (campPlayersRes.error) return NextResponse.json({ error: campPlayersRes.error.message }, { status: 400 });
     if (clubRes.error) return NextResponse.json({ error: clubRes.error.message }, { status: 400 });
+    if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
+    if (clubPlayerMembershipsRes.error) return NextResponse.json({ error: clubPlayerMembershipsRes.error.message }, { status: 400 });
 
-    const eventIds = uniq((dayRes.data ?? []).map((row: any) => row.event_id));
-    const [dayCoachAssignmentsRes, participantAttendanceRes] = await Promise.all([
-      eventIds.length
-        ? supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds)
-        : ({ data: [], error: null } as const),
-      eventIds.length
-        ? supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds)
-        : ({ data: [], error: null } as const),
-    ]);
-    if (dayCoachAssignmentsRes.error) return NextResponse.json({ error: dayCoachAssignmentsRes.error.message }, { status: 400 });
-    if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
-
-    const participantIds = uniq(
-      (participantAttendanceRes.data ?? [])
-        .filter((row: any) => String(row.status ?? "not_registered") === "present")
-        .map((row: any) => row.player_id)
-    );
-    const participantProfilesRes = participantIds.length
-      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", participantIds)
-      : ({ data: [], error: null } as const);
-    if (participantProfilesRes.error) return NextResponse.json({ error: participantProfilesRes.error.message }, { status: 400 });
-
-    const headCoachById = new Map<string, any>();
-    (profileRes.data ?? []).forEach((profile: any) => headCoachById.set(String(profile.id), profile));
     const clubNameById = new Map<string, string>();
     (clubRes.data ?? []).forEach((club: any) => clubNameById.set(String(club.id), String(club.name ?? "Club")));
+    const headCoachById = new Map<string, any>();
+    (profileRes.data ?? []).forEach((profile: any) => headCoachById.set(String(profile.id), profile));
 
     const daysByCampId: Record<string, any[]> = {};
     const dayIndexByEventId: Record<string, number> = {};
-    const dayCoachIdsByEventId: Record<string, string[]> = {};
-    const participantProfileById = new Map<string, any>();
-    (participantProfilesRes.data ?? []).forEach((profile: any) => participantProfileById.set(String(profile.id), profile));
-    const participantsByEventId: Record<string, any[]> = {};
     const playerRegistrationsByCampId: Record<
       string,
-      Array<{ player_id: string; registration_status: string; day_status_by_day_index: Record<string, string> }>
+      Array<{
+        player_id: string;
+        registration_status: string;
+        day_status_by_day_index: Record<string, string>;
+        player: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null } | null;
+      }>
     > = {};
     const playerRegistrationByCampAndPlayer: Record<
       string,
-      Record<string, { player_id: string; registration_status: string; day_status_by_day_index: Record<string, string> }>
+      Record<
+        string,
+        {
+          player_id: string;
+          registration_status: string;
+          day_status_by_day_index: Record<string, string>;
+          player: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null } | null;
+        }
+      >
     > = {};
-    (dayCoachAssignmentsRes.data ?? []).forEach((row: any) => {
-      const eventId = String(row.event_id ?? "").trim();
-      const coachId = String(row.coach_id ?? "").trim();
-      if (!eventId || !coachId) return;
-      if (!dayCoachIdsByEventId[eventId]) dayCoachIdsByEventId[eventId] = [];
-      dayCoachIdsByEventId[eventId].push(coachId);
-    });
-    (participantAttendanceRes.data ?? []).forEach((row: any) => {
-      const eventId = String(row.event_id ?? "").trim();
-      const playerId = String(row.player_id ?? "").trim();
-      const status = String(row.status ?? "not_registered").trim().toLowerCase();
-      if (!eventId || !playerId || status !== "present") return;
-      const profile = participantProfileById.get(playerId);
-      if (!profile) return;
-      if (!participantsByEventId[eventId]) participantsByEventId[eventId] = [];
-      participantsByEventId[eventId].push(profile);
-    });
-    (dayRes.data ?? []).forEach((row: any) => {
+    (daysRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
+      const eventId = String(row.event_id ?? "").trim();
       if (!campId) return;
-      dayIndexByEventId[String(row.event_id ?? "").trim()] = Number(row.day_index ?? 0);
+      if (eventId) {
+        dayIndexByEventId[eventId] = Number(row.day_index ?? 0);
+      }
       if (!daysByCampId[campId]) daysByCampId[campId] = [];
       daysByCampId[campId].push({
-        event_id: String(row.event_id ?? ""),
+        event_id: eventId,
         day_index: Number(row.day_index ?? 0),
         practical_info: row.practical_info ?? null,
         starts_at: row.starts_at ?? null,
         ends_at: row.ends_at ?? null,
         location_text: row.location_text ?? null,
         status: row.club_events?.status ?? "scheduled",
-        coach_ids: uniq(dayCoachIdsByEventId[String(row.event_id ?? "").trim()] ?? []),
-        participants_count: (participantsByEventId[String(row.event_id ?? "").trim()] ?? []).length,
-        participants: participantsByEventId[String(row.event_id ?? "").trim()] ?? [],
+        group_id: String(row.club_events?.group_id ?? ""),
+        counts: { present: 0, not_registered: 0, absent: 0, excused: 0 },
+        participants_count: 0,
+        participants: [] as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>,
+      });
+    });
+
+    const campPlayerIds = uniq((campPlayersRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
+    const clubPlayerIds = uniq((clubPlayerMembershipsRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim()));
+    const profileIdsToLoad = uniq([...campPlayerIds, ...clubPlayerIds]);
+    const campPlayerProfilesRes = profileIdsToLoad.length
+      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", profileIdsToLoad)
+      : ({ data: [], error: null } as const);
+    if (campPlayerProfilesRes.error) return NextResponse.json({ error: campPlayerProfilesRes.error.message }, { status: 400 });
+
+    const campPlayerProfileById = new Map<string, any>();
+    (campPlayerProfilesRes.data ?? []).forEach((profile: any) => {
+      campPlayerProfileById.set(String(profile.id ?? "").trim(), profile);
+    });
+    (campPlayersRes.data ?? []).forEach((row: any) => {
+      const campId = String(row.camp_id ?? "").trim();
+      const playerId = String(row.player_id ?? "").trim();
+      if (!campId || !playerId) return;
+      if (!playerRegistrationsByCampId[campId]) playerRegistrationsByCampId[campId] = [];
+      if (!playerRegistrationByCampAndPlayer[campId]) playerRegistrationByCampAndPlayer[campId] = {};
+      const profile = campPlayerProfileById.get(playerId) ?? null;
+      const normalizedRegistrationStatus = normalizeRegistrationStatus(row.registration_status);
+      const registration = {
+        player_id: playerId,
+        registration_status: normalizedRegistrationStatus,
+        day_status_by_day_index: {} as Record<string, string>,
+        player: profile
+          ? {
+              id: playerId,
+              first_name: profile.first_name ?? null,
+              last_name: profile.last_name ?? null,
+              avatar_url: profile.avatar_url ?? null,
+            }
+          : null,
+      };
+      playerRegistrationsByCampId[campId].push(registration);
+      playerRegistrationByCampAndPlayer[campId][playerId] = registration;
+    });
+
+    const availablePlayersByClubId: Record<string, Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>> = {};
+    (clubPlayerMembershipsRes.data ?? []).forEach((row: any) => {
+      const clubId = String(row.club_id ?? "").trim();
+      const playerId = String(row.user_id ?? "").trim();
+      if (!clubId || !playerId) return;
+      const profile = campPlayerProfileById.get(playerId);
+      if (!profile) return;
+      if (!availablePlayersByClubId[clubId]) availablePlayersByClubId[clubId] = [];
+      if (availablePlayersByClubId[clubId].some((player) => player.id === playerId)) return;
+      availablePlayersByClubId[clubId].push({
+        id: playerId,
+        first_name: profile.first_name ?? null,
+        last_name: profile.last_name ?? null,
+        avatar_url: profile.avatar_url ?? null,
       });
     });
 
     const statsByCampId: Record<string, { invited: number; registered: number; coaches: number }> = {};
-    const groupIdsByCampId: Record<string, string[]> = {};
-    const playerIdsByCampId: Record<string, string[]> = {};
     const coachIdsByCampId: Record<string, string[]> = {};
-    (groupRes.data ?? []).forEach((row: any) => {
-      const campId = String(row.camp_id ?? "").trim();
-      const groupId = String(row.group_id ?? "").trim();
-      if (!campId || !groupId) return;
-      if (!groupIdsByCampId[campId]) groupIdsByCampId[campId] = [];
-      groupIdsByCampId[campId].push(groupId);
-    });
-    (playerRes.data ?? []).forEach((row: any) => {
+    const playerIdsByCampId: Record<string, string[]> = {};
+    const groupIdsByCampId: Record<string, string[]> = {};
+
+    (campPlayersRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
       const playerId = String(row.player_id ?? "").trim();
       if (!campId) return;
       if (!statsByCampId[campId]) statsByCampId[campId] = { invited: 0, registered: 0, coaches: 0 };
       statsByCampId[campId].invited += 1;
-      const registrationStatus = normalizeRegistrationStatus(row.registration_status);
-      if (registrationStatus === "registered") statsByCampId[campId].registered += 1;
+      if (normalizeRegistrationStatus(row.registration_status) === "registered") {
+        statsByCampId[campId].registered += 1;
+      }
       if (playerId) {
         if (!playerIdsByCampId[campId]) playerIdsByCampId[campId] = [];
         playerIdsByCampId[campId].push(playerId);
-        if (!playerRegistrationsByCampId[campId]) playerRegistrationsByCampId[campId] = [];
-        if (!playerRegistrationByCampAndPlayer[campId]) playerRegistrationByCampAndPlayer[campId] = {};
-        const registration = {
-          player_id: playerId,
-          registration_status: registrationStatus,
-          day_status_by_day_index: {} as Record<string, string>,
-        };
-        playerRegistrationsByCampId[campId].push(registration);
-        playerRegistrationByCampAndPlayer[campId][playerId] = registration;
       }
     });
-    (participantAttendanceRes.data ?? []).forEach((row: any) => {
-      const eventId = String(row.event_id ?? "").trim();
-      const playerId = String(row.player_id ?? "").trim();
-      const dayIndex = dayIndexByEventId[eventId];
-      if (!eventId || !playerId || dayIndex == null) return;
-      const status = String(row.status ?? "").trim().toLowerCase();
-      if (status !== "present" && status !== "absent") return;
-      Object.entries(daysByCampId).forEach(([campId, campDays]) => {
-        const dayExists = campDays.some((day) => String(day.event_id ?? "").trim() === eventId);
-        if (!dayExists) return;
-        const registration = playerRegistrationByCampAndPlayer[campId]?.[playerId];
-        if (!registration) return;
-        registration.day_status_by_day_index[String(dayIndex)] = status;
-      });
-    });
-    (coachRes.data ?? []).forEach((row: any) => {
+
+    const campCoachRowsRes = campIds.length
+      ? await supabaseAdmin
+          .from("club_camp_coaches")
+          .select("camp_id,coach_id,is_head")
+          .in("camp_id", campIds)
+      : ({ data: [], error: null } as const);
+    if (campCoachRowsRes.error) return NextResponse.json({ error: campCoachRowsRes.error.message }, { status: 400 });
+
+    (campCoachRowsRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
       const coachId = String(row.coach_id ?? "").trim();
       if (!campId) return;
@@ -248,28 +251,106 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    (daysRes.data ?? []).forEach((row: any) => {
+      const campId = String(row.camp_id ?? "").trim();
+      const groupId = String(row.club_events?.group_id ?? "").trim();
+      if (!campId || !groupId) return;
+      if (!groupIdsByCampId[campId]) groupIdsByCampId[campId] = [];
+      groupIdsByCampId[campId].push(groupId);
+    });
+
+    const dayByEventId = new Map<string, any>();
+    Object.values(daysByCampId).forEach((days) => {
+      days.forEach((day) => dayByEventId.set(String(day.event_id), day));
+    });
+
+    const eventIds = Array.from(dayByEventId.keys());
+    if (eventIds.length > 0) {
+      const [attendeesRes, participantAttendanceRes] = await Promise.all([
+        supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds),
+        supabaseAdmin
+          .from("club_event_attendees")
+          .select("event_id,player_id,status")
+          .in("event_id", eventIds)
+          .eq("status", "present"),
+      ]);
+      if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+      if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
+
+      const participantIds = uniq((participantAttendanceRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
+      const participantProfilesRes = participantIds.length
+        ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", participantIds)
+        : ({ data: [], error: null } as const);
+      if (participantProfilesRes.error) return NextResponse.json({ error: participantProfilesRes.error.message }, { status: 400 });
+
+      const participantById = new Map<string, any>();
+      (participantProfilesRes.data ?? []).forEach((profile: any) => {
+        participantById.set(String(profile.id ?? "").trim(), profile);
+      });
+
+      const participantsByEventId: Record<string, ProfileLite[]> = {};
+      (participantAttendanceRes.data ?? []).forEach((row: any) => {
+        const eventId = String(row.event_id ?? "").trim();
+        const playerId = String(row.player_id ?? "").trim();
+        if (!eventId || !playerId) return;
+        if (!participantsByEventId[eventId]) participantsByEventId[eventId] = [];
+        const participant = participantById.get(playerId);
+        if (!participant) return;
+        participantsByEventId[eventId].push({
+          id: playerId,
+          first_name: participant.first_name ?? null,
+          last_name: participant.last_name ?? null,
+          avatar_url: participant.avatar_url ?? null,
+        });
+      });
+
+      (attendeesRes.data ?? []).forEach((attendee: any) => {
+        const eventId = String(attendee.event_id ?? "").trim();
+        const day = dayByEventId.get(eventId);
+        if (!day) return;
+        const status = String(attendee.status ?? "not_registered");
+        if (status === "present") day.counts.present += 1;
+        else if (status === "absent") day.counts.absent += 1;
+        else if (status === "excused") day.counts.excused += 1;
+        else day.counts.not_registered += 1;
+
+        const dayIndex = dayIndexByEventId[eventId];
+        if (dayIndex != null && (status === "present" || status === "absent")) {
+          Object.entries(daysByCampId).forEach(([campId, campDays]) => {
+            const dayExists = campDays.some((campDay) => String(campDay.event_id ?? "").trim() === eventId);
+            if (!dayExists) return;
+            const registration = playerRegistrationByCampAndPlayer[campId]?.[String(attendee.player_id ?? "").trim()];
+            if (!registration) return;
+            registration.day_status_by_day_index[String(dayIndex)] = status;
+          });
+        }
+      });
+
+      Object.values(daysByCampId).forEach((days) => {
+        days.forEach((day) => {
+          day.participants = (participantsByEventId[String(day.event_id)] ?? []);
+          day.participants_count = day.participants.length;
+        });
+      });
+    }
+
     return NextResponse.json({
       camps: camps.map((camp: any) => {
-        const headCoach = headCoachById.get(String(camp.head_coach_user_id ?? "").trim()) ?? null;
-        const stats = statsByCampId[String(camp.id)] ?? { invited: 0, registered: 0, coaches: 0 };
+        const campId = String(camp.id);
         return {
           ...camp,
           club_name: clubNameById.get(String(camp.club_id ?? "").trim()) ?? "Club",
-          head_coach: headCoach,
-          group_ids: uniq(groupIdsByCampId[String(camp.id)] ?? []),
-          player_ids: uniq(playerIdsByCampId[String(camp.id)] ?? []),
-          coach_ids: uniq(coachIdsByCampId[String(camp.id)] ?? []),
-          player_registrations: (playerRegistrationsByCampId[String(camp.id)] ?? []).map((registration) => ({
+          head_coach: headCoachById.get(String(camp.head_coach_user_id ?? "").trim()) ?? null,
+          group_ids: uniq(groupIdsByCampId[campId] ?? []),
+          player_ids: uniq(playerIdsByCampId[campId] ?? []),
+          coach_ids: uniq(coachIdsByCampId[campId] ?? []),
+          stats: statsByCampId[campId] ?? { invited: 0, registered: 0, coaches: 0 },
+          player_registrations: (playerRegistrationsByCampId[campId] ?? []).map((registration) => ({
             ...registration,
             day_status_by_day_index: registration.day_status_by_day_index ?? {},
           })),
-          days: (daysByCampId[String(camp.id)] ?? [])
-            .map((day) => ({
-              ...day,
-              coach_ids: uniq((day.coach_ids ?? []).filter((coachId: string) => coachId !== String(camp.head_coach_user_id ?? "").trim())),
-            }))
-            .sort((a, b) => Number(a.day_index ?? 0) - Number(b.day_index ?? 0)),
-          stats,
+          available_players: availablePlayersByClubId[String(camp.club_id)] ?? [],
+          days: (daysByCampId[campId] ?? []).sort((a, b) => Number(a.day_index ?? 0) - Number(b.day_index ?? 0)),
         };
       }),
     });

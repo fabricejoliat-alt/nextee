@@ -268,7 +268,7 @@ export async function POST(
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("id,group_id,club_id")
+      .select("id,group_id,club_id,event_type")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
@@ -283,6 +283,10 @@ export async function POST(
       String(event.club_id ?? "").trim()
     );
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    if (String(event.event_type ?? "").trim() === "camp") {
+      return NextResponse.json({ error: "Les jours de stage/camp ne sont pas évaluables." }, { status: 400 });
+    }
 
     if (attendanceStatus) {
       if (!["expected", "present", "absent", "excused"].includes(attendanceStatus)) {

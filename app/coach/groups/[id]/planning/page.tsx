@@ -557,7 +557,7 @@ export default function CoachGroupPlanningPage() {
     const nowTs = Date.now();
     const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
     const isPastOccurrence = endTs < nowTs;
-    const requiresEvaluationCheck = e.event_type === "training" || e.event_type === "camp" || e.event_type === "interclub";
+    const requiresEvaluationCheck = e.event_type === "training" || e.event_type === "interclub";
     if (!isPastOccurrence || !requiresEvaluationCheck) return false;
     const missingEvalCount = presentPlayerIds.filter((pid) => !evaluatedPlayerIds.has(pid)).length;
     return missingEvalCount > 0;
@@ -789,7 +789,7 @@ export default function CoachGroupPlanningPage() {
         .from("club_events")
         .select("id,event_type,starts_at,ends_at")
         .eq("group_id", groupId)
-        .in("event_type", ["training", "interclub", "camp"]);
+        .in("event_type", ["training", "interclub"]);
       if (pastEvalEventsRes.error) throw new Error(pastEvalEventsRes.error.message);
 
       const nowTs = Date.now();

@@ -1548,7 +1548,13 @@ export default function TrainingsListPage() {
                     const isTrainingLike = e.event_type === "training" || e.event_type === "camp";
                     const isArchivedTraining = isAttendanceEvent && isArchiveGroupName(groupName);
                     const isUpcomingEvent = new Date(e.starts_at).getTime() >= nowTs;
-                    const canEvaluateEvent = performanceEnabled && !isUpcomingEvent && attendanceStatus !== "absent" && attendanceStatus !== "excused" && attendanceStatus !== "not_registered";
+                    const canEvaluateEvent =
+                      performanceEnabled &&
+                      e.event_type === "training" &&
+                      !isUpcomingEvent &&
+                      attendanceStatus !== "absent" &&
+                      attendanceStatus !== "excused" &&
+                      attendanceStatus !== "not_registered";
                     const isCollapsedTraining = isAttendanceEvent && (attendanceStatus === "absent" || attendanceStatus === "not_registered");
                     const eventStructure = eventStructureByEventId[e.id] ?? [];
                     const showEventStructure = isAttendanceEvent && attendanceStatus === "present" && eventStructure.length > 0;

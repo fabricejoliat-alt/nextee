@@ -767,7 +767,10 @@ export default function CoachEventDetailPage() {
                       const playerName = shortNameForList(p?.first_name ?? null, p?.last_name ?? null, 16);
                       const canOpenPlayerDetail =
                         event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
-                      const canEvaluatePlayer = canOpenPlayerDetail && a.status !== "absent" && isEventPast;
+                      const canEvaluatePlayer =
+                        (event.event_type === "training" || event.event_type === "interclub") &&
+                        a.status !== "absent" &&
+                        isEventPast;
                       const canStructurePlayer = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
                       const evaluationSummary = evaluatedPlayersById.get(a.player_id) ?? null;
                       const alreadyEvaluated = Boolean(evaluationSummary);
@@ -848,7 +851,16 @@ export default function CoachEventDetailPage() {
                                     ) : null}
                                   </Link>
                                 ) : (
-                                  <button type="button" className="btn" disabled title={tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")}>
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    disabled
+                                    title={
+                                      event.event_type === "camp"
+                                        ? tr("Les jours de stage/camp ne sont pas évaluables.", "Camp days are not evaluable.")
+                                        : tr("Impossible d’évaluer un joueur absent.", "Cannot evaluate an absent player.")
+                                    }
+                                  >
                                     <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                                     {tr("Évaluer", "Evaluate")}
                                   </button>

@@ -1123,7 +1123,7 @@ export default function GolfDashboardPage() {
           .from("club_events")
           .select("id,starts_at,event_type,status,club_id,title")
           .in("id", eventIds)
-          .in("event_type", ["training", "camp"])
+          .in("event_type", ["training"])
           .lt("starts_at", new Date().toISOString())
           .limit(1000);
         if (evRes.error) throw new Error(evRes.error.message);

@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
           .from("club_events")
           .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
           .in("group_id", groupIds)
-          .in("event_type", ["training", "interclub", "camp"])
+          .in("event_type", ["training", "interclub"])
           .lt("starts_at", nowIso)
           .order("starts_at", { ascending: false })
           .limit(120),
@@ -195,7 +195,7 @@ export async function GET(req: NextRequest) {
     }));
     const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 5);
     const pastEvents = allEventsWithCampDay
-      .filter((e) => ["training", "interclub", "camp"].includes(String(e.event_type ?? "")) && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
+      .filter((e) => ["training", "interclub"].includes(String(e.event_type ?? "")) && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
       .slice(0, 120);
 

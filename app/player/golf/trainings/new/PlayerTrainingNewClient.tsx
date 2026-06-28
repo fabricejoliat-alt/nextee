@@ -307,8 +307,9 @@ export default function PlayerTrainingNewPage() {
   }, [eventAttendees, userId]);
   const linkedEventAttendanceBlocked =
     linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused" || linkedAttendanceStatus === "not_registered";
+  const linkedEventEvaluationBlocked = Boolean(linkedEvent) && linkedEvent.event_type === "camp";
   const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
-  const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked;
+  const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked || linkedEventEvaluationBlocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
   const showSensationsCard = useMemo(() => {
     if (!performanceEnabled) return false;
@@ -352,7 +353,7 @@ export default function PlayerTrainingNewPage() {
   const canSave = useMemo(() => {
     if (busy) return false;
     if (plannedEventLocked) return false;
-    if (linkedEventAttendanceBlocked) return false;
+    if (linkedEventAttendanceBlocked || linkedEventEvaluationBlocked) return false;
     if (!linkedEvent && !hasChosenTrainingType) return false;
     if (!userId) return false;
     if (!startAt) return false;
@@ -372,7 +373,7 @@ export default function PlayerTrainingNewPage() {
     }
 
     return true;
-  }, [busy, performanceEnabled, plannedEventLocked, linkedEventAttendanceBlocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
+  }, [busy, performanceEnabled, plannedEventLocked, linkedEventAttendanceBlocked, linkedEventEvaluationBlocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -957,6 +958,16 @@ export default function PlayerTrainingNewPage() {
       return;
     }
 
+    if (linkedEventEvaluationBlocked) {
+      setError(
+        locale === "fr"
+          ? "Les jours de stage/camp ne sont pas des activités à évaluer."
+          : "Camp days are not activities to evaluate."
+      );
+      setBusy(false);
+      return;
+    }
+
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
       setError("Date/heure invalide.");
@@ -1148,6 +1159,25 @@ export default function PlayerTrainingNewPage() {
                             locale,
                             "Tu es indiqué absent sur cet entraînement. Il n'apparaît pas dans les entraînements à évaluer et il ne peut pas être évalué.",
                             "You are marked absent for this training. It should not appear in trainings to complete and it cannot be evaluated."
+                          )}
+                        </div>
+                      ) : null}
+                      {linkedEventEvaluationBlocked ? (
+                        <div
+                          style={{
+                            border: "1px solid rgba(59,130,246,0.18)",
+                            background: "rgba(59,130,246,0.08)",
+                            color: "rgba(30,64,175,1)",
+                            borderRadius: 12,
+                            padding: "10px 12px",
+                            fontSize: 12,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {pickLocaleText(
+                            locale,
+                            "Les jours de stage/camp restent visibles ici, mais ne sont pas des activités à évaluer.",
+                            "Camp days remain visible here, but they are not activities to evaluate."
                           )}
                         </div>
                       ) : null}
