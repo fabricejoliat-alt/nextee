@@ -53,6 +53,15 @@ type ProfileCustomFieldGroup = {
   fields: ProfileCustomField[];
 };
 
+type HandicapHistoryEntry = {
+  id: string;
+  effective_date: string;
+  value: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function displayHello(firstName: string | null | undefined, helloLabel: string) {
   const f = (firstName ?? "").trim();
   if (!f) return helloLabel;
@@ -102,6 +111,22 @@ function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: str
 function staticDisplayValue(rawValue: string | null | undefined) {
   const value = String(rawValue ?? "").trim();
   return value || "—";
+}
+
+function formatShortDate(isoDate: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate ?? "").trim());
+  if (!match) return isoDate;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+}
+
+function formatDateRange(fromDate: string, nextMoreRecentDate?: string | null) {
+  const fromLabel = formatShortDate(fromDate);
+  if (!nextMoreRecentDate) return `${fromLabel} -> aujourd'hui`;
+  const nextDate = new Date(`${nextMoreRecentDate}T00:00:00Z`);
+  if (Number.isNaN(nextDate.getTime())) return `${fromLabel} -> aujourd'hui`;
+  nextDate.setUTCDate(nextDate.getUTCDate() - 1);
+  const toLabel = nextDate.toISOString().slice(0, 10);
+  return `${fromLabel} -> ${formatShortDate(toLabel)}`;
 }
 
 /** Categorys juniors (SwissGolf-style):
@@ -169,6 +194,14 @@ export default function PlayerProfilePage() {
 
   // ✅ Handicap
   const [handicap, setHandicap] = useState<string>("");
+  const [handicapHistory, setHandicapHistory] = useState<HandicapHistoryEntry[]>([]);
+  const [handicapHistoryLoading, setHandicapHistoryLoading] = useState(false);
+  const [handicapHistoryBusy, setHandicapHistoryBusy] = useState(false);
+  const [handicapFormMode, setHandicapFormMode] = useState<"create" | "edit">("create");
+  const [editingHandicapEntryId, setEditingHandicapEntryId] = useState<string | null>(null);
+  const [handicapEffectiveDate, setHandicapEffectiveDate] = useState("");
+  const [handicapValueInput, setHandicapValueInput] = useState("");
+  const [handicapNote, setHandicapNote] = useState("");
 
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
@@ -205,146 +238,190 @@ export default function PlayerProfilePage() {
   // delta placeholder (idem player)
   const handicapDelta = -0.4;
 
+  function resetHandicapForm() {
+    setHandicapFormMode("create");
+    setEditingHandicapEntryId(null);
+    setHandicapEffectiveDate("");
+    setHandicapValueInput("");
+    setHandicapNote("");
+  }
+
+  function applyHandicapEntries(entries: HandicapHistoryEntry[]) {
+    setHandicapHistory(entries);
+    const today = new Date().toISOString().slice(0, 10);
+    const currentEntry = [...entries]
+      .filter((entry) => entry.effective_date <= today)
+      .sort((a, b) => b.effective_date.localeCompare(a.effective_date))[0] ?? null;
+    setHandicap(currentEntry ? String(currentEntry.value) : "");
+  }
+
+  async function loadHandicapHistory(token: string) {
+    setHandicapHistoryLoading(true);
+    try {
+      const res = await fetch("/api/player/handicap-history", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger l'historique du handicap."));
+      const entries = Array.isArray(json?.entries) ? (json.entries as HandicapHistoryEntry[]) : [];
+      setHandicapHistory(entries);
+      if (entries.length > 0) applyHandicapEntries(entries);
+    } catch (e: unknown) {
+      setHandicapHistory([]);
+      setInfo(toErrorMessage(e, "Historique du handicap indisponible pour le moment."));
+    } finally {
+      setHandicapHistoryLoading(false);
+    }
+  }
+
   async function load() {
     setLoading(true);
     setError(null);
     setInfo(null);
-
-    const { data: userRes, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !userRes.user) {
-      setError(t("playerProfile.error.invalidSession"));
-      setLoading(false);
-      return;
-    }
-
-    const uid = userRes.user.id;
-    setUserId(uid);
-    setEmail(normalizeDisplayEmail(userRes.user.email));
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token ?? "";
-    if (token) {
-      const meRes = await fetch("/api/auth/me", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const meJson = await meRes.json().catch(() => ({}));
-      const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
-      const childrenRes = await fetch("/api/parent/children", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const childrenJson = await childrenRes.json().catch(() => ({}));
-      const hasChildren = Array.isArray(childrenJson?.children) && childrenJson.children.length > 0;
-      const effectiveRole = role === "parent" || hasChildren ? "parent" : "player";
-      setViewerRole(effectiveRole);
-
-      const customFieldsRes = await fetch("/api/profile/custom-fields", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
-      if (!customFieldsRes.ok) {
-        setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
-      } else {
-        const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
-        setCustomFieldGroups(
-          memberships.filter(
-            (membership): membership is ProfileCustomFieldGroup =>
-              membership &&
-              typeof membership === "object" &&
-              membership.role === effectiveRole &&
-              Array.isArray(membership.fields)
-          )
-        );
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes.user) {
+        setError(t("playerProfile.error.invalidSession"));
+        return;
       }
-    } else {
-      setViewerRole("player");
-      setCustomFieldGroups([]);
-    }
 
-    // profile
-    const profRes = await supabase
-      .from("profiles")
-      .select(
-        [
-          "id",
-          "first_name",
-          "last_name",
-          "username",
-          "phone",
-          "birth_date",
-          "sex",
-          "handedness",
-          "handicap",
-          "address",
-          "postal_code",
-          "city",
-          "avs_no",
-          "avatar_url",
-        ].join(",")
-      )
-      .eq("id", uid)
-      .maybeSingle();
+      const uid = userRes.user.id;
+      setUserId(uid);
+      setEmail(normalizeDisplayEmail(userRes.user.email));
+      let effectiveRole: "player" | "parent" = "player";
 
-    if (profRes.error) {
-      setError(profRes.error.message);
-      setLoading(false);
-      return;
-    }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (token) {
+        const meRes = await fetch("/api/auth/me", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const meJson = await meRes.json().catch(() => ({}));
+        const role = meRes.ok ? String(meJson?.membership?.role ?? "player") : "player";
+        const childrenRes = await fetch("/api/parent/children", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const childrenJson = await childrenRes.json().catch(() => ({}));
+        const hasChildren = Array.isArray(childrenJson?.children) && childrenJson.children.length > 0;
+        effectiveRole = role === "parent" || hasChildren ? "parent" : "player";
+        setViewerRole(effectiveRole);
 
-    const row = (profRes.data ?? null) as unknown as ProfileRow | null;
-    setFirstName(row?.first_name ?? "");
-    setLastName(row?.last_name ?? "");
-    setUsername((row as any)?.username ?? "");
-    setPhone(row?.phone ?? "");
+        const customFieldsRes = await fetch("/api/profile/custom-fields", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
+        if (!customFieldsRes.ok) {
+          setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
+        } else {
+          const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
+          setCustomFieldGroups(
+            memberships.filter(
+              (membership): membership is ProfileCustomFieldGroup =>
+                membership &&
+                typeof membership === "object" &&
+                membership.role === effectiveRole &&
+                Array.isArray(membership.fields)
+            )
+          );
+        }
+      } else {
+        setViewerRole("player");
+        setCustomFieldGroups([]);
+      }
 
-    setBirthDate(row?.birth_date ?? "");
-    setSex(row?.sex ?? "");
+      // profile
+      const profRes = await supabase
+        .from("profiles")
+        .select(
+          [
+            "id",
+            "first_name",
+            "last_name",
+            "username",
+            "phone",
+            "birth_date",
+            "sex",
+            "handedness",
+            "handicap",
+            "address",
+            "postal_code",
+            "city",
+            "avs_no",
+            "avatar_url",
+          ].join(",")
+        )
+        .eq("id", uid)
+        .maybeSingle();
 
-    setHandedness((row?.handedness as any) ?? "");
+      if (profRes.error) {
+        setError(profRes.error.message);
+        return;
+      }
 
-    setHandicap(row?.handicap == null ? "" : String(row.handicap));
+      const row = (profRes.data ?? null) as unknown as ProfileRow | null;
+      setFirstName(row?.first_name ?? "");
+      setLastName(row?.last_name ?? "");
+      setUsername((row as any)?.username ?? "");
+      setPhone(row?.phone ?? "");
 
-    setAddress(row?.address ?? "");
-    setPostalCode(row?.postal_code ?? "");
-    setCity(row?.city ?? "");
+      setBirthDate(row?.birth_date ?? "");
+      setSex(row?.sex ?? "");
 
-    setAvsNo(row?.avs_no ?? "");
+      setHandedness((row?.handedness as any) ?? "");
 
-    setAvatarDbUrl(row?.avatar_url ?? null);
+      setHandicap(row?.handicap == null ? "" : String(row.handicap));
 
-    // ✅ REFRESH (optionnel mais utile): force un refresh quand on recharge la page
-    setAvatarRefreshKey(Date.now());
+      setAddress(row?.address ?? "");
+      setPostalCode(row?.postal_code ?? "");
+      setCity(row?.city ?? "");
 
-    // clubs (comme player page)
-    const memRes = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", uid)
-      .eq("is_active", true);
+      setAvsNo(row?.avs_no ?? "");
 
-    if (!memRes.error) {
-      const cids = ((memRes.data ?? []) as ClubMember[])
-        .map((m) => m.club_id)
-        .filter(Boolean);
+      setAvatarDbUrl(row?.avatar_url ?? null);
 
-      if (cids.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
-        if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
-        else setClubs(cids.map((id) => ({ id, name: null })));
+      setAvatarRefreshKey(Date.now());
+
+      if (effectiveRole === "player" && token) {
+        await loadHandicapHistory(token);
+      } else {
+        setHandicapHistory([]);
+        resetHandicapForm();
+      }
+
+      const memRes = await supabase
+        .from("club_members")
+        .select("club_id")
+        .eq("user_id", uid)
+        .eq("is_active", true);
+
+      if (!memRes.error) {
+        const cids = ((memRes.data ?? []) as ClubMember[])
+          .map((m) => m.club_id)
+          .filter(Boolean);
+
+        if (cids.length > 0) {
+          const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
+          if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
+          else setClubs(cids.map((id) => ({ id, name: null })));
+        } else {
+          setClubs([]);
+        }
       } else {
         setClubs([]);
       }
-    } else {
-      // pas bloquant pour le profil
-      setClubs([]);
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Impossible de charger le profil."));
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -383,14 +460,6 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    const hc = parseHandicap();
-    const isApHandicap = handicap.trim().toUpperCase() === "AP";
-    if (viewerRole === "player" && handicap.trim() !== "" && hc === null && !isApHandicap) {
-      setError(t("playerProfile.error.invalidHandicap"));
-      setBusy(false);
-      return;
-    }
-
     const upsertPayload: Record<string, any> = {
       id: userId,
       first_name: firstName.trim() || null,
@@ -405,7 +474,6 @@ export default function PlayerProfilePage() {
       upsertPayload.birth_date = birthDate.trim() || null;
       upsertPayload.sex = sex.trim() || null;
       upsertPayload.handedness = handedness || null;
-      upsertPayload.handicap = hc;
       upsertPayload.avs_no = avsNo.trim() || null;
     }
 
@@ -500,6 +568,93 @@ export default function PlayerProfilePage() {
       saveFlashTimeoutRef.current = null;
     }, 2000);
     setBusy(false);
+  }
+
+  function beginEditHandicapEntry(entry: HandicapHistoryEntry) {
+    setHandicapFormMode("edit");
+    setEditingHandicapEntryId(entry.id);
+    setHandicapEffectiveDate(entry.effective_date);
+    setHandicapValueInput(String(entry.value));
+    setHandicapNote(entry.note ?? "");
+  }
+
+  async function submitHandicapEntry() {
+    if (!userId || viewerRole !== "player" || handicapHistoryBusy) return;
+
+    const effectiveDate = handicapEffectiveDate.trim();
+    const value = handicapValueInput.trim().replace(",", ".");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+      setError("Date d'effet invalide.");
+      return;
+    }
+    if (value === "" || Number.isNaN(Number(value))) {
+      setError("Handicap invalide.");
+      return;
+    }
+
+    setHandicapHistoryBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      const url =
+        handicapFormMode === "edit" && editingHandicapEntryId
+          ? `/api/player/handicap-history/${encodeURIComponent(editingHandicapEntryId)}`
+          : "/api/player/handicap-history";
+      const method = handicapFormMode === "edit" ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          effective_date: effectiveDate,
+          value,
+          note: handicapNote,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Impossible d'enregistrer l'entrée."));
+      const entries = Array.isArray(json?.entries) ? (json.entries as HandicapHistoryEntry[]) : [];
+      applyHandicapEntries(entries);
+      resetHandicapForm();
+      setInfo(handicapFormMode === "edit" ? "Entrée de handicap modifiée." : "Entrée de handicap ajoutée.");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Impossible d'enregistrer l'entrée."));
+    } finally {
+      setHandicapHistoryBusy(false);
+    }
+  }
+
+  async function deleteHandicapEntry(entryId: string) {
+    if (!userId || viewerRole !== "player" || handicapHistoryBusy) return;
+    if (typeof window !== "undefined" && !window.confirm("Supprimer cette entrée de handicap ?")) return;
+
+    setHandicapHistoryBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      const res = await fetch(`/api/player/handicap-history/${encodeURIComponent(entryId)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de supprimer l'entrée."));
+      const entries = Array.isArray(json?.entries) ? (json.entries as HandicapHistoryEntry[]) : [];
+      applyHandicapEntries(entries);
+      if (editingHandicapEntryId === entryId) resetHandicapForm();
+      setInfo("Entrée de handicap supprimée.");
+    } catch (e: unknown) {
+      setError(toErrorMessage(e, "Impossible de supprimer l'entrée."));
+    } finally {
+      setHandicapHistoryBusy(false);
+    }
   }
 
   function openFilePicker() {
@@ -814,25 +969,128 @@ export default function PlayerProfilePage() {
                         </Field>
                       </div>
 
-                      <div style={{ marginTop: 6 }}>
-                        <Field label={t("playerProfile.handicap")}>
-                          <input
-                            inputMode="decimal"
-                            placeholder="ex: 25.4"
-                            value={handicap}
-                            onChange={(e) => setHandicap(e.target.value)}
-                            style={{
-                              height: 46,
-                              fontSize: 18,
-                              fontWeight: 900,
-                              borderRadius: 12,
-                            }}
-                          />
-                        </Field>
-                      </div>
                     </>
                   )}
                 </SectionCard>
+
+                {viewerRole === "player" ? (
+                  <SectionCard title="Historique du handicap">
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <StaticField
+                        label="Handicap actuel"
+                        value={typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : ""}
+                      />
+
+                      <div style={{ color: "rgba(0,0,0,0.62)", fontWeight: 600, lineHeight: 1.45 }}>
+                        Gère ici les évolutions de ton handicap dans le temps. La valeur actuelle du profil est calculée depuis l'entrée active la plus récente.
+                      </div>
+
+                      <div className="grid-2">
+                        <Field label="Date d'effet">
+                          <input
+                            type="date"
+                            value={handicapEffectiveDate}
+                            onChange={(e) => setHandicapEffectiveDate(e.target.value)}
+                            disabled={handicapHistoryBusy}
+                          />
+                        </Field>
+
+                        <Field label="Handicap">
+                          <input
+                            inputMode="decimal"
+                            placeholder="ex: 16.2"
+                            value={handicapValueInput}
+                            onChange={(e) => setHandicapValueInput(e.target.value)}
+                            disabled={handicapHistoryBusy}
+                          />
+                        </Field>
+                      </div>
+
+                      <Field label="Note">
+                        <input
+                          value={handicapNote}
+                          onChange={(e) => setHandicapNote(e.target.value)}
+                          placeholder="Optionnel"
+                          disabled={handicapHistoryBusy}
+                        />
+                      </Field>
+
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => void submitHandicapEntry()}
+                          disabled={handicapHistoryBusy}
+                        >
+                          {handicapHistoryBusy
+                            ? "Enregistrement..."
+                            : handicapFormMode === "edit"
+                              ? "Modifier l'entrée"
+                              : "Ajouter une entrée"}
+                        </button>
+                        {handicapFormMode === "edit" ? (
+                          <button className="btn" type="button" onClick={resetHandicapForm} disabled={handicapHistoryBusy}>
+                            Annuler
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {handicapHistoryLoading ? (
+                        <div style={{ opacity: 0.8, fontWeight: 700 }}>Chargement de l'historique...</div>
+                      ) : handicapHistory.length === 0 ? (
+                        <div style={{ opacity: 0.8, fontWeight: 700 }}>Aucune entrée pour le moment.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          {handicapHistory.map((entry, index) => {
+                            const nextEntry = handicapHistory[index - 1] ?? null;
+                            return (
+                              <div
+                                key={entry.id}
+                                style={{
+                                  borderRadius: 14,
+                                  padding: "12px 14px",
+                                  border: "1px solid rgba(15, 23, 42, 0.08)",
+                                  background: "rgba(15, 23, 42, 0.03)",
+                                  display: "grid",
+                                  gap: 8,
+                                }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                                  <div style={{ display: "grid", gap: 4 }}>
+                                    <div style={{ fontWeight: 900, color: "#0f172a" }}>
+                                      {formatDateRange(entry.effective_date, nextEntry?.effective_date ?? null)} : {entry.value.toFixed(1)}
+                                    </div>
+                                    {entry.note ? (
+                                      <div style={{ color: "rgba(0,0,0,0.62)", fontWeight: 600 }}>{entry.note}</div>
+                                    ) : null}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                    <button
+                                      className="btn"
+                                      type="button"
+                                      onClick={() => beginEditHandicapEntry(entry)}
+                                      disabled={handicapHistoryBusy}
+                                    >
+                                      Modifier
+                                    </button>
+                                    <button
+                                      className="btn btn-danger soft"
+                                      type="button"
+                                      onClick={() => void deleteHandicapEntry(entry.id)}
+                                      disabled={handicapHistoryBusy}
+                                    >
+                                      Supprimer
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </SectionCard>
+                ) : null}
 
                 <SectionCard title={t("playerProfile.contact")}>
                   <div className="grid-2">
