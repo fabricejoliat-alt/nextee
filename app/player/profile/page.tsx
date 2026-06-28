@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ArrowDown, ArrowUp, Pencil, Trash2 } from "lucide-react";
 
 type ProfileRow = {
   id: string;
@@ -60,6 +61,19 @@ type HandicapHistoryEntry = {
   note: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type TrainingVolumeTargetRow = {
+  id: string;
+  ftem_code: string;
+  level_label: string;
+  handicap_label: string;
+  handicap_min: number | null;
+  handicap_max: number | null;
+  motivation_text: string | null;
+  minutes_offseason: number;
+  minutes_inseason: number;
+  sort_order: number;
 };
 
 function displayHello(firstName: string | null | undefined, helloLabel: string) {
@@ -121,12 +135,53 @@ function formatShortDate(isoDate: string) {
 
 function formatDateRange(fromDate: string, nextMoreRecentDate?: string | null) {
   const fromLabel = formatShortDate(fromDate);
-  if (!nextMoreRecentDate) return `${fromLabel} -> aujourd'hui`;
+  if (!nextMoreRecentDate) return { fromLabel, toLabel: "aujourd'hui", isOpenEnded: true };
   const nextDate = new Date(`${nextMoreRecentDate}T00:00:00Z`);
-  if (Number.isNaN(nextDate.getTime())) return `${fromLabel} -> aujourd'hui`;
+  if (Number.isNaN(nextDate.getTime())) return { fromLabel, toLabel: "aujourd'hui", isOpenEnded: true };
   nextDate.setUTCDate(nextDate.getUTCDate() - 1);
   const toLabel = nextDate.toISOString().slice(0, 10);
-  return `${fromLabel} -> ${formatShortDate(toLabel)}`;
+  return { fromLabel, toLabel: formatShortDate(toLabel), isOpenEnded: false };
+}
+
+function parseMonthArray(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  const uniq = new Set<number>();
+  for (const v of values) {
+    const n = Number(v);
+    if (!Number.isInteger(n)) continue;
+    if (n < 1 || n > 12) continue;
+    uniq.add(n);
+  }
+  return Array.from(uniq);
+}
+
+function pickTrainingVolumeTarget(
+  handicap: number | null | undefined,
+  rows: TrainingVolumeTargetRow[]
+): TrainingVolumeTargetRow | null {
+  if (!rows.length) return null;
+  if (typeof handicap !== "number" || !Number.isFinite(handicap)) return rows[0] ?? null;
+
+  const matched = rows.find((row) => {
+    if (typeof row.handicap_min !== "number" || typeof row.handicap_max !== "number") return false;
+    const lo = Math.min(row.handicap_min, row.handicap_max);
+    const hi = Math.max(row.handicap_min, row.handicap_max);
+    return handicap >= lo && handicap <= hi;
+  });
+
+  return matched ?? rows[0] ?? null;
+}
+
+function objectiveForMonth(
+  target: TrainingVolumeTargetRow | null,
+  seasonMonths: number[],
+  offseasonMonths: number[],
+  month: number
+) {
+  if (!target) return 0;
+  const inSeason =
+    seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
+  return inSeason ? target.minutes_inseason : target.minutes_offseason;
 }
 
 /** Categorys juniors (SwissGolf-style):
@@ -202,6 +257,7 @@ export default function PlayerProfilePage() {
   const [handicapEffectiveDate, setHandicapEffectiveDate] = useState("");
   const [handicapValueInput, setHandicapValueInput] = useState("");
   const [handicapNote, setHandicapNote] = useState("");
+  const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
 
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
@@ -273,6 +329,41 @@ export default function PlayerProfilePage() {
       setInfo(toErrorMessage(e, "Historique du handicap indisponible pour le moment."));
     } finally {
       setHandicapHistoryLoading(false);
+    }
+  }
+
+  async function loadTrainingVolumeLabels(token: string, clubIds: string[], effectiveUid: string, currentHandicap: number | null) {
+    if (clubIds.length === 0) {
+      setTrainingVolumeRows([]);
+      return;
+    }
+    try {
+      const month = new Date().getMonth() + 1;
+      const responses = await Promise.all(
+        Array.from(new Set(clubIds)).map(async (clubId) => {
+          const res = await fetch(`/api/player/clubs/${clubId}/training-volume?player_id=${encodeURIComponent(effectiveUid)}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) return null;
+          const rows = Array.isArray(json?.rows) ? (json.rows as TrainingVolumeTargetRow[]) : [];
+          const seasonMonths = parseMonthArray(json?.settings?.season_months);
+          const offseasonMonths = parseMonthArray(json?.settings?.offseason_months);
+          const target = pickTrainingVolumeTarget(currentHandicap, rows);
+          const objective = objectiveForMonth(target, seasonMonths, offseasonMonths, month);
+          return { rows, objective };
+        })
+      );
+
+      const best = responses
+        .filter((x): x is { rows: TrainingVolumeTargetRow[]; objective: number } => Boolean(x))
+        .sort((a, b) => b.objective - a.objective)[0];
+
+      setTrainingVolumeRows(best?.rows ?? []);
+    } catch {
+      setTrainingVolumeRows([]);
     }
   }
 
@@ -407,6 +498,12 @@ export default function PlayerProfilePage() {
           .map((m) => m.club_id)
           .filter(Boolean);
 
+        if (effectiveRole === "player" && token) {
+          await loadTrainingVolumeLabels(token, cids, uid, row?.handicap ?? null);
+        } else {
+          setTrainingVolumeRows([]);
+        }
+
         if (cids.length > 0) {
           const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
           if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
@@ -416,6 +513,7 @@ export default function PlayerProfilePage() {
         }
       } else {
         setClubs([]);
+        setTrainingVolumeRows([]);
       }
     } catch (e: unknown) {
       setError(toErrorMessage(e, "Impossible de charger le profil."));
@@ -760,6 +858,9 @@ export default function PlayerProfilePage() {
   }
 
   const handicapNumber = useMemo(() => parseHandicap(), [handicap]);
+  const handicapLevelLabel = useMemo(() => {
+    return (value: number) => pickTrainingVolumeTarget(value, trainingVolumeRows)?.level_label ?? "—";
+  }, [trainingVolumeRows]);
   const juniorCategory = useMemo(
     () => (birthDate ? getJuniorCategory(birthDate) : "—"),
     [birthDate]
@@ -1043,6 +1144,16 @@ export default function PlayerProfilePage() {
                         <div style={{ display: "grid", gap: 10 }}>
                           {handicapHistory.map((entry, index) => {
                             const nextEntry = handicapHistory[index - 1] ?? null;
+                            const previousEntry = handicapHistory[index + 1] ?? null;
+                            const dateRange = formatDateRange(entry.effective_date, nextEntry?.effective_date ?? null);
+                            const trend =
+                              previousEntry == null
+                                ? null
+                                : entry.value < previousEntry.value
+                                  ? "improving"
+                                  : entry.value > previousEntry.value
+                                    ? "worsening"
+                                    : "stable";
                             return (
                               <div
                                 key={entry.id}
@@ -1055,31 +1166,49 @@ export default function PlayerProfilePage() {
                                   gap: 8,
                                 }}
                               >
-                                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                                   <div style={{ display: "grid", gap: 4 }}>
-                                    <div style={{ fontWeight: 900, color: "#0f172a" }}>
-                                      {formatDateRange(entry.effective_date, nextEntry?.effective_date ?? null)} : {entry.value.toFixed(1)}
+                                    <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.35, color: "rgba(15,23,42,0.72)" }}>
+                                      {dateRange.isOpenEnded
+                                        ? `du ${dateRange.fromLabel} à ${dateRange.toLabel}`
+                                        : `du ${dateRange.fromLabel} au ${dateRange.toLabel}`}
+                                    </div>
+                                    <div style={{ fontWeight: 700, fontSize: 12, color: "rgba(15,23,42,0.82)" }}>
+                                      {handicapLevelLabel(entry.value)}
+                                    </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 15, color: "#0f172a" }}>
+                                      <span>{`HCP ${entry.value.toFixed(1)}`}</span>
+                                      {trend === "improving" ? (
+                                        <ArrowDown size={15} color="#16a34a" aria-label="Handicap en amélioration" />
+                                      ) : null}
+                                      {trend === "worsening" ? (
+                                        <ArrowUp size={15} color="#dc2626" aria-label="Handicap en hausse" />
+                                      ) : null}
                                     </div>
                                     {entry.note ? (
                                       <div style={{ color: "rgba(0,0,0,0.62)", fontWeight: 600 }}>{entry.note}</div>
                                     ) : null}
                                   </div>
-                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                     <button
                                       className="btn"
                                       type="button"
                                       onClick={() => beginEditHandicapEntry(entry)}
                                       disabled={handicapHistoryBusy}
+                                      title="Modifier"
+                                      aria-label="Modifier"
                                     >
-                                      Modifier
+                                      <Pencil size={14} />
                                     </button>
                                     <button
                                       className="btn btn-danger soft"
                                       type="button"
                                       onClick={() => void deleteHandicapEntry(entry.id)}
                                       disabled={handicapHistoryBusy}
+                                      title="Supprimer"
+                                      aria-label="Supprimer"
                                     >
-                                      Supprimer
+                                      <Trash2 size={14} />
                                     </button>
                                   </div>
                                 </div>

@@ -17,7 +17,6 @@ import {
   Bar,
   XAxis,
   YAxis,
-  ReferenceLine,
   CartesianGrid,
   Tooltip,
   Legend,
@@ -127,6 +126,19 @@ type TrainingVolumeTargetRow = {
   minutes_offseason: number;
   minutes_inseason: number;
   sort_order: number;
+};
+
+type HandicapHistoryEntry = {
+  id: string;
+  effective_date: string;
+  value: number;
+  note: string | null;
+};
+
+type TrainingVolumeClubConfig = {
+  rows: TrainingVolumeTargetRow[];
+  seasonMonths: number[];
+  offseasonMonths: number[];
 };
 
 type TeamThreadMessage = {
@@ -262,6 +274,10 @@ function objectiveForMonth(
   const inSeason =
     seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
   return inSeason ? target.minutes_inseason : target.minutes_offseason;
+}
+
+function compareYmd(a: string, b: string) {
+  return a.localeCompare(b);
 }
 
 function weekStartMonday(d: Date) {
@@ -559,9 +575,11 @@ export default function GolfDashboardPage() {
   const [effectivePlayerId, setEffectivePlayerId] = useState("");
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
   const [playerHandicap, setPlayerHandicap] = useState<number | null>(null);
+  const [handicapHistory, setHandicapHistory] = useState<HandicapHistoryEntry[]>([]);
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
+  const [trainingVolumeConfigs, setTrainingVolumeConfigs] = useState<TrainingVolumeClubConfig[]>([]);
 
   const [preset, setPreset] = useState<Preset>("month");
   const [customOpen, setCustomOpen] = useState(false);
@@ -648,6 +666,27 @@ export default function GolfDashboardPage() {
           )
         );
         const token = sessionRes.data.session?.access_token ?? "";
+        if (token) {
+          try {
+            const historyRes = await fetch("/api/player/handicap-history", {
+              method: "GET",
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            });
+            const historyJson = await historyRes.json().catch(() => ({}));
+            if (historyRes.ok) {
+              const entries = Array.isArray(historyJson?.entries) ? (historyJson.entries as HandicapHistoryEntry[]) : [];
+              setHandicapHistory(entries);
+            } else {
+              setHandicapHistory([]);
+            }
+          } catch {
+            setHandicapHistory([]);
+          }
+        } else {
+          setHandicapHistory([]);
+        }
+
         if (clubIds.length > 0 && token) {
           const month = new Date().getMonth() + 1;
           const responses = await Promise.all(
@@ -671,6 +710,11 @@ export default function GolfDashboardPage() {
             })
           );
 
+          const configs = responses
+            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
+            .map((x) => ({ rows: x.rows, seasonMonths: x.seasonMonths, offseasonMonths: x.offseasonMonths }));
+          setTrainingVolumeConfigs(configs);
+
           const best = responses
             .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
             .sort((a, b) => b.objective - a.objective)[0];
@@ -685,6 +729,7 @@ export default function GolfDashboardPage() {
             setTrainingOffseasonMonths([]);
           }
         } else {
+          setTrainingVolumeConfigs([]);
           setTrainingVolumeRows([]);
           setTrainingSeasonMonths([]);
           setTrainingOffseasonMonths([]);
@@ -692,6 +737,8 @@ export default function GolfDashboardPage() {
       } catch {
         setIsPerformanceEnabled(false);
         setPlayerHandicap(null);
+        setHandicapHistory([]);
+        setTrainingVolumeConfigs([]);
         setTrainingVolumeRows([]);
         setTrainingSeasonMonths([]);
         setTrainingOffseasonMonths([]);
@@ -1758,6 +1805,19 @@ function presetToSelectValue(p: Preset): Preset {
     () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
     [trainingVolumeObjective]
   );
+  const handicapForDate = useMemo(() => {
+    const sortedAsc = [...handicapHistory].sort((a, b) => compareYmd(a.effective_date, b.effective_date));
+    return (ymd: string) => {
+      if (sortedAsc.length === 0) return playerHandicap;
+      let active: HandicapHistoryEntry | null = null;
+      for (const entry of sortedAsc) {
+        if (compareYmd(entry.effective_date, ymd) <= 0) active = entry;
+        else break;
+      }
+      if (active) return active.value;
+      return sortedAsc[0]?.value ?? playerHandicap;
+    };
+  }, [handicapHistory, playerHandicap]);
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);
   const avgSatisfaction = useMemo(() => avg(sessions.map((s) => s.satisfaction)), [sessions]);
@@ -1864,6 +1924,16 @@ function presetToSelectValue(p: Preset): Preset {
         motivation: w.motN ? Math.round((w.motSum / w.motN) * 10) / 10 : null,
         difficulty: w.difN ? Math.round((w.difSum / w.difN) * 10) / 10 : null,
         satisfaction: w.satN ? Math.round((w.satSum / w.satN) * 10) / 10 : null,
+        objective:
+          trainingVolumeConfigs.length > 0
+            ? trainingVolumeConfigs.reduce((max, config) => {
+                const handicapAtWeek = handicapForDate(w.weekStart);
+                const target = pickTrainingVolumeTarget(handicapAtWeek, config.rows);
+                const month = new Date(`${w.weekStart}T00:00:00`).getMonth() + 1;
+                const objective = objectiveForMonth(target, config.seasonMonths, config.offseasonMonths, month);
+                return Math.max(max, objective);
+              }, 0)
+            : weeklyObjectiveMinutes,
       }));
 
     return list.map((x) => {
@@ -1871,7 +1941,7 @@ function presetToSelectValue(p: Preset): Preset {
       const label = new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "2-digit" }).format(d);
       return { ...x, weekLabel: label };
     });
-  }, [dateLocale, sessions]);
+  }, [dateLocale, handicapForDate, sessions, trainingVolumeConfigs, weeklyObjectiveMinutes]);
 
   const avgCoachEngagement = useMemo(() => avg(coachEvaluations.map((row) => row.engagement)), [coachEvaluations]);
   const avgCoachAttitude = useMemo(() => avg(coachEvaluations.map((row) => row.attitude)), [coachEvaluations]);
@@ -3071,20 +3141,16 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    {weeklyObjectiveMinutes > 0 ? (
-                      <ReferenceLine
-                        y={weeklyObjectiveMinutes}
+                    {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
+                      <Line
+                        type="monotone"
+                        dataKey="objective"
+                        name={pickLocaleText(locale, "Objectif", "Goal")}
                         stroke="rgba(185,28,28,0.9)"
                         strokeDasharray="6 4"
                         strokeWidth={2}
-                        ifOverflow="extendDomain"
-                        label={{
-                          value: pickLocaleText(locale, "Objectif", "Goal"),
-                          position: "right",
-                          fill: "rgba(185,28,28,0.9)",
-                          fontSize: 11,
-                          fontWeight: 900,
-                        }}
+                        dot={false}
+                        activeDot={false}
                       />
                     ) : null}
                     <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
@@ -3092,9 +3158,15 @@ function presetToSelectValue(p: Preset): Preset {
                 </ResponsiveContainer>
               </div>
             )}
-            {weeklyObjectiveMinutes > 0 ? (
+            {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
-                {pickLocaleText(locale, "Objectif hebdomadaire", "Weekly goal")}: {weeklyObjectiveMinutes} min
+                {pickLocaleText(locale, "Objectif hebdomadaire", "Weekly goal")}:
+                {" "}
+                {pickLocaleText(
+                  locale,
+                  "calculé semaine par semaine selon l'historique HCP",
+                  "calculated week by week from handicap history"
+                )}
               </div>
             ) : null}
           </div>

@@ -21,7 +21,6 @@ import {
   Line,
   BarChart,
   Bar,
-  ReferenceLine,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -136,6 +135,33 @@ type GolfHoleRow = {
 type TrainingVolumeSummarySnapshot = {
   current: { minutes: number; count: number };
   previous: { minutes: number; count: number };
+};
+
+type TrainingVolumeTargetRow = {
+  id: string;
+  ftem_code: string;
+  level_label: string;
+  handicap_label: string;
+  handicap_min: number | null;
+  handicap_max: number | null;
+  motivation_text: string | null;
+  minutes_offseason: number;
+  minutes_inseason: number;
+  sort_order: number;
+};
+
+type HandicapHistoryEntry = {
+  id: string;
+  effective_date: string;
+  value: number;
+  note: string | null;
+};
+
+type TrainingVolumeClubConfig = {
+  organization_id: string;
+  season_months: number[];
+  offseason_months: number[];
+  rows: TrainingVolumeTargetRow[];
 };
 
 type OmTournamentScoreRow = {
@@ -258,6 +284,49 @@ function avg(values: Array<number | null | undefined>) {
   if (v.length === 0) return null;
   const s = v.reduce((a, b) => a + b, 0);
   return Math.round((s / v.length) * 10) / 10;
+}
+
+function parseMonthArray(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  const uniq = new Set<number>();
+  for (const v of values) {
+    const n = Number(v);
+    if (!Number.isInteger(n)) continue;
+    if (n < 1 || n > 12) continue;
+    uniq.add(n);
+  }
+  return Array.from(uniq);
+}
+
+function pickTrainingVolumeTarget(
+  handicap: number | null | undefined,
+  rows: TrainingVolumeTargetRow[]
+): TrainingVolumeTargetRow | null {
+  if (!rows.length) return null;
+  if (typeof handicap !== "number" || !Number.isFinite(handicap)) return rows[0] ?? null;
+  const matched = rows.find((row) => {
+    if (typeof row.handicap_min !== "number" || typeof row.handicap_max !== "number") return false;
+    const lo = Math.min(row.handicap_min, row.handicap_max);
+    const hi = Math.max(row.handicap_min, row.handicap_max);
+    return handicap >= lo && handicap <= hi;
+  });
+  return matched ?? rows[0] ?? null;
+}
+
+function objectiveForMonth(
+  target: TrainingVolumeTargetRow | null,
+  seasonMonths: number[],
+  offseasonMonths: number[],
+  month: number
+) {
+  if (!target) return 0;
+  const inSeason =
+    seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
+  return inSeason ? target.minutes_inseason : target.minutes_offseason;
+}
+
+function compareYmd(a: string, b: string) {
+  return a.localeCompare(b);
 }
 
 function weekStartMonday(d: Date) {
@@ -670,6 +739,9 @@ export default function GolfDashboardPage() {
   const [trainingVolumeObjectiveFromDb, setTrainingVolumeObjectiveFromDb] = useState<number | null>(null);
   const [trainingVolumeMotivationFromDb, setTrainingVolumeMotivationFromDb] = useState<string | null>(null);
   const [trainingVolumeSummary, setTrainingVolumeSummary] = useState<TrainingVolumeSummarySnapshot | null>(null);
+  const [playerHandicap, setPlayerHandicap] = useState<number | null>(null);
+  const [handicapHistory, setHandicapHistory] = useState<HandicapHistoryEntry[]>([]);
+  const [trainingVolumeConfigs, setTrainingVolumeConfigs] = useState<TrainingVolumeClubConfig[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -1551,6 +1623,19 @@ function presetToSelectValue(p: Preset): Preset {
     () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
     [trainingVolumeObjective]
   );
+  const handicapForDate = useMemo(() => {
+    const sortedAsc = [...handicapHistory].sort((a, b) => compareYmd(a.effective_date, b.effective_date));
+    return (ymd: string) => {
+      if (sortedAsc.length === 0) return playerHandicap;
+      let active: HandicapHistoryEntry | null = null;
+      for (const entry of sortedAsc) {
+        if (compareYmd(entry.effective_date, ymd) <= 0) active = entry;
+        else break;
+      }
+      if (active) return active.value;
+      return sortedAsc[0]?.value ?? playerHandicap;
+    };
+  }, [handicapHistory, playerHandicap]);
   const trainingVolumePercent =
     displayedTrainingVolumeObjective > 0
       ? Math.max(0, Math.round((totalMinutes / displayedTrainingVolumeObjective) * 100))
@@ -1558,6 +1643,9 @@ function presetToSelectValue(p: Preset): Preset {
   useEffect(() => {
     (async () => {
       if (!canLoadData || !playerId) {
+        setPlayerHandicap(null);
+        setHandicapHistory([]);
+        setTrainingVolumeConfigs([]);
         setTrainingVolumeLevelFromDb(null);
         setTrainingVolumeObjectiveFromDb(null);
         setTrainingVolumeMotivationFromDb(null);
@@ -1567,10 +1655,41 @@ function presetToSelectValue(p: Preset): Preset {
         const { data: sess } = await supabase.auth.getSession();
         const token = sess.session?.access_token ?? "";
         if (!token) {
+          setPlayerHandicap(null);
+          setHandicapHistory([]);
+          setTrainingVolumeConfigs([]);
           setTrainingVolumeLevelFromDb(null);
           setTrainingVolumeObjectiveFromDb(null);
           setTrainingVolumeMotivationFromDb(null);
           return;
+        }
+        const weeklyTargetsRes = await fetch(
+          `/api/coach/players/${encodeURIComponent(playerId)}/training-volume-weekly-targets`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+        );
+        const weeklyTargetsJson = await weeklyTargetsRes.json().catch(() => ({}));
+        if (weeklyTargetsRes.ok) {
+          const currentHandicap = Number(weeklyTargetsJson?.current_handicap);
+          setPlayerHandicap(Number.isFinite(currentHandicap) ? currentHandicap : null);
+          setHandicapHistory(
+            Array.isArray(weeklyTargetsJson?.handicap_history)
+              ? (weeklyTargetsJson.handicap_history as HandicapHistoryEntry[])
+              : []
+          );
+          setTrainingVolumeConfigs(
+            Array.isArray(weeklyTargetsJson?.configs)
+              ? (weeklyTargetsJson.configs as TrainingVolumeClubConfig[]).map((config) => ({
+                  organization_id: String(config.organization_id ?? ""),
+                  season_months: parseMonthArray(config.season_months),
+                  offseason_months: parseMonthArray(config.offseason_months),
+                  rows: Array.isArray(config.rows) ? config.rows : [],
+                }))
+              : []
+          );
+        } else {
+          setPlayerHandicap(null);
+          setHandicapHistory([]);
+          setTrainingVolumeConfigs([]);
         }
         const res = await fetch(
           `/api/coach/players/${encodeURIComponent(playerId)}/training-volume-level`,
@@ -1590,6 +1709,9 @@ function presetToSelectValue(p: Preset): Preset {
         const motivation = String(json?.motivation_text ?? "").trim();
         setTrainingVolumeMotivationFromDb(motivation || null);
       } catch {
+        setPlayerHandicap(null);
+        setHandicapHistory([]);
+        setTrainingVolumeConfigs([]);
         setTrainingVolumeLevelFromDb(null);
         setTrainingVolumeObjectiveFromDb(null);
         setTrainingVolumeMotivationFromDb(null);
@@ -1783,6 +1905,16 @@ function presetToSelectValue(p: Preset): Preset {
         motivation: w.motN ? Math.round((w.motSum / w.motN) * 10) / 10 : null,
         difficulty: w.difN ? Math.round((w.difSum / w.difN) * 10) / 10 : null,
         satisfaction: w.satN ? Math.round((w.satSum / w.satN) * 10) / 10 : null,
+        objective:
+          trainingVolumeConfigs.length > 0
+            ? trainingVolumeConfigs.reduce((max, config) => {
+                const handicapAtWeek = handicapForDate(w.weekStart);
+                const target = pickTrainingVolumeTarget(handicapAtWeek, config.rows);
+                const month = new Date(`${w.weekStart}T00:00:00`).getMonth() + 1;
+                const objective = objectiveForMonth(target, config.season_months, config.offseason_months, month);
+                return Math.max(max, objective);
+              }, 0)
+            : weeklyObjectiveMinutes,
       }));
 
     return list.map((x) => {
@@ -1790,7 +1922,7 @@ function presetToSelectValue(p: Preset): Preset {
       const label = new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "2-digit" }).format(d);
       return { ...x, weekLabel: label };
     });
-  }, [dateLocale, filteredSessions]);
+  }, [dateLocale, filteredSessions, handicapForDate, trainingVolumeConfigs, weeklyObjectiveMinutes]);
 
   // ===== MES PARCOURS AGGREGATES (CURRENT + PREV) =====
   const holeAgg = useMemo(() => {
@@ -4116,20 +4248,16 @@ function presetToSelectValue(p: Preset): Preset {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    {weeklyObjectiveMinutes > 0 ? (
-                      <ReferenceLine
-                        y={weeklyObjectiveMinutes}
+                    {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
+                      <Line
+                        type="monotone"
+                        dataKey="objective"
+                        name={pickLocaleText(locale, "Objectif", "Goal")}
                         stroke="rgba(185,28,28,0.9)"
                         strokeDasharray="6 4"
                         strokeWidth={2}
-                        ifOverflow="extendDomain"
-                        label={{
-                          value: "Objectif",
-                          position: "right",
-                          fill: "rgba(185,28,28,0.9)",
-                          fontSize: 11,
-                          fontWeight: 900,
-                        }}
+                        dot={false}
+                        activeDot={false}
                       />
                     ) : null}
                     <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
