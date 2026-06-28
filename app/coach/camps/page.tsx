@@ -262,9 +262,6 @@ export default function CoachCampsPage() {
                             <div style={{ fontSize: 12, fontWeight: 800 }}>{fmtRange(day.starts_at, day.ends_at)}</div>
                             {day.location_text ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>📍 {day.location_text}</div> : null}
                             {day.practical_info ? <div style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>{day.practical_info}</div> : null}
-                            <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.52)", wordBreak: "break-all" }}>
-                              Requête: GET /api/coach/camps • camp_id={camp.id} • event_id={day.event_id}
-                            </div>
                             <div style={{ display: "flex", justifyContent: "flex-start", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
                               <Link className="btn" href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}>
                                 Voir
