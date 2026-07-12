@@ -4,12 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { AlertTriangle, MessageCircle } from "lucide-react";
+import { AlertTriangle, CalendarDays } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
-import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
-import MessageCountBadge from "@/components/messages/MessageCountBadge";
 
 type EventLite = {
   id: string;
@@ -57,6 +55,15 @@ function fmtTime(iso: string, locale: string) {
   }).format(d);
 }
 
+function fmtDateLabelNoTime(iso: string, locale: string) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(d);
+}
+
 function isSameDay(aIso: string, bIso: string | null) {
   if (!bIso) return true;
   const a = new Date(aIso);
@@ -78,7 +85,6 @@ export default function CoachHomePage() {
   const [upcomingEvents, setUpcomingEvents] = useState<EventLite[]>([]);
   const [me, setMe] = useState<ProfileLite | null>(null);
   const [organizationNames, setOrganizationNames] = useState<string[]>([]);
-  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
 
   useEffect(() => {
     (async () => {
@@ -145,60 +151,6 @@ export default function CoachHomePage() {
     })();
   }, [locale]);
 
-  useEffect(() => {
-    const ids = Array.from(new Set([...pendingEvalEvents, ...upcomingEvents].map((e) => String(e.id ?? "")).filter(Boolean)));
-    if (ids.length === 0) {
-      setMessageBadgesByEventId({});
-      return;
-    }
-    let cancelled = false;
-    const loadBadges = async () => {
-      const badges = await fetchEventMessageBadges(ids);
-      if (!cancelled) setMessageBadgesByEventId(badges);
-    };
-    void loadBadges();
-
-    const onFocus = () => void loadBadges();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void loadBadges();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    channel = supabase
-      .channel("coach-home-event-badges")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "thread_messages" },
-        () => {
-          void loadBadges();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "thread_participants" },
-        () => {
-          void loadBadges();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "message_threads" },
-        () => {
-          void loadBadges();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [pendingEvalEvents, upcomingEvents]);
-
   function eventTypeLabel(v: EventLite["event_type"]) {
     if (v === "training") return tr("Entraînement", "Training");
     if (v === "interclub") return "Interclub";
@@ -235,27 +187,6 @@ export default function CoachHomePage() {
     if (names.length === 0) return "—";
     return names.join(" • ");
   }, [organizationNames]);
-
-  function renderMessagePill(eventId: string, groupId: string) {
-    const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-    return (
-      <Link
-        href={`/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`}
-        className="pill-soft"
-        title={tr("Messagerie", "Messages")}
-        aria-label={tr("Ouvrir la page de l'événement", "Open event page")}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
-      >
-        <MessageCircle size={14} />
-        {tr("Messagerie", "Messages")}
-        <MessageCountBadge
-          messageCount={badge.message_count ?? 0}
-          unreadCount={badge.unread_count ?? 0}
-          style={{ marginLeft: 0 }}
-        />
-      </Link>
-    );
-  }
 
   return (
     <div className="player-dashboard-bg">
@@ -312,15 +243,38 @@ export default function CoachHomePage() {
                   <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
                     <Link href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link" style={{ textDecoration: "none" }}>
                       <div style={{ display: "grid", gap: 10 }}>
-                        <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                          {isSameDay(e.starts_at, e.ends_at) ? (
-                            <div>{fmtDateTime(e.starts_at, dateLocale)}</div>
-                          ) : (
-                            <div>
-                              {fmtDateTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
-                              {e.ends_at ? fmtDateTime(e.ends_at, dateLocale) : ""}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: 8,
+                              fontSize: 12,
+                              fontWeight: 950,
+                              color: "rgba(0,0,0,0.82)",
+                            }}
+                          >
+                            <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                            <div style={{ display: "grid", gap: 2 }}>
+                              {isSameDay(e.starts_at, e.ends_at) ? (
+                                <div>
+                                  {fmtDateLabelNoTime(e.starts_at, dateLocale)}{" "}
+                                  {e.ends_at ? (
+                                    <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                      {locale === "fr"
+                                        ? `• de ${fmtTime(e.starts_at, dateLocale)} à ${fmtTime(e.ends_at, dateLocale)}`
+                                        : `• from ${fmtTime(e.starts_at, dateLocale)} to ${fmtTime(e.ends_at, dateLocale)}`}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div>
+                                  {fmtDateLabelNoTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
+                                  {e.ends_at ? fmtDateLabelNoTime(e.ends_at, dateLocale) : ""}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
                         </div>
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
@@ -338,26 +292,33 @@ export default function CoachHomePage() {
                               —
                             </div>
                           )}
-                          <div style={{ flexShrink: 0 }}>
-                            {renderMessagePill(e.id, e.group_id)}
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <span
-                            className="pill-soft"
+                          <Link
+                            href={`/coach/groups/${e.group_id}/planning/${e.id}`}
                             style={{
                               display: "inline-flex",
                               alignItems: "center",
+                              justifyContent: "center",
                               gap: 6,
+                              padding: "8px 12px",
+                              minHeight: 36,
+                              borderRadius: 12,
                               color: "rgba(127,29,29,1)",
-                              background: "rgba(239,68,68,0.16)",
-                              borderColor: "rgba(239,68,68,0.35)",
+                              border: "1px solid rgba(239,68,68,0.35)",
+                              backgroundColor: "rgba(254,242,242,0.96)",
+                              backgroundImage: "none",
                               fontWeight: 900,
+                              fontSize: 13,
+                              lineHeight: 1.1,
+                              flexShrink: 0,
+                              boxShadow: "none",
+                              textShadow: "none",
+                              textDecoration: "none",
+                              WebkitTextFillColor: "rgba(127,29,29,1)",
                             }}
                           >
-                            <AlertTriangle size={14} />
-                            {tr("Évaluation", "Evaluation")}
-                          </span>
+                            <AlertTriangle size={14} color="rgba(127,29,29,1)" />
+                            {tr("Évaluer", "Evaluate")}
+                          </Link>
                         </div>
                       </div>
                     </Link>
@@ -385,16 +346,19 @@ export default function CoachHomePage() {
                       <div style={{ display: "grid", gap: 10 }}>
                         <div
                           style={{
-                            display: "grid",
-                            gap: 2,
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
                             fontSize: 12,
                             fontWeight: 950,
                             color: "rgba(0,0,0,0.82)",
                           }}
                         >
+                          <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                          <div style={{ display: "grid", gap: 2 }}>
                           {isSameDay(e.starts_at, e.ends_at) ? (
                             <div>
-                              {fmtDateTime(e.starts_at, dateLocale)}{" "}
+                              {fmtDateLabelNoTime(e.starts_at, dateLocale)}{" "}
                               {e.ends_at ? (
                                 <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                                   {locale === "fr"
@@ -405,10 +369,11 @@ export default function CoachHomePage() {
                             </div>
                           ) : (
                             <div>
-                              {fmtDateTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
-                              {e.ends_at ? fmtDateTime(e.ends_at, dateLocale) : ""}
+                              {fmtDateLabelNoTime(e.starts_at, dateLocale)} {tr("au", "to")}{" "}
+                              {e.ends_at ? fmtDateLabelNoTime(e.ends_at, dateLocale) : ""}
                             </div>
                           )}
+                          </div>
                         </div>
                         <div className="hr-soft" style={{ margin: "1px 0" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
@@ -426,9 +391,13 @@ export default function CoachHomePage() {
                               —
                             </div>
                           )}
-                          <div style={{ flexShrink: 0 }}>
-                            {renderMessagePill(e.id, e.group_id)}
-                          </div>
+                          <Link
+                            className="btn"
+                            href={`/coach/groups/${e.group_id}/planning/${e.id}`}
+                            style={{ flexShrink: 0 }}
+                          >
+                            {tr("Détail", "Details")}
+                          </Link>
                         </div>
                       </div>
                     </Link>

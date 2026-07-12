@@ -317,38 +317,47 @@ export default function PlayerCampsPage() {
                 const isRegistered = camp.registration_status === "registered";
                 return (
                   <div key={camp.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 18, background: "rgba(255,255,255,0.82)", display: "grid", gap: 14 }}>
-                    <div className="glass-card" style={{ display: "grid", gap: 12, background: "rgba(255,255,255,0.96)", border: "1px solid rgba(0,0,0,0.08)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                        <div style={{ display: "grid", gap: 0 }}>
-                          <div className="card-title" style={{ marginBottom: 0 }}>{camp.title}</div>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)", marginTop: 2 }}>Organisé par {camp.club_name}</div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                          {!isRegistered ? (
-                            <button type="button" className="btn btn-camp-register" onClick={() => void registerCamp(camp.id)} disabled={busyKey === `register-${camp.id}`}>
-                              {busyKey === `register-${camp.id}` ? "Inscription…" : "S'inscrire"}
+                    <div
+                      className="glass-card"
+                      style={{
+                        display: "grid",
+                        gap: 14,
+                        justifyItems: "center",
+                        textAlign: "center",
+                        background: "rgba(255,255,255,0.98)",
+                        border: "1px solid rgba(0,0,0,0.08)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gap: 4, justifyItems: "center" }}>
+                        <div className="card-title" style={{ marginBottom: 0, fontSize: 30, lineHeight: 1.05, fontWeight: 995 }}>{camp.title}</div>
+                        <div style={{ fontSize: 13, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>Organisé par {camp.club_name}</div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                        {!isRegistered ? (
+                          <button type="button" className="btn btn-camp-register" onClick={() => void registerCamp(camp.id)} disabled={busyKey === `register-${camp.id}`}>
+                            {busyKey === `register-${camp.id}` ? "Inscription…" : "S'inscrire"}
+                          </button>
+                        ) : (
+                          <>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(21,128,61,1)", fontWeight: 900, fontSize: 14 }}>
+                              <CheckCircle2 size={16} /> Inscrit
+                            </div>
+                            <button type="button" className="btn" onClick={() => void unregisterCamp(camp.id)} disabled={busyKey === `unregister-${camp.id}`}>
+                              {busyKey === `unregister-${camp.id}` ? "Désinscription…" : "Se désinscrire"}
                             </button>
-                          ) : (
-                            <>
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(21,128,61,1)", fontWeight: 900, fontSize: 14 }}>
-                                <CheckCircle2 size={16} /> Inscrit
-                              </div>
-                              <button type="button" className="btn" onClick={() => void unregisterCamp(camp.id)} disabled={busyKey === `unregister-${camp.id}`}>
-                                {busyKey === `unregister-${camp.id}` ? "Désinscription…" : "Se désinscrire"}
-                              </button>
-                            </>
-                          )}
-                        </div>
+                          </>
+                        )}
                       </div>
 
                       {camp.notes?.trim() ? (
                         <div
-                          style={{ fontSize: 14, color: "#111827", paddingBlock: 6 }}
+                          style={{ fontSize: 14, color: "#111827", paddingBlock: 6, textAlign: "left", justifySelf: "stretch" }}
                           dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}
                         />
                       ) : null}
 
-                      <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "grid", gap: 8, justifySelf: "stretch" }}>
                         <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.56)", textTransform: "uppercase", letterSpacing: 0.4 }}>Responsable du camp</div>
                         <CoachMiniCard coach={camp.head_coach} />
                       </div>

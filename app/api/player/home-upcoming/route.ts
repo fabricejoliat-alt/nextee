@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
 
     const nowIso = new Date().toISOString();
 
-    const [futureSessionsRes, attendeeRes, plannedCompetitionsRes] = await Promise.all([
+    const [futureSessionsRes, attendeeRes, plannedCompetitionsRes, registeredCampPlayersRes] = await Promise.all([
       supabaseAdmin
         .from("training_sessions")
         .select("id,start_at,location_text,session_type,club_id,club_event_id")
@@ -82,15 +82,22 @@ export async function GET(req: NextRequest) {
         .gte("starts_at", nowIso)
         .order("starts_at", { ascending: true })
         .limit(5),
+      supabaseAdmin
+        .from("club_camp_players")
+        .select("camp_id")
+        .eq("player_id", effectiveUserId)
+        .eq("registration_status", "registered"),
     ]);
 
     if (futureSessionsRes.error) return NextResponse.json({ error: futureSessionsRes.error.message }, { status: 400 });
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (plannedCompetitionsRes.error) return NextResponse.json({ error: plannedCompetitionsRes.error.message }, { status: 400 });
+    if (registeredCampPlayersRes.error) return NextResponse.json({ error: registeredCampPlayersRes.error.message }, { status: 400 });
 
     const futureSessions = futureSessionsRes.data ?? [];
     const attendeeRows = attendeeRes.data ?? [];
     const plannedCompetitions = plannedCompetitionsRes.data ?? [];
+    const registeredCampIds = uniq((registeredCampPlayersRes.data ?? []).map((row: any) => row.camp_id));
 
     const attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
     const attendeeEventIds = uniq((attendeeRows as Array<{ event_id: string | null }>).map((row) => row.event_id));
@@ -100,18 +107,56 @@ export async function GET(req: NextRequest) {
       attendeeStatusByEventId[eventId] = (row.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
     });
 
-    const plannedRes = attendeeEventIds.length
+    const registeredCampDaysRes = registeredCampIds.length
+      ? await supabaseAdmin
+          .from("club_camp_days")
+          .select("camp_id,event_id,starts_at,club_events:event_id(id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status)")
+          .in("camp_id", registeredCampIds)
+          .gte("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+      : ({ data: [], error: null } as const);
+    if (registeredCampDaysRes.error) return NextResponse.json({ error: registeredCampDaysRes.error.message }, { status: 400 });
+
+    const registeredCampEventIds = uniq((registeredCampDaysRes.data ?? []).map((row: any) => row.event_id));
+    const registeredCampEvents = (registeredCampDaysRes.data ?? [])
+      .map((row: any) => row.club_events ?? null)
+      .filter((event: any) => event && String(event.status ?? "") === "scheduled")
+      .map((event: any) => ({
+        id: String(event.id ?? "").trim(),
+        event_type: (event.event_type ?? null) as any,
+        title: event.title ?? null,
+        starts_at: event.starts_at ?? null,
+        ends_at: event.ends_at ?? null,
+        duration_minutes: Number(event.duration_minutes ?? 0),
+        location_text: event.location_text ?? null,
+        club_id: String(event.club_id ?? "").trim(),
+        group_id: event.group_id ? String(event.group_id).trim() : null,
+        status: (event.status ?? "scheduled") as "scheduled" | "cancelled",
+      }))
+      .filter((event: any) => event.id && event.starts_at);
+    const plannedEventIds = uniq([...attendeeEventIds, ...registeredCampEventIds]);
+    const plannedRes = plannedEventIds.length
       ? await supabaseAdmin
           .from("club_events")
           .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
-          .in("id", attendeeEventIds)
+          .in("id", plannedEventIds)
           .eq("status", "scheduled")
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
-          .limit(10)
       : ({ data: [], error: null } as const);
     if (plannedRes.error) return NextResponse.json({ error: plannedRes.error.message }, { status: 400 });
-    const plannedEvents = plannedRes.data ?? [];
+    const plannedEventsMap = new Map<string, any>();
+    (plannedRes.data ?? []).forEach((event: any) => {
+      const eventId = String(event.id ?? "").trim();
+      if (!eventId) return;
+      plannedEventsMap.set(eventId, event);
+    });
+    registeredCampEvents.forEach((event: any) => {
+      if (!plannedEventsMap.has(event.id)) plannedEventsMap.set(event.id, event);
+    });
+    const plannedEvents = Array.from(plannedEventsMap.values()).sort(
+      (a: any, b: any) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+    );
 
     const plannedEventIdSet = new Set(plannedEvents.map((event: any) => String(event.id ?? "").trim()).filter(Boolean));
     const dedupedFutureSessions = futureSessions.filter((session: any) => {
@@ -167,6 +212,13 @@ export async function GET(req: NextRequest) {
       });
     });
 
+    const upcomingCampEventIds = new Set(
+      plannedEvents
+        .filter((event: any) => String(event.event_type ?? "").trim() === "camp")
+        .map((event: any) => String(event.id ?? "").trim())
+        .filter(Boolean)
+    );
+
     const upcomingActivities = [
       ...plannedEvents.map((event: any) => ({ kind: "event", key: `event-${event.id}`, dateIso: event.starts_at, event })),
       ...dedupedFutureSessions.map((session: any) => ({
@@ -175,15 +227,16 @@ export async function GET(req: NextRequest) {
         dateIso: session.start_at,
         session,
       })),
-      ...plannedCompetitions.map((competition: any) => ({
-        kind: "competition",
-        key: `competition-${competition.id}`,
-        dateIso: competition.starts_at,
-        competition,
-      })),
+      ...plannedCompetitions
+        .filter((competition: any) => !(competition.event_type === "camp" && upcomingCampEventIds.size > 0))
+        .map((competition: any) => ({
+          kind: "competition",
+          key: `competition-${competition.id}`,
+          dateIso: competition.starts_at,
+          competition,
+        })),
     ]
-      .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime())
-      .slice(0, 5);
+      .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
 
     return NextResponse.json({
       viewerUserId,

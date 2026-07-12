@@ -47,10 +47,83 @@ export async function GET(req: NextRequest) {
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("group_id")
+      .select("group_id,event_type")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
+    const eventType = String((eventRes.data as { event_type?: string | null } | null)?.event_type ?? "").trim();
+
+    if (eventType === "camp") {
+      const campDayRes = await supabaseAdmin
+        .from("club_camp_days")
+        .select("camp_id")
+        .eq("event_id", eventId)
+        .maybeSingle();
+      if (campDayRes.error) return NextResponse.json({ error: campDayRes.error.message }, { status: 400 });
+      const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
+      if (!campId) return NextResponse.json({ attendees: [] });
+
+      const registeredPlayersRes = await supabaseAdmin
+        .from("club_camp_players")
+        .select("player_id,registration_status")
+        .eq("camp_id", campId)
+        .eq("registration_status", "registered");
+      if (registeredPlayersRes.error) return NextResponse.json({ error: registeredPlayersRes.error.message }, { status: 400 });
+
+      const registeredPlayerIds = Array.from(
+        new Set(
+          ((registeredPlayersRes.data ?? []) as Array<{ player_id: string | null }>)
+            .map((row) => String(row.player_id ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      if (registeredPlayerIds.length === 0) return NextResponse.json({ attendees: [] });
+
+      const attendeesRes = await supabaseAdmin
+        .from("club_event_attendees")
+        .select("player_id,status")
+        .eq("event_id", eventId)
+        .eq("status", "present")
+        .in("player_id", registeredPlayerIds);
+      if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+
+      const presentPlayerIds = Array.from(
+        new Set(
+          ((attendeesRes.data ?? []) as Array<{ player_id: string | null }>)
+            .map((row) => String(row.player_id ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      if (presentPlayerIds.length === 0) return NextResponse.json({ attendees: [] });
+
+      const profilesRes = await supabaseAdmin
+        .from("profiles")
+        .select("id,first_name,last_name,avatar_url")
+        .in("id", presentPlayerIds);
+      if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
+
+      const namesById: Record<string, { first_name: string | null; last_name: string | null; avatar_url: string | null }> = {};
+      (profilesRes.data ?? []).forEach((p: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }) => {
+        namesById[String(p.id)] = {
+          first_name: p.first_name ?? null,
+          last_name: p.last_name ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      });
+
+      const attendees = presentPlayerIds
+        .map((pid) => ({
+          player_id: pid,
+          status: "present" as const,
+          first_name: namesById[pid]?.first_name ?? null,
+          last_name: namesById[pid]?.last_name ?? null,
+          avatar_url: namesById[pid]?.avatar_url ?? null,
+        }))
+        .sort((a, b) => `${a.last_name ?? ""} ${a.first_name ?? ""}`.localeCompare(`${b.last_name ?? ""} ${b.first_name ?? ""}`, "fr"));
+
+      return NextResponse.json({ attendees });
+    }
+
     const groupId = String((eventRes.data as { group_id?: string | null } | null)?.group_id ?? "").trim();
     if (!groupId) return NextResponse.json({ attendees: [] });
 

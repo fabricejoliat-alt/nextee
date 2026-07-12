@@ -9,11 +9,10 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { Flame, Mountain, Smile, Pencil, ChevronDown, Filter, MessageCircle, Trash2 } from "lucide-react";
+import { CalendarDays, Flame, Mountain, Smile, Pencil, ChevronDown, Filter, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
-import MessageCountBadge from "@/components/messages/MessageCountBadge";
 
 type SessionRow = {
   id: string;
@@ -108,6 +107,7 @@ type TrainingsPageCache = {
   attendeeEvents: PlannedEventRow[];
   attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>;
   competitionEvents: PlayerActivityEventRow[];
+  activeClubCount: number;
   clubNameById: Record<string, string>;
   groupNameById: Record<string, string>;
   itemsBySessionId: Record<string, SessionItemRow[]>;
@@ -126,6 +126,7 @@ type TrainingsCoreResponse = {
   attendeeEvents: PlannedEventRow[];
   attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>;
   competitionEvents: PlayerActivityEventRow[];
+  activeClubCount: number;
   clubNameById: Record<string, string>;
   groupNameById: Record<string, string>;
 };
@@ -351,6 +352,7 @@ export default function TrainingsListPage() {
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>>({});
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [competitionEvents, setCompetitionEvents] = useState<PlayerActivityEventRow[]>([]);
+  const [activeClubCount, setActiveClubCount] = useState(0);
 
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
@@ -378,6 +380,7 @@ export default function TrainingsListPage() {
   const [editingCompetitionId, setEditingCompetitionId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string>("");
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
+  const showOrganizer = activeClubCount > 1;
 
   const categoryLabel = (cat: string) => {
     const map: Record<string, string> = {
@@ -708,6 +711,7 @@ export default function TrainingsListPage() {
       setAttendeeEvents(json.attendeeEvents ?? []);
       setAttendeeStatusByEventId(json.attendeeStatusByEventId ?? {});
       setCompetitionEvents(json.competitionEvents ?? []);
+      setActiveClubCount(Number(json.activeClubCount ?? 0));
       setClubNameById(json.clubNameById ?? {});
       setGroupNameById(json.groupNameById ?? {});
       setItemsBySessionId(pageCache?.itemsBySessionId ?? {});
@@ -720,6 +724,7 @@ export default function TrainingsListPage() {
       setAttendeeEvents([]);
       setAttendeeStatusByEventId({});
       setCompetitionEvents([]);
+      setActiveClubCount(0);
       setClubNameById({});
       setGroupNameById({});
       setItemsBySessionId({});
@@ -740,6 +745,7 @@ export default function TrainingsListPage() {
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents,
+      activeClubCount,
       performanceEnabled,
       clubNameById,
       groupNameById,
@@ -756,6 +762,7 @@ export default function TrainingsListPage() {
     attendeeEvents,
     attendeeStatusByEventId,
     competitionEvents,
+    activeClubCount,
     performanceEnabled,
     clubNameById,
     groupNameById,
@@ -1584,14 +1591,17 @@ export default function TrainingsListPage() {
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div
                               style={{
-                                display: "grid",
-                                gap: 2,
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: 8,
                                 fontSize: 12,
                                 fontWeight: 950,
                                 color: "rgba(0,0,0,0.82)",
                               }}
                             >
-                              {isMultiDay ? (
+                              <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                              <div style={{ display: "grid", gap: 2 }}>
+                                {isMultiDay ? (
                                 <div>
                                   {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
                                 </div>
@@ -1602,9 +1612,10 @@ export default function TrainingsListPage() {
                                     {locale === "fr"
                                       ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
                                       : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                                  </span>
-                                </div>
-                              )}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
                             {isAttendanceEvent && isUpcomingEvent ? (
@@ -1631,7 +1642,7 @@ export default function TrainingsListPage() {
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                                 {eventTitle}
                               </div>
-                              {isAttendanceEvent && !isCollapsedTraining ? (
+                              {showOrganizer && isAttendanceEvent ? (
                                 <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
                                   {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
                                 </div>
@@ -1649,12 +1660,6 @@ export default function TrainingsListPage() {
 
                           {!isCollapsedTraining ? (
                             <>
-                              {e.location_text ? (
-                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                                  📍 {e.location_text}
-                                </div>
-                              ) : null}
-
                               {showEventStructure ? <div className="hr-soft" style={{ margin: "2px 0" }} /> : null}
 
                               {showEventStructure ? (
@@ -1680,21 +1685,17 @@ export default function TrainingsListPage() {
                           ) : null}
 
                           {isTrainingLike ? (
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              {e.location_text ? (
+                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                  📍 {e.location_text}
+                                </div>
+                              ) : <div />}
                               <Link
                                 className="btn"
                                 href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}
                               >
                                 {pickLocaleText(locale, "Détails", "Details")}
-                              </Link>
-                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}>
-                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                {pickLocaleText(locale, "Messagerie", "Messages")}
-                                <MessageCountBadge
-                                  messageCount={messageBadge.message_count ?? 0}
-                                  unreadCount={messageBadge.unread_count ?? 0}
-                                  style={{ marginLeft: 0 }}
-                                />
                               </Link>
                               {canEvaluateEvent ? (
                                 <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${e.id}`}>
@@ -1797,6 +1798,9 @@ export default function TrainingsListPage() {
                   const linkedEvent = s.club_event_id
                     ? attendeeEvents.find((ev) => ev.id === s.club_event_id) ?? null
                     : null;
+                  const organizerClubName =
+                    (linkedEvent?.club_id ? clubNameById[linkedEvent.club_id] : null) ??
+                    (s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null);
                   const linkedAttendanceStatus = linkedEvent ? attendeeStatusByEventId[linkedEvent.id] ?? null : null;
                   const isLinkedAttendanceEvent =
                     linkedEvent != null &&
@@ -1907,9 +1911,9 @@ export default function TrainingsListPage() {
                               <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                                 {sessionTitle}
                               </div>
-                              {normalizedSessionType === "club" && clubName ? (
+                              {showOrganizer && organizerClubName ? (
                                 <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                                  {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
+                                  {pickLocaleText(locale, "Organisé par", "Organized by")} {organizerClubName}
                                 </div>
                               ) : null}
                             </div>
@@ -1922,12 +1926,6 @@ export default function TrainingsListPage() {
                               </span>
                             ) : null}
                           </div>
-
-                          {displayLocation ? (
-                            <div className="truncate" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
-                              📍 {displayLocation}
-                            </div>
-                          ) : null}
 
                           {postes.length > 0 && <div className="hr-soft" style={{ margin: "2px 0" }} />}
 
@@ -1956,7 +1954,12 @@ export default function TrainingsListPage() {
                             </>
                           ) : null}
 
-                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {displayLocation ? (
+                              <div className="truncate" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
+                                📍 {displayLocation}
+                              </div>
+                            ) : <div />}
                             <Link className="btn" href={`/player/golf/trainings/${s.id}`} onClick={(e) => e.stopPropagation()}>
                               {pickLocaleText(locale, "Détails", "Details")}
                             </Link>
@@ -1970,23 +1973,6 @@ export default function TrainingsListPage() {
                                 {pickLocaleText(locale, "Éditer le stage", "Edit camp")}
                               </Link>
                             ) : null}
-                            {linkedEvent ? (
-                              <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(linkedEvent.id)}`} onClick={(e) => e.stopPropagation()}>
-                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                {pickLocaleText(locale, "Messagerie", "Messages")}
-                                {(() => {
-                                  const badge = messageBadgesByEventId[String(linkedEvent.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-                                  return (
-                                    <MessageCountBadge
-                                      messageCount={badge.message_count ?? 0}
-                                      unreadCount={badge.unread_count ?? 0}
-                                      style={{ marginLeft: 0 }}
-                                    />
-                                  );
-                                })()}
-                              </Link>
-                            ) : null}
-
                             {canEvaluateLinkedSession ? (
                               <Link className="btn" href={`/player/golf/trainings/${s.id}/edit`} onClick={(e) => e.stopPropagation()}>
                                 <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />

@@ -12,10 +12,9 @@ import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPage
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { ArrowRight, MessageCircle, PlusCircle } from "lucide-react";
+import { ArrowRight, CalendarDays, PlusCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import MessageCountBadge from "@/components/messages/MessageCountBadge";
 
 type Profile = {
   id: string;
@@ -87,11 +86,6 @@ type MarketplaceImageRow = {
   item_id: string;
   path: string;
   sort_order: number;
-};
-
-type AttendeeStatusRow = {
-  event_id: string;
-  status: "expected" | "present" | "absent" | "excused" | null;
 };
 
 type HomeSessionRow = {
@@ -679,7 +673,6 @@ export default function PlayerHomePage() {
   const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, HomeEventStructureItem[]>>({});
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
-  const [upcomingIndex, setUpcomingIndex] = useState(0);
   const [latestNews, setLatestNews] = useState<HomeNewsItem | null>(null);
   const [newsLoading, setNewsLoading] = useState(true);
   const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
@@ -710,6 +703,7 @@ export default function PlayerHomePage() {
     if (names.length === 0) return "—";
     return names.join(" • ");
   }, [clubs]);
+  const showOrganizer = clubs.filter((c) => Boolean(c?.id)).length > 1;
 
   const trainingVolumeObjective = useMemo(() => {
     const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
@@ -841,10 +835,6 @@ export default function PlayerHomePage() {
 
       const previewUpcoming = (json?.upcomingActivities ?? []) as HomeUpcomingItem[];
       setUpcomingActivities(previewUpcoming);
-      setUpcomingIndex((i) => {
-        if (previewUpcoming.length === 0) return 0;
-        return Math.min(i, previewUpcoming.length - 1);
-      });
       setUpcomingLoading(false);
     } catch {
       // keep default full-loading flow
@@ -1326,160 +1316,9 @@ export default function PlayerHomePage() {
       setMonthItems([]);
     }
 
-    // Upcoming activities (same family as /player/golf/trainings planned list)
-    try {
-      const nowIso = new Date().toISOString();
-      const futureSessionsRes = await supabase
-        .from("training_sessions")
-        .select("id,start_at,location_text,session_type,club_id,club_event_id")
-        .eq("user_id", effectiveUid)
-        .gte("start_at", nowIso)
-        .order("start_at", { ascending: true })
-        .limit(60);
-      const futureSessions = !futureSessionsRes.error ? (futureSessionsRes.data ?? []) as HomeSessionRow[] : [];
-
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id,status")
-        .eq("player_id", effectiveUid)
-        .in("status", ["expected", "present", "absent", "excused"])
-        .limit(2000);
-      const statusMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-      const attendeeEventIds = new Set<string>();
-      if (!attendeeRes.error) {
-        (attendeeRes.data ?? []).forEach((r: AttendeeStatusRow) => {
-          const eid = String(r.event_id ?? "");
-          if (!eid) return;
-          attendeeEventIds.add(eid);
-          statusMap[eid] = (r.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
-        });
-      }
-      setAttendeeStatusByEventId(statusMap);
-
-      let plannedEvents: HomePlannedEventRow[] = [];
-      if (attendeeEventIds.size > 0) {
-        const plannedRes = await supabase
-          .from("club_events")
-          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
-          .in("id", Array.from(attendeeEventIds))
-          .eq("status", "scheduled")
-          .gte("starts_at", nowIso)
-          .order("starts_at", { ascending: true })
-          .limit(80);
-        if (!plannedRes.error) plannedEvents = (plannedRes.data ?? []) as HomePlannedEventRow[];
-      }
-
-      const plannedEventIdSet = new Set(plannedEvents.map((event) => String(event.id ?? "").trim()).filter(Boolean));
-      const dedupedFutureSessions = futureSessions.filter((session) => {
-        const linkedEventId = String(session.club_event_id ?? "").trim();
-        return !linkedEventId || !plannedEventIdSet.has(linkedEventId);
-      });
-
-      const plannedCompetitionsRes = await supabase
-        .from("player_activity_events")
-        .select("id,event_type,title,starts_at,ends_at,location_text,status")
-        .eq("user_id", effectiveUid)
-        .eq("status", "scheduled")
-        .gte("starts_at", nowIso)
-        .order("starts_at", { ascending: true })
-        .limit(60);
-      const plannedCompetitions = !plannedCompetitionsRes.error
-        ? (plannedCompetitionsRes.data ?? []) as HomePlayerActivityRow[]
-        : [];
-
-      const clubIdSet = new Set<string>();
-      plannedEvents.forEach((e) => clubIdSet.add(e.club_id));
-      futureSessions.forEach((s) => {
-        if (s.club_id) clubIdSet.add(s.club_id);
-      });
-      if (clubIdSet.size > 0) {
-        const clubRes = await supabase.from("clubs").select("id,name").in("id", Array.from(clubIdSet));
-        const map: Record<string, string> = {};
-        if (!clubRes.error) {
-          (clubRes.data ?? []).forEach((c: Club) => {
-            map[String(c.id)] = c.name ?? t("common.club");
-          });
-        }
-        setClubNameById(map);
-      } else {
-        setClubNameById({});
-      }
-
-      const groupIds = Array.from(new Set(plannedEvents.map((e) => e.group_id).filter((x): x is string => Boolean(x))));
-      if (groupIds.length > 0) {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token ?? "";
-        if (token) {
-          const query = new URLSearchParams({
-            ids: groupIds.join(","),
-            child_id: effectiveUid,
-          });
-          const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
-            method: "GET",
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          });
-          const gJson = await gRes.json().catch(() => ({}));
-          const gMap: Record<string, string> = {};
-          ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
-            gMap[g.id] = g.name ?? "Groupe";
-          });
-          setGroupNameById(gMap);
-        } else {
-          setGroupNameById({});
-        }
-      } else {
-        setGroupNameById({});
-      }
-
-      const structureEventIds = Array.from(
-        new Set([
-          ...plannedEvents.map((event) => String(event.id ?? "").trim()),
-          ...futureSessions.map((session) => String(session.club_event_id ?? "").trim()),
-        ].filter(Boolean))
-      );
-
-      if (structureEventIds.length > 0) {
-        const structRes = await supabase
-          .from("club_event_structure_items")
-          .select("event_id,category,minutes,note")
-          .in("event_id", structureEventIds);
-        if (!structRes.error) {
-          const map: Record<string, HomeEventStructureItem[]> = {};
-          (structRes.data ?? []).forEach((r: HomeEventStructureItem) => {
-            const eid = String(r.event_id ?? "");
-            if (!eid) return;
-            if (!map[eid]) map[eid] = [];
-            map[eid].push(r);
-          });
-          if (Object.keys(map).length > 0) {
-            setEventStructureByEventId((prev) => ({ ...prev, ...map }));
-          }
-        }
-      }
-
-      const upcoming: HomeUpcomingItem[] = [
-        ...plannedEvents.map((event) => ({ kind: "event" as const, key: `event-${event.id}`, dateIso: event.starts_at, event })),
-        ...dedupedFutureSessions.map((session) => ({ kind: "session" as const, key: `session-${session.id}`, dateIso: session.start_at, session })),
-        ...plannedCompetitions.map((competition) => ({
-          kind: "competition" as const,
-          key: `competition-${competition.id}`,
-          dateIso: competition.starts_at,
-          competition,
-        })),
-      ].sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
-      setUpcomingActivities(upcoming);
-      setUpcomingIndex((i) => {
-        if (upcoming.length === 0) return 0;
-        return Math.min(i, upcoming.length - 1);
-      });
-      setUpcomingLoading(false);
-    } catch (e) {
-      // Non-blocking: keep dashboard visible even if upcoming widgets timeout.
-      console.warn("player home upcoming load failed:", e);
-      setUpcomingActivities([]);
-      setUpcomingLoading(false);
-    }
+    // Upcoming activities are intentionally sourced only from the server preview API.
+    // This avoids client-side permission or join differences that can overwrite
+    // the correct camp-day list a few seconds later.
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("common.errorLoading"));
@@ -1821,7 +1660,7 @@ export default function PlayerHomePage() {
     ],
     [focusFromRounds.fwPctAvg, focusFromRounds.girPctAvg, focusFromRounds.puttAvg, focusFromRounds.scramblingPct, locale, t]
   );
-  const currentUpcoming = upcomingActivities[upcomingIndex] ?? null;
+  const upcomingPreview = upcomingActivities.slice(0, 3);
   const latestNewsDate = latestNews
     ? formatNewsPublishedLabel(latestNews.published_at ?? latestNews.scheduled_for ?? latestNews.created_at, locale)
     : "";
@@ -1967,179 +1806,199 @@ export default function PlayerHomePage() {
                   <div style={{ height: 10, width: "72%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
                 </div>
               </div>
-            ) : currentUpcoming ? (
-              <>
-                {currentUpcoming.kind === "event" ? (() => {
-                  const e = currentUpcoming.event;
-                  const linkedSession = upcomingActivities.find(
-                    (item): item is Extract<HomeUpcomingItem, { kind: "session" }> =>
-                      item.kind === "session" && item.session.club_event_id === e.id
-                  )?.session ?? null;
-                  const clubName = clubNameById[e.club_id] ?? t("common.club");
-                  const groupName = e.group_id ? groupNameById[e.group_id] : null;
-                  const eventEnd =
-                    e.ends_at ??
-                    new Date(new Date(e.starts_at).getTime() + Math.max(1, Number(e.duration_minutes ?? 0)) * 60_000).toISOString();
-                  const isMultiDay = !sameDay(e.starts_at, eventEnd);
-                  const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
-                  const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
-                  const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
-                  let eventTitle = eventType;
-                  const customName = (e.title ?? "").trim();
-                  if (e.event_type === "training") {
-                    const trainingGroupLabel = groupName || (pickLocaleText(locale, "Groupe", "Group"));
-                    eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
-                  }
-                  if (e.event_type !== "training") {
-                    eventTitle = customName ? `${eventType} • ${customName}` : eventType;
-                  }
-                  return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                        <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                          {isMultiDay ? (
-                            <div>
-                              {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
+            ) : upcomingPreview.length > 0 ? (
+              <div className="marketplace-list marketplace-list-top">
+                {upcomingPreview.map((item, index) => (
+                  <div
+                    key={item.key}
+                    className="marketplace-item"
+                    style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
+                  >
+                    {item.kind === "event" ? (() => {
+                      const e = item.event;
+                      const linkedSession = upcomingActivities.find(
+                        (candidate): candidate is Extract<HomeUpcomingItem, { kind: "session" }> =>
+                          candidate.kind === "session" && candidate.session.club_event_id === e.id
+                      )?.session ?? null;
+                      const clubName = clubNameById[e.club_id] ?? t("common.club");
+                      const groupName = e.group_id ? groupNameById[e.group_id] : null;
+                      const eventEnd =
+                        e.ends_at ??
+                        new Date(new Date(e.starts_at).getTime() + Math.max(1, Number(e.duration_minutes ?? 0)) * 60_000).toISOString();
+                      const isMultiDay = !sameDay(e.starts_at, eventEnd);
+                      const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
+                      const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
+                      const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
+                      let eventTitle = eventType;
+                      const customName = (e.title ?? "").trim();
+                      if (e.event_type === "training") {
+                        const trainingGroupLabel = groupName || pickLocaleText(locale, "Groupe", "Group");
+                        eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
+                      }
+                      if (e.event_type !== "training") {
+                        eventTitle = customName ? `${eventType} • ${customName}` : eventType;
+                      }
+
+                      return (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              alignItems: "center",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                gap: 8,
+                                fontSize: 12,
+                                fontWeight: 950,
+                                color: "rgba(0,0,0,0.82)",
+                              }}
+                            >
+                              <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                              <div style={{ display: "grid", gap: 2 }}>
+                                {isMultiDay ? (
+                                  <div>
+                                    {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
+                                    <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                      {locale === "fr"
+                                        ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
+                                        : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          ) : (
-                            <div>
-                              {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
-                              <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                {locale === "fr"
-                                  ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
-                                  : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                              </span>
+                            {isAttendanceEvent ? (
+                              <AttendanceToggle
+                                checked={attendanceStatus === "present"}
+                                onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
+                                disabled={attendanceBusyEventId === e.id}
+                                disabledCursor="wait"
+                                ariaLabel={pickLocaleText(locale, "Basculer présence", "Toggle attendance")}
+                                leftLabel={pickLocaleText(locale, "Absent", "Absent")}
+                                rightLabel={pickLocaleText(locale, "Présent", "Present")}
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                          <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                              {eventTitle}
                             </div>
-                          )}
-                        </div>
-                        {isAttendanceEvent ? (
-                          <AttendanceToggle
-                            checked={attendanceStatus === "present"}
-                            onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
-                            disabled={attendanceBusyEventId === e.id}
-                            disabledCursor="wait"
-                            ariaLabel={pickLocaleText(locale, "Basculer présence", "Toggle attendance")}
-                            leftLabel={pickLocaleText(locale, "Absent", "Absent")}
-                            rightLabel={pickLocaleText(locale, "Présent", "Present")}
-                          />
-                        ) : null}
-                      </div>
-
-                      <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {eventTitle}
+                            {showOrganizer && isAttendanceEvent ? (
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
+                                {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
-                        {isAttendanceEvent ? (
-                          <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                            {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
-                          </div>
-                        ) : null}
-                      </div>
 
-                      {e.location_text ? (
-                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                          📍 {e.location_text}
-                        </div>
-                      ) : null}
-                      {e.event_type === "training" ? (
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                          <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
-                            {pickLocaleText(locale, "Détails", "Details")}
-                          </Link>
-                          {(() => {
-                            const badge = messageBadgesByEventId[String(e.id)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-                            return (
-                              <Link
-                                className="btn"
-                                href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(e.id)}`}
-                                title={pickLocaleText(locale, "Messagerie", "Messages")}
-                                aria-label={pickLocaleText(locale, "Ouvrir la page de l'activité", "Open activity page")}
-                              >
-                                <MessageCircle size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                {pickLocaleText(locale, "Messagerie", "Messages")}
-                                <MessageCountBadge
-                                  messageCount={badge.message_count ?? 0}
-                                  unreadCount={badge.unread_count ?? 0}
-                                  showZero
-                                  style={{ marginLeft: 6 }}
-                                />
+                          {isAttendanceEvent ? (
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              {e.location_text ? (
+                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                                  📍 {e.location_text}
+                                </div>
+                              ) : <div />}
+                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
+                                {pickLocaleText(locale, "Détails", "Details")}
                               </Link>
-                            );
-                          })()}
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  );
-                })() : null}
+                      );
+                    })() : null}
 
-                {currentUpcoming.kind === "competition" ? (() => {
-                  const c = currentUpcoming.competition;
-                  const typeLabelComp =
-                    c.event_type === "camp"
-                      ? locale === "fr"
-                        ? "Stage"
-                        : "Camp"
-                      : locale === "fr"
-                      ? "Compétition"
-                      : "Competition";
-                  const title = `${typeLabelComp}${(c.title ?? "").trim() ? ` • ${(c.title ?? "").trim()}` : ""}`;
-                  return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                        {sameDay(c.starts_at, c.ends_at) ? (
-                          <div>{fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))}</div>
-                        ) : (
-                          <div>
-                            {fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(c.ends_at, pickLocaleText(locale, "fr", "en"))}
+                    {item.kind === "competition" ? (() => {
+                      const c = item.competition;
+                      const typeLabelComp =
+                        c.event_type === "camp"
+                          ? locale === "fr"
+                            ? "Stage"
+                            : "Camp"
+                          : locale === "fr"
+                          ? "Compétition"
+                          : "Competition";
+                      const title = `${typeLabelComp}${(c.title ?? "").trim() ? ` • ${(c.title ?? "").trim()}` : ""}`;
+                      return (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                            <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                            <div style={{ display: "grid", gap: 2 }}>
+                              {sameDay(c.starts_at, c.ends_at) ? (
+                                <div>{fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))}</div>
+                              ) : (
+                                <div>
+                                  {fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(c.ends_at, pickLocaleText(locale, "fr", "en"))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      <div className="hr-soft" style={{ margin: "1px 0" }} />
-                      <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                        {title}
-                      </div>
-                      {c.location_text ? (
-                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                          📍 {c.location_text}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })() : null}
 
-                {currentUpcoming.kind === "session" ? (() => {
-                  const s = currentUpcoming.session;
-                  const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
-                  const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
-                  const sessionTitle =
-                    normalizedSessionType === "club"
-                      ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
-                      : `${normalizedSessionType === "private" ? (pickLocaleText(locale, "Cours privé", "Private lesson")) : (pickLocaleText(locale, "Entraînement individuel", "Individual training"))}`;
-                  return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                        <div>{fmtDateLabelNoTime(s.start_at, pickLocaleText(locale, "fr", "en"))}</div>
-                        {hasDisplayableTime(s.start_at) ? (
-                          <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{fmtHourLabel(s.start_at, pickLocaleText(locale, "fr", "en"))}</div>
-                        ) : null}
-                      </div>
-                      <div className="hr-soft" style={{ margin: "1px 0" }} />
-                      <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                        {sessionTitle}
-                      </div>
-                      {s.location_text ? (
-                        <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                          📍 {s.location_text}
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {title}
+                          </div>
+                          {c.location_text ? (
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                              📍 {c.location_text}
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  );
-                })() : null}
-              </>
+                      );
+                    })() : null}
+
+                    {item.kind === "session" ? (() => {
+                      const s = item.session;
+                      const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
+                      const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
+                      const sessionTitle =
+                        normalizedSessionType === "club"
+                          ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
+                          : `${normalizedSessionType === "private" ? pickLocaleText(locale, "Cours privé", "Private lesson") : pickLocaleText(locale, "Entraînement individuel", "Individual training")}`;
+                      return (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                            <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                            <div style={{ display: "grid", gap: 2 }}>
+                              <div>
+                                {fmtDateLabelNoTime(s.start_at, pickLocaleText(locale, "fr", "en"))}
+                                {hasDisplayableTime(s.start_at) ? (
+                                  <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
+                                    {locale === "fr" ? ` • ${fmtHourLabel(s.start_at, "fr")}` : ` • ${fmtHourLabel(s.start_at, "en")}`}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+
+                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
+                            {sessionTitle}
+                          </div>
+                          {s.location_text ? (
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                              📍 {s.location_text}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })() : null}
+                  </div>
+                ))}
+              </div>
             ) : (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
                 {pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}
@@ -2147,23 +2006,10 @@ export default function PlayerHomePage() {
             )}
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => setUpcomingIndex((i) => Math.max(0, i - 1))}
-              disabled={upcomingIndex <= 0 || upcomingActivities.length === 0}
-            >
-              {pickLocaleText(locale, "Précédent", "Previous")}
-            </button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => setUpcomingIndex((i) => Math.min(upcomingActivities.length - 1, i + 1))}
-              disabled={upcomingIndex >= upcomingActivities.length - 1 || upcomingActivities.length === 0}
-            >
-              {pickLocaleText(locale, "Suivant", "Next")}
-            </button>
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Link className="btn" href="/player/golf/trainings?type=all">
+              {pickLocaleText(locale, "Toutes les activités", "All activities")}
+            </Link>
           </div>
         </section>
 

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { Home, Users, CalendarDays, User, LogOut, X, MessageCircle, Trophy, Tent, Newspaper, ShieldCheck } from "lucide-react";
+import { Home, Users, CalendarDays, User, LogOut, X, Trophy, Tent, Newspaper, ShieldCheck } from "lucide-react";
 
 const ROUTES = {
   home: "/coach",
@@ -16,7 +16,6 @@ const ROUTES = {
   validations: "/coach/validations",
   players: "/coach/players",
   om: "/coach/om",
-  messages: "/coach/messages",
   profileEdit: "/coach/profile",
 } as const;
 
@@ -80,7 +79,6 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
   const nav = useMemo(
     () => [
       { label: "Accueil", icon: Home, href: ROUTES.home },
-      { label: "Messagerie", icon: MessageCircle, href: ROUTES.messages },
       { label: "News", icon: Newspaper, href: ROUTES.news },
       { label: "Validations", icon: ShieldCheck, href: ROUTES.validations },
       { label: "Activités", icon: CalendarDays, href: ROUTES.calendar },

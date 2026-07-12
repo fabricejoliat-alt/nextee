@@ -9,7 +9,7 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import { MessageCircle, Send } from "lucide-react";
+import { CalendarDays, MessageCircle, Send } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -37,6 +37,7 @@ type ClubEventRow = {
   duration_minutes: number;
   location_text: string | null;
   status: "scheduled" | "cancelled";
+  title?: string | null;
 };
 
 type ExistingSessionRow = {
@@ -265,6 +266,8 @@ export default function PlayerTrainingNewPage() {
   // planned event (optional)
   const [linkedEvent, setLinkedEvent] = useState<ClubEventRow | null>(null);
   const [linkedGroupName, setLinkedGroupName] = useState<string>("");
+  const [linkedCampTitle, setLinkedCampTitle] = useState<string>("");
+  const [linkedCampDayIndex, setLinkedCampDayIndex] = useState<number | null>(null);
   const [existingSessionId, setExistingSessionId] = useState<string>("");
   const [coachFeedback, setCoachFeedback] = useState<CoachFeedbackRow[]>([]);
   const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
@@ -397,103 +400,6 @@ export default function PlayerTrainingNewPage() {
     setStartAt(`${startDate}T${nextTime}`);
   }
 
-  async function loadCoachOptionsForPlannedEvent(ev: ClubEventRow): Promise<CoachOption[]> {
-  // 1) Try explicit coaches for this event (club_event_coaches)
-  const coachesRes = await supabase
-    .from("club_event_coaches")
-    .select("coach_id")
-    .eq("event_id", ev.id);
-
-  let coachIds = uniq((coachesRes.data ?? []).map((r: any) => String(r.coach_id ?? "").trim())).filter(Boolean);
-
-  // 2) Fallback: use group head coach + assistants (if event has no explicit coaches)
-  if (coachIds.length === 0) {
-    // head coach from coach_groups
-    const gRes = await supabase
-      .from("coach_groups")
-      .select("head_coach_user_id")
-      .eq("id", ev.group_id)
-      .maybeSingle();
-
-    const headId = String(gRes.data?.head_coach_user_id ?? "").trim();
-
-    // assistants (and possibly also head) from coach_group_coaches
-    const gcRes = await supabase
-      .from("coach_group_coaches")
-      .select("coach_user_id,is_head")
-      .eq("group_id", ev.group_id);
-
-    const assistants = (gcRes.data ?? [])
-      .filter((r: any) => !Boolean(r.is_head))
-      .map((r: any) => String(r.coach_user_id ?? "").trim())
-      .filter(Boolean);
-
-    // build final list: head first, then assistants (dedup)
-    coachIds = uniq([headId, ...assistants]).filter(Boolean);
-  }
-
-  if (coachIds.length === 0) return [];
-
-  // 3) Determine head/assistant flags (best-effort)
-  const isHeadById: Record<string, boolean> = {};
-
-  // prefer coach_groups.head_coach_user_id as "head"
-  const g2Res = await supabase
-    .from("coach_groups")
-    .select("head_coach_user_id")
-    .eq("id", ev.group_id)
-    .maybeSingle();
-  const headId2 = String(g2Res.data?.head_coach_user_id ?? "").trim();
-  if (headId2) isHeadById[headId2] = true;
-
-  // also read coach_group_coaches flags if present
-  const groupRoleRes = await supabase
-    .from("coach_group_coaches")
-    .select("coach_user_id,is_head")
-    .eq("group_id", ev.group_id)
-    .in("coach_user_id", coachIds);
-
-  if (!groupRoleRes.error) {
-    (groupRoleRes.data ?? []).forEach((r: any) => {
-      const id = String(r.coach_user_id ?? "").trim();
-      if (!id) return;
-      if (Boolean(r.is_head)) isHeadById[id] = true;
-      else if (isHeadById[id] === undefined) isHeadById[id] = false;
-    });
-  }
-
-  // ensure we have at least one head: if none marked, make first one head
-  const anyHead = coachIds.some((id) => Boolean(isHeadById[id]));
-  if (!anyHead && coachIds[0]) isHeadById[coachIds[0]] = true;
-
-  // 4) Profiles for names
-  const pRes = await supabase
-    .from("profiles")
-    .select("id,first_name,last_name,avatar_url")
-    .in("id", coachIds);
-
-  if (pRes.error) return [];
-
-  const byId: Record<string, ProfileLite> = {};
-  (pRes.data ?? []).forEach((p: any) => (byId[String(p.id)] = p as ProfileLite));
-
-  // 5) Build options (head first)
-  const sorted = [...coachIds].sort((a, b) => Number(Boolean(isHeadById[b])) - Number(Boolean(isHeadById[a])));
-
-    return sorted.map((id) => {
-      const p = byId[id];
-      const label = p ? nameOf(p.first_name ?? null, p.last_name ?? null) : "—";
-      const isHead = Boolean(isHeadById[id]);
-      return {
-        id,
-        label,
-        isHead,
-        roleLabel: isHead ? t("common.coach") : t("trainingNew.extraCoach"),
-        avatar_url: p?.avatar_url ?? null,
-      };
-    });
-}
-
   async function loadCoachOptionsForNonPlannedClub(clubId: string): Promise<CoachOption[]> {
     // ✅ Entraînement club non lié à un groupe:
     // afficher tous les coachs du club + les head coachs des groupes du club.
@@ -608,6 +514,8 @@ export default function PlayerTrainingNewPage() {
           const ev = plannedJson.event as ClubEventRow;
           setLinkedEvent(ev);
           setLinkedGroupName(String(plannedJson?.groupName ?? "").trim());
+          setLinkedCampTitle(String(plannedJson?.campTitle ?? "").trim());
+          setLinkedCampDayIndex(typeof plannedJson?.campDayIndex === "number" ? Number(plannedJson.campDayIndex) : null);
           setExistingSessionId("");
 
           // ✅ force club session
@@ -633,27 +541,36 @@ export default function PlayerTrainingNewPage() {
           }
 
           // ✅ planned coaches: read-only display (head + assistants)
-          const opts: CoachOption[] = await loadCoachOptionsForPlannedEvent(ev);
-          setCoachOptions(opts);
+          const assignedCoaches = ((plannedJson?.assignedCoaches ?? []) as Array<{
+            id: string;
+            label: string;
+            isHead: boolean;
+            staffFunction?: string | null;
+            avatar_url?: string | null;
+          }>).map((coach) => ({
+            id: String(coach.id ?? "").trim(),
+            label: String(coach.label ?? "").trim() || "—",
+            isHead: Boolean(coach.isHead),
+            roleLabel: coach.isHead
+              ? t("common.coach")
+              : String(coach.staffFunction ?? "").trim() || t("trainingNew.extraCoach"),
+            avatar_url: coach.avatar_url ?? null,
+          })).filter((coach) => coach.id);
+          setCoachOptions(assignedCoaches);
           setSelectedCoachIds([]); // pas utilisé en planned
 
           const fb = (plannedJson?.coachFeedback ?? []) as CoachFeedbackRow[];
-          if (fb.length > 0) {
-            setCoachFeedback(fb);
-            const map: Record<string, CoachProfileLite> = {};
-            ((plannedJson?.coachProfiles ?? []) as any[]).forEach((p: any) => {
-              map[String(p.id)] = {
-                id: String(p.id),
-                first_name: p.first_name ?? null,
-                last_name: p.last_name ?? null,
-                avatar_url: p.avatar_url ?? null,
-              };
-            });
-            setCoachProfilesById(map);
-          } else {
-            setCoachFeedback([]);
-            setCoachProfilesById({});
-          }
+          const map: Record<string, CoachProfileLite> = {};
+          ((plannedJson?.coachProfiles ?? []) as any[]).forEach((p: any) => {
+            map[String(p.id)] = {
+              id: String(p.id),
+              first_name: p.first_name ?? null,
+              last_name: p.last_name ?? null,
+              avatar_url: p.avatar_url ?? null,
+            };
+          });
+          setCoachProfilesById(map);
+          setCoachFeedback(fb);
 
           let prefilledFromExistingSession = false;
           const existingSessionRes = await supabase
@@ -713,6 +630,8 @@ export default function PlayerTrainingNewPage() {
         setCoachFeedback([]);
         setCoachProfilesById({});
         setEventAttendees([]);
+        setLinkedCampTitle("");
+        setLinkedCampDayIndex(null);
         setEventThreadId("");
         setEventThreadMessages([]);
         setEventThreadParticipants([]);
@@ -1076,10 +995,13 @@ export default function PlayerTrainingNewPage() {
     (linkedEvent?.club_id ? clubsById[linkedEvent.club_id]?.name : null) ??
     (clubIdForTraining ? clubsById[clubIdForTraining]?.name : null) ??
     t("common.club");
-  const plannedTrainingTypeLabel =
-    `${pickLocaleText(locale, "Entraînement", "Training")} ${plannedClubName}`;
+  const plannedEventTitle = linkedEvent?.event_type === "camp"
+    ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")}${typeof linkedCampDayIndex === "number" ? ` • ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}` : ""}`
+    : `${pickLocaleText(locale, "Entraînement", "Training")} ${plannedClubName}`;
   const infoCardTitle = linkedEvent
-    ? `${pickLocaleText(locale, "Entraînement", "Training")} • ${linkedGroupName || (pickLocaleText(locale, "Groupe", "Group"))}`
+    ? linkedEvent.event_type === "camp"
+      ? plannedEventTitle
+      : `${pickLocaleText(locale, "Entraînement", "Training")} • ${linkedGroupName || (pickLocaleText(locale, "Groupe", "Group"))}`
     : `${t("common.date")} · ${t("common.time")} · ${t("common.place")}`;
 
   return (
@@ -1125,60 +1047,73 @@ export default function PlayerTrainingNewPage() {
             <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                      <div className="card-title" style={{ marginBottom: 0 }}>
-                        {pickLocaleText(locale, "Entraînement", "Training")} — {linkedGroupName || pickLocaleText(locale, "Groupe", "Group")}
+                    <div
+                      className="glass-card"
+                      style={{
+                        padding: 18,
+                        display: "grid",
+                        gap: 6,
+                        justifyItems: "center",
+                        textAlign: "center",
+                        background: "rgba(255,255,255,0.98)",
+                        border: "1px solid rgba(0,0,0,0.10)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 30,
+                          lineHeight: 1.05,
+                          fontWeight: 995,
+                          color: "rgba(0,0,0,0.92)",
+                        }}
+                      >
+                        {linkedEvent.event_type === "camp"
+                          ? linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")
+                          : pickLocaleText(locale, "Entraînement", "Training")}
                       </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="pill-soft">{plannedClubName || t("common.club")}</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                        <div className="marketplace-item-title" style={{ fontSize: 28, lineHeight: 1.15, fontWeight: 980 }}>
-                          {fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}
+                      {linkedEvent.event_type === "camp" && typeof linkedCampDayIndex === "number" ? (
+                        <div
+                          style={{
+                            fontSize: 18,
+                            lineHeight: 1.1,
+                            fontWeight: 900,
+                            color: "rgba(0,0,0,0.62)",
+                          }}
+                        >
+                          {pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}
                         </div>
-                        <div className="marketplace-price-pill">{linkedEvent.duration_minutes} {t("common.min")}</div>
+                      ) : linkedGroupName ? (
+                        <div
+                          style={{
+                            fontSize: 18,
+                            lineHeight: 1.1,
+                            fontWeight: 900,
+                            color: "rgba(0,0,0,0.62)",
+                          }}
+                        >
+                          {linkedGroupName}
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          fontSize: 13,
+                          lineHeight: 1.35,
+                          fontWeight: 850,
+                          color: "rgba(0,0,0,0.72)",
+                        }}
+                      >
+                        {fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}
                       </div>
                       {linkedEvent.location_text ? (
-                        <div style={{ color: "rgba(0,0,0,0.68)", fontWeight: 800, fontSize: 12 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            lineHeight: 1.35,
+                            fontWeight: 800,
+                            color: "rgba(0,0,0,0.62)",
+                          }}
+                        >
                           📍 {linkedEvent.location_text}
-                        </div>
-                      ) : null}
-                      {linkedEventAttendanceBlocked ? (
-                        <div
-                          style={{
-                            border: "1px solid rgba(239,68,68,0.18)",
-                            background: "rgba(239,68,68,0.08)",
-                            color: "rgba(127,29,29,1)",
-                            borderRadius: 12,
-                            padding: "10px 12px",
-                            fontSize: 12,
-                            fontWeight: 900,
-                          }}
-                        >
-                          {pickLocaleText(
-                            locale,
-                            "Tu es indiqué absent sur cet entraînement. Il n'apparaît pas dans les entraînements à évaluer et il ne peut pas être évalué.",
-                            "You are marked absent for this training. It should not appear in trainings to complete and it cannot be evaluated."
-                          )}
-                        </div>
-                      ) : null}
-                      {linkedEventEvaluationBlocked ? (
-                        <div
-                          style={{
-                            border: "1px solid rgba(59,130,246,0.18)",
-                            background: "rgba(59,130,246,0.08)",
-                            color: "rgba(30,64,175,1)",
-                            borderRadius: 12,
-                            padding: "10px 12px",
-                            fontSize: 12,
-                            fontWeight: 900,
-                          }}
-                        >
-                          {pickLocaleText(
-                            locale,
-                            "Les jours de stage/camp restent visibles ici, mais ne sont pas des activités à évaluer.",
-                            "Camp days remain visible here, but they are not activities to evaluate."
-                          )}
                         </div>
                       ) : null}
                     </div>
@@ -1235,7 +1170,7 @@ export default function PlayerTrainingNewPage() {
                                 <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
                               </div>
                               <span className="pill-soft" style={{ fontWeight: 900, whiteSpace: "nowrap" }}>
-                                {c.isHead ? "Head coach" : t("trainingNew.extraCoach")}
+                                {c.roleLabel}
                               </span>
                             </div>
                           ))}
@@ -1245,7 +1180,7 @@ export default function PlayerTrainingNewPage() {
 
                     <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
-                        {pickLocaleText(locale, "Joueurs", "Players")} ({eventAttendees.length})
+                        {pickLocaleText(locale, "Joueurs présents", "Present players")} ({eventAttendees.length})
                       </div>
                       {loadingEventAttendees ? (
                         <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
@@ -1262,11 +1197,11 @@ export default function PlayerTrainingNewPage() {
                             const statusLabel =
                               status === "present"
                                 ? pickLocaleText(locale, "Présent", "Present")
-                                : status === "absent"
-                                  ? pickLocaleText(locale, "Absent", "Absent")
-                                  : status === "excused"
-                                    ? pickLocaleText(locale, "Excusé", "Excused")
-                                    : pickLocaleText(locale, "Attendu", "Expected");
+                                  : status === "absent"
+                                    ? pickLocaleText(locale, "Absent", "Absent")
+                                    : status === "excused"
+                                      ? pickLocaleText(locale, "Excusé", "Excused")
+                                      : pickLocaleText(locale, "Attendu", "Expected");
                             const badgeStyle: CSSProperties =
                               status === "present"
                                 ? { background: "rgba(27,94,32,0.14)", color: "#1b5e20", border: "1px solid rgba(27,94,32,0.24)" }
@@ -1490,7 +1425,7 @@ export default function PlayerTrainingNewPage() {
                           color: "rgba(0,0,0,0.80)",
                         }}
                       >
-                        {plannedTrainingTypeLabel}
+                        {plannedEventTitle}
                       </div>
                     ) : (
                       <select
@@ -1663,7 +1598,7 @@ export default function PlayerTrainingNewPage() {
                                           whiteSpace: "nowrap",
                                         }}
                                       >
-                                        {c.isHead ? "Head coach" : t("trainingNew.extraCoach")}
+                                        {c.roleLabel}
                                       </div>
                                     </div>
                                   );

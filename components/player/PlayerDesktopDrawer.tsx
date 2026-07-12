@@ -19,7 +19,6 @@ import {
   LogOut,
   X,
   Trophy,
-  MessageCircle,
   ListChecks,
   Tent,
   Newspaper,
@@ -34,7 +33,6 @@ const ROUTES = {
   golfDashboard: "/player/golf",
   
   trainingsList: "/player/golf/trainings?type=all",
-  messages: "/player/messages",
   news: "/player/news",
   support: "/player/encadrement",
   trainingsListTraining: "/player/golf/trainings?type=training",
@@ -395,11 +393,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         label: t("nav.home"),
         icon: Home,
         href: ROUTES.home,
-      },
-      {
-        label: locale === "fr" ? "Messagerie" : "Messages",
-        icon: MessageCircle,
-        href: ROUTES.messages,
       },
       {
         label: "News",

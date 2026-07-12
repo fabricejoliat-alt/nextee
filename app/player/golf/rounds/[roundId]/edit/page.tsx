@@ -14,6 +14,7 @@ type Round = {
   start_at: string;
   round_type: "training" | "competition";
   course_source: string | null;
+  external_course_id?: string | null;
   competition_name: string | null;
   notes: string | null;
   om_organization_id: string | null;
@@ -43,6 +44,8 @@ type TournamentRoundMeta = {
   id: string;
   om_miss_cut: boolean;
 };
+
+type OmCompetitionLevel = "club_internal" | "club_official" | "regional" | "national" | "international";
 
 function getParamString(p: any): string | null {
   if (typeof p === "string") return p;
@@ -92,6 +95,24 @@ function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
   return next;
 }
 
+function duplicateNineHoleTemplate(source: Hole[]) {
+  const frontNine = source.slice(0, 9).map((hole, index) => ({
+    ...hole,
+    hole_no: index + 1,
+  }));
+  const backNine = frontNine.map((hole, index) => ({
+    par: hole.par,
+    stroke_index: hole.stroke_index,
+    score: null,
+    putts: null,
+    fairway_hit: null,
+    note: null,
+    id: undefined,
+    hole_no: index + 10,
+  }));
+  return [...frontNine, ...backNine];
+}
+
 export default function EditRoundWizardPage() {
   const { t } = useI18n();
   const params = useParams();
@@ -111,6 +132,11 @@ export default function EditRoundWizardPage() {
   const [round, setRound] = useState<Round | null>(null);
   const [roundDate, setRoundDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [competitionLevel, setCompetitionLevel] = useState<OmCompetitionLevel>("club_official");
+  const [roundsFormatValue, setRoundsFormatValue] = useState<string>("1");
+  const [teeName, setTeeName] = useState("");
+  const [slopeRating, setSlopeRating] = useState("");
+  const [courseRating, setCourseRating] = useState("");
   const [holes, setHoles] = useState<Hole[]>(
     Array.from({ length: 18 }, (_, i) => ({
       hole_no: i + 1,
@@ -288,6 +314,11 @@ export default function EditRoundWizardPage() {
     setRound(loadedRound);
     setRoundDate(localYmdFromIso(loadedRound.start_at));
     setNotes(loadedRound.notes ?? "");
+    setCompetitionLevel((loadedRound.om_competition_level as OmCompetitionLevel | null) ?? "club_official");
+    setRoundsFormatValue(String(loadedRound.om_rounds_18_count ?? 1));
+    setTeeName(loadedRound.tee_name ?? "");
+    setSlopeRating(loadedRound.slope_rating == null ? "" : String(loadedRound.slope_rating));
+    setCourseRating(loadedRound.course_rating == null ? "" : String(loadedRound.course_rating));
 
     setNextRoundId(null);
     setTournamentRounds([]);
@@ -356,6 +387,16 @@ export default function EditRoundWizardPage() {
 
     const maxHoleNo = Math.max(0, ...(hRes.data ?? []).map((x: any) => Number(x.hole_no) || 0));
     const holeCount = maxHoleNo > 0 && maxHoleNo <= 9 ? 9 : 18;
+    if (
+      loadedRound.round_type === "competition" &&
+      loadedRound.om_competition_format === "stroke_play_individual" &&
+      (loadedRound.om_rounds_18_count ?? 1) === 1 &&
+      holeCount === 9
+    ) {
+      setRoundsFormatValue("1x9");
+    } else {
+      setRoundsFormatValue(String(loadedRound.om_rounds_18_count ?? 1));
+    }
 
     // ✅ IMPORTANT: set real defaults in STATE (score = par, putts = 2) if null
     setHoles(
@@ -547,21 +588,112 @@ export default function EditRoundWizardPage() {
     router.push("/player/golf/rounds");
   }
 
+  async function syncHoleTemplateForCompetition(nextRoundId: string, targetFormat: string) {
+    const wantsSingleNine = targetFormat === "1x9";
+    const targetHoleCount = wantsSingleNine ? 9 : 18;
+    const currentHoles = [...holes].sort((a, b) => a.hole_no - b.hole_no);
+
+    let nextHoles: Hole[] = currentHoles;
+    if (targetHoleCount === 9) {
+      nextHoles = currentHoles.slice(0, 9).map((hole, index) => ({ ...hole, hole_no: index + 1 }));
+    } else if (currentHoles.length <= 9) {
+      nextHoles = duplicateNineHoleTemplate(currentHoles.slice(0, 9));
+    } else {
+      nextHoles = currentHoles.slice(0, 18).map((hole, index) => ({ ...hole, hole_no: index + 1 }));
+    }
+
+    const deleteQuery = supabase.from("golf_round_holes").delete().eq("round_id", nextRoundId);
+    if (targetHoleCount === 9) {
+      deleteQuery.gt("hole_no", 9);
+    } else {
+      deleteQuery.gt("hole_no", 18);
+    }
+    const delRes = await deleteQuery;
+    if (delRes.error) throw new Error(delRes.error.message);
+
+    const upsertRows = nextHoles.map((hole) => ({
+      round_id: nextRoundId,
+      hole_no: hole.hole_no,
+      par: hole.par,
+      stroke_index: hole.stroke_index,
+      score: hole.score,
+      putts: hole.putts,
+      fairway_hit: hole.fairway_hit,
+      note: hole.note?.trim() || null,
+    }));
+    const upsertRes = await supabase.from("golf_round_holes").upsert(upsertRows, { onConflict: "round_id,hole_no" });
+    if (upsertRes.error) throw new Error(upsertRes.error.message);
+
+    const refreshed = await supabase
+      .from("golf_round_holes")
+      .select("id,hole_no,par,stroke_index,score,putts,fairway_hit,note")
+      .eq("round_id", nextRoundId)
+      .order("hole_no", { ascending: true });
+    if (refreshed.error) throw new Error(refreshed.error.message);
+    const refreshedRows = (refreshed.data ?? []) as Hole[];
+    setHoles(refreshedRows);
+    setHoleIdx((prev) => Math.min(prev, Math.max(0, refreshedRows.length - 1)));
+  }
+
   async function saveRoundMeta() {
     if (!roundId || !round) return;
     setSaving(true);
     setError(null);
     try {
+      await flushSave();
       const nextStartAt = replaceIsoDateKeepingTime(round.start_at, roundDate);
+      const parsedSlope = slopeRating.trim() === "" ? null : Number(slopeRating);
+      const parsedCourseRating = courseRating.trim() === "" ? null : Number(courseRating);
+      if (parsedSlope !== null && !Number.isFinite(parsedSlope)) throw new Error("Slope invalide.");
+      if (parsedCourseRating !== null && !Number.isFinite(parsedCourseRating)) throw new Error("Course rating invalide.");
+      const nextRounds18Count = roundsFormatValue === "1x9" ? 1 : Number(roundsFormatValue);
+      if (!Number.isFinite(nextRounds18Count) || nextRounds18Count < 1 || nextRounds18Count > 4) {
+        throw new Error("Nombre de tours invalide.");
+      }
       const upd = await supabase
         .from("golf_rounds")
         .update({
           start_at: nextStartAt,
           notes: notes.trim() || null,
+          om_competition_level:
+            round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
+              ? competitionLevel
+              : round.om_competition_level,
+          om_rounds_18_count:
+            round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
+              ? nextRounds18Count
+              : round.om_rounds_18_count,
+          tee_name: teeName.trim() || null,
+          slope_rating: parsedSlope,
+          course_rating: parsedCourseRating,
         })
         .eq("id", roundId);
       if (upd.error) throw new Error(upd.error.message);
-      setRound((prev) => (prev ? { ...prev, start_at: nextStartAt, notes: notes.trim() || null } : prev));
+      if (round.round_type === "competition" && round.om_competition_format === "stroke_play_individual") {
+        await syncHoleTemplateForCompetition(roundId, roundsFormatValue);
+      }
+      const recompute = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
+      if (recompute.error) throw new Error(recompute.error.message);
+      setRound((prev) =>
+        prev
+          ? {
+              ...prev,
+              start_at: nextStartAt,
+              notes: notes.trim() || null,
+              om_competition_level:
+                round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
+                  ? competitionLevel
+                  : prev.om_competition_level,
+              om_rounds_18_count:
+                round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
+                  ? nextRounds18Count
+                  : prev.om_rounds_18_count,
+              tee_name: teeName.trim() || null,
+              slope_rating: parsedSlope,
+              course_rating: parsedCourseRating,
+            }
+          : prev
+      );
     } catch (e: any) {
       setError(e?.message ?? t("common.errorLoading"));
     } finally {
@@ -971,6 +1103,80 @@ export default function EditRoundWizardPage() {
                   style={{ maxWidth: 220 }}
                 />
               </div>
+              {round.round_type === "competition" && round.om_competition_format === "stroke_play_individual" ? (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                    Niveau du tournoi
+                  </div>
+                  <select
+                    className="input"
+                    value={competitionLevel}
+                    onChange={(e) => setCompetitionLevel(e.target.value as OmCompetitionLevel)}
+                    disabled={saving}
+                  >
+                    <option value="club_internal">Tournoi interne</option>
+                    <option value="club_official">Tournoi club</option>
+                    <option value="regional">Tournoi regional</option>
+                    <option value="national">Tournoi national</option>
+                    <option value="international">Tournoi international</option>
+                  </select>
+
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                    Nombre de trous / tours
+                  </div>
+                  <select
+                    className="input"
+                    value={roundsFormatValue}
+                    onChange={(e) => setRoundsFormatValue(e.target.value)}
+                    disabled={saving}
+                  >
+                    <option value="1x9">1 x 9</option>
+                    <option value="1">1 x 18</option>
+                    <option value="2">2 x 18</option>
+                    <option value="3">3 x 18</option>
+                    <option value="4">4 x 18</option>
+                  </select>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Si le parcours est un 9 trous et que tu choisis 18 trous, la carte sera automatiquement creee sur 18 trous (2 x 9).
+                  </div>
+
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
+                    Tee de depart
+                  </div>
+                  <input
+                    className="input"
+                    value={teeName}
+                    onChange={(e) => setTeeName(e.target.value)}
+                    disabled={saving}
+                    placeholder="Ex: Tee jaune"
+                  />
+
+                  <div className="grid-2">
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Slope</span>
+                      <input
+                        className="input"
+                        inputMode="numeric"
+                        value={slopeRating}
+                        onChange={(e) => setSlopeRating(e.target.value)}
+                        disabled={saving}
+                        placeholder="Ex: 125"
+                      />
+                    </label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Course rating</span>
+                      <input
+                        className="input"
+                        inputMode="decimal"
+                        value={courseRating}
+                        onChange={(e) => setCourseRating(e.target.value)}
+                        disabled={saving}
+                        placeholder="Ex: 71.4"
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
               <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
                 Hydratation, alimentation, etc.
               </div>

@@ -11,6 +11,10 @@ function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
 }
 
+function nameOf(first: string | null | undefined, last: string | null | undefined) {
+  return `${first ?? ""} ${last ?? ""}`.trim() || "—";
+}
+
 export async function GET(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -51,7 +55,7 @@ export async function GET(req: NextRequest) {
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status")
+      .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status,title")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
@@ -66,9 +70,21 @@ export async function GET(req: NextRequest) {
       duration_minutes: number | null;
       location_text: string | null;
       status: string | null;
+      title: string | null;
     };
 
-    const [groupRes, clubRes, feedbackRes, playerStructureRes] = await Promise.all([
+    const campDayRes = event.event_type === "camp"
+      ? await supabaseAdmin
+          .from("club_camp_days")
+          .select("camp_id,day_index")
+          .eq("event_id", eventId)
+          .maybeSingle()
+      : ({ data: null, error: null } as const);
+    if (campDayRes.error) return NextResponse.json({ error: campDayRes.error.message }, { status: 400 });
+
+    const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
+
+    const [groupRes, clubRes, feedbackRes, playerStructureRes, campRes, eventCoachLinksRes] = await Promise.all([
       event.group_id
         ? supabaseAdmin.from("coach_groups").select("name").eq("id", event.group_id).maybeSingle()
         : ({ data: null, error: null } as const),
@@ -88,18 +104,37 @@ export async function GET(req: NextRequest) {
         .eq("player_id", effectivePlayerId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      campId
+        ? supabaseAdmin.from("club_camps").select("id,title,head_coach_user_id").eq("id", campId).maybeSingle()
+        : ({ data: null, error: null } as const),
+      supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
     ]);
 
     if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
     if (clubRes.error) return NextResponse.json({ error: clubRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
     if (playerStructureRes.error) return NextResponse.json({ error: playerStructureRes.error.message }, { status: 400 });
+    if (campRes.error) return NextResponse.json({ error: campRes.error.message }, { status: 400 });
+    if (eventCoachLinksRes.error) return NextResponse.json({ error: eventCoachLinksRes.error.message }, { status: 400 });
 
-    const coachIds = uniq(((feedbackRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id));
+    const feedbackCoachIds = ((feedbackRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
+    const linkedCoachIds = ((eventCoachLinksRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
+    const campHeadCoachId = String((campRes.data as { head_coach_user_id?: string | null } | null)?.head_coach_user_id ?? "").trim() || null;
+    const coachIds = uniq([...linkedCoachIds, ...feedbackCoachIds, campHeadCoachId]);
     const coachProfilesRes = coachIds.length
-      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", coachIds)
+      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url,staff_function").in("id", coachIds)
       : ({ data: [], error: null } as const);
     if (coachProfilesRes.error) return NextResponse.json({ error: coachProfilesRes.error.message }, { status: 400 });
+
+    const groupRoleRowsRes =
+      event.group_id && coachIds.length > 0
+        ? await supabaseAdmin
+            .from("coach_group_coaches")
+            .select("coach_user_id,is_head")
+            .eq("group_id", event.group_id)
+            .in("coach_user_id", coachIds)
+        : ({ data: [], error: null } as const);
+    if (groupRoleRowsRes.error) return NextResponse.json({ error: groupRoleRowsRes.error.message }, { status: 400 });
 
     const commonStructureRes =
       (playerStructureRes.data ?? []).length > 0
@@ -112,10 +147,57 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: true });
     if (commonStructureRes.error) return NextResponse.json({ error: commonStructureRes.error.message }, { status: 400 });
 
+    const coachProfileById = new Map<string, { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; staff_function: string | null }>();
+    (coachProfilesRes.data ?? []).forEach((profile: any) => {
+      coachProfileById.set(String(profile.id ?? "").trim(), {
+        id: String(profile.id ?? "").trim(),
+        first_name: profile.first_name ?? null,
+        last_name: profile.last_name ?? null,
+        avatar_url: profile.avatar_url ?? null,
+        staff_function: profile.staff_function ?? null,
+      });
+    });
+
+    const isHeadById: Record<string, boolean> = {};
+    if (campHeadCoachId) isHeadById[campHeadCoachId] = true;
+    (groupRoleRowsRes.data ?? []).forEach((row: any) => {
+      const coachUserId = String(row.coach_user_id ?? "").trim();
+      if (!coachUserId) return;
+      if (Boolean(row.is_head)) isHeadById[coachUserId] = true;
+      else if (isHeadById[coachUserId] === undefined) isHeadById[coachUserId] = false;
+    });
+    const anyHead = coachIds.some((id) => Boolean(isHeadById[id]));
+    if (!anyHead && coachIds[0]) isHeadById[coachIds[0]] = true;
+
+    const assignedCoaches = coachIds
+      .map((coachId) => {
+        const profile = coachProfileById.get(coachId);
+        return {
+          id: coachId,
+          first_name: profile?.first_name ?? null,
+          last_name: profile?.last_name ?? null,
+          avatar_url: profile?.avatar_url ?? null,
+          label: nameOf(profile?.first_name ?? null, profile?.last_name ?? null),
+          isHead: Boolean(isHeadById[coachId]),
+          staffFunction: String(profile?.staff_function ?? "").trim() || null,
+        };
+      })
+      .sort((a, b) => {
+        const headDiff = Number(b.isHead) - Number(a.isHead);
+        if (headDiff !== 0) return headDiff;
+        return a.label.localeCompare(b.label, "fr");
+      });
+
     return NextResponse.json({
       event,
       groupName: String((groupRes.data as { name?: string | null } | null)?.name ?? ""),
       clubName: String((clubRes.data as { name?: string | null } | null)?.name ?? ""),
+      campId: campId || null,
+      campTitle: String((campRes.data as { title?: string | null } | null)?.title ?? event.title ?? "").trim() || null,
+      campDayIndex: typeof (campDayRes.data as { day_index?: number | null } | null)?.day_index === "number"
+        ? Number((campDayRes.data as { day_index?: number | null }).day_index)
+        : null,
+      assignedCoaches,
       coachFeedback: feedbackRes.data ?? [],
       coachProfiles: coachProfilesRes.data ?? [],
       plannedStructureItems:

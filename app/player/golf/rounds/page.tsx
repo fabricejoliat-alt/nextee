@@ -23,6 +23,8 @@ type Round = {
   om_competition_level: string | null;
   om_rounds_18_count: number | null;
   om_competition_format: "stroke_play_individual" | "match_play_individual" | null;
+  om_points_net: number | null;
+  om_points_brut: number | null;
   score_entry_mode: "full" | "hole_only" | null;
   om_match_result: "won" | "lost" | null;
   match_score_text: string | null;
@@ -125,6 +127,16 @@ function getCurrentMonthYmdRange(now = new Date()) {
   };
 }
 
+function getLast3MonthsYmdRange(now = new Date()) {
+  const { start, end } = last3MonthsRangeLocal(now);
+  const endInclusive = new Date(end);
+  endInclusive.setDate(endInclusive.getDate() - 1);
+  return {
+    from: isoToYMD(start),
+    to: isoToYMD(endInclusive),
+  };
+}
+
 function roundTitle(r: Round, t: (key: string) => string) {
   if (r.round_type === "competition") {
     return `${t("rounds.competition")}${r.competition_name ? ` — ${r.competition_name}` : ""}`;
@@ -142,10 +154,10 @@ export default function RoundsListPage() {
   const [holesByRoundId, setHolesByRoundId] = useState<Record<string, HoleLite[]>>({});
   const [roundPositionByRoundId, setRoundPositionByRoundId] = useState<Record<string, string>>({});
 
-  const [fromDate, setFromDate] = useState<string>(() => getCurrentMonthYmdRange().from);
-  const [toDate, setToDate] = useState<string>(() => getCurrentMonthYmdRange().to);
+  const [fromDate, setFromDate] = useState<string>(() => getLast3MonthsYmdRange().from);
+  const [toDate, setToDate] = useState<string>(() => getLast3MonthsYmdRange().to);
 
-  const [preset, setPreset] = useState<Preset>("month");
+  const [preset, setPreset] = useState<Preset>("last3");
   const [customOpen, setCustomOpen] = useState(false);
 
   const [page, setPage] = useState(1);
@@ -164,7 +176,7 @@ export default function RoundsListPage() {
       const q = supabase
         .from("golf_rounds")
         .select(
-          "id,user_id,start_at,round_type,competition_name,notes,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,score_entry_mode,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
+          "id,user_id,start_at,round_type,competition_name,notes,course_name,tee_name,om_organization_id,om_competition_level,om_rounds_18_count,om_competition_format,om_points_net,om_points_brut,score_entry_mode,om_match_result,match_score_text,match_opponent_handicap,total_score,total_putts,gir",
           { count: "exact" }
         )
         .eq("user_id", uid)
@@ -627,6 +639,16 @@ export default function RoundsListPage() {
                               ) : null}
                             </div>
                           )}
+
+                          {r.round_type === "competition" ? (
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
+                              <div>
+                                OM net: <span style={{ fontWeight: 900 }}>{typeof r.om_points_net === "number" ? r.om_points_net.toFixed(2) : "—"}</span>
+                                {" • "}
+                                OM brut: <span style={{ fontWeight: 900 }}>{typeof r.om_points_brut === "number" ? r.om_points_brut.toFixed(2) : "—"}</span>
+                              </div>
+                            </div>
+                          ) : null}
 
                           <div className="hr-soft" style={{ margin: "2px 0" }} />
 

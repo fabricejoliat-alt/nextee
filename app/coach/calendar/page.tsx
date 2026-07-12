@@ -6,8 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import MessageCountBadge from "@/components/messages/MessageCountBadge";
-import { CalendarDays, Filter, MessageCircle } from "lucide-react";
+import { AlertTriangle, CalendarDays, Filter } from "lucide-react";
 
 type FilterMode = "upcoming" | "past";
 
@@ -26,12 +25,6 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: string;
-};
-
-type EventMessageBadge = {
-  thread_id: string | null;
-  message_count: number;
-  unread_count: number;
 };
 
 function timeLabel(iso: string, locale: string) {
@@ -95,21 +88,6 @@ function isArchiveGroupLabel(label: string) {
   return l.includes("archive") || l.includes("historique");
 }
 
-async function fetchEventMessageBadges(eventIds: string[]) {
-  if (eventIds.length === 0) return {} as Record<string, EventMessageBadge>;
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token ?? "";
-  if (!token) return {} as Record<string, EventMessageBadge>;
-
-  const res = await fetch(`/api/messages/event-badges?event_ids=${encodeURIComponent(eventIds.join(","))}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) return {} as Record<string, EventMessageBadge>;
-  return (json?.badges ?? {}) as Record<string, EventMessageBadge>;
-}
-
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
@@ -120,7 +98,7 @@ export default function CoachCalendarPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [campNamesById, setCampNamesById] = useState<Record<string, string>>({});
-  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
+  const [pendingEvalEventIds, setPendingEvalEventIds] = useState<Set<string>>(new Set());
 
   const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
   const [groupFilter, setGroupFilter] = useState<string>("all");
@@ -137,61 +115,38 @@ export default function CoachCalendarPage() {
         const token = sessionData.session?.access_token ?? "";
         if (!token) throw new Error("Session invalide.");
 
-        const res = await fetch("/api/coach/events/calendar", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(String(json?.error ?? "Erreur chargement"));
+        const [calendarRes, homeRes] = await Promise.all([
+          fetch("/api/coach/events/calendar", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }),
+          fetch("/api/coach/home", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }),
+        ]);
+        const calendarJson = await calendarRes.json().catch(() => ({}));
+        const homeJson = await homeRes.json().catch(() => ({}));
+        if (!calendarRes.ok) throw new Error(String(calendarJson?.error ?? "Erreur chargement"));
+        if (!homeRes.ok) throw new Error(String(homeJson?.error ?? "Erreur chargement"));
 
-        setEvents((json?.events ?? []) as EventRow[]);
-        setGroupNames((json?.groupNameById ?? {}) as Record<string, string>);
-        setCampNamesById((json?.campNameById ?? {}) as Record<string, string>);
+        setEvents((calendarJson?.events ?? []) as EventRow[]);
+        setGroupNames((calendarJson?.groupNameById ?? {}) as Record<string, string>);
+        setCampNamesById((calendarJson?.campNameById ?? {}) as Record<string, string>);
+        setPendingEvalEventIds(
+          new Set<string>(((homeJson?.pendingEvalEvents ?? []) as Array<{ id?: string | null }>).map((event) => String(event?.id ?? "").trim()).filter(Boolean))
+        );
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : tr("Erreur chargement", "Loading error"));
         setEvents([]);
+        setPendingEvalEventIds(new Set());
       } finally {
         setLoading(false);
       }
     })();
   }, [locale]);
-
-  useEffect(() => {
-    const ids = Array.from(new Set(events.map((e) => String(e.id ?? "")).filter(Boolean)));
-    if (ids.length === 0) {
-      setMessageBadgesByEventId({});
-      return;
-    }
-    let cancelled = false;
-    const loadBadges = async () => {
-      const badges = await fetchEventMessageBadges(ids);
-      if (!cancelled) setMessageBadgesByEventId(badges);
-    };
-    void loadBadges();
-
-    const onFocus = () => void loadBadges();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void loadBadges();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    channel = supabase
-      .channel("coach-calendar-event-badges")
-      .on("postgres_changes", { event: "*", schema: "public", table: "thread_messages" }, () => void loadBadges())
-      .on("postgres_changes", { event: "*", schema: "public", table: "thread_participants" }, () => void loadBadges())
-      .on("postgres_changes", { event: "*", schema: "public", table: "message_threads" }, () => void loadBadges())
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [events]);
 
   const nowTs = Date.now();
 
@@ -266,23 +221,6 @@ export default function CoachCalendarPage() {
   useEffect(() => {
     setListPage(1);
   }, [filterMode, groupFilter]);
-
-  function renderMessagePill(eventId: string, groupId: string) {
-    const badge = messageBadgesByEventId[String(eventId)] ?? { thread_id: null, message_count: 0, unread_count: 0 };
-    return (
-      <Link
-        href={`/coach/groups/${encodeURIComponent(groupId)}/planning/${encodeURIComponent(eventId)}`}
-        className="pill-soft"
-        title={tr("Messagerie", "Messages")}
-        aria-label={tr("Ouvrir la page de l'événement", "Open event page")}
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", flexShrink: 0 }}
-      >
-        <MessageCircle size={14} />
-        {tr("Messagerie", "Messages")}
-        <MessageCountBadge messageCount={badge.message_count ?? 0} unreadCount={badge.unread_count ?? 0} />
-      </Link>
-    );
-  }
 
   return (
     <div className="player-dashboard-bg">
@@ -383,11 +321,22 @@ export default function CoachCalendarPage() {
                   const titleLabel = eventCardTitle(e, groupNames, locale);
                   const endIso = e.ends_at ?? e.starts_at;
                   const oneDay = sameDay(e.starts_at, endIso);
+                  const needsEvaluation = pendingEvalEventIds.has(String(e.id ?? ""));
                   return (
-                    <Link key={e.id} href={`/coach/groups/${e.group_id}/planning/${e.id}`} className="marketplace-link">
-                      <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
+                    <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            fontSize: 12,
+                            fontWeight: 950,
+                            color: "rgba(0,0,0,0.82)",
+                          }}
+                        >
+                          <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
+                          <div style={{ display: "grid", gap: 2 }}>
                             {oneDay ? (
                               <div>
                                 {dateLabelNoTime(e.starts_at, dateLocale)}{" "}
@@ -403,26 +352,63 @@ export default function CoachCalendarPage() {
                               </div>
                             )}
                           </div>
-                          <div className="hr-soft" style={{ margin: "1px 0" }} />
+                        </div>
+                        <div className="hr-soft" style={{ margin: "1px 0" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                           <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
                             {titleLabel}
                           </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
                           {e.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
+                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12, minWidth: 0 }} className="truncate">
                               📍 {e.location_text}
                             </div>
-                          ) : null}
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <span onClick={(ev) => ev.stopPropagation()}>{renderMessagePill(e.id, e.group_id)}</span>
-                          </div>
-                          {e.coach_note?.trim() ? (
-                            <div style={{ color: "rgba(0,0,0,0.72)", fontWeight: 700, fontSize: 12, whiteSpace: "pre-wrap" }}>
-                              {e.coach_note}
+                          ) : (
+                            <div style={{ color: "rgba(0,0,0,0.45)", fontWeight: 700, fontSize: 12, minWidth: 0 }} className="truncate">
+                              —
                             </div>
-                          ) : null}
+                          )}
+                          <Link
+                            href={`/coach/groups/${e.group_id}/planning/${e.id}`}
+                            className={needsEvaluation ? undefined : "btn"}
+                            style={
+                              needsEvaluation
+                                ? {
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 6,
+                                    padding: "8px 12px",
+                                    minHeight: 36,
+                                    borderRadius: 12,
+                                    color: "rgba(127,29,29,1)",
+                                    border: "1px solid rgba(239,68,68,0.35)",
+                                    backgroundColor: "rgba(254,242,242,0.96)",
+                                    backgroundImage: "none",
+                                    fontWeight: 900,
+                                    fontSize: 13,
+                                    lineHeight: 1.1,
+                                    flexShrink: 0,
+                                    boxShadow: "none",
+                                    textShadow: "none",
+                                    textDecoration: "none",
+                                    WebkitTextFillColor: "rgba(127,29,29,1)",
+                                  }
+                                : { flexShrink: 0 }
+                            }
+                          >
+                            {needsEvaluation ? <AlertTriangle size={14} color="rgba(127,29,29,1)" /> : null}
+                            {needsEvaluation ? tr("Évaluer", "Evaluate") : tr("Détail", "Details")}
+                          </Link>
                         </div>
+                        {e.coach_note?.trim() ? (
+                          <div style={{ color: "rgba(0,0,0,0.72)", fontWeight: 700, fontSize: 12, whiteSpace: "pre-wrap" }}>
+                            {e.coach_note}
+                          </div>
+                        ) : null}
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

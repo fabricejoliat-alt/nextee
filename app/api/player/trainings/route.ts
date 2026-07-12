@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       if (fallbackChildId) effectiveUserId = fallbackChildId;
     }
 
-    const [perfRes, profileRes, sessionsRes, attendeeRes, competitionRes] = await Promise.all([
+    const [perfRes, profileRes, activeMembershipsRes, sessionsRes, attendeeRes, competitionRes] = await Promise.all([
       supabaseAdmin
         .from("club_members")
         .select("id")
@@ -74,6 +74,11 @@ export async function GET(req: NextRequest) {
         .select("first_name,last_name")
         .eq("id", effectiveUserId)
         .maybeSingle(),
+      supabaseAdmin
+        .from("club_members")
+        .select("club_id")
+        .eq("user_id", effectiveUserId)
+        .eq("is_active", true),
       supabaseAdmin
         .from("training_sessions")
         .select("id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id")
@@ -92,6 +97,7 @@ export async function GET(req: NextRequest) {
 
     if (perfRes.error) return NextResponse.json({ error: perfRes.error.message }, { status: 400 });
     if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
+    if (activeMembershipsRes.error) return NextResponse.json({ error: activeMembershipsRes.error.message }, { status: 400 });
     if (sessionsRes.error) return NextResponse.json({ error: sessionsRes.error.message }, { status: 400 });
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (competitionRes.error) return NextResponse.json({ error: competitionRes.error.message }, { status: 400 });
@@ -196,6 +202,7 @@ export async function GET(req: NextRequest) {
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents: competitionRes.data ?? [],
+      activeClubCount: uniq((activeMembershipsRes.data ?? []).map((row: any) => row.club_id)).length,
       clubNameById,
       groupNameById,
     });
