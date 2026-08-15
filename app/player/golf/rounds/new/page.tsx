@@ -1017,21 +1017,7 @@ export default function NewRoundPage() {
                   </div>
                 ) : !selectedCourse ? (
                   <>
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{t("roundsNew.searchCourse")}</span>
-                      <input
-                        value={q}
-                        onChange={(e) => {
-                          setQ(e.target.value);
-                          resetCourse();
-                        }}
-                        disabled={busy}
-                        placeholder={t("roundsNew.searchPlaceholder")}
-                      />
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        {searching ? t("roundsNew.searching") : results.length > 0 ? `${results.length} ${t("roundsNew.results")}` : " "}
-                      </div>
-                    </label>
+                    <div style={fieldLabelStyle}>{pickLocaleText(locale, "Parcours", "Course")}</div>
 
                     {results.length > 0 && (
                       <div style={{ display: "grid", gap: 10 }}>
@@ -1098,9 +1084,6 @@ export default function NewRoundPage() {
                       </div>
                     )}
 
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                      Si tu ne trouves pas le parcours, clique sur le bouton Ajouter un parcours.
-                    </div>
                     <button
                       type="button"
                       className="btn"
