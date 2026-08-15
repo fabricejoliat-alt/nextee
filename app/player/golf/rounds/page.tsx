@@ -588,6 +588,8 @@ export default function RoundsListPage() {
                                   {c?.overParTotal != null
                                     ? c.overParTotal > 0
                                       ? `(+${c.overParTotal})`
+                                      : c.overParTotal < 0
+                                      ? `(${c.overParTotal})`
                                       : `(0)`
                                     : " "}
                                 </div>

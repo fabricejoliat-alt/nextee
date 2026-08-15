@@ -458,6 +458,8 @@ export default function ScorecardPage() {
                   {computed.overParTotal != null
                     ? computed.overParTotal > 0
                       ? `(+${computed.overParTotal})`
+                      : computed.overParTotal < 0
+                      ? `(${computed.overParTotal})`
                       : `(0)`
                     : " "}
                 </div>
