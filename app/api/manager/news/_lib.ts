@@ -19,6 +19,9 @@ export type NewsLinkedEventOption = {
   title: string;
   event_type: string | null;
   starts_at: string | null;
+  target_user_ids: string[];
+  group_name: string | null;
+  head_coach_name: string | null;
 };
 
 export type NewsLinkedCampOption = {
@@ -289,13 +292,13 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
       .select("id,name,head_coach_user_id")
       .eq("club_id", clubId)
       .eq("is_active", true)
+      .not("club_season_id", "is", null)
       .order("name", { ascending: true }),
     supabaseAdmin
       .from("club_events")
-      .select("id,title,event_type,starts_at,status")
+      .select("id,title,event_type,starts_at,status,group_id")
       .eq("club_id", clubId)
       .neq("status", "cancelled")
-      .neq("event_type", "training")
       .order("starts_at", { ascending: false })
       .limit(150),
     supabaseAdmin
@@ -309,6 +312,30 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
   if (groupsRes.error) throw new Error(groupsRes.error.message);
   if (eventsRes.error) throw new Error(eventsRes.error.message);
   if (campsRes.error) throw new Error(campsRes.error.message);
+
+  const groupsById = new Map<string, any>((groupsRes.data ?? []).map((row: any) => [String(row.id ?? ""), row]));
+  const memberNameById = new Map<string, string>(members.map((member) => [member.user_id, member.full_name]));
+
+  const eventIds = Array.from(new Set((eventsRes.data ?? []).map((row: any) => String(row.id ?? "")).filter(Boolean)));
+  const [eventAttendeesRes, eventCoachesRes] = await Promise.all([
+    eventIds.length > 0
+      ? supabaseAdmin.from("club_event_attendees").select("event_id,player_id").in("event_id", eventIds)
+      : ({ data: [], error: null } as const),
+    eventIds.length > 0
+      ? supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds)
+      : ({ data: [], error: null } as const),
+  ]);
+  if (eventAttendeesRes.error) throw new Error(eventAttendeesRes.error.message);
+  if (eventCoachesRes.error) throw new Error(eventCoachesRes.error.message);
+
+  const eventTargetUserIdsByEventId: Record<string, string[]> = {};
+  for (const row of [...(eventAttendeesRes.data ?? []), ...(eventCoachesRes.data ?? [])] as any[]) {
+    const eventId = String(row.event_id ?? "").trim();
+    const userId = String(row.player_id ?? row.coach_id ?? "").trim();
+    if (!eventId || !userId) continue;
+    if (!eventTargetUserIdsByEventId[eventId]) eventTargetUserIdsByEventId[eventId] = [];
+    if (!eventTargetUserIdsByEventId[eventId].includes(userId)) eventTargetUserIdsByEventId[eventId].push(userId);
+  }
 
   const groupIds = Array.from(new Set((groupsRes.data ?? []).map((row: any) => String(row.id ?? "")).filter(Boolean)));
   const [categoriesRes, groupPlayersRes, groupCoachesRes] = await Promise.all([
@@ -393,6 +420,9 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
       title: String(row.title ?? "").trim() || "Événement",
       event_type: row.event_type == null ? null : String(row.event_type),
       starts_at: row.starts_at == null ? null : String(row.starts_at),
+      target_user_ids: eventTargetUserIdsByEventId[String(row.id ?? "")] ?? [],
+      group_name: groupsById.get(String(row.group_id ?? ""))?.name ?? null,
+      head_coach_name: memberNameById.get(String(groupsById.get(String(row.group_id ?? ""))?.head_coach_user_id ?? "")) ?? null,
     })),
     camps: ((campsRes.data ?? []) as any[]).map((row) => ({
       id: String(row.id ?? ""),
@@ -565,6 +595,22 @@ export async function validateLinkedNewsContent(args: {
     if (campRes.error) throw new Error(campRes.error.message);
     if (!campRes.data) throw new Error("Le stage/camp lié est invalide.");
   }
+}
+
+export async function resolveLinkedEventTargets(supabaseAdmin: any, eventId: string | null) {
+  if (!eventId) return null;
+  const [attendeesRes, coachesRes] = await Promise.all([
+    supabaseAdmin.from("club_event_attendees").select("player_id").eq("event_id", eventId),
+    supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
+  ]);
+  if (attendeesRes.error) throw new Error(attendeesRes.error.message);
+  if (coachesRes.error) throw new Error(coachesRes.error.message);
+  return Array.from(
+    new Set([
+      ...(attendeesRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()),
+      ...(coachesRes.data ?? []).map((row: any) => String(row.coach_id ?? "").trim()),
+    ].filter(Boolean))
+  ).map((userId) => ({ target_type: "user" as const, target_value: userId }));
 }
 
 export function normalizeTargets(raw: unknown) {

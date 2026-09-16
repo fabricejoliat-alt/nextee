@@ -13,7 +13,6 @@ import {
   PlusCircle,
   Map,
   Store,
-  Tags,
   User,
   CircleHelp,
   LogOut,
@@ -34,7 +33,6 @@ const ROUTES = {
   
   trainingsList: "/player/golf/trainings?type=all",
   news: "/player/news",
-  support: "/player/encadrement",
   trainingsListTraining: "/player/golf/trainings?type=training",
   trainingsToComplete: "/player/golf/trainings/to-complete",
   trainingsNew: "/player/golf/trainings/new",
@@ -94,6 +92,12 @@ function isActive(pathname: string, href: string) {
 
 function isTrainingChildActive(pathname: string, searchParams: URLSearchParams, href: string) {
   const hrefPath = href.split("?")[0] || href;
+  if (hrefPath === "/player/om") {
+    const hrefQuery = href.includes("?") ? new URLSearchParams(href.split("?")[1] ?? "") : null;
+    const requestedView = hrefQuery?.get("view") || "summary";
+    const currentView = searchParams.get("view") || "summary";
+    return pathname === hrefPath && requestedView === currentView;
+  }
   if (hrefPath !== "/player/golf/trainings") return isActive(pathname, href);
   const hrefQuery = href.includes("?") ? new URLSearchParams(href.split("?")[1] ?? "") : null;
   const requestedType = hrefQuery?.get("type");
@@ -367,11 +371,12 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       if (eventIds.length > 0) {
         const eRes = await supabase
           .from("club_events")
-          .select("id,event_type,starts_at,status")
+          .select("id,event_type,starts_at,status,requires_evaluation")
           .in("id", eventIds);
         if (!eRes.error) {
           incompleteEventsCount = (eRes.data ?? [])
             .filter((ev: any) => ev.status === "scheduled")
+            .filter((ev: any) => ev.requires_evaluation === true)
             .filter((ev: any) => ev.event_type === "training")
             .filter((ev: any) => new Date(String(ev.starts_at)).getTime() < nowTs)
             .filter((ev: any) => {
@@ -395,7 +400,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         href: ROUTES.home,
       },
       {
-        label: "News",
+        label: "Actualités",
         icon: Newspaper,
         href: ROUTES.news,
       },
@@ -409,8 +414,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             {
               label:
                 locale === "fr"
-                  ? "Activité à compléter"
-                  : "Activity to complete",
+                  ? "Activités à évaluer"
+                  : "Activities to evaluate",
               icon: ListChecks,
               href: ROUTES.trainingsToComplete,
               badgeCount: pendingEvalCount > 0 ? pendingEvalCount : 0,
@@ -462,11 +467,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             },
           ]
         : []),
-      {
-        label: locale === "fr" ? "Encadrement" : "Support team",
-        icon: User,
-        href: ROUTES.support,
-      },
       {
         label: t("nav.marketplace"),
         icon: Store,

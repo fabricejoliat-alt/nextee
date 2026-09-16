@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     const eventsRes = await supabaseAdmin
       .from("club_events")
-      .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+      .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,competition_level,competition_category,external_registration_url,competition_note")
       .in("club_id", clubIds)
       .order("starts_at", { ascending: true });
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });

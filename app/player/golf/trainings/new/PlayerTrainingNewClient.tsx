@@ -1,15 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import { CalendarDays, MessageCircle, Send } from "lucide-react";
+import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
+import { ArrowLeft, Clock3, MapPin, Users } from "lucide-react";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import corporateStyles from "@/app/manager/camps/Camps.module.css";
+import styles from "./PlayerTrainingNew.module.css";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -38,6 +43,7 @@ type ClubEventRow = {
   location_text: string | null;
   status: "scheduled" | "cancelled";
   title?: string | null;
+  requires_evaluation: boolean;
 };
 
 type ExistingSessionRow = {
@@ -80,13 +86,6 @@ type EventAttendeeUiRow = {
   player_id: string;
   status: "expected" | "present" | "absent" | "excused" | "not_registered";
   profile: ProfileLite | null;
-};
-type ThreadMessageRow = {
-  id: string;
-  sender_user_id: string;
-  sender_name: string | null;
-  body: string | null;
-  created_at: string;
 };
 
 type CoachOption = {
@@ -178,7 +177,7 @@ function nameOf(first: string | null, last: string | null) {
 function initialsOf(first: string | null | undefined, last: string | null | undefined) {
   const fi = (first ?? "").trim().charAt(0).toUpperCase();
   const li = (last ?? "").trim().charAt(0).toUpperCase();
-  return `${fi}${li}` || "👤";
+  return `${fi}${li}` || "J";
 }
 
 function uniq<T>(arr: T[]) {
@@ -191,27 +190,14 @@ function coachRatingPercent(value: number | null) {
   return Math.max(0, Math.min(100, raw));
 }
 
-function fmtMessageTime(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
+type PlayerTrainingNewPageProps = {
+  embedded?: boolean;
+  onSaved?: () => void | Promise<void>;
+  embeddedSubmitClassName?: string;
+  embeddedSubmitLabel?: string;
+};
 
-async function markThreadRead(threadId: string) {
-  const { data: sessRes } = await supabase.auth.getSession();
-  const token = sessRes.session?.access_token ?? "";
-  if (!token || !threadId) return;
-  await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/read`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  }).catch(() => {});
-}
-
-export default function PlayerTrainingNewPage() {
+export default function PlayerTrainingNewPage({ embedded = false, onSaved, embeddedSubmitClassName, embeddedSubmitLabel }: PlayerTrainingNewPageProps) {
   const { t, locale } = useI18n();
   const router = useRouter();
   const sp = useSearchParams();
@@ -234,7 +220,6 @@ export default function PlayerTrainingNewPage() {
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   const [userId, setUserId] = useState("");
-  const [viewerUserId, setViewerUserId] = useState("");
 
   // clubs
   const [clubIds, setClubIds] = useState<string[]>([]);
@@ -258,6 +243,8 @@ export default function PlayerTrainingNewPage() {
   const [motivation, setMotivation] = useState<string>("");
   const [difficulty, setDifficulty] = useState<string>("");
   const [satisfaction, setSatisfaction] = useState<string>("");
+  const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
+  const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
 
   // items
   const [items, setItems] = useState<TrainingItemDraft[]>([]);
@@ -273,13 +260,7 @@ export default function PlayerTrainingNewPage() {
   const [coachProfilesById, setCoachProfilesById] = useState<Record<string, CoachProfileLite>>({});
   const [eventAttendees, setEventAttendees] = useState<EventAttendeeUiRow[]>([]);
   const [loadingEventAttendees, setLoadingEventAttendees] = useState(false);
-  const [eventThreadId, setEventThreadId] = useState("");
-  const [eventThreadMessages, setEventThreadMessages] = useState<ThreadMessageRow[]>([]);
-  const [eventThreadParticipants, setEventThreadParticipants] = useState<string[]>([]);
-  const [loadingEventThread, setLoadingEventThread] = useState(false);
   const [showAllEventAttendees, setShowAllEventAttendees] = useState(false);
-  const [threadComposer, setThreadComposer] = useState("");
-  const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
 
   // ✅ coaches (planned: display only / non-planned club: checkbox list)
   const [coachOptions, setCoachOptions] = useState<CoachOption[]>([]);
@@ -310,7 +291,7 @@ export default function PlayerTrainingNewPage() {
   }, [eventAttendees, userId]);
   const linkedEventAttendanceBlocked =
     linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused" || linkedAttendanceStatus === "not_registered";
-  const linkedEventEvaluationBlocked = Boolean(linkedEvent) && linkedEvent.event_type === "camp";
+  const linkedEventEvaluationBlocked = Boolean(linkedEvent) && !linkedEvent.requires_evaluation;
   const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
   const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked || linkedEventEvaluationBlocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
@@ -413,7 +394,7 @@ export default function PlayerTrainingNewPage() {
 
     if (memRes.error) return [];
 
-    const memberCoachIds = uniq((memRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim())).filter(Boolean);
+    const memberCoachIds = uniq(((memRes.data ?? []) as Array<{ user_id: string | null }>).map((row) => String(row.user_id ?? "").trim())).filter(Boolean);
 
     const grpRes = await supabase
       .from("coach_groups")
@@ -422,7 +403,7 @@ export default function PlayerTrainingNewPage() {
       .eq("is_active", true);
 
     const headCoachIds = !grpRes.error
-      ? uniq((grpRes.data ?? []).map((r: any) => String(r.head_coach_user_id ?? "").trim())).filter(Boolean)
+      ? uniq(((grpRes.data ?? []) as Array<{ head_coach_user_id: string | null }>).map((row) => String(row.head_coach_user_id ?? "").trim())).filter(Boolean)
       : [];
 
     const coachIds = uniq([...memberCoachIds, ...headCoachIds]).filter(Boolean);
@@ -432,8 +413,8 @@ export default function PlayerTrainingNewPage() {
     if (pRes.error) return [];
 
     const byId: Record<string, ProfileLite> = {};
-    (pRes.data ?? []).forEach((p: any) => {
-      byId[String(p.id)] = p as ProfileLite;
+    ((pRes.data ?? []) as ProfileLite[]).forEach((profile) => {
+      byId[String(profile.id)] = profile;
     });
 
     const sorted = [...coachIds].sort((a, b) => {
@@ -461,8 +442,6 @@ export default function PlayerTrainingNewPage() {
 
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
-      const { data: authRes } = await supabase.auth.getUser();
-      setViewerUserId(String(authRes.user?.id ?? ""));
       const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
       setPerformanceEnabled(perfEnabled);
 
@@ -487,7 +466,7 @@ export default function PlayerTrainingNewPage() {
         }
 
         const map: Record<string, ClubRow> = {};
-        for (const c of clubsRes.data ?? []) map[(c as any).id] = c as ClubRow;
+        for (const club of (clubsRes.data ?? []) as ClubRow[]) map[club.id] = club;
         setClubsById(map);
 
         setClubIdForTraining(ids[0]);
@@ -561,16 +540,19 @@ export default function PlayerTrainingNewPage() {
 
           const fb = (plannedJson?.coachFeedback ?? []) as CoachFeedbackRow[];
           const map: Record<string, CoachProfileLite> = {};
-          ((plannedJson?.coachProfiles ?? []) as any[]).forEach((p: any) => {
-            map[String(p.id)] = {
-              id: String(p.id),
-              first_name: p.first_name ?? null,
-              last_name: p.last_name ?? null,
-              avatar_url: p.avatar_url ?? null,
+          ((plannedJson?.coachProfiles ?? []) as CoachProfileLite[]).forEach((profile) => {
+            map[String(profile.id)] = {
+              id: String(profile.id),
+              first_name: profile.first_name ?? null,
+              last_name: profile.last_name ?? null,
+              avatar_url: profile.avatar_url ?? null,
             };
           });
           setCoachProfilesById(map);
           setCoachFeedback(fb);
+          const nextCustomCriteria = (plannedJson?.customEvaluationCriteria ?? []) as EventEvaluationCriterion[];
+          setCustomCriteria(nextCustomCriteria);
+          setCustomResponses(Object.fromEntries(((plannedJson?.customEvaluationResponses ?? []) as Array<{ event_criterion_id: string; value_json: string | number | boolean }>).map((row) => [row.event_criterion_id, row.value_json])));
 
           let prefilledFromExistingSession = false;
           const existingSessionRes = await supabase
@@ -632,9 +614,8 @@ export default function PlayerTrainingNewPage() {
         setEventAttendees([]);
         setLinkedCampTitle("");
         setLinkedCampDayIndex(null);
-        setEventThreadId("");
-        setEventThreadMessages([]);
-        setEventThreadParticipants([]);
+        setCustomCriteria([]);
+        setCustomResponses({});
       }
 
       setLoading(false);
@@ -647,11 +628,7 @@ export default function PlayerTrainingNewPage() {
       if (!linkedEvent?.id) {
         setEventAttendees([]);
         setShowAllEventAttendees(false);
-        setEventThreadId("");
-        setEventThreadMessages([]);
-        setEventThreadParticipants([]);
         setLoadingEventAttendees(false);
-        setLoadingEventThread(false);
         return;
       }
 
@@ -700,60 +677,8 @@ export default function PlayerTrainingNewPage() {
         setLoadingEventAttendees(false);
       }
 
-      setLoadingEventThread(true);
-      try {
-        const { data: sessRes } = await supabase.auth.getSession();
-        const token = sessRes.session?.access_token ?? "";
-        if (!token) {
-          setEventThreadId("");
-          setEventThreadMessages([]);
-          setEventThreadParticipants([]);
-          return;
-        }
-        const threadRes = await fetch(`/api/messages/event-thread?event_id=${encodeURIComponent(linkedEvent.id)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const threadJson = await threadRes.json().catch(() => ({}));
-        if (!threadRes.ok) throw new Error(String(threadJson?.error ?? "Thread load failed"));
-        const threadId = String(threadJson?.thread_id ?? "");
-        setEventThreadId(threadId);
-        if (!threadId) {
-          setEventThreadMessages([]);
-          setEventThreadParticipants([]);
-          return;
-        }
-        const [msgRes, partRes] = await Promise.all([
-          fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=20`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }),
-          fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }),
-        ]);
-        const msgJson = await msgRes.json().catch(() => ({}));
-        const partJson = await partRes.json().catch(() => ({}));
-        if (!msgRes.ok) throw new Error(String(msgJson?.error ?? "Messages load failed"));
-        if (!partRes.ok) throw new Error(String(partJson?.error ?? "Participants load failed"));
-        setEventThreadMessages(((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse());
-        setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
-        await markThreadRead(threadId);
-      } catch {
-        setEventThreadId("");
-        setEventThreadMessages([]);
-        setEventThreadParticipants([]);
-      } finally {
-        setLoadingEventThread(false);
-      }
     })();
   }, [linkedEvent?.id, userId]);
-
-  useEffect(() => {
-    if (!eventThreadId) return;
-    void markThreadRead(eventThreadId);
-  }, [eventThreadId, eventThreadMessages.length]);
 
   // ✅ when NOT planned: load coaches ONLY if user is creating a "club" training
   useEffect(() => {
@@ -821,35 +746,6 @@ export default function PlayerTrainingNewPage() {
     }
   }
 
-  async function sendThreadMessage() {
-    const trimmed = threadComposer.trim();
-    if (!eventThreadId || !trimmed || sendingThreadMessage) return;
-    setSendingThreadMessage(true);
-    try {
-      const { data: sessRes } = await supabase.auth.getSession();
-      const token = sessRes.session?.access_token ?? "";
-      if (!token) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session."));
-      const res = await fetch(`/api/messages/threads/${encodeURIComponent(eventThreadId)}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ message_type: "text", body: trimmed }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? pickLocaleText(locale, "Envoi impossible.", "Failed to send message.")));
-      const created = json?.message as ThreadMessageRow | undefined;
-      if (created?.id) setEventThreadMessages((prev) => [...prev, created].slice(-20));
-      setThreadComposer("");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : pickLocaleText(locale, "Envoi impossible.", "Failed to send message.");
-      setError(message);
-    } finally {
-      setSendingThreadMessage(false);
-    }
-  }
-
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!canSave) return;
@@ -880,8 +776,8 @@ export default function PlayerTrainingNewPage() {
     if (linkedEventEvaluationBlocked) {
       setError(
         locale === "fr"
-          ? "Les jours de stage/camp ne sont pas des activités à évaluer."
-          : "Camp days are not activities to evaluate."
+          ? "Cette activité n’est pas configurée pour être évaluée."
+          : "This activity is not configured for evaluation."
       );
       setBusy(false);
       return;
@@ -898,6 +794,15 @@ export default function PlayerTrainingNewPage() {
     const mot = performanceEnabled && showSensationsCard && motivation ? Number(motivation) : null;
     const dif = performanceEnabled && showSensationsCard && difficulty ? Number(difficulty) : null;
     const sat = performanceEnabled && showSensationsCard && satisfaction ? Number(satisfaction) : null;
+
+    if (linkedEvent && showSensationsCard) {
+      const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
+      if (missing) {
+        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`));
+        setBusy(false);
+        return;
+      }
+    }
 
     // ✅ if linkedEvent, mark attendee present (UPDATE only)
     if (linkedEvent) {
@@ -986,6 +891,25 @@ export default function PlayerTrainingNewPage() {
       }
     }
 
+    if (linkedEvent && showSensationsCard && customCriteria.length) {
+      const clearedIds = customCriteria.filter((criterion) => customResponses[criterion.id] == null || customResponses[criterion.id] === "").map((criterion) => criterion.id);
+      if (clearedIds.length) {
+        const removed = await supabase.from("club_event_evaluation_responses").delete().eq("event_id", linkedEvent.id).eq("player_id", userId).eq("respondent_role", "player").in("event_criterion_id", clearedIds);
+        if (removed.error) { setError(removed.error.message); setBusy(false); return; }
+      }
+      const answered = customCriteria.filter((criterion) => customResponses[criterion.id] != null && customResponses[criterion.id] !== "");
+      if (answered.length) {
+        const saved = await supabase.from("club_event_evaluation_responses").upsert(answered.map((criterion) => ({ club_id: linkedEvent.club_id, event_criterion_id: criterion.id, event_id: linkedEvent.id, player_id: userId, respondent_user_id: userId, respondent_role: "player", value_json: customResponses[criterion.id] })), { onConflict: "event_criterion_id,player_id,respondent_role" });
+        if (saved.error) { setError(saved.error.message); setBusy(false); return; }
+      }
+    }
+
+    if (onSaved) {
+      await onSaved();
+      setBusy(false);
+      return;
+    }
+
     router.push("/player/golf/trainings");
   }
 
@@ -1003,24 +927,38 @@ export default function PlayerTrainingNewPage() {
       ? plannedEventTitle
       : `${pickLocaleText(locale, "Entraînement", "Training")} • ${linkedGroupName || (pickLocaleText(locale, "Groupe", "Group"))}`
     : `${t("common.date")} · ${t("common.time")} · ${t("common.place")}`;
+  const saveButtonStyle: CSSProperties = embedded
+    ? { width: "auto", minWidth: 150, justifySelf: "end", paddingInline: 24 }
+    : { width: "100%" };
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
+    <div className={embedded ? undefined : `player-dashboard-bg ${clubEventId ? styles.evaluationPage : ""}`}>
+      <div className={embedded ? undefined : `app-shell marketplace-page ${clubEventId ? styles.evaluationShell : ""}`}>
+        {!embedded ? (
+          <>
+            <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: clubEventId ? pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
+            <div className={clubEventId ? styles.evaluationHero : "glass-section"}>
+          <header className={clubEventId ? corporateStyles.topline : "marketplace-header"}>
             <div style={{ display: "grid", gap: 10 }}>
+              <h1 className={clubEventId ? undefined : "section-title"} style={{ marginBottom: 0 }}>
+                {clubEventId
+                  ? pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity")
+                  : pickLocaleText(locale, "Ajouter un entraînement", "Add training")}
+              </h1>
+              <p className={clubEventId ? corporateStyles.lead : "section-subtitle"}>
+                {clubEventId
+                  ? pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")
+                  : pickLocaleText(locale, "Renseigne la structure réalisée et ton ressenti.", "Enter the completed structure and your feedback.")}
+              </p>
             </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings?type=training">
-                {t("common.back")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings?type=training">
-                {t("trainings.title")}
+            <div className={clubEventId ? styles.heroActions : "marketplace-actions"} style={{ marginTop: 2 }}>
+              <Link className={clubEventId ? `${corporateStyles.secondary} ${styles.backButton}` : "btn"} href={clubEventId ? "/player/golf/trainings/to-complete" : "/player/golf/trainings?type=training"}>
+                {clubEventId ? <ArrowLeft size={15} aria-hidden="true" /> : null}
+                {clubEventId ? pickLocaleText(locale, "Retour aux évaluations", "Back to evaluations") : t("common.back")}
               </Link>
             </div>
-          </div>
+          </header>
 
           {error && <div className="marketplace-error">{error}</div>}
 
@@ -1029,96 +967,50 @@ export default function PlayerTrainingNewPage() {
               {t("trainingNew.noActiveClub")}
             </div>
           )}
-        </div>
-
-        <div className="glass-section">
-          {loading ? (
-            <div
-              className="glass-card"
-              style={{
-                padding: 14,
-                background: "rgba(229,231,235,0.70)",
-                border: "1px solid rgba(0,0,0,0.10)",
-              }}
-            >
-              <CompactLoadingBlock label={pickLocaleText(locale, "Chargement...", "Loading...")} />
             </div>
+          </>
+        ) : (
+          <>
+            {error && <div className="marketplace-error">{error}</div>}
+
+            {sessionType === "club" && clubIds.length === 0 && !loading && (
+              <div style={{ marginBottom: 10, fontSize: 12, fontWeight: 800, color: "#334155" }}>
+                {t("trainingNew.noActiveClub")}
+              </div>
+            )}
+          </>
+        )}
+
+        <div className={embedded ? undefined : clubEventId ? styles.evaluationContent : "glass-section"}>
+          {loading ? (
+            <TrainingFormSkeleton label={pickLocaleText(locale, "Chargement...", "Loading...")} evaluation={Boolean(clubEventId)} />
           ) : (
-            <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
+            <form onSubmit={save} className={clubEventId ? styles.evaluationForm : undefined} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
-                    <div
-                      className="glass-card"
-                      style={{
-                        padding: 18,
-                        display: "grid",
-                        gap: 6,
-                        justifyItems: "center",
-                        textAlign: "center",
-                        background: "rgba(255,255,255,0.98)",
-                        border: "1px solid rgba(0,0,0,0.10)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 30,
-                          lineHeight: 1.05,
-                          fontWeight: 995,
-                          color: "rgba(0,0,0,0.92)",
-                        }}
-                      >
+                    <article className={`glass-card ${styles.activitySummary}`}>
+                      <EvaluationDateTile iso={linkedEvent.starts_at} locale={locale} />
+                      <div className={styles.activitySummaryContent}>
+                        <span className={styles.activityType}>{linkedEvent.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training")}</span>
+                        <h2>
                         {linkedEvent.event_type === "camp"
                           ? linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")
                           : pickLocaleText(locale, "Entraînement", "Training")}
-                      </div>
+                        </h2>
                       {linkedEvent.event_type === "camp" && typeof linkedCampDayIndex === "number" ? (
-                        <div
-                          style={{
-                            fontSize: 18,
-                            lineHeight: 1.1,
-                            fontWeight: 900,
-                            color: "rgba(0,0,0,0.62)",
-                          }}
-                        >
+                        <p>
                           {pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}
-                        </div>
+                        </p>
                       ) : linkedGroupName ? (
-                        <div
-                          style={{
-                            fontSize: 18,
-                            lineHeight: 1.1,
-                            fontWeight: 900,
-                            color: "rgba(0,0,0,0.62)",
-                          }}
-                        >
+                        <p>
                           {linkedGroupName}
-                        </div>
+                        </p>
                       ) : null}
-                      <div
-                        style={{
-                          fontSize: 13,
-                          lineHeight: 1.35,
-                          fontWeight: 850,
-                          color: "rgba(0,0,0,0.72)",
-                        }}
-                      >
-                        {fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}
+                        <div className={styles.activitySummaryMeta}><span><Clock3 size={14} aria-hidden="true" />{fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}</span><span><Users size={14} aria-hidden="true" />{plannedClubName}</span>{linkedEvent.location_text ? <span><MapPin size={14} aria-hidden="true" />{linkedEvent.location_text}</span> : null}</div>
                       </div>
-                      {linkedEvent.location_text ? (
-                        <div
-                          style={{
-                            fontSize: 13,
-                            lineHeight: 1.35,
-                            fontWeight: 800,
-                            color: "rgba(0,0,0,0.62)",
-                          }}
-                        >
-                          📍 {linkedEvent.location_text}
-                        </div>
-                      ) : null}
-                    </div>
+                    </article>
 
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
                         {pickLocaleText(locale, "Coachs assignés", "Assigned coaches")}
                       </div>
@@ -1129,6 +1021,7 @@ export default function PlayerTrainingNewPage() {
                           {coachOptions.map((c) => (
                             <div
                               key={`coach-top-${c.id}`}
+                              className={styles.personRow}
                               style={{
                                 border: "1px solid rgba(0,0,0,0.10)",
                                 borderRadius: 12,
@@ -1140,8 +1033,9 @@ export default function PlayerTrainingNewPage() {
                                 gap: 10,
                               }}
                             >
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              <div className={styles.person}>
                                 <div
+                                  className={styles.avatar}
                                   style={{
                                     width: 30,
                                     height: 30,
@@ -1159,7 +1053,7 @@ export default function PlayerTrainingNewPage() {
                                   }}
                                 >
                                   {c.avatar_url ? (
-                                    <img src={c.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                    <Image src={c.avatar_url} alt="" width={40} height={40} unoptimized />
                                   ) : (
                                     initialsOf(
                                       c.label.split(" ").slice(0, 1).join("") || null,
@@ -1167,7 +1061,7 @@ export default function PlayerTrainingNewPage() {
                                     )
                                   )}
                                 </div>
-                                <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{c.label}</div>
+                                <div className={styles.personName}>{c.label}</div>
                               </div>
                               <span className="pill-soft" style={{ fontWeight: 900, whiteSpace: "nowrap" }}>
                                 {c.roleLabel}
@@ -1176,9 +1070,9 @@ export default function PlayerTrainingNewPage() {
                           ))}
                         </div>
                       )}
-                    </div>
+                    </section>
 
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
                         {pickLocaleText(locale, "Joueurs présents", "Present players")} ({eventAttendees.length})
                       </div>
@@ -1213,6 +1107,7 @@ export default function PlayerTrainingNewPage() {
                             return (
                               <div
                                 key={`evt-att-top-${a.player_id}`}
+                                className={styles.personRow}
                                 style={{
                                   border: "1px solid rgba(0,0,0,0.10)",
                                   borderRadius: 12,
@@ -1224,8 +1119,9 @@ export default function PlayerTrainingNewPage() {
                                   gap: 10,
                                 }}
                               >
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                                <div className={styles.person}>
                                   <div
+                                    className={styles.avatar}
                                     style={{
                                       width: 30,
                                       height: 30,
@@ -1243,12 +1139,12 @@ export default function PlayerTrainingNewPage() {
                                     }}
                                   >
                                     {a.profile?.avatar_url ? (
-                                      <img src={a.profile.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                      <Image src={a.profile.avatar_url} alt="" width={40} height={40} unoptimized />
                                     ) : (
                                       initialsOf(a.profile?.first_name ?? null, a.profile?.last_name ?? null)
                                     )}
                                   </div>
-                                  <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>
+                                  <div className={styles.personName}>
                                     {nameOf(a.profile?.first_name ?? null, a.profile?.last_name ?? null)}
                                   </div>
                                 </div>
@@ -1274,7 +1170,7 @@ export default function PlayerTrainingNewPage() {
                           ) : null}
                         </div>
                       )}
-                    </div>
+                    </section>
 
                     <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
@@ -1852,12 +1748,12 @@ export default function PlayerTrainingNewPage() {
                     </button>
                   </div>
 
-                  {!showSensationsCard ? (
+                  {!embedded && !linkedEvent && !showSensationsCard ? (
                     <button
                       className="cta-green"
                       type="submit"
                       disabled={!canSave || busy}
-                      style={{ width: "100%" }}
+                      style={saveButtonStyle}
                     >
                       {busy ? t("trainingNew.saving") : t("common.save")}
                     </button>
@@ -1865,15 +1761,31 @@ export default function PlayerTrainingNewPage() {
                 </div>
                 ) : null}
 
-                {!performanceEnabled && !linkedEvent ? (
+                {!embedded && !performanceEnabled && !linkedEvent ? (
                   <button
                     className="cta-green"
                     type="submit"
                     disabled={!canSave || busy}
-                    style={{ width: "100%" }}
+                    style={saveButtonStyle}
                   >
                     {busy ? t("trainingNew.saving") : t("common.save")}
                   </button>
+                ) : null}
+
+                {linkedEvent && customCriteria.length ? (
+                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>
+                      {plannedEventLocked ? pickLocaleText(locale, "Objectifs du jour", "Today's goals") : pickLocaleText(locale, "Focus de l’activité", "Activity focus")}
+                    </div>
+                    {customCriteria.map((criterion) => (
+                      <label key={criterion.id} style={{ display: "grid", gap: 7 }}>
+                        <span style={fieldLabelStyle}>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
+                        {criterion.snapshot_description ? <small style={{ opacity: .65 }}>{criterion.snapshot_description}</small> : null}
+                        {showSensationsCard ? <EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={inputsDisabled} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/> : <span className="pill-soft" style={{ width: "fit-content" }}>{criterion.snapshot_domain_label}</span>}
+                      </label>
+                    ))}
+                    {!plannedEventLocked && !showSensationsCard ? <small style={{ opacity: .65 }}>{pickLocaleText(locale, "L’auto-évaluation sera disponible après l’activité.", "Self-assessment will be available after the activity.")}</small> : null}
+                  </div>
                 ) : null}
 
                 {showSensationsCard ? (
@@ -1977,13 +1889,38 @@ export default function PlayerTrainingNewPage() {
                       </label>
                     </div>
 
+                    {!embedded && !linkedEvent ? (
+                      <button
+                        className="cta-green"
+                        type="submit"
+                        disabled={!canSave || busy}
+                        style={saveButtonStyle}
+                      >
+                        {busy ? t("trainingNew.saving") : t("common.save")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {!embedded && linkedEvent ? (
+                  <div className={styles.evaluationActions}>
+                    <Link href="/player/golf/trainings/to-complete" className={styles.cancelEvaluation}>
+                      {pickLocaleText(locale, "Annuler", "Cancel")}
+                    </Link>
+                    <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
+                      {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation")}
+                    </button>
+                  </div>
+                ) : null}
+
+                {embedded ? (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <button
-                      className="cta-green"
+                      className={embeddedSubmitClassName ?? "cta-green"}
                       type="submit"
                       disabled={!canSave || busy}
-                      style={{ width: "100%" }}
                     >
-                      {busy ? t("trainingNew.saving") : t("common.save")}
+                      {busy ? t("trainingNew.saving") : (embeddedSubmitLabel ?? t("common.save"))}
                     </button>
                   </div>
                 ) : null}
@@ -2001,3 +1938,13 @@ const fieldLabelStyle: CSSProperties = {
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
 };
+
+function EvaluationDateTile({ iso, locale }: { iso: string; locale: string }) {
+  const date = new Date(iso);
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  return <div className={styles.dateTile}><span>{new Intl.DateTimeFormat(dateLocale, { weekday: "short" }).format(date).replace(".", "")}</span><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat(dateLocale, { month: "short" }).format(date).replace(".", "")}</span><small>{new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(date)}</small></div>;
+}
+
+function TrainingFormSkeleton({ label, evaluation }: { label: string; evaluation: boolean }) {
+  return <div className={styles.formSkeleton} aria-live="polite" aria-busy="true" aria-label={label}><div className={evaluation ? styles.summarySkeleton : styles.standardSkeleton}><span/><div><span/><span/><span/></div></div>{Array.from({ length: evaluation ? 3 : 2 }, (_, index) => <div className={styles.sectionSkeleton} key={index}><span/><span/><span/></div>)}</div>;
+}

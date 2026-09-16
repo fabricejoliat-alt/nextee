@@ -8,6 +8,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 const BUCKET = "marketplace";
 const MAX_IMAGES = 5;
@@ -518,13 +519,14 @@ export default function MarketplaceEditPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Modifier l’annonce" }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 Modifier une annonce
-              </div>
+              </h1>
               <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
                 {item?.title ?? "—"}
               </div>

@@ -7,6 +7,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { ArrowLeft, Check, Pencil, X } from "lucide-react";
+import campsStyles from "@/app/manager/camps/Camps.module.css";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type Round = {
   id: string;
@@ -360,7 +363,24 @@ export default function ScorecardPage() {
     return parts.filter(Boolean).join(" • ");
   }, [round, t]);
 
-  if (loading) return <CompactLoadingBlock label={t("common.loading")} />;
+  if (loading) {
+    return (
+      <div className="player-dashboard-bg">
+        <div className={`app-shell marketplace-page ${campsStyles.page}`}>
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
+          <div className={campsStyles.topline}>
+            <div>
+              <h1>{t("rounds.scorecard")}</h1>
+              <p className={campsStyles.lead}>{t("common.loading")}</p>
+            </div>
+          </div>
+          <div className={campsStyles.panel}>
+            <CompactLoadingBlock label={t("common.loading")} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!round) {
     return (
@@ -380,38 +400,35 @@ export default function ScorecardPage() {
 
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {/* Header */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {t("rounds.scorecard")}
-              </div>
-            </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+      <div className={`app-shell marketplace-page ${campsStyles.page}`}>
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
+        <div className={campsStyles.topline}>
+          <div>
+            <h1>{t("rounds.scorecard")}</h1>
+            <p className={campsStyles.lead}>{configLine || fmtDate(round.start_at, locale)}</p>
+          </div>
+          <div className="marketplace-actions" style={{ marginTop: 2 }}>
               {prevRoundId ? (
-                <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${prevRoundId}/scorecard`}>
+                <Link className={campsStyles.secondary} href={`/player/golf/rounds/${prevRoundId}/scorecard`}>
                   Tour precedent
                 </Link>
               ) : null}
               {nextRoundId ? (
-                <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${nextRoundId}/scorecard`}>
+                <Link className={campsStyles.secondary} href={`/player/golf/rounds/${nextRoundId}/scorecard`}>
                   Tour suivant
                 </Link>
               ) : null}
-              <Link className="cta-green cta-green-inline" href={`/player/golf/rounds/${round.id}/edit`}>
+              <Link className={campsStyles.primary} href={`/player/golf/rounds/${round.id}/edit`}>
+                <Pencil size={15} aria-hidden="true" />
                 {t("common.edit")}
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
+              <Link className={campsStyles.secondary} href="/player/golf/rounds">
+                <ArrowLeft size={16} aria-hidden="true" />
                 {t("rounds.title")}
               </Link>
             </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
         </div>
+        {error && <div className="marketplace-error" role="alert">{error}</div>}
 
         {/* Summary glass card */}
         <div className="glass-section">
@@ -468,87 +485,51 @@ export default function ScorecardPage() {
           </div>
         </div>
 
-        {/* Holes list */}
         <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14 }}>
-            <div style={{ display: "grid", gap: 10 }}>
-              {holes.map((h) => {
-                const gir = isGIR(h.par, h.score, h.putts);
-                const girKnown = h.par != null && h.score != null && h.putts != null;
-
-                const fwKnown = h.fairway_hit !== null;
-                const fwHit = h.fairway_hit === true;
-                const fwMiss = h.fairway_hit === false;
-
-                return (
-                  <Link
-                    key={h.id ?? `h-${h.hole_no}`}
-                    href={`/player/golf/rounds/${round.id}/edit?hole=${h.hole_no}`}
-                    style={{ display: "block" }}
-                  >
-                    <div
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 16,
-                        background: "rgba(255,255,255,0.65)",
-                        padding: 12,
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
-                        <div style={{ fontWeight: 1000, fontSize: 16 }}>
-                          {t("roundsEdit.hole")} {h.hole_no}
-                        </div>
-
-                        <div style={{ justifySelf: "end" }}>
-                          <ScoreShape
-                            value={h.score}
-                            mark={scoreMark(h.par, h.score)}
-                            triplePlusTitle={t("roundsScorecard.tripleBogeyOrMore")}
-                          />
-                        </div>
-                      </div>
-
-                      {/* ✅ chips/pills */}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span style={pillGrey}>Par {h.par ?? "—"}</span>
-                        {round.score_entry_mode !== "hole_only" ? (
-                          <>
-                            <span
-                              style={
-                                !fwKnown
-                                  ? pillGrey
-                                  : fwHit
-                                  ? pillGreen
-                                  : pillRed
-                              }
-                            >
-                              FW {!fwKnown ? "—" : fwHit ? t("roundsScorecard.hit") : t("roundsScorecard.miss")}
-                            </span>
-
-                            <span
-                              style={
-                                !girKnown
-                                  ? pillGrey
-                                  : gir
-                                  ? pillGreen
-                                  : pillRed
-                              }
-                            >
-                              GIR {!girKnown ? "—" : gir ? t("roundsScorecard.yes") : t("roundsScorecard.no")}
-                            </span>
-                          </>
-                        ) : null}
-                      </div>
-
-                      {!!h.note?.trim() && (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>{h.note.trim()}</div>
-                      )}
-                    </div>
-                  </Link>
-                );
-              })}
+          <div className="glass-card player-scorecard-panel">
+            <div className="player-scorecard-wrap">
+              <table className="player-scorecard">
+                <thead>
+                  <tr>
+                    <th scope="col">{t("roundsEdit.hole")}</th>
+                    {holes.map((hole) => <th key={hole.id ?? `hole-${hole.hole_no}`} scope="col">{hole.hole_no}</th>)}
+                    <th scope="col">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">Par</th>
+                    {holes.map((hole) => <td key={`par-${hole.id}`}>{hole.par ?? "—"}</td>)}
+                    <td className="player-scorecard-total">{computed.parTotal ?? "—"}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Score</th>
+                    {holes.map((hole) => <td key={`score-${hole.id}`}><Link href={`/player/golf/rounds/${round.id}/edit?hole=${hole.hole_no}`} className="player-scorecard-score"><ScoreShape value={hole.score} mark={scoreMark(hole.par, hole.score)} triplePlusTitle={t("roundsScorecard.tripleBogeyOrMore")} /></Link></td>)}
+                    <td className="player-scorecard-total">{computed.scoreTotal ?? "—"}</td>
+                  </tr>
+                  {round.score_entry_mode !== "hole_only" ? <>
+                    <tr>
+                      <th scope="row">Fairway</th>
+                      {holes.map((hole) => <td key={`fairway-${hole.id}`}>{hole.fairway_hit == null ? "—" : hole.fairway_hit ? <Check className="player-scorecard-success" size={15} aria-label={t("roundsScorecard.hit")} /> : <X className="player-scorecard-failure" size={15} aria-label={t("roundsScorecard.miss")} />}</td>)}
+                      <td className="player-scorecard-total">—</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">GIR</th>
+                      {holes.map((hole) => {
+                        const known = hole.par != null && hole.score != null && hole.putts != null;
+                        const gir = isGIR(hole.par, hole.score, hole.putts);
+                        return <td key={`gir-${hole.id}`}>{!known ? "—" : gir ? <Check className="player-scorecard-success" size={15} aria-label={t("roundsScorecard.yes")} /> : <X className="player-scorecard-failure" size={15} aria-label={t("roundsScorecard.no")} />}</td>;
+                      })}
+                      <td className="player-scorecard-total">{computed.gir ?? "—"}</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">Putts</th>
+                      {holes.map((hole) => <td key={`putts-${hole.id}`}>{hole.putts ?? "—"}</td>)}
+                      <td className="player-scorecard-total">{computed.putts ?? "—"}</td>
+                    </tr>
+                  </> : null}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -630,13 +611,6 @@ export default function ScorecardPage() {
   );
 }
 
-/**
- * ✅ If you prefer CSS classes instead of inline styles:
- * - replace pillGrey/pillGreen/pillRed with className like:
- *   className="pill pill--grey" / "pill pill--green" / "pill pill--red"
- * and define them in globals.css.
- */
-
 const kvRow: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "baseline",
@@ -657,36 +631,6 @@ const kvVal: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 1100,
   color: "rgba(0,0,0,0.82)",
-};
-
-const pillBase: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  height: 28,
-  padding: "0 10px",
-  borderRadius: 999,
-  border: "1px solid rgba(0,0,0,0.10)",
-  fontSize: 12,
-  fontWeight: 950,
-  color: "rgba(0,0,0,0.78)",
-};
-
-const pillGrey: React.CSSProperties = {
-  ...pillBase,
-  background: "rgba(0,0,0,0.06)",
-};
-
-const pillGreen: React.CSSProperties = {
-  ...pillBase,
-  background: "rgba(21,128,61,0.18)",
-  borderColor: "rgba(21,128,61,0.22)",
-};
-
-const pillRed: React.CSSProperties = {
-  ...pillBase,
-  background: "rgba(185,28,28,0.16)",
-  borderColor: "rgba(185,28,28,0.22)",
 };
 
 const statBox: React.CSSProperties = {

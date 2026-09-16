@@ -1,0 +1,39 @@
+.listTitle {
+  margin: 0 0 9px;
+  color: #35483b;
+  font-size: 12px;
+}
+
+.compactList {
+  display: grid;
+  gap: 7px;
+}
+
+.compactList a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid #e3e8e2;
+  border-radius: 9px;
+  background: #fbfcfa;
+  color: #35483b;
+  font-size: 11px;
+}
+
+.compactList span {
+  color: #788379;
+  font-size: 10px;
+}
+
+.groupTable td {
+  color: #526056;
+  font: 500 11px/1.25 var(--font-inter), sans-serif;
+}
+
+.groupTable td:first-child a {
+  color: #2f4135;
+  font-size: 12px;
+  font-weight: 700;
+}

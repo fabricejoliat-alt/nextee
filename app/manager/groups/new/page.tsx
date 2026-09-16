@@ -6,13 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { PlusCircle, Search, Trash2, Users, Tag, User } from "lucide-react";
+import { ArrowLeft, PlusCircle, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
 
 
 type Role = "coach" | "manager" | "player";
 
 type Club = { id: string; name: string | null };
+type ClubResponseItem = { id?: string | null; name?: string | null };
+type Season = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
 
 type ClubMemberRow = {
   club_id: string;
@@ -71,6 +75,8 @@ export default function CoachGroupNewPage() {
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubId, setClubId] = useState<string>("");
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [seasonId, setSeasonId] = useState<string>("");
 
   const [groupName, setGroupName] = useState("");
   const [isActive, setIsActive] = useState(true);
@@ -78,6 +84,7 @@ export default function CoachGroupNewPage() {
   // categories
   const [catInput, setCatInput] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
+  const [existingCategories, setExistingCategories] = useState<string[]>([]);
 
   // club members split by role
   const [clubMembersPlayers, setClubMembersPlayers] = useState<ProfileLite[]>([]);
@@ -124,7 +131,7 @@ export default function CoachGroupNewPage() {
     }
 
     const list = (Array.isArray(clubsJson?.clubs) ? clubsJson.clubs : [])
-      .map((c: any) => ({ id: String(c?.id ?? ""), name: (c?.name ?? null) as string | null }))
+      .map((c: ClubResponseItem) => ({ id: String(c?.id ?? ""), name: c?.name ?? null }))
       .filter((c: Club) => Boolean(c.id));
 
     if (list.length === 0) {
@@ -199,6 +206,51 @@ export default function CoachGroupNewPage() {
     setClubMembersCoaches(coachProfiles);
   }
 
+  async function loadExistingCategories(cid: string) {
+    if (!cid) {
+      setExistingCategories([]);
+      return;
+    }
+
+    const { data: groupsData, error: groupsError } = await supabase
+      .from("coach_groups")
+      .select("id")
+      .eq("club_id", cid);
+
+    if (groupsError) {
+      console.error(groupsError);
+      setExistingCategories([]);
+      return;
+    }
+
+    const groupIds = (groupsData ?? []).map((group) => String(group.id)).filter(Boolean);
+    if (!groupIds.length) {
+      setExistingCategories([]);
+      return;
+    }
+
+    const { data: categoriesData, error: categoriesError } = await supabase
+      .from("coach_group_categories")
+      .select("category,group_id")
+      .in("group_id", groupIds);
+
+    if (categoriesError) {
+      console.error(categoriesError);
+      setExistingCategories([]);
+      return;
+    }
+
+    setExistingCategories(
+      Array.from(
+        new Set(
+          (categoriesData ?? [])
+            .map((row) => String(row.category ?? "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "fr"))
+    );
+  }
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,13 +258,27 @@ export default function CoachGroupNewPage() {
 
   useEffect(() => {
     (async () => {
-      await loadClubMembers(clubId);
+      if (clubId) {
+        const { data } = await supabase
+          .from("club_seasons")
+          .select("id,name,starts_on,ends_on,is_current")
+          .eq("club_id", clubId)
+          .order("starts_on", { ascending: true });
+        const nextSeasons = (data ?? []) as Season[];
+        setSeasons(nextSeasons);
+        setSeasonId((current) => nextSeasons.some((season) => season.id === current)
+          ? current
+          : nextSeasons.find((season) => season.is_current)?.id ?? nextSeasons[0]?.id ?? "");
+      } else {
+        setSeasons([]);
+        setSeasonId("");
+      }
+      await Promise.all([loadClubMembers(clubId), loadExistingCategories(clubId)]);
       setQueryPlayers("");
       setQueryCoaches("");
       setSelectedPlayers({});
       setSelectedCoaches({});
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   const canSave = useMemo(() => {
@@ -222,7 +288,7 @@ export default function CoachGroupNewPage() {
     if (groupName.trim().length < 2) return false;
     if (Object.keys(selectedCoaches).length < 1) return false;
     return true;
-  }, [busy, userId, clubId, groupName, selectedPlayers, selectedCoaches]);
+  }, [busy, userId, clubId, groupName, selectedCoaches]);
 
   function addCategory() {
     const v = catInput.trim();
@@ -238,6 +304,14 @@ export default function CoachGroupNewPage() {
 
   function removeCategory(v: string) {
     setCategories((prev) => prev.filter((x) => x !== v));
+  }
+
+  function addExistingCategory(value: string) {
+    const v = value.trim();
+    if (!v) return;
+    const exists = categories.some((c) => c.toLowerCase() === v.toLowerCase());
+    if (exists) return;
+    setCategories((prev) => [...prev, v].sort((a, b) => a.localeCompare(b, "fr")));
   }
 
   function toggleSelected(
@@ -331,6 +405,7 @@ async function handleCreate(e: React.FormEvent) {
   const gRes = await supabase.from("coach_groups").insert({
     id: groupIdNew,
     club_id: clubId,
+    club_season_id: seasonId || null,
     name: groupName.trim(),
     is_active: isActive,
     head_coach_user_id: headCoachId,
@@ -379,9 +454,17 @@ async function handleCreate(e: React.FormEvent) {
 
   // ✅ players (optionnel)
   if (selectedPlayerIds.length > 0) {
-    const rows = selectedPlayerIds.map((pid) => ({ group_id: groupIdNew, player_user_id: pid }));
-    const pRes = await supabase.from("coach_group_players").insert(rows);
-    if (pRes.error) setError(`Groupe créé, mais erreur ajout joueurs: ${pRes.error.message}`);
+    const authorization = await authHeader();
+    const playerResults = await Promise.all(selectedPlayerIds.map((playerId) => fetch(`/api/admin/organizations/${clubId}/group-assignments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authorization },
+      body: JSON.stringify({ actorType: "player", userId: playerId, toGroupId: groupIdNew, seasonId: seasonId || undefined }),
+    })));
+    const failedPlayer = playerResults.find((response) => !response.ok);
+    if (failedPlayer) {
+      const payload = await failedPlayer.json().catch(() => ({}));
+      setError(`Groupe créé, mais erreur ajout joueurs: ${payload.error ?? "Action impossible."}`);
+    }
   }
 
   router.push(`/manager/groups/${groupIdNew}`);
@@ -389,468 +472,467 @@ async function handleCreate(e: React.FormEvent) {
   
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {/* Header section */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Créer un groupe
-              </div>
-            </div>
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">Groupes</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <span>Nouveau groupe</span>
+      </nav>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <button
-                type="button"
-                className="cta-green cta-green-inline"
-                onClick={() => router.back()}
-                disabled={busy}
-              >
-                Retour
-              </button>
-
-              <Link
-                className="cta-green cta-green-inline"
-                href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
-              >
-                Mes groupes
-              </Link>
-            </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+      <div className={styles.topline}>
+        <div>
+          <h1>Nouveau groupe</h1>
+          <p className={styles.lead}>Composez le groupe, ses catégories, ses juniors et son encadrement.</p>
         </div>
+        <div className={actionStyles.topActions}>
+          <label className="groups-season-nav-select">
+            <select
+              aria-label="Saison"
+              value={seasonId}
+              onChange={(event) => setSeasonId(event.target.value)}
+              disabled={seasons.length === 0}
+            >
+              {seasons.length === 0 ? <option value="">Aucune saison configurée</option> : null}
+              {seasons.map((season) => (
+                <option key={season.id} value={season.id}>
+                  {season.name}{season.is_current ? " · Saison en cours" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link
+            className={actionStyles.backButton}
+            href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+            Retour aux groupes
+          </Link>
+        </div>
+      </div>
 
-        {/* Form */}
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <CompactLoadingBlock label="Chargement..." />
-            ) : clubs.length === 0 ? (
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                Aucun club trouvé pour ton compte.
+      {error && (
+        <div className={actionStyles.errorAlert} role="alert">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <section className={styles.quickPanel}>
+          <CompactLoadingBlock label="Chargement..." />
+        </section>
+      ) : clubs.length === 0 ? (
+        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
+          Aucun club trouvé pour ton compte.
+        </div>
+      ) : (
+        <form onSubmit={handleCreate} style={{ display: "grid", gap: 18 }}>
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h2>Informations du groupe</h2>
+                <p>Prépare le cadre du groupe.</p>
               </div>
-            ) : (
-              <form onSubmit={handleCreate} style={{ display: "grid", gap: 12 }}>
-                {/* INFO CARD */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">Info</div>
+            </div>
 
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Club</span>
-                      <select
-                        value={clubId}
-                        onChange={(e) => setClubId(e.target.value)}
-                        disabled={busy || Boolean(organizationId)}
-                      >
-                        {clubs.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name ?? "Club"}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Nom du groupe</span>
+            <div className="user-mgmt-form-grid">
+                    <label className="user-mgmt-field">
+                      <span className="user-mgmt-field-label">Nom du groupe <span aria-hidden="true">*</span></span>
                       <input
                         value={groupName}
                         onChange={(e) => setGroupName(e.target.value)}
                         disabled={busy}
                         placeholder={t("coachGroupNew.categoryPlaceholder")}
+                        required
                       />
                     </label>
 
-                    <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label className="user-mgmt-checkbox-label" style={{ gridColumn: "1 / -1" }}>
                       <input
                         type="checkbox"
                         checked={isActive}
                         onChange={(e) => setIsActive(e.target.checked)}
                         disabled={busy}
-                        style={{ width: 18, height: 18 }}
                       />
-                      <span style={fieldLabelStyle}>Groupe actif</span>
+                      <span>Groupe actif</span>
                     </label>
-                  </div>
+            </div>
+          </section>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h2>Catégories</h2>
+                <p>Les catégories servent à structurer le groupe.</p>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+                <input
+                  value={catInput}
+                  onChange={(e) => setCatInput(e.target.value)}
+                  disabled={busy}
+                  placeholder="Ex: U12, U14, Elite, Adultes…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCategory();
+                    }
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className={actionStyles.secondaryButton}
+                  onClick={addCategory}
+                  disabled={busy || !catInput.trim()}
+                  aria-label={t("coachGroupNew.addCategory")}
+                  title="Ajouter"
+                  style={{ width: 44, padding: 0, justifyContent: "center" }}
+                >
+                  <PlusCircle size={18} />
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#6d786e", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  Catégories déjà utilisées
                 </div>
-
-                {/* CATEGORIES CARD */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Tag size={18} />
-                    Catégories
+                {existingCategories.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucune catégorie existante dans ce club.
                   </div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {existingCategories.map((value) => {
+                      const alreadySelected = categories.some((category) => category.toLowerCase() === value.toLowerCase());
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          className="pill-soft"
+                          onClick={() => addExistingCategory(value)}
+                          disabled={busy || alreadySelected}
+                          title={alreadySelected ? "Déjà sélectionnée" : "Ajouter cette catégorie"}
+                          style={{
+                            border: 0,
+                            cursor: alreadySelected ? "default" : "pointer",
+                            opacity: alreadySelected ? 0.65 : 1,
+                          }}
+                        >
+                          {value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
-                      <input
-                        value={catInput}
-                        onChange={(e) => setCatInput(e.target.value)}
-                        disabled={busy}
-                        placeholder="Ex: U12, U14, Elite, Adultes…"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCategory();
-                          }
-                        }}
-                      />
-
+              {categories.length === 0 ? (
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                  Aucune catégorie ajoutée.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {categories.map((c) => (
+                    <div key={c} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span className="pill-soft">{c}</span>
                       <button
                         type="button"
-                        className="glass-btn"
-                        onClick={addCategory}
-                        disabled={busy || !catInput.trim()}
-                        style={{
-                          width: 44,
-                          height: 42,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: "rgba(255,255,255,0.70)",
-                          border: "1px solid rgba(0,0,0,0.08)",
-                        }}
-                        aria-label={t("coachGroupNew.addCategory")}
-                        title="Ajouter"
+                        className="btn btn-danger soft"
+                        onClick={() => removeCategory(c)}
+                        disabled={busy}
+                        style={{ padding: "8px 10px" }}
+                        aria-label={t("coachGroupNew.removeCategory")}
+                        title="Supprimer"
                       >
-                        <PlusCircle size={18} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
-
-                    {categories.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        Aucune catégorie ajoutée.
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {categories.map((c) => (
-                          <div key={c} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span className="pill-soft">{c}</span>
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => removeCategory(c)}
-                              disabled={busy}
-                              style={{ padding: "8px 10px" }}
-                              aria-label={t("coachGroupNew.removeCategory")}
-                              title="Supprimer"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  ))}
                 </div>
+              )}
+            </div>
+          </section>
 
-                {/* PLAYERS CARD */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={18} />
-                    Joueurs
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h2>Juniors</h2>
+                <p>Optionnel à la création. Tu peux aussi ajouter les juniors plus tard.</p>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: "absolute",
+                    left: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    opacity: 0.7,
+                  }}
+                />
+                <input
+                  value={queryPlayers}
+                  onChange={(e) => setQueryPlayers(e.target.value)}
+                  disabled={busy}
+                  placeholder="Rechercher un junior (nom, handicap)…"
+                  style={{ paddingLeft: 44 }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Junior(s) sélectionné(s) ({selectedPlayersList.length})</div>
+
+                {selectedPlayersList.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun junior sélectionné.
                   </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Optionnel à la création. Tu peux aussi ajouter les joueurs plus tard dans Gérer les groupes.
-                    </div>
-                    <div style={{ position: "relative" }}>
-                      <Search
-                        size={18}
-                        style={{
-                          position: "absolute",
-                          left: 14,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          opacity: 0.7,
-                        }}
-                      />
-                      <input
-                        value={queryPlayers}
-                        onChange={(e) => setQueryPlayers(e.target.value)}
-                        disabled={busy}
-                        placeholder="Rechercher un joueur (nom, handicap)…"
-                        style={{ paddingLeft: 44 }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
-
-                      {selectedPlayersList.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun joueur sélectionné.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {selectedPlayersList.map((p) => (
-                            <div key={p.id} style={lightRowCardStyle}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(p)}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                  </div>
-                                </div>
-                              </div>
-
+                ) : (
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead>
+                        <tr>
+                          <th aria-label="Avatar" />
+                          <th>Nom et prénom</th>
+                          <th aria-label="Actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPlayersList.map((p) => (
+                          <tr key={p.id}>
+                            <td>
+                              <span className="user-mgmt-member-avatar" aria-hidden="true">
+                                {avatarNode(p)}
+                              </span>
+                            </td>
+                            <td>
+                              <b>{fullName(p)}</b>
+                            </td>
+                            <td>
                               <button
                                 type="button"
                                 className="btn btn-danger soft"
                                 onClick={() => toggleSelected(setSelectedPlayers, p)}
                                 disabled={busy}
-                                style={{ padding: "10px 12px" }}
                                 aria-label="Retirer"
                                 title="Retirer"
                               >
                                 <Trash2 size={18} />
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Ajouter depuis le club ({candidatesPlayers.length})</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Ajouter un junior ({candidatesPlayers.length})</div>
 
-                      {clubId && clubMembersPlayers.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun joueur actif trouvé dans ce club.
-                        </div>
-                      ) : candidatesPlayers.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun résultat.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {candidatesPlayers.map((p) => (
-                            <div key={p.id} style={lightRowCardStyle}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(p)}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                  </div>
-                                </div>
-                              </div>
-
+                {clubId && clubMembersPlayers.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun junior actif trouvé dans ce club.
+                  </div>
+                ) : candidatesPlayers.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun résultat.
+                  </div>
+                ) : (
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead>
+                        <tr>
+                          <th aria-label="Avatar" />
+                          <th>Nom et prénom</th>
+                          <th aria-label="Actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {candidatesPlayers.map((p) => (
+                          <tr key={p.id}>
+                            <td>
+                              <span className="user-mgmt-member-avatar" aria-hidden="true">
+                                {avatarNode(p)}
+                              </span>
+                            </td>
+                            <td>
+                              <b>{fullName(p)}</b>
+                            </td>
+                            <td>
                               <button
                                 type="button"
-                                className="glass-btn"
+                                className={actionStyles.secondaryButton}
                                 onClick={() => toggleSelected(setSelectedPlayers, p)}
                                 disabled={busy}
-                                style={{
-                                  width: 44,
-                                  height: 42,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  background: "rgba(255,255,255,0.70)",
-                                  border: "1px solid rgba(0,0,0,0.08)",
-                                }}
-                                aria-label="Ajouter joueur"
+                                aria-label="Ajouter junior"
                                 title="Ajouter"
+                                style={{ width: 44, padding: 0, justifyContent: "center" }}
                               >
                                 <PlusCircle size={18} />
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
+                )}
+              </div>
+            </div>
+          </section>
 
-                {/* COACHES CARD */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <User size={18} />
-                    Coach
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h2>Coachs</h2>
+                <p>Sélectionne au moins un coach. Le premier devient Head Coach.</p>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ position: "relative" }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: "absolute",
+                    left: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    opacity: 0.7,
+                  }}
+                />
+                <input
+                  value={queryCoaches}
+                  onChange={(e) => setQueryCoaches(e.target.value)}
+                  disabled={busy}
+                  placeholder="Rechercher un coach (nom)…"
+                  style={{ paddingLeft: 44 }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Coach(s) sélectionné(s) ({selectedCoachesList.length})</div>
+
+                {selectedCoachesList.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun coach supplémentaire sélectionné.
                   </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      Sélectionne au moins <b>1 coach</b>. Le premier coach sélectionné devient <b>Head Coach</b>.
-                    </div>
-
-                    <div style={{ position: "relative" }}>
-                      <Search
-                        size={18}
-                        style={{
-                          position: "absolute",
-                          left: 14,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          opacity: 0.7,
-                        }}
-                      />
-                      <input
-                        value={queryCoaches}
-                        onChange={(e) => setQueryCoaches(e.target.value)}
-                        disabled={busy}
-                        placeholder="Rechercher un coach (nom)…"
-                        style={{ paddingLeft: 44 }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Coachs sélectionnés ({selectedCoachesList.length})</div>
-
-                      {selectedCoachesList.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun coach supplémentaire sélectionné.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {selectedCoachesList.map((p) => (
-                            <div key={p.id} style={lightRowCardStyle}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(p)}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    {selectedCoachesList[0]?.id === p.id ? "Head Coach" : "Coach du groupe"}
-                                  </div>
-                                </div>
-                              </div>
-
+                ) : (
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead>
+                        <tr>
+                          <th aria-label="Avatar" />
+                          <th>Nom et prénom</th>
+                          <th aria-label="Actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedCoachesList.map((p) => (
+                          <tr key={p.id}>
+                            <td>
+                              <span className="user-mgmt-member-avatar" aria-hidden="true">
+                                {avatarNode(p)}
+                              </span>
+                            </td>
+                            <td>
+                              <b>{fullName(p)}</b>
+                            </td>
+                            <td>
                               <button
                                 type="button"
                                 className="btn btn-danger soft"
                                 onClick={() => toggleSelected(setSelectedCoaches, p)}
                                 disabled={busy}
-                                style={{ padding: "10px 12px" }}
                                 aria-label="Retirer coach"
                                 title="Retirer"
                               >
                                 <Trash2 size={18} />
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Ajouter un coach ({candidatesCoaches.length})</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Ajouter un coach ({candidatesCoaches.length})</div>
 
-                      {clubId && clubMembersCoaches.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun coach actif trouvé dans ce club.
-                        </div>
-                      ) : candidatesCoaches.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun résultat.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {candidatesCoaches.map((p) => (
-                            <div key={p.id} style={lightRowCardStyle}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(p)}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                    Ajouter comme coach
-                                  </div>
-                                </div>
-                              </div>
-
+                {clubId && clubMembersCoaches.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun coach actif trouvé dans ce club.
+                  </div>
+                ) : candidatesCoaches.length === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                    Aucun résultat.
+                  </div>
+                ) : (
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead>
+                        <tr>
+                          <th aria-label="Avatar" />
+                          <th>Nom et prénom</th>
+                          <th aria-label="Actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {candidatesCoaches.map((p) => (
+                          <tr key={p.id}>
+                            <td>
+                              <span className="user-mgmt-member-avatar" aria-hidden="true">
+                                {avatarNode(p)}
+                              </span>
+                            </td>
+                            <td>
+                              <b>{fullName(p)}</b>
+                            </td>
+                            <td>
                               <button
                                 type="button"
-                                className="glass-btn"
+                                className={actionStyles.secondaryButton}
                                 onClick={() => toggleSelected(setSelectedCoaches, p)}
                                 disabled={busy}
-                                style={{
-                                  width: 44,
-                                  height: 42,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  background: "rgba(255,255,255,0.70)",
-                                  border: "1px solid rgba(0,0,0,0.08)",
-                                }}
                                 aria-label="Ajouter coach"
                                 title="Ajouter"
+                                style={{ width: 44, padding: 0, justifyContent: "center" }}
                               >
                                 <PlusCircle size={18} />
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
+                )}
+              </div>
+            </div>
+          </section>
 
-                {/* ACTIONS */}
-                <button
-                  className="cta-green cta-green-inline"
-                  type="submit"
-                  disabled={!canSave || busy}
-                  style={{ width: "100%" }}
-                >
-                  {busy ? t("coachGroupNew.creating") : t("coachGroupNew.createGroup")}
-                </button>
-
-                <Link
-                  href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
-                  className="btn"
-                  style={{ width: "100%", textAlign: "center" }}
-                >
-                  Annuler
-                </Link>
-              </form>
-            )}
+          <div className={actionStyles.topActions} style={{ justifyContent: "flex-end", marginTop: 8 }}>
+            <Link
+              href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
+              className={actionStyles.secondaryButton}
+            >
+              Annuler
+            </Link>
+            <button className={actionStyles.primaryButton} type="submit" disabled={!canSave || busy}>
+              {busy ? <RefreshCw size={16} className={styles.spin} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+              {busy ? t("coachGroupNew.creating") : t("coachGroupNew.createGroup")}
+            </button>
           </div>
-        </div>
-      </div>
-    </div>
+        </form>
+      )}
+    </main>
   );
 }
-
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
-
-const avatarBoxStyle: React.CSSProperties = {
-  width: 42,
-  height: 42,
-  borderRadius: 14,
-  overflow: "hidden",
-  background: "rgba(255,255,255,0.65)",
-  border: "1px solid rgba(0,0,0,0.08)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 950,
-  color: "var(--green-dark)",
-  flexShrink: 0,
-};
-
-const lightRowCardStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.08)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.65)",
-  padding: 12,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};

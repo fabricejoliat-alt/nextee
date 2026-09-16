@@ -1,0 +1,36 @@
+.automaticToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #dfe6de;
+  border-radius: 9px;
+  background: #f8faf7;
+  color: #35483b;
+  font: 700 11px/1.2 var(--font-inter), sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.automaticToggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #607b5b;
+  cursor: pointer;
+}
+
+.automaticToggle:focus-within {
+  border-color: #899d7d;
+  box-shadow: 0 0 0 3px rgba(137, 157, 125, .17);
+}
+
+.automaticToggle:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.automaticToggle input:disabled {
+  cursor: not-allowed;
+}

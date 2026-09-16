@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { isOrgStaffMember, requireCaller } from "@/app/api/messages/_lib";
+import { hasCoachClubPermission } from "@/lib/coachAuthorization";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -332,7 +333,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       coaches,
       selectedCoachIds,
       structureItems: structureRes.data ?? [],
-      evaluatedPlayerIds: evaluatedPlayers.map((row) => row.player_id),
+      evaluatedPlayerIds: Array.from(new Set(feedbackRows.filter((row) => row.coach_id === callerId).map((row) => row.player_id))),
       evaluatedPlayers,
       meId: callerId,
     });
@@ -356,7 +357,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("id,club_id,series_id,event_type,starts_at,location_text")
+      .select("id,club_id,group_id,series_id,event_type,starts_at,location_text")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
@@ -370,10 +371,14 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId:
       return NextResponse.json({ error: "Événement récurrent : suppression uniquement depuis l’éditeur de récurrence." }, { status: 400 });
     }
 
-    const staffAllowed = await isOrgStaffMember(supabaseAdmin, clubId, callerId);
+    const groupId = String((eventRes.data as { group_id?: string | null }).group_id ?? "").trim();
+    const staffAllowed = await hasCoachClubPermission(supabaseAdmin, callerId, clubId, "planning", groupId);
     if (!staffAllowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const eventType = String((eventRes.data as { event_type?: string | null }).event_type ?? "training").trim();
+    if (eventType === "competition") {
+      return NextResponse.json({ error: "Les compétitions sont modifiables uniquement depuis l’espace manager." }, { status: 403 });
+    }
     const startsAt = String((eventRes.data as { starts_at?: string | null }).starts_at ?? "").trim();
     const locationText = String((eventRes.data as { location_text?: string | null }).location_text ?? "").trim() || null;
 

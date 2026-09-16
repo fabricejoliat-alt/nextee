@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
     const registeredCampDaysRes = registeredCampIds.length
       ? await supabaseAdmin
           .from("club_camp_days")
-          .select("camp_id,event_id,starts_at,club_events:event_id(id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status)")
+          .select("camp_id,event_id,starts_at,club_events:event_id(id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status,competition_level,competition_category,external_registration_url,competition_note)")
           .in("camp_id", registeredCampIds)
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
@@ -138,10 +138,10 @@ export async function GET(req: NextRequest) {
     const plannedRes = plannedEventIds.length
       ? await supabaseAdmin
           .from("club_events")
-          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status")
+          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status,competition_level,competition_category,external_registration_url,competition_note")
           .in("id", plannedEventIds)
           .eq("status", "scheduled")
-          .gte("starts_at", nowIso)
+          .or(`starts_at.gte.${nowIso},and(event_type.eq.competition,ends_at.gte.${nowIso})`)
           .order("starts_at", { ascending: true })
       : ({ data: [], error: null } as const);
     if (plannedRes.error) return NextResponse.json({ error: plannedRes.error.message }, { status: 400 });
@@ -173,17 +173,28 @@ export async function GET(req: NextRequest) {
       ...plannedEvents.map((event: any) => event.id),
       ...futureSessions.map((session: any) => session.club_event_id),
     ]);
+    const coachEventIds = structureEventIds;
 
-    const [clubsRes, groupsRes, structureRes] = await Promise.all([
+    const [clubsRes, groupsRes, structureRes, eventCoachesRes] = await Promise.all([
       clubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
       groupIds.length ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds) : ({ data: [], error: null } as const),
       structureEventIds.length
         ? supabaseAdmin.from("club_event_structure_items").select("event_id,category,minutes,note").in("event_id", structureEventIds)
         : ({ data: [], error: null } as const),
+      coachEventIds.length
+        ? supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", coachEventIds)
+        : ({ data: [], error: null } as const),
     ]);
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
     if (structureRes.error) return NextResponse.json({ error: structureRes.error.message }, { status: 400 });
+    if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
+
+    const coachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => row.coach_id));
+    const coachProfilesRes = coachIds.length
+      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name").in("id", coachIds)
+      : ({ data: [], error: null } as const);
+    if (coachProfilesRes.error) return NextResponse.json({ error: coachProfilesRes.error.message }, { status: 400 });
 
     const clubNameById: Record<string, string> = {};
     (clubsRes.data ?? []).forEach((club: any) => {
@@ -210,6 +221,22 @@ export async function GET(req: NextRequest) {
         minutes: Number(item.minutes ?? 0),
         note: item.note ?? null,
       });
+    });
+
+    const coachNameById = new Map(
+      (coachProfilesRes.data ?? []).map((profile: any) => {
+        const name = [profile.first_name, profile.last_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+        return [String(profile.id ?? "").trim(), name] as const;
+      })
+    );
+    const coachNamesByEventId: Record<string, string[]> = {};
+    (eventCoachesRes.data ?? []).forEach((row: any) => {
+      const eventId = String(row.event_id ?? "").trim();
+      const coachName = coachNameById.get(String(row.coach_id ?? "").trim()) ?? "";
+      if (!eventId || !coachName) return;
+      const names = coachNamesByEventId[eventId] ?? [];
+      if (!names.includes(coachName)) names.push(coachName);
+      coachNamesByEventId[eventId] = names;
     });
 
     const upcomingCampEventIds = new Set(
@@ -244,6 +271,7 @@ export async function GET(req: NextRequest) {
       attendeeStatusByEventId,
       clubNameById,
       groupNameById,
+      coachNamesByEventId,
       eventStructureByEventId,
       upcomingActivities,
     });

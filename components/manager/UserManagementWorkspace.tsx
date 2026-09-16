@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpDown,
   Download,
-  Link2,
   Mail,
   Pencil,
   RefreshCw,
@@ -30,6 +29,8 @@ type ClubRow = {
   id: string;
   name: string;
 };
+
+type ClubSeason = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
 
 type PlayerFieldDef = {
   id: string;
@@ -95,7 +96,7 @@ type EditPlayerForm = {
   avs_no: string;
   is_active: boolean;
   is_performance: boolean;
-  player_consent_status: "granted" | "pending" | "adult";
+  player_consent_status: "granted" | "pending" | "refused" | "adult";
   custom_field_values: Record<string, string | boolean | null>;
 };
 
@@ -152,7 +153,7 @@ type AccessJuniorRow = {
   junior_user_id: string;
   junior_name: string;
   junior_username: string | null;
-  player_consent_status: "granted" | "pending" | "adult" | null;
+  player_consent_status: "granted" | "pending" | "refused" | "adult" | null;
   junior_status: "not_ready" | "ready" | "sent" | "activated" | "error";
   junior_last_sent_at: string | null;
   junior_last_activity_at?: string | null;
@@ -178,7 +179,7 @@ type AccessData = {
     user_id: string;
     name: string;
     username: string | null;
-    player_consent_status: "granted" | "pending" | "adult" | null;
+    player_consent_status: "granted" | "pending" | "refused" | "adult" | null;
     activated_at: string | null;
   }>;
   mail_config: {
@@ -195,12 +196,11 @@ type PlayerColumnKey = "last_name" | "first_name" | "consent" | "parent_linked" 
 type PlayerColumnConfig = Record<PlayerColumnKey, boolean>;
 
 const SECTION_LINKS: Array<{ key: Section; label: string; href: string; icon: typeof Users }> = [
-  { key: "players", label: "Joueurs", href: "/manager/user-management/players", icon: Users },
-  { key: "parents", label: "Parents", href: "/manager/user-management/parents", icon: Link2 },
-  { key: "coaches", label: "Coach", href: "/manager/user-management/coaches", icon: User },
+  { key: "players", label: "Juniors", href: "/manager/user-management/players", icon: Users },
+  { key: "coaches", label: "Coachs", href: "/manager/user-management/coaches", icon: User },
   { key: "managers", label: "Manager", href: "/manager/user-management/managers", icon: Settings2 },
   { key: "custom-fields", label: "Champs personnalisés", href: "/manager/user-management/custom-fields", icon: Settings2 },
-  { key: "email-configuration", label: "Configuration E-mail", href: "/manager/user-management/email-configuration", icon: Mail },
+  { key: "email-configuration", label: "E-mails", href: "/manager/user-management/email-configuration", icon: Mail },
 ];
 
 const PLAYER_COLUMNS_STORAGE_KEY = "manager-user-management-player-columns";
@@ -440,6 +440,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
 
   const [clubs, setClubs] = useState<ClubRow[]>([]);
   const [clubId, setClubId] = useState("");
+  const [seasons, setSeasons] = useState<ClubSeason[]>([]);
+  const [seasonId, setSeasonId] = useState("");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [playerFields, setPlayerFields] = useState<PlayerFieldDef[]>([]);
   const [guardianData, setGuardianData] = useState<GuardianData | null>(null);
@@ -512,15 +514,17 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     setError(null);
     try {
       const headers = await authHeader();
-      const [membersResponse, guardiansResponse, accessResponse] = await Promise.all([
+      const [membersResponse, guardiansResponse, accessResponse, seasonsResponse] = await Promise.all([
         fetch(`/api/manager/clubs/${selectedClubId}/members`, { headers, cache: "no-store" }),
         fetch(`/api/manager/clubs/${selectedClubId}/guardians`, { headers, cache: "no-store" }),
         fetch(`/api/manager/clubs/${selectedClubId}/access-invitations`, { headers, cache: "no-store" }),
+        fetch(`/api/manager/clubs/${selectedClubId}/seasons`, { headers, cache: "no-store" }),
       ]);
 
       const membersJson = await membersResponse.json().catch(() => ({}));
       const guardiansJson = await guardiansResponse.json().catch(() => ({}));
       const accessJson = await accessResponse.json().catch(() => ({}));
+      const seasonsJson = await seasonsResponse.json().catch(() => ({}));
 
       if (!membersResponse.ok) throw new Error(membersJson?.error ?? "Impossible de charger les membres.");
       if (!guardiansResponse.ok) throw new Error(guardiansJson?.error ?? "Impossible de charger les liens parents.");
@@ -531,6 +535,9 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       setGuardianData((guardiansJson ?? null) as GuardianData | null);
       setAccessData((accessJson ?? null) as AccessData | null);
       setMailConfig((accessJson?.mail_config ?? null) as AccessData["mail_config"] | null);
+      const nextSeasons = (seasonsResponse.ok && Array.isArray(seasonsJson?.seasons) ? seasonsJson.seasons : []) as ClubSeason[];
+      setSeasons(nextSeasons);
+      setSeasonId((current) => current && nextSeasons.some((season) => season.id === current) ? current : nextSeasons.find((season) => season.is_current)?.id ?? nextSeasons[0]?.id ?? "");
     } catch (nextError: unknown) {
       setError(errorMessage(nextError, "Erreur de chargement."));
       setMembers([]);
@@ -538,6 +545,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       setGuardianData(null);
       setAccessData(null);
       setMailConfig(null);
+      setSeasons([]);
+      setSeasonId("");
     } finally {
       setLoading(false);
     }
@@ -1283,20 +1292,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     setPlayerFields((previous) => previous.map((field) => (field.id === fieldId ? { ...field, ...patch } : field)));
   }
 
-  const buildPlayerParameters = useCallback(
-    (member: MemberRow) => {
-      const chips: string[] = [];
-      if (member.profiles?.avs_no) chips.push(`AVS: ${member.profiles.avs_no}`);
-      activePlayerFields.forEach((field) => {
-        const value = playerFieldDisplayValue(field, member.custom_field_values?.[field.id] ?? member.player_field_values?.[field.id]);
-        if (!value) return;
-        chips.push(`${field.label}: ${value}`);
-      });
-      return chips;
-    },
-    [activePlayerFields]
-  );
-
   const getPlayerFieldValue = useCallback(
     (member: MemberRow, field: PlayerFieldDef) =>
       playerFieldDisplayValue(field, member.custom_field_values?.[field.id] ?? member.player_field_values?.[field.id]) ?? "—",
@@ -1347,7 +1342,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         member.id,
         member.profiles?.first_name ?? "",
         member.profiles?.last_name ?? "",
-        member.profiles?.avs_no ?? "",
         member.profiles?.username ?? "",
       ];
       return normalizeSearch(values.join(" ")).includes(query);
@@ -1500,6 +1494,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
       });
   }, [managers, managerSearch, managerSort]);
 
+  const clubNamesById = useMemo(() => Object.fromEntries(clubs.map((club) => [club.id, club.name])) as Record<string, string>, [clubs]);
   const currentClubName = clubs.find((club) => club.id === clubId)?.name ?? accessData?.club.name ?? "Club";
 
   function SortHeader({
@@ -1533,7 +1528,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         "Adresse",
         "Code postal",
         "Localité",
-        "Numéro AVS",
         "Mode performance",
         "Consentement",
         "Parent lié",
@@ -1554,7 +1548,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
           member.profiles?.address ?? "",
           member.profiles?.postal_code ?? "",
           member.profiles?.city ?? "",
-          member.profiles?.avs_no ?? "",
           member.is_performance ? "Oui" : "Non",
           consentLabel(member.player_consent_status),
           parentLinked,
@@ -1610,7 +1603,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         "Adresse",
         "Code postal",
         "Ville",
-        "AVS",
         ...activePlayerFields.filter((field) => !field.legacy_binding).map((field) => field.label),
       ],
       []
@@ -2020,6 +2012,13 @@ export default function UserManagementWorkspace({ section }: { section: Section 
             <div className="glass-section">
               <div className="glass-card" style={{ display: "grid", gap: 14 }}>
                 <div className="user-mgmt-toolbar">
+                  <label className="user-mgmt-field" style={{ minWidth: 190 }}>
+                    <span className="user-mgmt-field-label">Saison</span>
+                    <select value={seasonId} onChange={(event) => setSeasonId(event.target.value)} style={FIELD_INPUT_STYLE}>
+                      {seasons.length === 0 ? <option value="">Saison à configurer</option> : null}
+                      {seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? " · En cours" : ""}</option>)}
+                    </select>
+                  </label>
                   <label className="user-mgmt-field" style={{ minWidth: "min(420px, 100%)" }}>
                     <span className="user-mgmt-field-label">Recherche</span>
                     <div style={{ position: "relative" }}>
@@ -2027,7 +2026,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                       <input
                         value={playerSearch}
                         onChange={(event) => setPlayerSearch(event.target.value)}
-                        placeholder="ID, nom, prénom, username, AVS…"
+                        placeholder="ID, nom, prénom ou username…"
                         style={{ ...FIELD_INPUT_STYLE, paddingLeft: 38 }}
                       />
                     </div>
@@ -2780,10 +2779,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                       <Download size={14} />
                       Exporter
                     </button>
-                    <Link href="/manager/parents" className="btn">
-                      <Link2 size={14} />
-                      Gérer les liaisons
-                    </Link>
                   </div>
                 </div>
               </div>
@@ -2816,7 +2811,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                           const children = playerChildrenByParentId.get(member.user_id) ?? [];
                           const access = parentAccessById.get(member.user_id);
                           const tone = statusTone(access?.parent_status ?? "not_ready");
-                          const linkChildrenHref = `/manager/parents?clubId=${encodeURIComponent(clubId)}&parentUserId=${encodeURIComponent(member.user_id)}`;
                           return (
                             <tr key={member.id}>
                               <td>{member.profiles?.last_name ?? "—"}</td>
@@ -2858,16 +2852,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                                       <Pencil size={14} />
                                     </button>
                                   ) : null}
-                                  {children.length === 0 ? (
-                                    <Link
-                                      href={linkChildrenHref}
-                                      className="btn user-mgmt-icon-btn"
-                                      title="Lier un junior"
-                                      aria-label="Lier un junior"
-                                    >
-                                      <Link2 size={14} />
-                                    </Link>
-                                  ) : null}
                                 </div>
                               </td>
                             </tr>
@@ -2900,7 +2884,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                     </div>
                   </label>
                   <div className="user-mgmt-actions">
-                    <Link href="/manager/users?role=coach#users-create" className="btn">
+                    <Link href="/manager/user-management/coaches/new" className="btn">
                       <UserPlus size={14} />
                       Ajouter un coach
                     </Link>
@@ -3006,13 +2990,14 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                         <th><SortHeader label="Nom" sortKey="last_name" sort={managerSort} onToggle={() => toggleSort(managerSort, "last_name", setManagerSort)} /></th>
                         <th><SortHeader label="Prénom" sortKey="first_name" sort={managerSort} onToggle={() => toggleSort(managerSort, "first_name", setManagerSort)} /></th>
                         <th><SortHeader label="Fonction" sortKey="function" sort={managerSort} onToggle={() => toggleSort(managerSort, "function", setManagerSort)} /></th>
+                        <th>Organisation</th>
                         <th aria-label="Actions" />
                       </tr>
                     </thead>
                     <tbody>
                       {filteredManagers.length === 0 ? (
                         <tr>
-                          <td colSpan={4}>
+                          <td colSpan={5}>
                             <div className="marketplace-empty">Aucun manager actif trouvé.</div>
                           </td>
                         </tr>
@@ -3022,6 +3007,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                             <td>{member.profiles?.last_name ?? "—"}</td>
                             <td>{member.profiles?.first_name ?? "—"}</td>
                             <td>{member.profiles?.staff_function ?? "—"}</td>
+                            <td>{clubNamesById[member.club_id] ?? member.club_id ?? "—"}</td>
                             <td>
                               <div className="user-mgmt-actions">
                                 <button
@@ -3343,7 +3329,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                   </div>
                   <Link href="/manager/access" className="btn">
                     <Mail size={14} />
-                    Ouvrir Invitations & accès
+                    Ouvrir Accès aux familles
                   </Link>
                 </div>
 

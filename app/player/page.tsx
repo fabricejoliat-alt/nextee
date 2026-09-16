@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { fetchEventMessageBadges, type EventMessageBadge } from "@/lib/messages/eventBadgesClient";
-import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { ArrowRight, CalendarDays, PlusCircle } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarCheck2, CalendarDays, CheckCircle2, ClipboardCheck, Flag, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
+import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
+import coachStyles from "@/app/coach/CoachDashboard.module.css";
+import validationStyles from "@/app/coach/validations/CoachValidations.module.css";
+import styles from "./PlayerDashboard.module.css";
 
 type Profile = {
   id: string;
@@ -99,7 +102,7 @@ type HomeSessionRow = {
 
 type HomePlannedEventRow = {
   id: string;
-  event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | "competition" | null;
   title: string | null;
   starts_at: string;
   ends_at: string | null;
@@ -108,6 +111,10 @@ type HomePlannedEventRow = {
   club_id: string;
   group_id: string | null;
   status: "scheduled" | "cancelled";
+  competition_level?: "internal" | "club" | "regional" | "national" | "international" | null;
+  competition_category?: "u10" | "u12" | "u14" | "u16" | "u18" | "all" | null;
+  external_registration_url?: string | null;
+  competition_note?: string | null;
 };
 
 type HomePlayerActivityRow = {
@@ -164,6 +171,7 @@ type PlayerHomePageCache = {
   attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
   clubNameById: Record<string, string>;
   groupNameById: Record<string, string>;
+  coachNamesByEventId: Record<string, string[]>;
   eventStructureByEventId: Record<string, HomeEventStructureItem[]>;
   upcomingActivities: HomeUpcomingItem[];
   playVolumeSummary?: PlayVolumeSummary;
@@ -192,6 +200,10 @@ type HomeNewsItem = {
   linked_content_type: "event" | "camp" | null;
   linked_content_label: string | null;
 };
+
+type PendingTraining = { id: string; dateIso: string; title: string; href: string };
+type AttendanceInsight = { present: number; expected: number; rate: number; change: number | null };
+type MeritInsight = { rank: number; total: number; change: number | null } | null;
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
 const playerHomeCacheKey = (userId: string) => `page-cache:player-home:v3:${userId}`;
@@ -285,7 +297,7 @@ function getInitials(p?: Profile | null) {
   const l = (p?.last_name ?? "").trim();
   const fi = f ? f[0].toUpperCase() : "";
   const li = l ? l[0].toUpperCase() : "";
-  if (!fi && !li) return "👤";
+  if (!fi && !li) return "J";
   return `${fi}${li}`;
 }
 
@@ -493,13 +505,28 @@ function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: string) {
     if (v === "interclub") return "Interclub";
     if (v === "camp") return "Camp";
     if (v === "session") return "Session";
+    if (v === "competition") return "Competition";
     return "Event";
   }
   if (v === "training") return "Entraînement";
   if (v === "interclub") return "Interclubs";
   if (v === "camp") return "Stage";
   if (v === "session") return "Réunion";
+  if (v === "competition") return "Compétition";
   return "Événement";
+}
+
+function clubCompetitionLevelLabel(value: HomePlannedEventRow["competition_level"]) {
+  if (value === "internal") return "Tournoi interne";
+  if (value === "club") return "Tournoi Club";
+  if (value === "regional") return "Régional";
+  if (value === "national") return "National";
+  if (value === "international") return "International";
+  return "—";
+}
+
+function clubCompetitionCategoryLabel(value: HomePlannedEventRow["competition_category"]) {
+  return value === "all" ? "Tous" : String(value ?? "—").toUpperCase();
 }
 
 function priceLabel(it: Item, t: (key: string) => string) {
@@ -608,6 +635,41 @@ function isClubAttendanceEventType(eventType: HomePlannedEventRow["event_type"])
   return eventType === "training" || eventType === "interclub" || eventType === "camp" || eventType === "event" || eventType === "session";
 }
 
+function UpcomingAttendanceToggle({
+  variant,
+  checked,
+  onToggle,
+  disabled,
+  absentLabel,
+  presentLabel,
+  absentSentence,
+  presentSentence,
+  ariaLabel,
+}: {
+  variant: 0 | 1 | 2;
+  checked: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+  absentLabel: string;
+  presentLabel: string;
+  absentSentence: string;
+  presentSentence: string;
+  ariaLabel: string;
+}) {
+  if (variant === 0) {
+    return <button type="button" className={`player-home-attendance player-home-attendance--segments ${checked ? "is-present" : "is-absent"}`} role="switch" aria-checked={checked} aria-label={ariaLabel} onClick={onToggle} disabled={disabled}><span>{absentLabel}</span><span>{presentLabel}</span></button>;
+  }
+  if (variant === 1) {
+    return <button type="button" className="player-home-attendance player-home-attendance--editorial" role="switch" aria-checked={checked} aria-label={ariaLabel} onClick={onToggle} disabled={disabled}><span>{checked ? presentLabel : absentLabel}</span><i aria-hidden="true" className={checked ? "is-present" : "is-absent"} /></button>;
+  }
+  return <button type="button" className={`player-home-attendance player-home-attendance--pill ${checked ? "is-present" : "is-absent"}`} role="switch" aria-checked={checked} aria-label={ariaLabel} onClick={onToggle} disabled={disabled}><i aria-hidden="true" /><span>{checked ? presentSentence : absentSentence}</span></button>;
+}
+
+function BenchmarkBadge({ icon: Icon, tone, children }: { icon: LucideIcon; tone: "positive" | "neutral" | "caution" | "highlight"; children: ReactNode }) {
+  const toneClass = tone === "positive" ? validationStyles.badgeElite : tone === "caution" ? validationStyles.badgeBronze : tone === "highlight" ? validationStyles.badgeGold : validationStyles.badgeSilver;
+  return <span className={`${validationStyles.badge} ${toneClass} ${styles.statusBadge}`}><Icon size={13} aria-hidden="true" />{children}</span>;
+}
+
 function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) {
   if (session.club_event_id) return "club" as const;
   return session.session_type;
@@ -641,6 +703,7 @@ export default function PlayerHomePage() {
   const [monthClubEventDurationById, setMonthClubEventDurationById] = useState<Record<string, number>>({});
   const [monthClubEventDurationByStartKey, setMonthClubEventDurationByStartKey] = useState<Record<string, number>>({});
   const [monthPlannedClubMinutes, setMonthPlannedClubMinutes] = useState<number>(0);
+  const [monthPlannedClubEvents, setMonthPlannedClubEvents] = useState<Array<{ starts_at: string; ends_at: string | null; duration_minutes: number | null }>>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
   const [playVolumeSummary, setPlayVolumeSummary] = useState<PlayVolumeSummary>({
     roundsCount: 0,
@@ -670,20 +733,139 @@ export default function PlayerHomePage() {
   const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | null>>({});
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
+  const [coachNamesByEventId, setCoachNamesByEventId] = useState<Record<string, string[]>>({});
   const [eventStructureByEventId, setEventStructureByEventId] = useState<Record<string, HomeEventStructureItem[]>>({});
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
-  const [latestNews, setLatestNews] = useState<HomeNewsItem | null>(null);
+  const [latestNews, setLatestNews] = useState<HomeNewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
-  const [messageBadgesByEventId, setMessageBadgesByEventId] = useState<Record<string, EventMessageBadge>>({});
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(true);
+  const [insightsError, setInsightsError] = useState(false);
+  const [pendingTrainings, setPendingTrainings] = useState<PendingTraining[]>([]);
+  const [attendanceInsight, setAttendanceInsight] = useState<AttendanceInsight | null>(null);
+  const [meritInsight, setMeritInsight] = useState<MeritInsight>(null);
+  const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
   const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
   const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
 
   const bucket = "marketplace";
+
+  useEffect(() => {
+    if (!effectiveUserId) return;
+    let cancelled = false;
+    const loadInsights = async () => {
+      setInsightsLoading(true);
+      setInsightsError(false);
+      try {
+        const { data: auth } = await supabase.auth.getSession();
+        const token = auth.session?.access_token ?? "";
+        const validationQuery = viewerRole === "parent" ? `?child_id=${encodeURIComponent(effectiveUserId)}` : "";
+        const [attendeesResult, sessionsResult, validationsResult] = await Promise.all([
+          supabase.from("club_event_attendees").select("event_id,status").eq("player_id", effectiveUserId),
+          isPerformanceEnabled
+            ? supabase.from("training_sessions").select("id,start_at,club_event_id,location_text,motivation,difficulty,satisfaction").eq("user_id", effectiveUserId).order("start_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+          token ? fetch(`/api/player/validations${validationQuery}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null) : Promise.resolve(null),
+        ]);
+        if (attendeesResult.error) throw attendeesResult.error;
+        if (sessionsResult.error) throw sessionsResult.error;
+        const attendees = (attendeesResult.data ?? []) as Array<{ event_id: string; status: string | null }>;
+        const sessions = (sessionsResult.data ?? []) as Array<{ id: string; start_at: string; club_event_id: string | null; location_text: string | null; motivation: number | null; difficulty: number | null; satisfaction: number | null }>;
+        const eventIds = [...new Set(attendees.map((row) => row.event_id).filter(Boolean))];
+        const sessionIds = sessions.map((row) => row.id);
+        const [eventsResult, itemsResult] = await Promise.all([
+          eventIds.length ? supabase.from("club_events").select("id,event_type,title,starts_at,ends_at,status,requires_evaluation").in("id", eventIds) : Promise.resolve({ data: [], error: null }),
+          sessionIds.length ? supabase.from("training_session_items").select("session_id,minutes").in("session_id", sessionIds) : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (eventsResult.error) throw eventsResult.error;
+        if (itemsResult.error) throw itemsResult.error;
+        const events = (eventsResult.data ?? []) as Array<{ id: string; event_type: string; title: string | null; starts_at: string; ends_at: string | null; status: string; requires_evaluation: boolean }>;
+        const statusById = new Map(attendees.map((row) => [row.event_id, row.status]));
+        const itemMinutesBySession = new Map<string, number>();
+        for (const row of (itemsResult.data ?? []) as Array<{ session_id: string; minutes: number }>) {
+          itemMinutesBySession.set(row.session_id, Math.max(itemMinutesBySession.get(row.session_id) ?? 0, Number(row.minutes ?? 0)));
+        }
+        const completeSessions = new Set(sessions.filter((session) => (itemMinutesBySession.get(session.id) ?? 0) > 0 && typeof session.motivation === "number" && typeof session.difficulty === "number" && typeof session.satisfaction === "number").map((session) => session.id));
+        const sessionsByEvent = new Map(sessions.filter((session) => session.club_event_id).map((session) => [session.club_event_id, session]));
+        const now = Date.now();
+        const pending: PendingTraining[] = [];
+        if (isPerformanceEnabled) {
+          for (const event of events) {
+            if (event.status !== "scheduled" || !event.requires_evaluation || !["training", "camp"].includes(event.event_type) || new Date(event.ends_at ?? event.starts_at).getTime() >= now || ["absent", "excused", "not_registered"].includes(statusById.get(event.id) ?? "")) continue;
+            const session = sessionsByEvent.get(event.id);
+            if (session && completeSessions.has(session.id)) continue;
+            pending.push({ id: event.id, dateIso: event.starts_at, title: event.title?.trim() || (event.event_type === "camp" ? "Stage" : "Entraînement"), href: session ? `/player/golf/trainings/${session.id}/edit` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}` });
+          }
+          for (const session of sessions) {
+            if (session.club_event_id || completeSessions.has(session.id) || new Date(session.start_at).getTime() >= now) continue;
+            pending.push({ id: session.id, dateIso: session.start_at, title: "Entraînement individuel", href: `/player/golf/trainings/${session.id}/edit` });
+          }
+        }
+        pending.sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime());
+        const currentStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+        const previousStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
+        const attendanceFor = (from: number, to: number) => {
+          let present = 0; let expected = 0;
+          for (const event of events) {
+            const date = new Date(event.starts_at).getTime();
+            const status = statusById.get(event.id);
+            if (date < from || date >= to || date >= now || event.status !== "scheduled" || !["training", "interclub", "camp", "event", "session"].includes(event.event_type) || !["present", "absent"].includes(status ?? "")) continue;
+            expected += 1;
+            if (status === "present") present += 1;
+          }
+          return { present, expected, rate: expected ? Math.round((present / expected) * 100) : 0 };
+        };
+        const currentAttendance = attendanceFor(currentStart, now);
+        const previousAttendance = attendanceFor(previousStart, currentStart);
+        let merit: MeritInsight = null;
+        let partialError = false;
+        if (isPerformanceEnabled && clubs[0]?.id) {
+          const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());
+          const yearStart = `${today.slice(0, 4)}-01-01`;
+          const ranking = await supabase.rpc("om_ranking_snapshot", { p_org_id: clubs[0].id, p_from: yearStart, p_as_of: today });
+          if (ranking.error) partialError = true;
+          else {
+            const rows = (ranking.data ?? []) as Array<{ player_id: string; rank_net: number }>;
+            const mine = rows.find((row) => row.player_id === effectiveUserId);
+            if (mine && Number.isFinite(Number(mine.rank_net))) {
+              let change: number | null = null;
+              const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
+              if (previousMonthEnd >= yearStart) {
+                const previousRanking = await supabase.rpc("om_ranking_snapshot", { p_org_id: clubs[0].id, p_from: yearStart, p_as_of: previousMonthEnd });
+                if (!previousRanking.error) {
+                  const previousMine = ((previousRanking.data ?? []) as Array<{ player_id: string; rank_net: number }>).find((row) => row.player_id === effectiveUserId);
+                  if (previousMine && Number.isFinite(Number(previousMine.rank_net))) change = Number(previousMine.rank_net) - Number(mine.rank_net);
+                }
+              }
+              merit = { rank: Number(mine.rank_net), total: rows.length, change };
+            }
+          }
+        }
+        let validation: ValidationDashboardPayload | null = null;
+        if (token && !validationsResult) partialError = true;
+        if (validationsResult) {
+          if (!validationsResult.ok) partialError = true;
+          else validation = await validationsResult.json() as ValidationDashboardPayload;
+        }
+        if (cancelled) return;
+        setPendingTrainings(pending);
+        setAttendanceInsight(currentAttendance.expected ? { ...currentAttendance, change: previousAttendance.expected ? currentAttendance.rate - previousAttendance.rate : null } : null);
+        setMeritInsight(merit);
+        setValidationDashboard(validation);
+        setInsightsError(partialError);
+      } catch (cause) {
+        if (!cancelled) { console.warn("player dashboard insights failed:", cause); setInsightsError(true); }
+      } finally {
+        if (!cancelled) setInsightsLoading(false);
+      }
+    };
+    void loadInsights();
+    return () => { cancelled = true; };
+  }, [effectiveUserId, viewerRole, isPerformanceEnabled, clubs]);
 
   const placeholderThumb = useMemo(() => {
     const svg = `
@@ -703,7 +885,6 @@ export default function PlayerHomePage() {
     if (names.length === 0) return "—";
     return names.join(" • ");
   }, [clubs]);
-  const showOrganizer = clubs.filter((c) => Boolean(c?.id)).length > 1;
 
   const trainingVolumeObjective = useMemo(() => {
     const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
@@ -828,6 +1009,7 @@ export default function PlayerHomePage() {
       setAttendeeStatusByEventId((prev) => ({ ...prev, ...(json?.attendeeStatusByEventId ?? {}) }));
       setClubNameById((prev) => ({ ...prev, ...(json?.clubNameById ?? {}) }));
       setGroupNameById((prev) => ({ ...prev, ...(json?.groupNameById ?? {}) }));
+      setCoachNamesByEventId((prev) => ({ ...prev, ...(json?.coachNamesByEventId ?? {}) }));
       const structureMap = (json?.eventStructureByEventId ?? {}) as Record<string, HomeEventStructureItem[]>;
       if (Object.keys(structureMap).length > 0) {
         setEventStructureByEventId((prev) => ({ ...prev, ...structureMap }));
@@ -847,7 +1029,7 @@ export default function PlayerHomePage() {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
       if (!token) {
-        setLatestNews(null);
+        setLatestNews([]);
         return;
       }
 
@@ -861,9 +1043,9 @@ export default function PlayerHomePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "Failed to load news"));
       const rows = Array.isArray(json?.news) ? (json.news as HomeNewsItem[]) : [];
-      setLatestNews(rows.find((row) => Boolean(row.visible_on_home)) ?? null);
+      setLatestNews(rows.slice(0, 3));
     } catch {
-      setLatestNews(null);
+      setLatestNews([]);
     } finally {
       setNewsLoading(false);
     }
@@ -1034,6 +1216,7 @@ export default function PlayerHomePage() {
         setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
         setClubNameById(pageCache.clubNameById);
         setGroupNameById(pageCache.groupNameById);
+        setCoachNamesByEventId(pageCache.coachNamesByEventId ?? {});
         setEventStructureByEventId(pageCache.eventStructureByEventId);
         setUpcomingActivities(pageCache.upcomingActivities);
         setUpcomingLoading(false);
@@ -1292,6 +1475,7 @@ export default function PlayerHomePage() {
           .lt("starts_at", end.toISOString())
           .lt("starts_at", nowIso);
         if (!plannedRes.error) {
+          setMonthPlannedClubEvents((plannedRes.data ?? []) as Array<{ starts_at: string; ends_at: string | null; duration_minutes: number | null }>);
           const total = (plannedRes.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
             const mins = Number(row.duration_minutes ?? 0);
             if (Number.isFinite(mins) && mins > 0) return sum + mins;
@@ -1304,9 +1488,11 @@ export default function PlayerHomePage() {
           setMonthPlannedClubMinutes(total);
         } else {
           setMonthPlannedClubMinutes(0);
+          setMonthPlannedClubEvents([]);
         }
       } else {
         setMonthPlannedClubMinutes(0);
+        setMonthPlannedClubEvents([]);
       }
     } else {
       setMonthSessions([]);
@@ -1333,7 +1519,7 @@ export default function PlayerHomePage() {
       setPlayVolumeLoading(false);
       setUpcomingActivities([]);
       setUpcomingLoading(false);
-      setLatestNews(null);
+      setLatestNews([]);
       setNewsLoading(false);
     } finally {
       setLoading(false);
@@ -1367,6 +1553,7 @@ export default function PlayerHomePage() {
       attendeeStatusByEventId,
       clubNameById,
       groupNameById,
+      coachNamesByEventId,
       eventStructureByEventId,
       upcomingActivities,
     });
@@ -1391,6 +1578,7 @@ export default function PlayerHomePage() {
     attendeeStatusByEventId,
     clubNameById,
     groupNameById,
+    coachNamesByEventId,
     eventStructureByEventId,
     upcomingActivities,
   ]);
@@ -1486,75 +1674,6 @@ export default function PlayerHomePage() {
     if (!ok) return;
     void updateTrainingAttendance(event, next);
   }
-
-  useEffect(() => {
-    const ids = Array.from(
-      new Set(
-        upcomingActivities
-          .filter((x): x is Extract<HomeUpcomingItem, { kind: "event" }> => x.kind === "event")
-          .map((x) => String(x.event?.id ?? ""))
-          .filter(Boolean)
-      )
-    );
-    if (ids.length === 0) {
-      setMessageBadgesByEventId({});
-      return;
-    }
-    let cancelled = false;
-    const loadBadges = async () => {
-      const badges = await fetchEventMessageBadges(ids);
-      if (!cancelled) setMessageBadgesByEventId(badges);
-    };
-
-    void loadBadges();
-
-    const onFocus = () => void loadBadges();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void loadBadges();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    if (viewerUserId) {
-      channel = supabase
-        .channel(`player-home-event-badges-${viewerUserId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "thread_messages" },
-          () => {
-            void loadBadges();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "thread_participants",
-            filter: `user_id=eq.${viewerUserId}`,
-          },
-          () => {
-            void loadBadges();
-          }
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "message_threads" },
-          () => {
-            void loadBadges();
-          }
-        )
-        .subscribe();
-    }
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (channel) void supabase.removeChannel(channel);
-    };
-  }, [upcomingActivities, viewerUserId]);
 
   const avatarUrl = useMemo(() => {
     const base = profile?.avatar_url?.trim() || "";
@@ -1661,28 +1780,55 @@ export default function PlayerHomePage() {
     [focusFromRounds.fwPctAvg, focusFromRounds.girPctAvg, focusFromRounds.puttAvg, focusFromRounds.scramblingPct, locale, t]
   );
   const upcomingPreview = upcomingActivities.slice(0, 3);
-  const latestNewsDate = latestNews
-    ? formatNewsPublishedLabel(latestNews.published_at ?? latestNews.scheduled_for ?? latestNews.created_at, locale)
-    : "";
-  const latestNewsLinkedLabel = compactHomeNewsLinkedLabel(
-    latestNews?.linked_content_label ?? null,
-    latestNews?.linked_content_type ?? null
-  );
-  const latestNewsOpenHref = useMemo(() => {
-    if (!latestNews) return null;
-    if (latestNews.linked_camp_id) {
-      if (viewerRole === "parent" && effectiveUserId) {
-        return `/player/camps?child_id=${encodeURIComponent(effectiveUserId)}`;
+  const attentionEvents = upcomingActivities
+    .filter((item): item is Extract<HomeUpcomingItem, { kind: "event" }> => item.kind === "event")
+    .filter((item) => isClubAttendanceEventType(item.event.event_type))
+    .filter((item) => attendeeStatusByEventId[item.event.id] == null || attendeeStatusByEventId[item.event.id] === "expected")
+    .slice(0, 2);
+  const validationHighlight = useMemo(() => {
+    const sections = validationDashboard?.sections.filter((section) => section.is_active && section.exercises.length > 0) ?? [];
+    const active = [...sections].sort((a, b) => b.validated_count - a.validated_count || a.sort_order - b.sort_order)[0];
+    if (!active) return null;
+    const next = active.exercises.find((exercise) => exercise.is_unlocked && !exercise.is_validated) ?? active.exercises.find((exercise) => !exercise.is_validated);
+    const last = sections.flatMap((section) => section.exercises.flatMap((exercise) => exercise.attempts.filter((attempt) => attempt.result === "success").map((attempt) => ({ name: exercise.name, date: attempt.attempted_at })))).sort((a, b) => b.date.localeCompare(a.date))[0];
+    return { section: active, next, last };
+  }, [validationDashboard]);
+  const weeklyVolume = useMemo(() => {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const buckets: Array<{ key: string; label: string; minutes: number; objective: number | null }> = [];
+    for (const date = new Date(first), index = { value: 1 }; date < end; date.setDate(date.getDate() + (index.value === 1 ? 7 - ((date.getDay() + 6) % 7) : 7)), index.value += 1) {
+      const key = String(index.value);
+      buckets.push({
+        key,
+        label: `${pickLocaleText(locale, "Sem.", "Week")} ${index.value}`,
+        minutes: 0,
+        objective: trainingVolumeObjective > 0 ? trainingVolumeObjective : null,
+      });
+    }
+    for (const session of monthSessions) {
+      const date = new Date(session.start_at);
+      if (date < first || date >= end) continue;
+      const week = Math.floor((date.getDate() + ((first.getDay() + 6) % 7) - 1) / 7);
+      const bucket = buckets[week];
+      if (bucket) {
+        const itemsMinutes = monthItems.filter((item) => item.session_id === session.id).reduce((sum, item) => sum + Number(item.minutes ?? 0), 0);
+        const sessionMinutes = isPerformanceEnabled ? itemsMinutes : session.club_event_id ? 0 : Number(session.total_minutes ?? 0);
+        bucket.minutes += sessionMinutes || 0;
       }
-      return "/player/camps";
     }
-    if (latestNews.linked_club_event_id) {
-      const params = new URLSearchParams({ club_event_id: latestNews.linked_club_event_id });
-      if (viewerRole === "parent" && effectiveUserId) params.set("child_id", effectiveUserId);
-      return `/player/golf/trainings/new?${params.toString()}`;
+    if (!isPerformanceEnabled) for (const event of monthPlannedClubEvents) {
+      const date = new Date(event.starts_at);
+      const week = Math.floor((date.getDate() + ((first.getDay() + 6) % 7) - 1) / 7);
+      const bucket = buckets[week];
+      if (!bucket) continue;
+      const duration = Number(event.duration_minutes ?? 0);
+      const fallback = event.ends_at ? Math.max(0, Math.round((new Date(event.ends_at).getTime() - date.getTime()) / 60000)) : 0;
+      bucket.minutes += duration > 0 ? duration : fallback;
     }
-    return null;
-  }, [latestNews, viewerRole, effectiveUserId]);
+    return buckets;
+  }, [locale, monthSessions, monthItems, isPerformanceEnabled, monthPlannedClubEvents, trainingVolumeObjective]);
   const allNewsHref = useMemo(() => {
     if (viewerRole === "parent" && effectiveUserId) {
       return `/player/news?child_id=${encodeURIComponent(effectiveUserId)}`;
@@ -1719,7 +1865,12 @@ export default function PlayerHomePage() {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{heroLoading && !profile ? `${t("playerHome.hello")}…` : `${displayHello(profile, t)} 👋`}</div>
+            <div className="hero-title">
+              {heroLoading && !profile ? `${t("playerHome.hello")}…` : displayHello(profile, t)}{" "}
+              <span className="player-home-wave" role="img" aria-label="bonjour">
+                👋
+              </span>
+            </div>
 
             <div className="hero-sub">
               <div>
@@ -1734,717 +1885,179 @@ export default function PlayerHomePage() {
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
-        {latestNews ? (
-          <section className="glass-section" style={{ marginTop: 14 }}>
-            <div className="section-title">News</div>
+        <div className={coachStyles.page}>
+          <div className={styles.firstRow}>
+            <section id="player-upcoming-activities" className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}>
+                <div><h2>{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</h2><p>{pickLocaleText(locale, "Les trois prochains rendez-vous.", "Your next three activities.")}</p></div>
+                <Link className={coachStyles.textLink} href="/player/golf/trainings?type=all" aria-label={pickLocaleText(locale, "Voir mon activité", "View my activity")}><ArrowRight size={16} /></Link>
+              </div>
+              {upcomingLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : upcomingPreview.length ? (
+                <div className={coachStyles.eventList}>
+                  {upcomingPreview.map((item) => {
+                    const event = item.kind === "event" ? item.event : null;
+                    const session = item.kind === "session" ? item.session : null;
+                    const competition = item.kind === "competition" ? item.competition : null;
+                    const title = event
+                      ? (event.title?.trim() || eventTypeLabel(event.event_type, locale))
+                      : session
+                        ? pickLocaleText(locale, "Entraînement", "Training")
+                        : (competition?.title?.trim() || pickLocaleText(locale, "Compétition", "Competition"));
+                    const location = event?.location_text || session?.location_text || competition?.location_text;
+                    const href = event
+                      ? (event.event_type === "training" || event.event_type === "session" || event.event_type === "camp"
+                        ? "/player/golf/trainings/new?club_event_id=" + encodeURIComponent(event.id)
+                        : "/player/golf/trainings?type=all")
+                      : session
+                        ? "/player/golf/trainings/" + session.id
+                        : "/player/golf/trainings?type=all";
+                    const organizer = event ? (coachNamesByEventId[event.id]?.join(", ") || clubNameById[event.club_id] || (event.group_id ? groupNameById[event.group_id] : "") || pickLocaleText(locale, "Club", "Club")) : session ? pickLocaleText(locale, "Entraînement personnel", "Personal training") : pickLocaleText(locale, "Compétition", "Competition");
+                    const activityDetail = event?.event_type === "session" && event.title?.trim() ? event.title.trim() : organizer;
+                    const status = event ? (attendeeStatusByEventId[event.id] ?? null) : null;
+                    const activityDate = new Date(item.dateIso);
+                    const dateDay = new Intl.DateTimeFormat(dateLocale, { weekday: "short" }).format(activityDate).replace(".", "");
+                    const dateMonth = new Intl.DateTimeFormat(dateLocale, { month: "short" }).format(activityDate).replace(".", "");
+                    const activityTime = new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(activityDate);
+                    const activityType = event ? eventTypeLabel(event.event_type, locale) : session ? pickLocaleText(locale, "Entraînement", "Training") : pickLocaleText(locale, "Compétition", "Competition");
+                    return <article key={item.key} className={styles.activityItem}>
+                      <div className={styles.activityDate} aria-label={new Intl.DateTimeFormat(dateLocale, { dateStyle: "full", timeStyle: "short" }).format(activityDate)}>
+                        <span>{dateDay}</span><b>{activityDate.getDate()}</b><span>{dateMonth}</span><time dateTime={item.dateIso}>{activityTime}</time>
+                      </div>
+                      <div className={styles.activityBody}>
+                        <Link className={styles.activityTitle} href={href}>{activityType}</Link>
+                        <span className={styles.activityMeta}>{activityDetail}</span>
+                        <span className={`planning-event-location ${styles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{location || pickLocaleText(locale, "Lieu non renseigné", "Location not specified")}</span></span>
+                      </div>
+                      {event && isClubAttendanceEventType(event.event_type) ? <UpcomingAttendanceToggle variant={2} checked={status !== "absent" && status !== "excused"} onToggle={() => handleTrainingAttendanceToggle(event, status)} disabled={attendanceBusyEventId === event.id} absentLabel={pickLocaleText(locale, "Absent", "Absent")} presentLabel={pickLocaleText(locale, "Présent", "Present")} absentSentence={pickLocaleText(locale, "Absent", "Absent")} presentSentence={pickLocaleText(locale, "Présent", "Present")} ariaLabel={pickLocaleText(locale, `Présence pour ${title}`, `Attendance for ${title}`)} /> : null}
+                    </article>;
+                  })}
+                </div>
+              ) : <div className={coachStyles.empty}>{pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}</div>}
+            </section>
 
-            <div
-              className="glass-card"
-              role="link"
-              tabIndex={0}
-              onClick={(event) => {
-                const target = event.target as HTMLElement;
-                if (target.closest("a,button,input,textarea,select")) return;
-                router.push(allNewsHref);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                router.push(allNewsHref);
-              }}
-              style={{ cursor: "pointer" }}
-            >
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                  <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                    <div>{latestNewsDate}</div>
-                  </div>
-                  {latestNewsOpenHref ? (
-                    <Link className="btn" href={latestNewsOpenHref}>
-                      {pickLocaleText(locale, "Ouvrir", "Open")}
-                    </Link>
+            <section className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de la section", "Section news")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles de votre section.", "Latest news from your section.")}</p></div><Link className={coachStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
+              {newsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
+                <div className={coachStyles.eventList}>
+                  {latestNews.map((news) => <Link key={news.id} href={allNewsHref}>
+                    <div className={coachStyles.dateBox}><Newspaper size={16} /></div>
+                    <div><b>{news.title}</b><span>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}{news.summary ? " · " + truncate(news.summary, 72) : ""}</span></div>
+                    <ArrowRight size={16} />
+                  </Link>)}
+                </div>
+              ) : <div className={coachStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
+            </section>
+
+            <section className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
+              {upcomingLoading || insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : (
+                <div className={coachStyles.taskList}>
+                  {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete" className={coachStyles.taskWarning}>
+                    <span><ClipboardCheck size={17} /></span>
+                    <b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b>
+                    <ArrowRight size={15} />
+                  </Link> : null}
+                  {attentionEvents.map(({ event }) => <Link key={event.id} href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}`} className={coachStyles.taskWarning}>
+                    <span><AlertTriangle size={17} /></span>
+                    <b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")} · {event.title?.trim() || eventTypeLabel(event.event_type, locale)}</b>
+                    <ArrowRight size={15} />
+                  </Link>)}
+                  {trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20 ? (
+                    <Link href="#player-training-volume" className={coachStyles.taskWarning}><span><Target size={17} /></span><b>{pickLocaleText(locale, "Objectif FTEM du mois à atteindre", "Monthly FTEM goal to reach")}</b><ArrowRight size={15} /></Link>
                   ) : null}
-                </div>
-
-                <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div className="marketplace-item-title" style={{ fontSize: 14, fontWeight: 950 }}>
-                    {latestNews.title}
-                  </div>
-                  {latestNews.summary ? (
-                    <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
-                      {latestNews.summary}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-              <Link className="btn" href={allNewsHref}>
-                {pickLocaleText(locale, "Toutes les news", "All news")}
-              </Link>
-            </div>
-          </section>
-        ) : null}
-
-        <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</div>
-
-          <div className="glass-card">
-            {upcomingLoading ? (
-              <div aria-live="polite" aria-busy="true" style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ height: 12, width: "46%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                  <div style={{ height: 10, width: "34%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                </div>
-                <div className="hr-soft" style={{ margin: "2px 0" }} />
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ height: 14, width: "64%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                  <div style={{ height: 10, width: "52%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                  <div style={{ height: 10, width: "72%", borderRadius: 999, background: "linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.1), rgba(0,0,0,0.06))", backgroundSize: "200% 100%", animation: "soft-shimmer 1.2s ease-in-out infinite" }} />
-                </div>
-              </div>
-            ) : upcomingPreview.length > 0 ? (
-              <div className="marketplace-list marketplace-list-top">
-                {upcomingPreview.map((item, index) => (
-                  <div
-                    key={item.key}
-                    className="marketplace-item"
-                    style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
-                  >
-                    {item.kind === "event" ? (() => {
-                      const e = item.event;
-                      const linkedSession = upcomingActivities.find(
-                        (candidate): candidate is Extract<HomeUpcomingItem, { kind: "session" }> =>
-                          candidate.kind === "session" && candidate.session.club_event_id === e.id
-                      )?.session ?? null;
-                      const clubName = clubNameById[e.club_id] ?? t("common.club");
-                      const groupName = e.group_id ? groupNameById[e.group_id] : null;
-                      const eventEnd =
-                        e.ends_at ??
-                        new Date(new Date(e.starts_at).getTime() + Math.max(1, Number(e.duration_minutes ?? 0)) * 60_000).toISOString();
-                      const isMultiDay = !sameDay(e.starts_at, eventEnd);
-                      const eventType = eventTypeLabel(e.event_type, pickLocaleText(locale, "fr", "en"));
-                      const attendanceStatus = attendeeStatusByEventId[e.id] ?? null;
-                      const isAttendanceEvent = isClubAttendanceEventType(e.event_type);
-                      let eventTitle = eventType;
-                      const customName = (e.title ?? "").trim();
-                      if (e.event_type === "training") {
-                        const trainingGroupLabel = groupName || pickLocaleText(locale, "Groupe", "Group");
-                        eventTitle = `${pickLocaleText(locale, "Entraînement", "Training")} • ${trainingGroupLabel}`;
-                      }
-                      if (e.event_type !== "training") {
-                        eventTitle = customName ? `${eventType} • ${customName}` : eventType;
-                      }
-
-                      return (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 10,
-                              alignItems: "center",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "flex-start",
-                                gap: 8,
-                                fontSize: 12,
-                                fontWeight: 950,
-                                color: "rgba(0,0,0,0.82)",
-                              }}
-                            >
-                              <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
-                              <div style={{ display: "grid", gap: 2 }}>
-                                {isMultiDay ? (
-                                  <div>
-                                    {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
-                                  </div>
-                                ) : (
-                                  <div>
-                                    {fmtDateLabelNoTime(e.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
-                                    <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                      {locale === "fr"
-                                        ? `• de ${fmtHourLabel(e.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
-                                        : `• from ${fmtHourLabel(e.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            {isAttendanceEvent ? (
-                              <AttendanceToggle
-                                checked={attendanceStatus === "present"}
-                                onToggle={() => handleTrainingAttendanceToggle(e, attendanceStatus)}
-                                disabled={attendanceBusyEventId === e.id}
-                                disabledCursor="wait"
-                                ariaLabel={pickLocaleText(locale, "Basculer présence", "Toggle attendance")}
-                                leftLabel={pickLocaleText(locale, "Absent", "Absent")}
-                                rightLabel={pickLocaleText(locale, "Présent", "Present")}
-                              />
-                            ) : null}
-                          </div>
-
-                          <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                          <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {eventTitle}
-                            </div>
-                            {showOrganizer && isAttendanceEvent ? (
-                              <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                                {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
-                              </div>
-                            ) : null}
-                          </div>
-
-                          {isAttendanceEvent ? (
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              {e.location_text ? (
-                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                                  📍 {e.location_text}
-                                </div>
-                              ) : <div />}
-                              <Link className="btn" href={linkedSession ? `/player/golf/trainings/${linkedSession.id}` : `/player/golf/trainings/new?club_event_id=${e.id}`}>
-                                {pickLocaleText(locale, "Détails", "Details")}
-                              </Link>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })() : null}
-
-                    {item.kind === "competition" ? (() => {
-                      const c = item.competition;
-                      const typeLabelComp =
-                        c.event_type === "camp"
-                          ? locale === "fr"
-                            ? "Stage"
-                            : "Camp"
-                          : locale === "fr"
-                          ? "Compétition"
-                          : "Competition";
-                      const title = `${typeLabelComp}${(c.title ?? "").trim() ? ` • ${(c.title ?? "").trim()}` : ""}`;
-                      return (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                            <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
-                            <div style={{ display: "grid", gap: 2 }}>
-                              {sameDay(c.starts_at, c.ends_at) ? (
-                                <div>{fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))}</div>
-                              ) : (
-                                <div>
-                                  {fmtDateLabelNoTime(c.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(c.ends_at, pickLocaleText(locale, "fr", "en"))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {title}
-                          </div>
-                          {c.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                              📍 {c.location_text}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })() : null}
-
-                    {item.kind === "session" ? (() => {
-                      const s = item.session;
-                      const normalizedSessionType = s.club_event_id ? "club" : s.session_type;
-                      const clubName = normalizedSessionType === "club" && s.club_id ? clubNameById[s.club_id] ?? t("common.club") : null;
-                      const sessionTitle =
-                        normalizedSessionType === "club"
-                          ? `${pickLocaleText(locale, "Entraînement", "Training")}${clubName ? ` • ${clubName}` : ""}`
-                          : `${normalizedSessionType === "private" ? pickLocaleText(locale, "Cours privé", "Private lesson") : pickLocaleText(locale, "Entraînement individuel", "Individual training")}`;
-                      return (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                            <CalendarDays size={15} style={{ flex: "0 0 auto", marginTop: 1, color: "rgba(0,0,0,0.62)" }} />
-                            <div style={{ display: "grid", gap: 2 }}>
-                              <div>
-                                {fmtDateLabelNoTime(s.start_at, pickLocaleText(locale, "fr", "en"))}
-                                {hasDisplayableTime(s.start_at) ? (
-                                  <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                    {locale === "fr" ? ` • ${fmtHourLabel(s.start_at, "fr")}` : ` • ${fmtHourLabel(s.start_at, "en")}`}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                          <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                            {sessionTitle}
-                          </div>
-                          {s.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                              📍 {s.location_text}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })() : null}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Link className="btn" href="/player/golf/trainings?type=all">
-              {pickLocaleText(locale, "Toutes les activités", "All activities")}
-            </Link>
-          </div>
-        </section>
-
-        {/* ===== Volume d’entrainement ===== */}
-        <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">{t("playerHome.trainingVolume")}</div>
-
-          <div className="glass-card">
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12, alignItems: "center" }}>
-              <div>
-                <div className="muted-uc">{thisMonthTitle}</div>
-
-                <div style={{ marginTop: 6 }}>
-                  <CountUpNumber value={trainingsSummary.totalMinutes} durationMs={2000} className="big-number" />
-                  <span className="unit">{t("playerHome.minutesUnit")}</span>
-                </div>
-
-                <div className="hr-soft" />
-
-                {trainingsSummary.objective > 0 ? (
-                  <div style={{ fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
-                    {t("playerHome.goal")}: {trainingsSummary.objective} {t("common.min")}
-                  </div>
-                ) : null}
-                {trainingVolumeMotivation ? (
-                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
-                    {trainingVolumeMotivation}
-                  </div>
-                ) : null}
-
-                <div style={{ marginTop: 10 }}>
-                  <span className="pill-soft">⛳ {trainingsSummary.count} {t("golfDashboard.sessions")}</span>
-                </div>
-              </div>
-
-              <div className="donut-wrap">
-                <Donut percent={trainingsSummary.percent} />
-              </div>
-            </div>
-          </div>
-
-          {isPerformanceEnabled ? (
-            <div className="grid-2" style={{ marginTop: 12 }}>
-              {/* Top secteurs */}
-              <div className="glass-card">
-                <div className="card-title">{t("playerHome.topSections")}</div>
-
-                {trainingsSummary.top.length === 0 ? (
-                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("playerHome.noDataThisMonth")}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {trainingsSummary.top.map((x) => {
-                      const w = Math.round((x.minutes / topMax) * 100);
-                      return (
-                        <div key={x.cat}>
-                          <div className="bar-row">
-                            <div>{x.label}</div>
-                            <div>{x.minutes}min</div>
-                          </div>
-                          <div className="bar">
-                            <span style={{ width: `${w}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* ✅ Sensations : moyenne du mois + flèche vs séance précédente */}
-              <div className="glass-card">
-                <div className="card-title">{t("trainingDetail.feelings")}</div>
-
-                <div style={{ display: "grid", gap: 14 }}>
-                  <div>
-                    <div className="sense-row">
-                      <div>{t("common.motivation")}</div>
-                      <div style={senseRightStyle}>
-                        <span className="sense-val">{trainingsSummary.motivationAvg ?? "—"}</span>
-                        <ArrowOnly delta={trainingsSummary.deltaMotivation} />
-                      </div>
-                    </div>
-                    <div className="bar">
-                      <span style={{ width: `${clamp(((trainingsSummary.motivationAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="sense-row">
-                      <div>{t("common.difficulty")}</div>
-                      <div style={senseRightStyle}>
-                        <span className="sense-val">{trainingsSummary.difficultyAvg ?? "—"}</span>
-                        <ArrowOnly delta={trainingsSummary.deltaDifficulty} />
-                      </div>
-                    </div>
-                    <div className="bar">
-                      <span style={{ width: `${clamp(((trainingsSummary.difficultyAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="sense-row">
-                      <div>{t("common.satisfaction")}</div>
-                      <div style={senseRightStyle}>
-                        <span className="sense-val">{trainingsSummary.satisfactionAvg ?? "—"}</span>
-                        <ArrowOnly delta={trainingsSummary.deltaSatisfaction} />
-                      </div>
-                    </div>
-                    <div className="bar">
-                      <span style={{ width: `${clamp(((trainingsSummary.satisfactionAvg ?? 0) / 6) * 100, 0, 100)}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <Link href="/player/golf/trainings/new" className="cta-green">
-            <PlusCircle size={18} />
-            {t("player.newTraining")}
-          </Link>
-        </section>
-
-        {/* ===== Volume de jeu ===== */}
-        <section className="glass-section">
-          <div className="section-title">
-            {pickLocaleText(locale, "Volume de jeu de l'année", "Yearly play volume")}
-          </div>
-
-          <div className="glass-card">
-            {playVolumeLoading && !playVolumeLoadedOnce ? (
-              <div
-                style={{
-                  marginTop: 4,
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                  alignItems: "center",
-                }}
-                aria-hidden="true"
-              >
-                {[0, 1].map((idx) => (
-                  <div
-                    key={`play-volume-skeleton-${idx}`}
-                    style={{
-                      borderWidth: 1,
-                      borderStyle: "solid",
-                      borderColor: "rgba(0,0,0,0.08)",
-                      background: "rgba(255,255,255,0.72)",
-                      borderRadius: 16,
-                      padding: "18px 12px",
-                      textAlign: "center",
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ height: 28, width: "46%", margin: "0 auto", borderRadius: 999, background: "rgba(15,23,42,0.14)" }} />
-                    <div style={{ height: 12, width: "54%", margin: "0 auto", borderRadius: 999, background: "rgba(15,23,42,0.10)" }} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div
-                style={{
-                  marginTop: 4,
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                  alignItems: "center",
-                }}
-              >
-                <div
-                  style={{
-                    borderWidth: 1,
-                    borderStyle: "solid",
-                    borderColor: "rgba(0,0,0,0.08)",
-                    background: "rgba(255,255,255,0.72)",
-                    borderRadius: 16,
-                    padding: "18px 12px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 950,
-                      lineHeight: 1,
-                      color: "var(--green-dark)",
-                    }}
-                  >
-                    <CountUpNumber value={roundsMonthCount} durationMs={900} />
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 14,
-                      fontWeight: 900,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    {t("playerHome.rounds").toUpperCase()}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    borderWidth: 1,
-                    borderStyle: "solid",
-                    borderColor: "rgba(0,0,0,0.08)",
-                    background: "rgba(255,255,255,0.72)",
-                    borderRadius: 16,
-                    padding: "18px 12px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 950,
-                      lineHeight: 1,
-                      color: "var(--green-dark)",
-                    }}
-                  >
-                    <CountUpNumber value={holesPlayedDisplay} durationMs={1200} />
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 14,
-                      fontWeight: 900,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    {t("playerHome.holes").toUpperCase()}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {isPerformanceEnabled ? (
-            <div
-              className="glass-card"
-              style={{
-                marginTop: 12,
-                border: "1px solid rgba(15,23,42,0.08)",
-                background: "rgba(255,255,255,0.82)",
-              }}
-            >
-              <div className="card-title">{t("playerHome.focus")}</div>
-
-              {playVolumeLoading && !playVolumeLoadedOnce ? (
-                <div
-                  style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-                  aria-hidden="true"
-                >
-                  {[0, 1, 2, 3].map((idx) => (
-                    <div
-                      key={`focus-skeleton-${idx}`}
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.82)",
-                        padding: 12,
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: 10,
-                          width: "62%",
-                          borderRadius: 999,
-                          background: "rgba(15,23,42,0.10)",
-                        }}
-                      />
-                      <div
-                        style={{
-                          height: 16,
-                          width: "48%",
-                          borderRadius: 999,
-                          background: "rgba(15,23,42,0.14)",
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                  {focusTiles.map((tile) => (
-                    <div
-                      key={tile.key}
-                      style={{
-                        border: "1px solid rgba(15,23,42,0.09)",
-                        borderRadius: 12,
-                        padding: "12px 12px 11px",
-                        background: "rgba(255,255,255,0.72)",
-                        display: "grid",
-                        gap: 6,
-                        textAlign: "center",
-                      }}
-                    >
-                      <div
-                        className="truncate"
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 900,
-                          letterSpacing: 1,
-                          color: "rgba(0,0,0,0.72)",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {tile.label}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 28,
-                          lineHeight: 1,
-                          fontWeight: 950,
-                          color: "var(--green-dark)",
-                        }}
-                      >
-                        {tile.value}
-                      </div>
-                    </div>
-                  ))}
+                  {!insightsError && !pendingTrainings.length && !attentionEvents.length && !(trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20) ? <div className={coachStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Aucun point d’attention.", "Nothing needs attention.")}</div> : null}
+                  {insightsError ? <div className={coachStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
               )}
-            </div>
-          ) : null}
+            </section>
+          </div>
 
-          <Link href="/player/golf/rounds/new" className="cta-green">
-            <PlusCircle size={18} />
-            {t("player.newRound")}
-          </Link>
-        </section>
-
-        {/* ===== Marketplace ===== */}
-        <section className="glass-section">
-          <div className="section-title">{t("nav.marketplace")}</div>
-
-          {marketplaceLoading ? (
-            <div className="marketplace-list" style={{ marginTop: 10 }}>
-              {[0, 1, 2].map((idx) => (
-                <div key={`mk-skeleton-${idx}`} className="marketplace-item" aria-hidden="true">
-                  <div className="marketplace-row">
-                    <div
-                      className="marketplace-thumb"
-                      style={{
-                        background:
-                          "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                        backgroundSize: "200% 100%",
-                        animation: "soft-shimmer 1.2s ease-in-out infinite",
-                      }}
-                    />
-                    <div className="marketplace-body" style={{ display: "grid", gap: 8 }}>
-                      <div
-                        style={{
-                          height: 12,
-                          width: "72%",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                          backgroundSize: "200% 100%",
-                          animation: "soft-shimmer 1.2s ease-in-out infinite",
-                        }}
-                      />
-                      <div
-                        style={{
-                          height: 10,
-                          width: "48%",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                          backgroundSize: "200% 100%",
-                          animation: "soft-shimmer 1.2s ease-in-out infinite",
-                        }}
-                      />
-                      <div
-                        style={{
-                          marginTop: 4,
-                          height: 22,
-                          width: 86,
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0.14), rgba(0,0,0,0.08))",
-                          backgroundSize: "200% 100%",
-                          animation: "soft-shimmer 1.2s ease-in-out infinite",
-                        }}
-                      />
-                    </div>
+          <section className={coachStyles.panel}>
+            <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Votre progression en un coup d’œil.", "Your progress at a glance.")}</p></div><Link className={coachStyles.textLink} href="/player/golf?section=stats">{pickLocaleText(locale, "Voir mes statistiques", "View my statistics")} <ArrowRight size={14} /></Link></div>
+            {insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <div className={styles.benchmarks}>
+              <div className={styles.benchmark}>
+                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
+                {attendanceInsight ? <>
+                  <div className={styles.attendanceProgress}><strong>{attendanceInsight.rate} %</strong><div className="bar" role="progressbar" aria-valuenow={attendanceInsight.rate} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${attendanceInsight.rate}%` }} /></div></div>
+                  <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
+                  <div className={styles.benchmarkSignals}>
+                    {attendanceInsight.change != null ? attendanceInsight.change > 0
+                      ? <BenchmarkBadge icon={ArrowUp} tone="positive">+{attendanceInsight.change} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
+                      : attendanceInsight.change < 0
+                        ? <BenchmarkBadge icon={ArrowDown} tone="caution">−{Math.abs(attendanceInsight.change)} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
+                        : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Stable vs mois précédent", "Stable vs previous month")}</BenchmarkBadge>
+                      : null}
+                    {attendanceInsight.rate === 100 ? <BenchmarkBadge icon={CheckCircle2} tone="positive">{pickLocaleText(locale, "Objectif atteint", "Goal reached")}</BenchmarkBadge> : null}
                   </div>
-                </div>
-              ))}
+                </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
+              </div>
+              <div className={styles.benchmark}>
+                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Classement OM net", "Net OM ranking")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir le classement OM", "View OM ranking")}><ArrowRight size={15} /></Link></div>
+                {meritInsight ? <>
+                  <div className={styles.rankLine}>
+                    <strong className={styles.rankValue}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
+                    {meritInsight.rank >= 1 && meritInsight.rank <= 3 ? <span className={styles.rankFlame} role="img" aria-label={pickLocaleText(locale, "Podium", "Podium")}>🔥</span> : null}
+                  </div>
+                  <span>{pickLocaleText(locale, "sur", "of")} {meritInsight.total} {pickLocaleText(locale, "joueurs", "players")}</span>
+                  {meritInsight.change != null ? <div className={styles.benchmarkSignals}>
+                    {meritInsight.change > 0 ? <BenchmarkBadge icon={ArrowUp} tone="positive">{meritInsight.change} {pickLocaleText(locale, meritInsight.change === 1 ? "place gagnée" : "places gagnées", meritInsight.change === 1 ? "place gained" : "places gained")}</BenchmarkBadge>
+                      : meritInsight.change < 0 ? <BenchmarkBadge icon={ArrowDown} tone="caution">{Math.abs(meritInsight.change)} {pickLocaleText(locale, Math.abs(meritInsight.change) === 1 ? "place de moins" : "places de moins", Math.abs(meritInsight.change) === 1 ? "place lower" : "places lower")}</BenchmarkBadge>
+                        : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Classement stable", "Ranking stable")}</BenchmarkBadge>}
+                  </div> : null}
+                </> : <p>{pickLocaleText(locale, "Aucun classement net disponible pour le moment.", "No net ranking available yet.")}</p>}
+              </div>
+              <div className={styles.benchmark}>
+                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><ShieldCheck size={17} /></span><h3>{pickLocaleText(locale, "Parcours de validation", "Validation journey")}</h3><Link className={styles.benchmarkLink} href="/player/validations" aria-label={pickLocaleText(locale, "Voir les validations", "View validations")}><ArrowRight size={15} /></Link></div>
+                {validationHighlight ? <>
+                  <strong className={styles.validationName}><span>{validationHighlight.section.name}</span><em>•</em><span>{pickLocaleText(locale, "Validation", "Validation")} #{validationHighlight.next?.sequence_no ?? Math.max(1, validationHighlight.section.validated_count + 1)}</span></strong>
+                  <span>{pickLocaleText(locale, "sur", "out of")} {validationHighlight.section.total_count} {pickLocaleText(locale, "validations", "validations")}</span>
+                  <BenchmarkBadge icon={ClipboardCheck} tone="neutral">{validationHighlight.next?.attempts.length ?? 0} {pickLocaleText(locale, (validationHighlight.next?.attempts.length ?? 0) === 1 ? "tentative" : "tentatives", (validationHighlight.next?.attempts.length ?? 0) === 1 ? "attempt" : "attempts")}</BenchmarkBadge>
+                </> : <p>{pickLocaleText(locale, "Votre parcours sera bientôt disponible.", "Your journey will be available soon.")}</p>}
+              </div>
+            </div>}
+          </section>
+
+          <div id="player-training-volume" className={styles.volumeRow}>
+            <section className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
+              {loading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
+                {trainingsSummary.objective > 0 ? <Donut percent={trainingsSummary.percent} /> : <div className={coachStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
+                <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
+                {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")}</span> : null}
+                {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
+              </div>}
+            </section>
+            <section className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{pickLocaleText(locale, "Réalisé et objectif FTEM pour chaque semaine du mois.", "Actual volume and FTEM goal for each week of the month.")}</p></div></div>
+              {loading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{pickLocaleText(locale, "Objectif FTEM complet pour chaque semaine, y compris celles à cheval sur deux mois.", "Full FTEM goal for every week, including weeks spanning two months.")}</small> : null}</>}
+            </section>
+          </div>
+
+          <section className={coachStyles.panel}>
+            <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Raccourcis", "Shortcuts")}</h2></div></div>
+            <div className={styles.shortcuts}>
+              <Link href="/player/golf/trainings?type=training"><span className={coachStyles.dateBox}><CalendarDays size={18} /></span><span><b>{pickLocaleText(locale, "Mes entraînements", "My trainings")}</b></span><ArrowRight size={16} /></Link>
+              <Link href="/player/golf/rounds"><span className={coachStyles.dateBox}><Flag size={18} /></span><span><b>{pickLocaleText(locale, "Mes parcours", "My rounds")}</b></span><ArrowRight size={16} /></Link>
+              <Link href="/player/golf"><span className={coachStyles.dateBox}><Target size={18} /></span><span><b>{pickLocaleText(locale, "Mes objectifs", "My goals")}</b></span><ArrowRight size={16} /></Link>
+              <Link href="/player/golf?section=stats"><span className={coachStyles.dateBox}><BarChart3 size={18} /></span><span><b>{pickLocaleText(locale, "Mes statistiques", "My statistics")}</b></span><ArrowRight size={16} /></Link>
             </div>
-          ) : latestItems.length === 0 ? (
-            <div style={{ opacity: 0.8, fontWeight: 800 }}>{t("marketplace.none")}</div>
-          ) : (
-            <div className="marketplace-list" style={{ marginTop: 10 }}>
-              {latestItems.map((it) => {
-                const img = thumbByItemId[it.id] || placeholderThumb;
-                const meta = compactMeta(it, locale);
+          </section>
 
-                return (
-                  <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">
-                    <div className="marketplace-item">
-                      <div className="marketplace-row">
-                        <div className="marketplace-thumb">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img} alt={it.title} loading="lazy" />
-                        </div>
-
-                        <div className="marketplace-body">
-                          <div className="marketplace-item-title">{truncate(it.title, 80)}</div>
-                          {meta && <div className="marketplace-meta">{meta}</div>}
-
-                          <div className="marketplace-price-row">
-                            <div className="marketplace-price-pill">{priceLabel(it, t)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-
-          <Link href="/player/marketplace/new" className="cta-green">
-            <PlusCircle size={18} />
-            {t("player.newListing")}
-          </Link>
-        </section>
-
-        <div style={{ height: 12 }} />
+          <section className={coachStyles.panel}>
+            <div className={coachStyles.panelHeader}><div><h2>{t("nav.marketplace")}</h2><p>{pickLocaleText(locale, "Les dernières annonces de vos clubs.", "Latest listings from your clubs.")}</p></div><Link className={coachStyles.textLink} href="/player/marketplace">{pickLocaleText(locale, "Toutes les annonces", "All listings")} <ArrowRight size={14} /></Link></div>
+            {marketplaceLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestItems.length ? (
+              <div className={"marketplace-list " + styles.marketplaceGrid}>
+                {latestItems.map((item) => <Link key={item.id} href={"/player/marketplace/" + item.id} className="marketplace-link"><div className="marketplace-item"><div className="marketplace-row">
+                  <div className="marketplace-thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={thumbByItemId[item.id] || placeholderThumb} alt={item.title} loading="lazy" />
+                  </div>
+                  <div className="marketplace-body"><div className="marketplace-item-title">{truncate(item.title, 80)}</div>{compactMeta(item, locale) ? <div className="marketplace-meta">{compactMeta(item, locale)}</div> : null}<div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(item, t)}</div></div></div>
+                </div></div></Link>)}
+              </div>
+            ) : <div className={coachStyles.empty}>{t("marketplace.none")}</div>}
+          </section>
+        </div>
       </div>
       {showProfilePhotoPrompt ? (
         <div

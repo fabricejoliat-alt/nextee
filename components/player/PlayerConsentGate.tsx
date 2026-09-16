@@ -9,7 +9,7 @@ type ParentChildConsent = {
   lastName: string | null;
   birthDate: string | null;
   isPrimary: boolean;
-  consentStatus: "granted" | "pending" | "adult";
+  consentStatus: "granted" | "pending" | "refused" | "adult";
   pending: boolean;
 };
 
@@ -26,7 +26,7 @@ type ConsentPayload =
         firstName: string | null;
         lastName: string | null;
         birthDate: string | null;
-        consentStatus: "granted" | "pending" | "adult";
+        consentStatus: "granted" | "pending" | "refused" | "adult";
         pending: boolean;
       };
     };
@@ -201,7 +201,7 @@ export default function PlayerConsentGate() {
                 </p>
                 <p style={{ margin: 0 }}>
                   Les données utilisées dans l'application peuvent inclure son identité, sa date de naissance, ses informations sportives,
-                  ses évaluations, ses messages liés aux événements, ainsi que les documents déposés par l'encadrement sportif lorsqu'ils
+                  ses évaluations et les documents déposés par l'encadrement sportif lorsqu'ils
                   sont nécessaires à son accompagnement.
                 </p>
                 <p style={{ margin: 0 }}>

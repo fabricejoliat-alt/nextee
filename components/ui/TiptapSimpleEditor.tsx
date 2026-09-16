@@ -13,6 +13,39 @@ type Props = {
   placeholder?: string;
 };
 
+function ToolButton({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="btn"
+      aria-label={label}
+      title={label}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      style={
+        active
+          ? {
+              background: "rgba(53,72,59,0.12)",
+              borderColor: "rgba(53,72,59,0.24)",
+            }
+          : undefined
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props) {
   const editor = useEditor({
     extensions: [
@@ -47,32 +80,6 @@ export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props)
 
   if (!editor) return null;
 
-  function ToolButton({
-    label,
-    active,
-    onClick,
-    children,
-  }: {
-    label: string;
-    active?: boolean;
-    onClick: () => void;
-    children: React.ReactNode;
-  }) {
-    return (
-      <button
-        type="button"
-        className="btn"
-        aria-label={label}
-        title={label}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClick}
-        style={active ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.24)" } : undefined}
-      >
-        {children}
-      </button>
-    );
-  }
-
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -94,6 +101,7 @@ export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props)
       </div>
 
       <div
+        className="tiptap-field-frame"
         style={{
           border: "1px solid rgba(0,0,0,0.14)",
           borderRadius: 12,
@@ -110,9 +118,15 @@ export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props)
           min-height: 116px;
           outline: none;
           color: #111827;
+          font-family: var(--font-inter), sans-serif;
           font-size: 14px;
+          font-weight: 400;
           line-height: 1.5;
           white-space: normal;
+        }
+        .tiptap-camp-editor strong,
+        .tiptap-camp-editor b {
+          font-weight: 700;
         }
         .tiptap-camp-editor p {
           margin: 0 0 0.75rem 0;

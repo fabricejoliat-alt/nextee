@@ -3,25 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
-import { Bell } from "lucide-react";
+import { Bell, Menu } from "lucide-react";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PushActivationBanner from "@/components/notifications/PushActivationBanner";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
 import { ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
 import { supabase } from "@/lib/supabaseClient";
-
-function BurgerIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 7h16v2H4V7Zm0 6h16v2H4v-2Zm0 6h16v2H4v-2Z"
-        opacity="0.95"
-      />
-    </svg>
-  );
-}
 
 export default function PlayerHeader() {
   const [open, setOpen] = useState(false);
@@ -180,7 +168,7 @@ export default function PlayerHeader() {
                 aria-label={t("common.openMenu")}
                 onClick={() => setOpen(true)}
               >
-                <BurgerIcon />
+                <Menu size={22} strokeWidth={2} aria-hidden="true" />
               </button>
             </div>
 

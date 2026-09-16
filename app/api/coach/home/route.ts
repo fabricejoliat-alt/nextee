@@ -17,6 +17,7 @@ type EventLite = {
   ends_at: string | null;
   location_text: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 
 type EventAttendeeLite = {
@@ -28,6 +29,7 @@ type EventAttendeeLite = {
 type EventFeedbackLite = {
   event_id: string;
   player_id: string;
+  coach_id: string;
 };
 
 function sortByStartsAtAsc<T extends { starts_at: string }>(items: T[]) {
@@ -79,6 +81,10 @@ export async function GET(req: NextRequest) {
         organizationNames: [],
         upcomingEvents: [],
         pendingEvalEvents: [],
+        groupCount: 0,
+        playerCount: 0,
+        pendingAttendanceCount: 0,
+        pendingEvaluationCount: 0,
       });
     }
 
@@ -93,16 +99,15 @@ export async function GET(req: NextRequest) {
       const [groupUpcomingRes, groupPastRes, groupsRes] = await Promise.all([
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
           .in("group_id", groupIds)
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
           .limit(80),
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
           .in("group_id", groupIds)
-          .in("event_type", ["training", "interclub"])
           .lt("starts_at", nowIso)
           .order("starts_at", { ascending: false })
           .limit(120),
@@ -131,7 +136,7 @@ export async function GET(req: NextRequest) {
     if (eventIdsFromAssign.length > 0) {
       const assignedEventsRes = await supabaseAdmin
         .from("club_events")
-        .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
+        .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
         .in("id", eventIdsFromAssign)
         .order("starts_at", { ascending: false });
       if (assignedEventsRes.error) return NextResponse.json({ error: assignedEventsRes.error.message }, { status: 400 });
@@ -193,11 +198,20 @@ export async function GET(req: NextRequest) {
       camp_day_index:
         event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
     }));
-    const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 5);
+    const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 80);
     const pastEvents = allEventsWithCampDay
-      .filter((e) => ["training", "interclub"].includes(String(e.event_type ?? "")) && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
+      .filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
       .slice(0, 120);
+    const evaluationEvents = pastEvents.filter((event) => Boolean(event.requires_evaluation));
+
+    const groupPlayersRes = groupIds.length > 0
+      ? await supabaseAdmin.from("coach_group_players").select("player_user_id").in("group_id", groupIds)
+      : { data: [], error: null };
+    if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
+    const followedPlayerIds = new Set(
+      (groupPlayersRes.data ?? []).map((row: { player_user_id: string | null }) => String(row.player_user_id ?? "")).filter(Boolean)
+    );
 
     if (pastEvents.length === 0) {
       return NextResponse.json({
@@ -206,13 +220,17 @@ export async function GET(req: NextRequest) {
         organizationNames,
         upcomingEvents,
         pendingEvalEvents: [],
+        groupCount: groupIds.length,
+        playerCount: followedPlayerIds.size,
+        pendingAttendanceCount: 0,
+        pendingEvaluationCount: 0,
       });
     }
 
     const pastIds = pastEvents.map((e) => e.id);
     const [attendeesRes, feedbackRes] = await Promise.all([
       supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", pastIds),
-      supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id").in("event_id", pastIds),
+      supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id,coach_id").in("event_id", pastIds).eq("coach_id", coachId),
     ]);
     if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
@@ -230,7 +248,7 @@ export async function GET(req: NextRequest) {
       evaluatedByEvent[r.event_id].add(r.player_id);
     });
 
-    const pendingEvalEvents = pastEvents.filter((e) => {
+    const pendingEvalEvents = evaluationEvents.filter((e) => {
       const present = presentByEvent[e.id] ?? new Set<string>();
       if (present.size === 0) return false;
       const evaluated = evaluatedByEvent[e.id] ?? new Set<string>();
@@ -240,12 +258,25 @@ export async function GET(req: NextRequest) {
       return false;
     });
 
+    const pendingAttendanceCount = ((attendeesRes.data ?? []) as EventAttendeeLite[]).filter(
+      (row) => row.status == null || row.status === "expected"
+    ).length;
+    const pendingEvaluationCount = pendingEvalEvents.reduce((total, event) => {
+      const present = presentByEvent[event.id] ?? new Set<string>();
+      const evaluated = evaluatedByEvent[event.id] ?? new Set<string>();
+      return total + Array.from(present).filter((playerId) => !evaluated.has(playerId)).length;
+    }, 0);
+
     return NextResponse.json({
       me,
       groupNameById,
       organizationNames,
       upcomingEvents,
       pendingEvalEvents,
+      groupCount: groupIds.length,
+      playerCount: followedPlayerIds.size,
+      pendingAttendanceCount,
+      pendingEvaluationCount,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

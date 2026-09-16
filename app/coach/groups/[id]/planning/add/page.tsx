@@ -604,6 +604,8 @@ export default function CoachGroupPlanningPage() {
       const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
       if (gRes.error) throw new Error(gRes.error.message);
       if (!gRes.data) throw new Error("Groupe introuvable.");
+      const permissionRes = await supabase.rpc("can_manage_assigned_group", { p_group_id: groupId, p_user_id: uRes.user.id, p_permission: "planning" });
+      if (permissionRes.error || permissionRes.data !== true) throw new Error("Vous n’avez pas l’autorisation de planifier les activités de ce groupe.");
       setGroup(gRes.data as GroupRow);
 
       // club name

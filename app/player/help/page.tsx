@@ -1,5 +1,7 @@
 "use client";
 
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+
 const GUIDE_URL =
   "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf";
 
@@ -38,7 +40,7 @@ const sections: HelpSection[] = [
       {
         heading: "Organisation",
         paragraphs: [
-          "ActiviTee permet aux clubs et aux coachs d’organiser facilement les activités de la section junior. Les joueurs et leurs parents peuvent ainsi consulter en tout temps les entraînements, les interclubs, les stages et autres événements du club. Chaque joueur dispose d’une vue claire de son planning. Il peut en tout temps ajouter des activités individuelles afin d’affiner la planification de sa saison. Des fils de discussion spécifiques à chaque événement permettent au club d’éviter les échanges dispersés d’e-mails ou de messages de groupe.",
+          "ActiviTee permet aux clubs et aux coachs d’organiser facilement les activités de la section junior. Les joueurs et leurs parents peuvent ainsi consulter en tout temps les entraînements, les interclubs, les stages et autres événements du club. Chaque joueur dispose d’une vue claire de son planning et peut ajouter des activités individuelles afin d’affiner la planification de sa saison.",
         ],
       },
       {
@@ -96,7 +98,7 @@ const sections: HelpSection[] = [
           "l’activation du compte du joueur junior",
           "l’enregistrement des activités sportives (entraînements, parcours, compétitions)",
           "le suivi de la progression sportive",
-          "la communication au sein de la section junior (messages, informations, événements)",
+          "les informations utiles de la section junior",
           "l’accès des parents au suivi de l’activité de leur enfant",
         ],
       },
@@ -178,7 +180,6 @@ const sections: HelpSection[] = [
           "les modifications d’un événement",
           "les annulations d’événement",
           "les nouvelles évaluations de coach",
-          "les nouveaux messages dans un fil de discussion",
           "les absences signalées par les joueurs",
           "les rappels d’événements à venir",
         ],
@@ -196,7 +197,7 @@ const sections: HelpSection[] = [
       },
       {
         paragraphs: [
-          "Si vous souhaitez recevoir les notifications directement sur votre téléphone, assurez-vous que l’option « Push PWA » est activée. Lorsque cette option est activée, les notifications peuvent apparaître sur votre téléphone même lorsque l’application n’est pas ouverte, comme pour une application classique. Cela vous permet de rester informé facilement des activités, messages et mises à jour importantes.",
+          "Si vous souhaitez recevoir les notifications directement sur votre téléphone, assurez-vous que l’option « Push PWA » est activée. Lorsque cette option est activée, les notifications peuvent apparaître sur votre téléphone même lorsque l’application n’est pas ouverte, comme pour une application classique. Cela vous permet de rester informé facilement des activités et mises à jour importantes.",
         ],
       },
     ],
@@ -235,18 +236,6 @@ const sections: HelpSection[] = [
       {
         paragraphs: [
           "Ces données peuvent notamment être utilisées pour répondre aux exigences de certaines institutions qui soutiennent l’activité sportive des jeunes, comme par exemple Jeunesse+Sport.",
-          "Chaque activité « Club » possède également son fil de discussion. Ce fil permet d’échanger autour de l’activité spécifique et peut être utilisé pour :",
-        ],
-        bullets: [
-          "partager des informations pratiques",
-          "organiser les trajets ou le covoiturage",
-          "communiquer des informations de dernière minute",
-          "poser des questions liées à l’activité",
-        ],
-      },
-      {
-        paragraphs: [
-          "Toutes les discussions restent ainsi centralisées dans l’événement concerné.",
         ],
       },
       {
@@ -569,71 +558,9 @@ const sections: HelpSection[] = [
         ],
       },
       {
-        heading: "Messagerie liée à l’événement",
-        paragraphs: [
-          "Comme sur chaque carte d’activité dans l’application, un bouton de messagerie est disponible. Ce bouton indique si une discussion est en cours dans le fil de discussion lié à l’événement. Cela permet de savoir rapidement si des informations ou des échanges sont en cours entre les joueurs, les parents ou les coachs.",
-        ],
-      },
-      {
         heading: "Accéder aux détails de l’événement",
         paragraphs: [
-          "Pour obtenir plus d’informations, cliquez sur le bouton Détail. Vous pourrez alors consulter toutes les informations de l’événement, voir les participants, accéder au fil de discussion et échanger avec les autres participants via la messagerie liée à l’événement. Cette page permet ainsi de centraliser toutes les informations et les échanges liés à une activité.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "page-messagerie",
-    title: "Page • Messagerie",
-    blocks: [
-      {
-        paragraphs: [
-          "La messagerie d’ActiviTee permet de faciliter la communication entre joueurs, parents, coachs et responsables de la section junior. Elle n’a pas pour objectif de remplacer une application de discussion instantanée, mais plutôt de centraliser les échanges liés aux activités sportives.",
-          "La messagerie fonctionne sous forme de fils de discussion regroupant plusieurs participants. Dans la majorité des cas, les fils de discussion sont directement liés à une activité « Club » (entraînement, compétition, stage, événement). Cela permet de rassembler toutes les informations et les échanges au même endroit.",
-        ],
-      },
-      {
-        heading: "Fils de discussion spécifiques",
-        paragraphs: [
-          "Certains fils de discussion ne sont pas liés à une activité. C’est notamment le cas pour :",
-        ],
-        bullets: [
-          "les discussions entre un junior et un coach",
-          "le fil de discussion Junior – Encadrement – Parent, accessible depuis le Dashboard dans la section Mon Golf",
-        ],
-      },
-      {
-        paragraphs: [
-          "Ces fils permettent d’échanger sur des sujets liés à la progression du joueur ou à son suivi sportif.",
-        ],
-      },
-      {
-        heading: "Communication entre juniors",
-        paragraphs: [
-          "Pour des raisons d’organisation et de sécurité, il n’est pas possible pour un junior d’ouvrir un fil de discussion avec un autre junior. La communication entre joueurs se fait principalement dans les fils liés aux activités, sous la supervision du coach ou de l’encadrement.",
-        ],
-      },
-      {
-        heading: "Accès aux discussions",
-        paragraphs: [
-          "Chaque fil de discussion est accessible directement depuis la page de l’activité concernée ou depuis l’onglet Messagerie dans la navigation principale. Cet onglet centralise l’ensemble des fils de discussion auxquels vous participez.",
-        ],
-      },
-      {
-        heading: "Recommandations d’utilisation",
-        paragraphs: [
-          "La messagerie est principalement destinée à faciliter l’organisation et la communication autour des activités sportives. Elle peut être utilisée par exemple pour :",
-        ],
-        bullets: [
-          "partager des informations pratiques liées à une activité",
-          "organiser les trajets ou le covoiturage",
-          "poser des questions au coach",
-          "communiquer des informations importantes aux participants",
-        ],
-      },
-      {
-        paragraphs: [
-          "Pour garantir une communication efficace, il est recommandé de rester concerné par le sujet de l’activité, de privilégier les messages utiles à l’organisation et d’éviter les discussions hors sujet. L’objectif est de maintenir une communication claire, utile et centrée sur l’activité sportive.",
+          "Pour obtenir plus d’informations, cliquez sur le bouton Détail. Vous pourrez alors consulter les informations de l’événement, voir les participants et retrouver les éléments utiles à sa préparation.",
         ],
       },
     ],
@@ -724,12 +651,6 @@ const sections: HelpSection[] = [
         paragraphs: [
           "Le Dashboard est la page de pilotage principale du joueur. Il regroupe en un seul endroit les informations essentielles permettant de suivre l’activité, analyser la performance et accompagner la progression du joueur. Cette page est utile à la fois pour le joueur, qui peut suivre sa progression et mieux comprendre son jeu, pour le coach, qui dispose d’une vision globale pour adapter les entraînements, et pour les parents, qui peuvent suivre l’activité sportive et l’évolution du junior.",
           "Le dashboard permet ainsi de transformer les données d’entraînement et de jeu en informations utiles pour la progression.",
-        ],
-      },
-      {
-        heading: "Fil de discussion Joueur • Coach • Parent",
-        paragraphs: [
-          "Le dashboard intègre un fil de discussion dédié au suivi du joueur. Ce fil permet d’échanger directement entre le joueur, le coach et les parents. Il est particulièrement utile pour discuter de la progression du joueur, donner des retours après un entraînement ou une compétition, partager des objectifs, transmettre des conseils ou des observations. Contrairement aux discussions liées aux activités, ce fil est centré sur le développement du joueur.",
         ],
       },
       {
@@ -1027,46 +948,21 @@ export default function PlayerHelpPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Aide" }]} />
+        <div className="glass-section">
+          <div className="marketplace-header">
+            <div>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>Aide</h1>
+              <div className="section-subtitle">Guide joueur ActiviTee.</div>
+            </div>
+            <div className="marketplace-actions">
+              <a href={GUIDE_URL} target="_blank" rel="noreferrer" className="cta-green cta-green-inline">Ouvrir le PDF</a>
+              <a href={GUIDE_URL} download className="btn">Télécharger</a>
+            </div>
+          </div>
+        </div>
         <div className="glass-section">
           <div className="glass-card" style={{ padding: 16, display: "grid", gap: 14 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <div style={{ display: "grid", gap: 2 }}>
-                <div className="section-title" style={{ marginBottom: 0 }}>
-                  Aide
-                </div>
-                <div className="section-subtitle">
-                  Guide joueur ActiviTee basé sur la structure du document Word.
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <a
-                  href={GUIDE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn"
-                  style={{ textDecoration: "none" }}
-                >
-                  Ouvrir le PDF
-                </a>
-                <a
-                  href={GUIDE_URL}
-                  download
-                  className="btn-secondary"
-                  style={{ textDecoration: "none" }}
-                >
-                  Télécharger
-                </a>
-              </div>
-            </div>
-
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
                 Sommaire

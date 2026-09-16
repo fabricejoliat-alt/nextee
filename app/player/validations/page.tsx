@@ -1,26 +1,21 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ClipboardList, Clock3, Flag, Lock, ShieldCheck, Target, Trash2, Unlock, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
+import { CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Clock3, Flag, Lock, ShieldCheck, Target, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import {
-  getValidationBadgeColors,
-  getValidationBadgeLabel,
-  type ValidationDashboardPayload,
-  type ValidationExerciseItem,
-  type ValidationSectionItem,
-} from "@/lib/validations";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import type { ValidationDashboardPayload, ValidationExerciseItem } from "@/lib/validations";
+import styles from "./PlayerValidations.module.css";
 
 function labelByLocale(locale: string, fr: string, en: string) {
   return locale === "fr" ? fr : en;
 }
 
 function progressRatio(value: number, total: number) {
-  if (total <= 0) return 0;
-  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+  return total > 0 ? Math.max(0, Math.min(100, Math.round((value / total) * 100))) : 0;
 }
 
 function toDateLocalValue(value: Date) {
@@ -32,239 +27,22 @@ function formatAttemptDate(locale: string, value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", {
-    timeZone: "Europe/Zurich",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+    timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit", year: "numeric",
   }).format(parsed);
 }
 
-function ProgressBar({
-  value,
-  total,
-  fill,
-}: {
-  value: number;
-  total: number;
-  fill: string;
-}) {
-  const width = `${progressRatio(value, total)}%`;
-  return (
-    <div className="bar">
-      <span
-        style={{
-          width,
-          background: fill,
-        }}
-      />
-    </div>
-  );
-}
-
-function BadgePill({ locale, badge }: { locale: string; badge: ValidationSectionItem["badge"] }) {
-  const colors = getValidationBadgeColors(badge);
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "6px 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 900,
-        letterSpacing: 0.2,
-        background: colors.background,
-        color: colors.color,
-        border: badge === "none" ? "1px solid rgba(15,23,42,0.08)" : "none",
-      }}
-    >
-      <ShieldCheck size={14} />
-      {getValidationBadgeLabel(locale, badge)}
-    </span>
-  );
-}
-
-function SkeletonLine({ width, height = 12, radius = 999 }: { width: string; height?: number; radius?: number }) {
-  return (
-    <div
-      aria-hidden="true"
-      style={{
-        width,
-        height,
-        borderRadius: radius,
-        background: "linear-gradient(90deg, rgba(15,23,42,0.07), rgba(15,23,42,0.12), rgba(15,23,42,0.07))",
-        backgroundSize: "200% 100%",
-        animation: "validationSkeletonShimmer 1.4s ease-in-out infinite",
-      }}
-    />
-  );
+function ProgressBar({ value, total }: { value: number; total: number }) {
+  return <div className={styles.progress} role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={total || 1}>
+    <span style={{ width: `${progressRatio(value, total)}%` }} />
+  </div>;
 }
 
 function ValidationsPageSkeleton() {
-  return (
-    <>
-      <div style={{ display: "grid", gap: 14 }}>
-        <div
-          style={{
-            borderWidth: 1,
-            borderStyle: "solid",
-            borderColor: "rgba(0,0,0,0.08)",
-            background: "rgba(255,255,255,0.72)",
-            borderRadius: 16,
-            padding: "18px 16px",
-            display: "grid",
-            gap: 12,
-          }}
-        >
-          <div style={{ display: "grid", gap: 8 }}>
-            <SkeletonLine width="68%" height={22} radius={10} />
-            <SkeletonLine width="100%" height={12} />
-            <SkeletonLine width="92%" height={12} />
-            <SkeletonLine width="78%" height={12} />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <div style={{ display: "grid", gap: 8 }}>
-              <SkeletonLine width="132px" height={12} />
-              <SkeletonLine width="94px" height={34} radius={12} />
-            </div>
-            <SkeletonLine width="90px" height={12} />
-          </div>
-          <div
-            aria-hidden="true"
-            style={{
-              height: 10,
-              borderRadius: 999,
-              background: "rgba(15,23,42,0.08)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: "44%",
-                height: "100%",
-                borderRadius: 999,
-                background: "linear-gradient(90deg, rgba(22,101,52,0.45), rgba(21,128,61,0.7))",
-              }}
-            />
-          </div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid rgba(15,23,42,0.08)",
-            borderRadius: 18,
-            padding: 16,
-            background: "rgba(255,255,255,0.92)",
-            display: "grid",
-            gap: 10,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <SkeletonLine width="104px" height={14} />
-            <SkeletonLine width="88px" height={28} radius={999} />
-          </div>
-          <div style={{ display: "grid", gap: 8 }}>
-            {[0, 1, 2, 3].map((index) => (
-              <div
-                key={`validation-skeleton-section-${index}`}
-                style={{
-                  borderRadius: 14,
-                  border: "1px solid rgba(15,23,42,0.08)",
-                  background: "white",
-                  padding: 12,
-                  display: "grid",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                  <SkeletonLine width={`${52 + index * 8}%`} height={12} />
-                  <SkeletonLine width="42px" height={12} />
-                </div>
-                <div
-                  aria-hidden="true"
-                  style={{
-                    height: 8,
-                    borderRadius: 999,
-                    background: "rgba(15,23,42,0.08)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${28 + index * 14}%`,
-                      height: "100%",
-                      borderRadius: 999,
-                      background: "linear-gradient(90deg, rgba(22,101,52,0.35), rgba(21,128,61,0.6))",
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <section className="glass-section" style={{ marginTop: 14 }}>
-        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-          <SkeletonLine width="180px" height={16} />
-          {[0, 1].map((index) => (
-            <div
-              key={`validation-skeleton-exercise-${index}`}
-              style={{
-                border: "1px solid rgba(15,23,42,0.08)",
-                borderRadius: 18,
-                padding: 16,
-                background: "rgba(255,255,255,0.96)",
-                display: "grid",
-                gap: 12,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <div style={{ display: "grid", gap: 8, flex: 1 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <SkeletonLine width="34px" height={34} radius={999} />
-                    <SkeletonLine width={index === 0 ? "52%" : "44%"} height={16} radius={8} />
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <SkeletonLine width="86px" height={28} radius={999} />
-                    <SkeletonLine width="70px" height={28} radius={999} />
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                {[0, 1, 2].map((cardIndex) => (
-                  <div
-                    key={`validation-skeleton-detail-${index}-${cardIndex}`}
-                    style={{
-                      border: "1px solid rgba(15,23,42,0.08)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(255,255,255,0.94)",
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    <SkeletonLine width="72px" height={10} />
-                    <SkeletonLine width="100%" height={12} radius={8} />
-                    <SkeletonLine width="78%" height={12} radius={8} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <style>{`
-        @keyframes validationSkeletonShimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
-    </>
-  );
+  return <div className={styles.skeleton} aria-hidden="true">
+    <div className={styles.skeletonSummary} />
+    <div className={styles.skeletonTabs} />
+    <div className={styles.skeletonGrid}>{[0, 1, 2].map((item) => <div key={item} className={styles.skeletonCard} />)}</div>
+  </div>;
 }
 
 export default function PlayerValidationsPage() {
@@ -280,54 +58,43 @@ export default function PlayerValidationsPage() {
   const [attemptDateDrafts, setAttemptDateDrafts] = useState<Record<string, string>>({});
   const [expandedExerciseIds, setExpandedExerciseIds] = useState<Record<string, boolean>>({});
 
-  const txt = useMemo(
-    () => ({
-      title: labelByLocale(locale, "Validations", "Validations"),
-      heroTitle: labelByLocale(
-        locale,
-        "Valide tous ces défis et deviens un joueur Elite !",
-        "Complete all these challenges and become an Elite player!"
-      ),
-      heroText: labelByLocale(
-        locale,
-        "Chaque exercice se débloque une fois que le précédent est validé. Cette progression t'aide à renforcer ton jeu, mieux gérer le stress et gagner en régularité sur le parcours.",
-        "Each exercise unlocks once the previous one is validated. This progression helps strengthen your game, manage stress better, and become more consistent on the course."
-      ),
-      loading: labelByLocale(locale, "Chargement des validations…", "Loading validations…"),
-      overall: labelByLocale(locale, "Progression globale", "Overall progress"),
-      attempts: labelByLocale(locale, "tentatives", "attempts"),
-      history: labelByLocale(locale, "Historique des essais", "Attempt history"),
-      objective: labelByLocale(locale, "Objectif", "Goal"),
-      instruction: labelByLocale(locale, "Consigne", "Instruction"),
-      equipment: labelByLocale(locale, "Matériel", "Equipment"),
-      validation: labelByLocale(locale, "Validation", "Validation"),
-      note: labelByLocale(locale, "Score/note", "Score/note"),
-      success: labelByLocale(locale, "Réussi", "Success"),
-      failure: labelByLocale(locale, "Manqué", "Missed"),
-      locked: labelByLocale(locale, "Verrouillé", "Locked"),
-      unlocked: labelByLocale(locale, "Débloqué", "Unlocked"),
-      validated: labelByLocale(locale, "Validé", "Validated"),
-      noHistory: labelByLocale(locale, "Aucun essai enregistré.", "No attempts recorded."),
-      level: labelByLocale(locale, "Niveau", "Level"),
-      dateTime: labelByLocale(locale, "Date", "Date"),
-      recordDisabled: labelByLocale(
-        locale,
-        "Consultation seule pour ce profil.",
-        "Read-only access for this profile."
-      ),
-      saved: labelByLocale(locale, "Essai enregistré.", "Attempt saved."),
-      deleted: labelByLocale(locale, "Tentative supprimée.", "Attempt deleted."),
-      deleteAttempt: labelByLocale(locale, "Supprimer", "Delete"),
-      deleteAttemptConfirm: labelByLocale(
-        locale,
-        "Supprimer cette tentative ? Si c'était la dernière réussite de cet exercice, les défis suivants seront à nouveau masqués.",
-        "Delete this attempt? If it was the last successful attempt for this exercise, the following challenges will be hidden again."
-      ),
-      sectionScore: labelByLocale(locale, "Score section", "Section score"),
-      globalScore: labelByLocale(locale, "Score global", "Overall score"),
-    }),
-    [locale]
-  );
+  const txt = useMemo(() => ({
+    title: labelByLocale(locale, "Validations", "Validations"),
+    subtitle: labelByLocale(locale, "Progresse secteur par secteur, à ton rythme.", "Progress through each section at your own pace."),
+    loading: labelByLocale(locale, "Chargement des validations…", "Loading validations…"),
+    overall: labelByLocale(locale, "Progression globale", "Overall progress"),
+    completed: labelByLocale(locale, "validations réussies", "validations completed"),
+    sections: labelByLocale(locale, "Secteurs", "Sections"),
+    sectionProgress: labelByLocale(locale, "validations réussies", "validations completed"),
+    objective: labelByLocale(locale, "Objectif", "Goal"),
+    instruction: labelByLocale(locale, "Consigne", "Instruction"),
+    equipment: labelByLocale(locale, "Matériel", "Equipment"),
+    validation: labelByLocale(locale, "Validation", "Validation"),
+    note: labelByLocale(locale, "Score / note", "Score / note"),
+    success: labelByLocale(locale, "Réussi", "Success"),
+    failure: labelByLocale(locale, "Manqué", "Missed"),
+    locked: labelByLocale(locale, "Verrouillé", "Locked"),
+    inProgress: labelByLocale(locale, "En cours", "In progress"),
+    toDo: labelByLocale(locale, "À faire", "To do"),
+    validated: labelByLocale(locale, "Validé", "Validated"),
+    history: labelByLocale(locale, "Historique des essais", "Attempt history"),
+    noHistory: labelByLocale(locale, "Aucun essai enregistré.", "No attempts recorded."),
+    level: labelByLocale(locale, "Niveau", "Level"),
+    dateTime: labelByLocale(locale, "Date", "Date"),
+    recordDisabled: labelByLocale(locale, "Consultation seule pour ce profil.", "Read-only access for this profile."),
+    saved: labelByLocale(locale, "Essai enregistré.", "Attempt saved."),
+    deleted: labelByLocale(locale, "Tentative supprimée.", "Attempt deleted."),
+    deleteAttempt: labelByLocale(locale, "Supprimer", "Delete"),
+    deleteAttemptConfirm: labelByLocale(locale,
+      "Supprimer cette tentative ? Si c'était la dernière réussite de cet exercice, les défis suivants seront à nouveau verrouillés.",
+      "Delete this attempt? If it was the last successful attempt for this exercise, the following challenges will be locked again."),
+    start: labelByLocale(locale, "Commencer", "Start"),
+    continue: labelByLocale(locale, "Continuer", "Continue"),
+    view: labelByLocale(locale, "Voir la validation", "View validation"),
+    close: labelByLocale(locale, "Réduire", "Collapse"),
+    imageMissing: labelByLocale(locale, "Illustration indisponible", "Illustration unavailable"),
+    nextUnlock: labelByLocale(locale, "Valide le défi précédent pour débloquer celui-ci.", "Complete the previous challenge to unlock this one."),
+  }), [locale]);
 
   async function getToken() {
     const { data } = await supabase.auth.getSession();
@@ -336,7 +103,6 @@ export default function PlayerValidationsPage() {
 
   useEffect(() => {
     let active = true;
-
     void (async () => {
       setLoading(true);
       setError(null);
@@ -345,10 +111,7 @@ export default function PlayerValidationsPage() {
         if (!token) throw new Error("Pas de session.");
         const ctx = await resolveEffectivePlayerContext();
         const qs = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
-        const res = await fetch(`/api/player/validations${qs}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
+        const res = await fetch(`/api/player/validations${qs}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json.error ?? "Erreur de chargement.");
         if (!active) return;
@@ -363,10 +126,7 @@ export default function PlayerValidationsPage() {
         if (active) setLoading(false);
       }
     })();
-
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
   const selectedSection = useMemo(
@@ -374,48 +134,14 @@ export default function PlayerValidationsPage() {
     [dashboard, selectedSectionId]
   );
 
-  const visibleExercise = useMemo(() => {
-    if (!selectedSection) return null;
-    const unlocked = selectedSection.exercises.filter((exercise) => exercise.is_unlocked);
-    if (unlocked.length === 0) return null;
-    return unlocked[unlocked.length - 1] ?? null;
-  }, [selectedSection]);
-
-  const visibleExercises = useMemo(() => {
-    if (!selectedSection) return [];
-    return selectedSection.exercises.filter((exercise) => exercise.is_unlocked);
-  }, [selectedSection]);
-
-  const overallAttemptCount = useMemo(() => {
-    if (!dashboard) return 0;
-    return dashboard.sections.reduce(
-      (sum, section) => sum + section.exercises.reduce((exerciseSum, exercise) => exerciseSum + exercise.attempts.length, 0),
-      0
-    );
-  }, [dashboard]);
-
-  useEffect(() => {
-    if (!visibleExercise) return;
-    setAttemptDateDrafts((current) => {
-      if (current[visibleExercise.id]) return current;
-      return {
-        ...current,
-        [visibleExercise.id]: toDateLocalValue(new Date()),
-      };
-    });
-  }, [visibleExercise]);
-
-  useEffect(() => {
-    if (!visibleExercise) return;
-    setExpandedExerciseIds((current) => {
-      if (current[visibleExercise.id] !== undefined) return current;
-      return { ...current, [visibleExercise.id]: !visibleExercise.is_validated };
-    });
-  }, [visibleExercise]);
+  function toggleExercise(exercise: ValidationExerciseItem) {
+    if (!exercise.is_unlocked) return;
+    setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: !current[exercise.id] }));
+    setAttemptDateDrafts((current) => current[exercise.id] ? current : { ...current, [exercise.id]: toDateLocalValue(new Date()) });
+  }
 
   async function saveAttempt(exercise: ValidationExerciseItem, result: "success" | "failure") {
     if (!dashboard?.can_record_attempts) return;
-
     setSubmittingId(exercise.id);
     setError(null);
     setInfo(null);
@@ -425,10 +151,7 @@ export default function PlayerValidationsPage() {
       const ctx = await resolveEffectivePlayerContext();
       const res = await fetch("/api/player/validations/attempts", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           child_id: ctx.role === "parent" ? ctx.effectiveUserId : "",
           exercise_id: exercise.id,
@@ -439,11 +162,8 @@ export default function PlayerValidationsPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Erreur d'enregistrement.");
-      const payload = json.dashboard as ValidationDashboardPayload;
-      setDashboard(payload);
-      if (result === "success") {
-        setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: false }));
-      }
+      setDashboard(json.dashboard as ValidationDashboardPayload);
+      if (result === "success") setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: false }));
       setInfo(txt.saved);
       setNoteDrafts((current) => ({ ...current, [exercise.id]: "" }));
     } catch (err: unknown) {
@@ -456,7 +176,6 @@ export default function PlayerValidationsPage() {
   async function deleteAttempt(attemptId: string) {
     if (!dashboard?.can_record_attempts || !attemptId) return;
     if (!window.confirm(txt.deleteAttemptConfirm)) return;
-
     setDeletingAttemptId(attemptId);
     setError(null);
     setInfo(null);
@@ -466,15 +185,11 @@ export default function PlayerValidationsPage() {
       const ctx = await resolveEffectivePlayerContext();
       const qs = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
       const res = await fetch(`/api/player/validations/attempts/${encodeURIComponent(attemptId)}${qs}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        method: "DELETE", headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Erreur de suppression.");
-      const payload = json.dashboard as ValidationDashboardPayload;
-      setDashboard(payload);
+      setDashboard(json.dashboard as ValidationDashboardPayload);
       setInfo(txt.deleted);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur de suppression.");
@@ -483,565 +198,134 @@ export default function PlayerValidationsPage() {
     }
   }
 
-  return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div className="section-title" style={{ marginBottom: 0 }}>
-              {txt.title}
+  return <div className="player-dashboard-bg">
+    <div className="app-shell marketplace-page">
+      <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: txt.title }]} />
+      <section className="glass-section">
+        <div className="marketplace-header">
+          <div>
+            <h1 className="section-title">{txt.title}</h1>
+            <p className="section-subtitle">{txt.subtitle}</p>
+          </div>
+        </div>
+      </section>
+
+      {error ? <div className="marketplace-error" role="alert">{error}</div> : null}
+      {info ? <div className={styles.notice} role="status"><CheckCircle2 size={17} aria-hidden="true" />{info}</div> : null}
+
+      {loading ? <ValidationsPageSkeleton /> : dashboard ? <div className={styles.content}>
+        <div className={styles.summary}>
+          <div className={styles.summaryTop}>
+            <div>
+              <span className={styles.eyebrow}>{txt.overall}</span>
+              <div className={styles.summaryValue}>{dashboard.overall_validated_count}<span> / {dashboard.overall_total_count}</span></div>
             </div>
+            <span className={styles.summaryCaption}>{txt.completed}</span>
+          </div>
+          <ProgressBar value={dashboard.overall_validated_count} total={dashboard.overall_total_count} />
+        </div>
+
+        <nav className={styles.sectorNav} aria-label={txt.sections}>
+          {dashboard.sections.map((section) => <button
+            key={section.id} type="button"
+            className={`${styles.sectorTab} ${selectedSection?.id === section.id ? styles.sectorTabActive : ""}`}
+            onClick={() => setSelectedSectionId(section.id)}
+            aria-current={selectedSection?.id === section.id ? "true" : undefined}
+          >
+            <span>{section.name}</span><small>{section.validated_count}/{section.total_count}</small>
+          </button>)}
+        </nav>
+
+        {selectedSection ? <section className={styles.sectorSection} aria-labelledby="validation-sector-title">
+          <div className={styles.sectorHeading}>
+            <div className={styles.sectorTitleLine}>
+              <span className={styles.sectorIcon}><Flag size={18} strokeWidth={1.8} aria-hidden="true" /></span>
+              <div>
+                <h2 id="validation-sector-title">{selectedSection.name}</h2>
+                <p>{selectedSection.validated_count} / {selectedSection.total_count} {txt.sectionProgress}</p>
+              </div>
+            </div>
+            <div className={styles.sectorProgress}><ProgressBar value={selectedSection.validated_count} total={selectedSection.total_count} /></div>
           </div>
 
-          {error ? (
-            <div style={{ marginTop: 12, ...messageBox("rgba(185,28,28,0.08)", "rgba(185,28,28,0.22)", "#991b1b") }}>{error}</div>
-          ) : null}
-          {info ? (
-            <div
-              style={{
-                marginTop: 12,
-                borderRadius: 14,
-                padding: "14px 16px",
-                background: "linear-gradient(135deg, rgba(22,101,52,0.95), rgba(21,128,61,0.92))",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                color: "white",
-                fontWeight: 800,
-                boxShadow: "0 4px 12px rgba(22,101,52,0.25)",
-              }}
-            >
-              <CheckCircle2 size={20} />
-              {info}
-            </div>
-          ) : null}
-
-          {loading || !dashboard ? (
-            <div style={{ marginTop: 12 }}>
-              <ValidationsPageSkeleton />
-            </div>
-          ) : (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: "grid", gap: 14 }}>
-                <div
-                  style={{
-                    borderWidth: 1,
-                    borderStyle: "solid",
-                    borderColor: "rgba(0,0,0,0.08)",
-                    background: "rgba(255,255,255,0.72)",
-                    borderRadius: 16,
-                    padding: "18px 16px",
-                    display: "grid",
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 19, fontWeight: 900, lineHeight: 1.2, color: "rgba(15,23,42,0.96)" }}>
-                      {txt.heroTitle}
-                    </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
-                      {txt.heroText}
-                    </div>
+          <div className={styles.exerciseGrid}>
+            {selectedSection.exercises.map((exercise) => {
+              const expanded = Boolean(expandedExerciseIds[exercise.id]);
+              const status = exercise.is_validated ? txt.validated : !exercise.is_unlocked ? txt.locked : exercise.attempts.length ? txt.inProgress : txt.toDo;
+              const StatusIcon = exercise.is_validated ? CheckCircle2 : !exercise.is_unlocked ? Lock : exercise.attempts.length ? Clock3 : Target;
+              const action = exercise.is_validated ? txt.view : exercise.attempts.length ? txt.continue : txt.start;
+              return <article key={exercise.id} className={`${styles.exerciseCard} ${expanded ? styles.exerciseCardExpanded : ""}`}>
+                <div className={styles.imageFrame}>
+                  {exercise.illustration_url ? <Image src={exercise.illustration_url} alt={exercise.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 33vw" unoptimized />
+                    : <span className={styles.imageFallback}><ClipboardList size={24} strokeWidth={1.6} aria-hidden="true" /><span>{txt.imageMissing}</span></span>}
+                </div>
+                <div className={styles.cardBody}>
+                  <div className={styles.cardMeta}>
+                    <span className={`${styles.status} ${exercise.is_validated ? styles.statusDone : !exercise.is_unlocked ? styles.statusLocked : exercise.attempts.length ? styles.statusProgress : styles.statusTodo}`}>
+                      <StatusIcon size={14} strokeWidth={2} aria-hidden="true" />{status}
+                    </span>
+                    <span className={styles.sequence}>{exercise.level != null ? `${txt.level} ${exercise.level}` : `${exercise.sequence_no}`}</span>
                   </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-                    <div>
-                      <div className="card-title" style={{ marginBottom: 0 }}>
-                        {txt.overall}
-                      </div>
-                      <div className="big-number" style={{ lineHeight: 1.05, marginTop: 6 }}>
-                        {dashboard.overall_validated_count}/{dashboard.overall_total_count}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>
-                      {overallAttemptCount} {txt.attempts}
-                    </div>
-                  </div>
-                  <ProgressBar
-                    value={dashboard.overall_validated_count}
-                    total={dashboard.overall_total_count}
-                    fill="linear-gradient(90deg, var(--green-light), var(--green-dark))"
-                  />
+                  <h3>{exercise.name}</h3>
+                  {exercise.short_description || exercise.objective ? <p className={styles.cardDescription}>{exercise.short_description || exercise.objective}</p> : null}
+                  {exercise.is_unlocked ? <button type="button" className={`btn ${exercise.is_validated ? "" : "btn-primary"} ${styles.cardAction}`}
+                    onClick={() => toggleExercise(exercise)} aria-expanded={expanded} aria-controls={`validation-detail-${exercise.id}`}>
+                    {expanded ? txt.close : action}{expanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+                  </button> : <p className={styles.lockedHint}>{txt.nextUnlock}</p>}
                 </div>
 
-                <div
-                  style={{
-                    border: "1px solid rgba(15,23,42,0.08)",
-                    borderRadius: 18,
-                    padding: 16,
-                    background: "rgba(255,255,255,0.92)",
-                    display: "grid",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                    <div>
-                      <div className="card-title" style={{ marginBottom: 0 }}>
-                        {labelByLocale(locale, "Secteurs", "Sections")}
-                      </div>
+                {expanded && exercise.is_unlocked ? <div id={`validation-detail-${exercise.id}`} className={styles.detail}>
+                  <div className={styles.detailFacts}>
+                    {exercise.objective ? <DetailFact icon={<Target size={15} />} label={txt.objective} value={exercise.objective} /> : null}
+                    {exercise.detailed_description || exercise.short_description ? <DetailFact icon={<ClipboardList size={15} />} label={txt.instruction} value={exercise.detailed_description || exercise.short_description || ""} /> : null}
+                    {exercise.equipment ? <DetailFact icon={<Flag size={15} />} label={txt.equipment} value={exercise.equipment} /> : null}
+                    {exercise.validation_rule_text ? <DetailFact icon={<ShieldCheck size={15} />} label={txt.validation} value={exercise.validation_rule_text} /> : null}
+                  </div>
+
+                  <div className={styles.attemptForm}>
+                    <div className={styles.formFields}>
+                      <label><span>{txt.dateTime}</span><input type="date" value={attemptDateDrafts[exercise.id] ?? ""}
+                        onChange={(event) => setAttemptDateDrafts((current) => ({ ...current, [exercise.id]: event.target.value }))}
+                        disabled={!dashboard.can_record_attempts || submittingId === exercise.id} /></label>
+                      <label><span>{txt.note}</span><textarea rows={2} value={noteDrafts[exercise.id] ?? ""}
+                        onChange={(event) => setNoteDrafts((current) => ({ ...current, [exercise.id]: event.target.value }))}
+                        disabled={!dashboard.can_record_attempts || submittingId === exercise.id} /></label>
                     </div>
-                    {selectedSection ? <BadgePill locale={locale} badge={selectedSection.badge} /> : null}
-                  </div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {dashboard.sections.map((section) => (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => setSelectedSectionId(section.id)}
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 14,
-                          border: section.id === selectedSection?.id ? "1px solid rgba(22,101,52,0.16)" : "1px solid rgba(15,23,42,0.08)",
-                          background: section.id === selectedSection?.id ? "rgba(22,101,52,0.07)" : "white",
-                          padding: 12,
-                          display: "grid",
-                          gap: 8,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                          <div className="bar-row" style={{ flex: 1, marginBottom: 0 }}>
-                            <span>{section.name}</span>
-                            <span>{section.validated_count}/{section.total_count}</span>
-                          </div>
-                        </div>
-                        <ProgressBar
-                          value={section.validated_count}
-                          total={section.total_count}
-                          fill="linear-gradient(90deg, var(--green-light), var(--green-dark))"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {selectedSection ? (
-                <section className="glass-section" style={{ marginTop: 14 }}>
-                  <div className="glass-card" style={{ display: "grid", gap: 14 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>
-                      {labelByLocale(locale, "Les défis ", "The challenges ")}{selectedSection.name}
+                    <div className={styles.formActions}>
+                      <button type="button" className="btn btn-primary" disabled={!dashboard.can_record_attempts || submittingId === exercise.id}
+                        onClick={() => saveAttempt(exercise, "success")}><CheckCircle2 size={16} aria-hidden="true" />{submittingId === exercise.id ? txt.loading : txt.success}</button>
+                      <button type="button" className="btn" disabled={!dashboard.can_record_attempts || submittingId === exercise.id}
+                        onClick={() => saveAttempt(exercise, "failure")}><XCircle size={16} aria-hidden="true" />{txt.failure}</button>
                     </div>
-                    {visibleExercise ? (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {visibleExercises.map((exercise) => {
-                          const isCompact = exercise.is_validated && !expandedExerciseIds[exercise.id];
-                          const resultColor = exercise.is_validated
-                            ? "#166534"
-                            : exercise.is_unlocked
-                            ? "#166534"
-                            : "rgba(15,23,42,0.52)";
-                          return (
-                            <div
-                              key={exercise.id}
-                              style={{
-                                border: "1px solid rgba(15,23,42,0.08)",
-                                borderRadius: 18,
-                                padding: 16,
-                                background: "rgba(255,255,255,0.96)",
-                                display: "grid",
-                                gap: 12,
-                                opacity: exercise.is_unlocked ? 1 : 0.78,
-                              }}
-                            >
-                            {isCompact ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: true }))
-                                }
-                                style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  padding: 0,
-                                  margin: 0,
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: 12,
-                                  alignItems: "center",
-                                  cursor: "pointer",
-                                  textAlign: "left",
-                                }}
-                              >
-                                <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
-                                  <span
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      minWidth: 34,
-                                      height: 34,
-                                      borderRadius: 999,
-                                      background: "rgba(15,23,42,0.08)",
-                                      fontSize: 13,
-                                      fontWeight: 900,
-                                      color: "rgba(15,23,42,0.88)",
-                                    }}
-                                  >
-                                    {exercise.sequence_no}
-                                  </span>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div
-                                      style={{
-                                        fontSize: 16,
-                                        fontWeight: 900,
-                                        color: "rgba(15,23,42,0.96)",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                      }}
-                                    >
-                                      {exercise.name}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                  <span style={statusPill(resultColor)}>
-                                    <CheckCircle2 size={14} />
-                                    {txt.validated}
-                                  </span>
-                                </div>
-                              </button>
-                            ) : (
-                              <>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                  <span
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      minWidth: 34,
-                                      height: 34,
-                                      borderRadius: 999,
-                                      background: "rgba(15,23,42,0.08)",
-                                      fontSize: 13,
-                                      fontWeight: 900,
-                                    }}
-                                  >
-                                    {exercise.sequence_no}
-                                  </span>
-                                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900 }}>{exercise.name}</h3>
-                                </div>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                  <span style={statusPill(resultColor)}>
-                                    {exercise.is_validated ? (
-                                      <>
-                                        <CheckCircle2 size={14} />
-                                        {txt.validated}
-                                      </>
-                                    ) : exercise.is_unlocked ? (
-                                      <>
-                                        <Unlock size={14} />
-                                        {txt.unlocked}
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Lock size={14} />
-                                        {txt.locked}
-                                      </>
-                                    )}
-                                  </span>
-                                  {exercise.level != null ? (
-                                    <span style={softPill()}>
-                                      {txt.level} {exercise.level}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-                              {exercise.is_validated ? (
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  onClick={() =>
-                                    setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: false }))
-                                  }
-                                  style={{
-                                    background: "white",
-                                    color: "rgba(15,23,42,0.72)",
-                                    border: "1px solid rgba(15,23,42,0.12)",
-                                  }}
-                                >
-                                  {labelByLocale(locale, "Reduire", "Collapse")}
-                                </button>
-                              ) : null}
-                            </div>
-
-                            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                              {exercise.objective ? <DetailCard icon={<Target size={14} />} label={txt.objective} value={exercise.objective} /> : null}
-                              {(exercise.detailed_description || exercise.short_description) ? (
-                                <DetailCard
-                                  icon={<ClipboardList size={14} />}
-                                  label={txt.instruction}
-                                  value={exercise.detailed_description || exercise.short_description || ""}
-                                />
-                              ) : null}
-                              {exercise.equipment ? <DetailCard icon={<Flag size={14} />} label={txt.equipment} value={exercise.equipment} /> : null}
-                              {exercise.validation_rule_text ? <DetailCard icon={<ShieldCheck size={14} />} label={txt.validation} value={exercise.validation_rule_text} /> : null}
-                            </div>
-
-                            <div style={{ display: "grid", gap: 10 }}>
-                              <label style={{ display: "grid", gap: 6 }}>
-                                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(15,23,42,0.62)" }}>{txt.dateTime}</span>
-                                <input
-                                  type="date"
-                                  value={attemptDateDrafts[exercise.id] ?? ""}
-                                  onChange={(event) =>
-                                    setAttemptDateDrafts((current) => ({ ...current, [exercise.id]: event.target.value }))
-                                  }
-                                  disabled={!dashboard.can_record_attempts || !exercise.is_unlocked || submittingId === exercise.id}
-                                  style={inputStyle}
-                                />
-                              </label>
-
-                              <label style={{ display: "grid", gap: 6 }}>
-                                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(15,23,42,0.62)" }}>{txt.note}</span>
-                                <textarea
-                                  value={noteDrafts[exercise.id] ?? ""}
-                                  onChange={(event) =>
-                                    setNoteDrafts((current) => ({ ...current, [exercise.id]: event.target.value }))
-                                  }
-                                  rows={2}
-                                  disabled={!dashboard.can_record_attempts || !exercise.is_unlocked || submittingId === exercise.id}
-                                  style={textAreaStyle}
-                                />
-                              </label>
-
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  disabled={!dashboard.can_record_attempts || !exercise.is_unlocked || submittingId === exercise.id}
-                                  onClick={() => saveAttempt(exercise, "success")}
-                                  style={{
-                                    background: "linear-gradient(135deg, rgba(22,101,52,0.98), rgba(21,128,61,0.94))",
-                                    color: "white",
-                                    border: "none",
-                                  }}
-                                >
-                                  <CheckCircle2 size={16} />
-                                  {submittingId === exercise.id ? txt.loading : txt.success}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  disabled={!dashboard.can_record_attempts || !exercise.is_unlocked || submittingId === exercise.id}
-                                  onClick={() => saveAttempt(exercise, "failure")}
-                                  style={{
-                                    background: "white",
-                                    color: "#991b1b",
-                                    border: "1px solid rgba(185,28,28,0.22)",
-                                  }}
-                                >
-                                  <XCircle size={16} />
-                                  {txt.failure}
-                                </button>
-                                {!dashboard.can_record_attempts ? (
-                                  <span style={softPill()}>{txt.recordDisabled}</span>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div style={{ display: "grid", gap: 8 }}>
-                              <div style={{ fontSize: 13, fontWeight: 900 }}>{txt.history}</div>
-                              {exercise.attempts.length === 0 ? (
-                                <div style={{ fontSize: 13, color: "rgba(15,23,42,0.62)", fontWeight: 700 }}>{txt.noHistory}</div>
-                              ) : (
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  {exercise.attempts.map((attempt) => (
-                                    <div
-                                      key={attempt.id}
-                                      style={{
-                                        borderRadius: 12,
-                                        border: "1px solid rgba(15,23,42,0.08)",
-                                        padding: "10px 12px",
-                                        background: "rgba(255,255,255,0.92)",
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        gap: 12,
-                                        alignItems: "center",
-                                        flexWrap: "wrap",
-                                      }}
-                                    >
-                                      <span style={attempt.result === "success" ? successMiniPill : failureMiniPill}>
-                                        {attempt.result === "success" ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                                        {attempt.result === "success" ? txt.success : txt.failure}
-                                      </span>
-                                      {attempt.note ? (
-                                        <div style={{ fontSize: 13, color: "rgba(15,23,42,0.78)", whiteSpace: "pre-wrap", flex: 1, minWidth: 100 }}>
-                                          {attempt.note}
-                                        </div>
-                                      ) : null}
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 8,
-                                          flexWrap: "wrap",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: 6,
-                                            fontSize: 12,
-                                            color: "rgba(15,23,42,0.62)",
-                                            fontWeight: 800,
-                                          }}
-                                        >
-                                          <Clock3 size={14} />
-                                          {formatAttemptDate(locale, attempt.attempted_at)}
-                                        </div>
-                                        {dashboard.can_record_attempts ? (
-                                          <button
-                                            type="button"
-                                            className="btn"
-                                            onClick={() => deleteAttempt(attempt.id)}
-                                            disabled={deletingAttemptId === attempt.id}
-                                            aria-label={txt.deleteAttempt}
-                                            title={txt.deleteAttempt}
-                                            style={{
-                                              width: 40,
-                                              minHeight: 40,
-                                              padding: 0,
-                                              background: "white",
-                                              color: "#991b1b",
-                                              border: "1px solid rgba(185,28,28,0.22)",
-                                              justifyContent: "center",
-                                            }}
-                                          >
-                                            <Trash2 size={18} />
-                                          </button>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                              </>
-                            )}
-                          </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
+                    {!dashboard.can_record_attempts ? <p className={styles.readOnly}>{txt.recordDisabled}</p> : null}
                   </div>
-                </section>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </div>
+
+                  <div className={styles.history}>
+                    <h4>{txt.history}</h4>
+                    {exercise.attempts.length === 0 ? <p>{txt.noHistory}</p> : <div className={styles.historyList}>
+                      {exercise.attempts.map((attempt) => <div key={attempt.id} className={styles.historyItem}>
+                        <span className={`${styles.attemptResult} ${attempt.result === "success" ? styles.attemptSuccess : styles.attemptFailure}`}>
+                          {attempt.result === "success" ? <CheckCircle2 size={14} aria-hidden="true" /> : <XCircle size={14} aria-hidden="true" />}
+                          {attempt.result === "success" ? txt.success : txt.failure}
+                        </span>
+                        {attempt.note ? <span className={styles.attemptNote}>{attempt.note}</span> : null}
+                        <time dateTime={attempt.attempted_at}><Clock3 size={14} aria-hidden="true" />{formatAttemptDate(locale, attempt.attempted_at)}</time>
+                        {dashboard.can_record_attempts ? <button type="button" className={`btn btn-danger ${styles.deleteButton}`}
+                          onClick={() => deleteAttempt(attempt.id)} disabled={deletingAttemptId === attempt.id}
+                          aria-label={`${txt.deleteAttempt} — ${exercise.name}`} title={txt.deleteAttempt}><Trash2 size={16} aria-hidden="true" /></button> : null}
+                      </div>)}
+                    </div>}
+                  </div>
+                </div> : null}
+              </article>;
+            })}
+          </div>
+        </section> : null}
+      </div> : null}
     </div>
-  );
+  </div>;
 }
 
-function DetailCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(15,23,42,0.08)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.94)",
-        display: "grid",
-        gap: 6,
-      }}
-    >
-      <div style={{ fontSize: 12, color: "rgba(15,23,42,0.56)", fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", color: "#166534" }}>{icon}</span>
-        <span>{label}</span>
-      </div>
-      <div style={{ fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: "rgba(15,23,42,0.88)" }}>{value}</div>
-    </div>
-  );
+function DetailFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return <div className={styles.detailFact}><div>{icon}<strong>{label}</strong></div><p>{value}</p></div>;
 }
-
-function messageBox(background: string, border: string, color: string): CSSProperties {
-  return {
-    border: `1px solid ${border}`,
-    background,
-    color,
-    borderRadius: 14,
-    padding: 12,
-    fontWeight: 800,
-  };
-}
-
-function statusPill(color: string): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15,23,42,0.08)",
-    fontSize: 12,
-    fontWeight: 900,
-    color,
-    background: "rgba(255,255,255,0.9)",
-  };
-}
-
-function softPill(): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15,23,42,0.08)",
-    fontSize: 12,
-    fontWeight: 800,
-    color: "rgba(15,23,42,0.72)",
-    background: "rgba(255,255,255,0.9)",
-  };
-}
-
-const textAreaStyle: CSSProperties = {
-  width: "100%",
-  borderRadius: 14,
-  border: "1px solid rgba(15,23,42,0.12)",
-  background: "white",
-  padding: "10px 12px",
-  resize: "vertical",
-  minHeight: 68,
-  font: "inherit",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  borderRadius: 14,
-  border: "1px solid rgba(15,23,42,0.12)",
-  background: "white",
-  padding: "10px 12px",
-  font: "inherit",
-};
-
-const successMiniPill: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  width: "fit-content",
-  padding: "5px 9px",
-  borderRadius: 999,
-  background: "rgba(22,163,74,0.1)",
-  color: "#166534",
-  fontSize: 12,
-  fontWeight: 900,
-};
-
-const failureMiniPill: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  width: "fit-content",
-  padding: "5px 9px",
-  borderRadius: 999,
-  background: "rgba(185,28,28,0.08)",
-  color: "#991b1b",
-  fontSize: 12,
-  fontWeight: 900,
-};

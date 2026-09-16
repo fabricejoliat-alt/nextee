@@ -117,7 +117,7 @@ function targetMatchesCoachNews(row: VisibleNewsRow, ctx: CoachNewsViewerContext
   return false;
 }
 
-export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: string[]) {
+export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: string[], options?: { includeArchived?: boolean }) {
   if (clubIds.length === 0) return [] as VisibleNewsRow[];
 
   const newsRes = await supabaseAdmin
@@ -126,7 +126,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
       "id,club_id,title,summary,body,status,visible_on_home,published_at,scheduled_for,created_at,updated_at,linked_club_event_id,linked_camp_id,include_linked_parents"
     )
     .in("club_id", clubIds)
-    .in("status", ["published", "scheduled"])
+    .in("status", options?.includeArchived ? ["published", "scheduled", "archived"] : ["published", "scheduled"])
     .order("updated_at", { ascending: false });
   if (newsRes.error) throw new Error(newsRes.error.message);
 
@@ -211,7 +211,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
         targets: targetsByNewsId.get(String(row.id ?? "")) ?? [],
       } satisfies VisibleNewsRow;
     })
-    .filter(isNowVisible)
+    .filter((row) => isNowVisible(row) || (options?.includeArchived === true && row.status === "archived"))
     .sort((left, right) => {
       const leftDate = new Date(publicationDateValue(left)).getTime();
       const rightDate = new Date(publicationDateValue(right)).getTime();
@@ -365,9 +365,10 @@ export async function fetchVisiblePlayerNews(args: {
   supabaseAdmin: any;
   callerId: string;
   requestedChildId: string | null;
+  includeArchived?: boolean;
 }) {
   const ctx = await resolvePlayerNewsContext(args);
-  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds);
+  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: args.includeArchived });
   const visibleNews = rows.filter((row) =>
     targetMatchesPlayerNews(row, {
       actorUserId: ctx.actorUserId,
@@ -390,7 +391,7 @@ export async function fetchVisiblePlayerNews(args: {
 
 export async function fetchVisibleCoachNews(args: { supabaseAdmin: any; callerId: string }) {
   const ctx = await resolveCoachNewsContext(args);
-  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds);
+  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: true });
   const visibleNews = rows.filter((row) =>
     targetMatchesCoachNews(row, {
       actorUserId: ctx.actorUserId,

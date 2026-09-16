@@ -1,91 +1,48 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Building2, ChevronRight, Languages, RefreshCw, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { messages } from "@/lib/i18n/messages";
+import styles from "./AdminHomeStats.module.css";
+
+type Stats = { organizations: number; managers: number; missingTranslations: number };
 
 export default function AdminHomeStats() {
-  const [clubCount, setClubCount] = useState<number>(0);
-  const [userCount, setUserCount] = useState<number>(0);
+  const [stats, setStats] = useState<Stats>({ organizations: 0, managers: 0, missingTranslations: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function loadStats() {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      // organizations count (legacy source: clubs table for now)
-      const clubsRes = await supabase.from("clubs").select("id", { count: "exact", head: true });
-      if (clubsRes.error) throw new Error(clubsRes.error.message);
-      setClubCount(clubsRes.count ?? 0);
-
-      // users count = profiles - superadmins
-      const adminsRes = await supabase.from("app_admins").select("user_id");
-      if (adminsRes.error) throw new Error(adminsRes.error.message);
-      const adminIds = new Set(
-        ((adminsRes.data ?? []) as Array<{ user_id: string | null }>).map((a) => a.user_id).filter(Boolean) as string[]
-      );
-
-      const profRes = await supabase.from("profiles").select("id");
-      if (profRes.error) throw new Error(profRes.error.message);
-      const allProfiles = profRes.data ?? [];
-      const nonAdminUsers = ((allProfiles ?? []) as Array<{ id: string }>).filter((p) => !adminIds.has(p.id));
-      setUserCount(nonAdminUsers.length);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur chargement");
-    } finally {
-      setLoading(false);
-    }
+      const [organizations, managers, translations] = await Promise.all([
+        supabase.from("organizations").select("id", { count: "exact", head: true }),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("app_role", "manager"),
+        supabase.from("app_translations").select("key", { count: "exact", head: true }).in("locale", ["en", "de", "it"]),
+      ]);
+      if (organizations.error) throw new Error(organizations.error.message);
+      if (managers.error) throw new Error(managers.error.message);
+      const referenceTranslationCount = Object.keys(messages.fr).length * 3;
+      const savedTranslations = translations.error ? 0 : translations.count ?? 0;
+      setStats({ organizations: organizations.count ?? 0, managers: managers.count ?? 0, missingTranslations: Math.max(0, referenceTranslationCount - savedTranslations) });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de chargement"); }
+    finally { setLoading(false); }
   }
+  useEffect(() => { void loadStats(); }, []);
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  const cards = [
+    { label: "Organisations", value: stats.organizations, detail: "Espaces administrés", icon: Building2, href: "/admin/organizations", action: "Gérer les organisations" },
+    { label: "Managers", value: stats.managers, detail: "Accès de gestion actifs", icon: Users, href: "/admin/users", action: "Gérer les managers" },
+    { label: "Traductions manquantes", value: stats.missingTranslations, detail: "EN, DE et IT à compléter", icon: Languages, href: "/admin/translations", action: "Compléter les traductions" },
+  ];
 
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>Accueil</h1>
-        <p style={{ marginTop: 6, color: "var(--muted)" }}>
-          Vue rapide de l’application.
-        </p>
-      </div>
-
-      {error && (
-        <div
-          style={{
-            border: "1px solid #ffcccc",
-            background: "#fff5f5",
-            padding: 10,
-            borderRadius: 10,
-            color: "#a00",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-        <div className="card">
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>Organisations</div>
-          <div style={{ fontSize: 34, fontWeight: 900, marginTop: 6 }}>
-            {loading ? "…" : clubCount}
-          </div>
-        </div>
-
-        <div className="card">
-          <div style={{ color: "var(--muted)", fontSize: 13 }}>Utilisateurs</div>
-          <div style={{ fontSize: 34, fontWeight: 900, marginTop: 6 }}>
-            {loading ? "…" : userCount}
-          </div>
-          <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 6 }}>
-            (hors superadmin)
-          </div>
-        </div>
-      </div>
-
-      <button className="btn" onClick={loadStats} style={{ width: "fit-content" }}>
-        Rafraîchir
-      </button>
-    </div>
-  );
+  return <div className={styles.page}>
+    <nav aria-label="Fil d’Ariane" style={{ display: "flex", alignItems: "center", minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>Administration</nav>
+    <div className={styles.topline}><div><h1>Bonjour</h1><p className={styles.lead}>Une vue d’ensemble de votre plateforme ActiviTee.</p></div><button type="button" className={styles.refreshButton} onClick={() => void loadStats()} disabled={loading}><RefreshCw size={16} className={loading ? styles.spin : undefined}/>{loading ? "Actualisation…" : "Actualiser"}</button></div>
+    {error ? <div className={styles.errorAlert} role="alert">{error}</div> : null}
+    <section className={styles.overview}><div className={styles.sectionHeading}><div><h2>Vue d’ensemble</h2><p>Les éléments essentiels à suivre.</p></div></div><div className={styles.statsGrid}>{cards.map((card) => { const Icon = card.icon; return <article className={styles.statCard} key={card.label}><div className={styles.statTop}><span className={styles.statIcon}><Icon size={20}/></span><Link href={card.href} aria-label={card.action}><ChevronRight size={18}/></Link></div><span>{card.label}</span><b>{loading ? "—" : card.value}</b><small>{card.detail}</small></article>; })}</div></section>
+    <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>Raccourcis</h2><p>Accédez rapidement aux principales tâches d’administration.</p></div></div><div className={styles.quickGrid}>{cards.map((card) => { const Icon = card.icon; return <Link key={card.href} href={card.href} className={styles.quickLink}><span><Icon size={18}/></span><div><b>{card.action}</b><small>{card.detail}</small></div><ChevronRight size={17}/></Link>})}</div></section>
+  </div>;
 }

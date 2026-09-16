@@ -10,6 +10,8 @@ import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import { respondentIncludes, validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 
 type EventRow = {
   id: string;
@@ -127,6 +129,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
+  const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
+  const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
 
   const [draft, setDraft] = useState<CoachFeedbackRow>({
     event_id: eventId,
@@ -272,6 +276,28 @@ export default function CoachEventPlayerFeedbackEditPage() {
         setAttendanceStatus("present");
       }
 
+      const customLinksRes = await supabase
+        .from("club_event_evaluation_criteria")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("is_enabled", true)
+        .order("position");
+      if (customLinksRes.error) throw new Error(customLinksRes.error.message);
+      const coachCriteria = ((customLinksRes.data ?? []) as EventEvaluationCriterion[]).filter((criterion) =>
+        respondentIncludes(criterion.snapshot_respondent, "coach")
+      );
+      setCustomCriteria(coachCriteria);
+      if (coachCriteria.length) {
+        const responsesRes = await supabase
+          .from("club_event_evaluation_responses")
+          .select("event_criterion_id,value_json")
+          .eq("event_id", eventId)
+          .eq("player_id", playerId)
+          .eq("respondent_role", "coach");
+        if (responsesRes.error) throw new Error(responsesRes.error.message);
+        setCustomResponses(Object.fromEntries((responsesRes.data ?? []).map((row: any) => [row.event_criterion_id, row.value_json])));
+      } else setCustomResponses({});
+
       setLoading(false);
     } catch (e: any) {
       setError(e?.message ?? "Erreur chargement.");
@@ -302,6 +328,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
   async function save(goNext = false) {
     setBusy(true);
     setError(null);
+
+    if (attendanceStatus !== "absent") {
+      const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
+      if (missing) {
+        setError(`Le critère « ${missing.snapshot_name} » est obligatoire.`);
+        setBusy(false);
+        return;
+      }
+    }
 
     if (attendanceStatus === "absent") {
       const attUp = await supabase
@@ -335,6 +370,19 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setError(up.error.message);
       setBusy(false);
       return;
+    }
+
+    if (attendanceStatus !== "absent" && customCriteria.length) {
+      const clearedIds = customCriteria.filter((criterion) => customResponses[criterion.id] == null || customResponses[criterion.id] === "").map((criterion) => criterion.id);
+      if (clearedIds.length) {
+        const removed = await supabase.from("club_event_evaluation_responses").delete().eq("event_id", eventId).eq("player_id", playerId).eq("respondent_role", "coach").in("event_criterion_id", clearedIds);
+        if (removed.error) { setError(removed.error.message); setBusy(false); return; }
+      }
+      const answered = customCriteria.filter((criterion) => customResponses[criterion.id] != null && customResponses[criterion.id] !== "");
+      if (answered.length) {
+        const saved = await supabase.from("club_event_evaluation_responses").upsert(answered.map((criterion) => ({ club_id: event?.club_id, event_criterion_id: criterion.id, event_id: eventId, player_id: playerId, respondent_user_id: meId, respondent_role: "coach", value_json: customResponses[criterion.id] })), { onConflict: "event_criterion_id,player_id,respondent_role" });
+        if (saved.error) { setError(saved.error.message); setBusy(false); return; }
+      }
     }
 
     const nextFeedbackFp = feedbackFingerprint({
@@ -587,6 +635,19 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   </>
                 )}
               </div>
+
+              {attendanceStatus !== "absent" && customCriteria.length ? (
+                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 14 }}>
+                  <div><div className="card-title" style={{ marginBottom: 3 }}>Focus personnalisés</div><div style={{ fontSize: 11, opacity: .6 }}>Les champs marqués * sont obligatoires.</div></div>
+                  {customCriteria.map((criterion) => (
+                    <label key={criterion.id} style={{ display: "grid", gap: 7 }}>
+                      <span style={fieldLabelStyle}>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
+                      {criterion.snapshot_description ? <small style={{ opacity: .65 }}>{criterion.snapshot_description}</small> : null}
+                      <EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={busy} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
 
               {attendanceStatus !== "absent" ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>

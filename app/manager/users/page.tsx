@@ -56,7 +56,7 @@ type EditForm = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean;
   is_performance: boolean;
-  player_consent_status: "granted" | "pending" | "adult";
+  player_consent_status: "granted" | "pending" | "refused" | "adult";
   player_field_values: Record<string, string | boolean | null>;
   first_name: string;
   last_name: string;
@@ -1406,7 +1406,7 @@ export default function ManagerUsersPage() {
                           </div>
                         ) : null}
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                          club: {clubNamesById[m.club_id] ?? m.club_id}
+                          organisation: {clubNamesById[m.club_id] ?? m.club_id}
                         </div>
                         <div style={{ color: "var(--muted)", fontSize: 13 }}>
                           statut: {m.is_active ? "actif" : "archivé"}

@@ -38,36 +38,16 @@ export async function GET(req: NextRequest) {
     if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
 
     const clubIds = uniq((membershipsRes.data ?? []).map((m: any) => String(m?.club_id ?? "").trim()));
-    if (clubIds.length === 0) {
-      return NextResponse.json({ messages_count: 0, notifications_count: 0 });
-    }
+    if (clubIds.length === 0) return NextResponse.json({ notifications_count: 0 });
 
-    const [threadsRes, activeMembersRes] = await Promise.all([
-      supabaseAdmin
-        .from("message_threads")
-        .select("id")
-        .in("organization_id", clubIds),
-      supabaseAdmin
-        .from("club_members")
-        .select("user_id")
-        .in("club_id", clubIds)
-        .eq("is_active", true),
-    ]);
-    if (threadsRes.error) return NextResponse.json({ error: threadsRes.error.message }, { status: 400 });
+    const activeMembersRes = await supabaseAdmin
+      .from("club_members")
+      .select("user_id")
+      .in("club_id", clubIds)
+      .eq("is_active", true);
     if (activeMembersRes.error) return NextResponse.json({ error: activeMembersRes.error.message }, { status: 400 });
 
-    const threadIds = uniq(((threadsRes.data ?? []) as Array<{ id: string | null }>).map((r) => String(r.id ?? "").trim()));
     const orgUserIds = uniq(((activeMembersRes.data ?? []) as Array<{ user_id: string | null }>).map((r) => String(r.user_id ?? "").trim()));
-
-    let messagesCount = 0;
-    for (const ids of chunk(threadIds, 200)) {
-      const countRes = await supabaseAdmin
-        .from("thread_messages")
-        .select("id", { count: "exact", head: true })
-        .in("thread_id", ids);
-      if (countRes.error) return NextResponse.json({ error: countRes.error.message }, { status: 400 });
-      messagesCount += countRes.count ?? 0;
-    }
 
     let notificationsCount = 0;
     for (const ids of chunk(orgUserIds, 200)) {
@@ -80,11 +60,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      messages_count: messagesCount,
       notifications_count: notificationsCount,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
 }
-

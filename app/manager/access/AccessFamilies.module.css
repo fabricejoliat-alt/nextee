@@ -1,0 +1,19 @@
+.statusDanger { color: #9f1239; border-color: #fecdd3; background: #fff1f2; }
+.statusSuccess { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.table td { color: #526056; font: 500 12px/1.25 var(--font-inter), sans-serif; }
+.table .titleCell b { font-size: 12px; }
+.table .muted { font-size: 10px; }
+.recipientField select { height: 36px; font-size: 11px; }
+.modalBackdrop { position: fixed; inset: 0; z-index: 6000; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .48); }
+.modal { width: min(720px, 100%); max-height: 88vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border-radius: 20px; border: 1px solid rgba(0, 0, 0, .1); background: #fff; box-shadow: 0 24px 70px rgba(15, 23, 42, .24); }
+.modalHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; border-bottom: 1px solid rgba(0, 0, 0, .08); }
+.modalHead h2 { margin: 0; color: #35483b; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+.modalHead p { margin: 4px 0 0; color: #6f7c72; font-size: 12px; font-weight: 400; }
+.modalBody { overflow: auto; display: grid; gap: 12px; padding: 18px; }
+.modalActions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 18px; border-top: 1px solid rgba(0, 0, 0, .08); }
+.modalActions > button { height: 38px; }
+.previewSubject { padding: 13px 14px; border: 1px solid #e3e9e2; border-radius: 11px; background: #fafcf9; color: #35483b; font: 600 13px/1.45 var(--font-inter), sans-serif; }
+.previewBody { padding: 16px; border: 1px solid #e3e9e2; border-radius: 11px; background: #fff; color: #4d5c50; white-space: pre-wrap; font: 400 13px/1.6 var(--font-inter), sans-serif; }
+.modalPrimaryButton { background: #35483b; color: #fff; }
+.modalPrimaryButton:hover:not(:disabled) { background: #2b3c30; }
+@media (max-width: 720px) { .modal { max-height: calc(100dvh - 24px); border-radius: 16px; } .modalActions { flex-wrap: wrap; } }

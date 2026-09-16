@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Bell } from "lucide-react";
+import { ExternalLink, Newspaper } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import managerStyles from "@/app/manager/camps/Camps.module.css";
+import styles from "./ClubNewsFeed.module.css";
 
 type ClubNewsFeedScope = "player" | "coach";
 
@@ -110,7 +113,7 @@ function compactLinkedLabel(label: string | null, contentType: NewsItem["linked_
   return label;
 }
 
-export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleDe, titleIt }: Props) {
+export default function ClubNewsFeed({ scope, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale } = useI18n();
   const tr = useCallback((fr: string, en: string) => pickLocaleText(locale, fr, en), [locale]);
   const resolveLocaleLabel = (fr: string, en: string, de?: string, it?: string) => {
@@ -198,41 +201,32 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
     return null;
   }
 
-  if (loading) {
-    return (
-      <div className="player-dashboard-bg">
-        <div className="app-shell marketplace-page">
-          <div className="glass-section">
-            <div className="section-title">News</div>
+  return (
+    <main className={managerStyles.page}>
+      <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: resolveLocaleLabel(titleFr, titleEn, titleDe, titleIt) }]} />
+      <header className={managerStyles.topline}>
+        <div>
+          <h1>{resolveLocaleLabel(titleFr, titleEn, titleDe, titleIt)}</h1>
+          <p className={managerStyles.lead}>{tr("Retrouvez les informations publiées par votre club.", "Find the latest information published by your club.")}</p>
+        </div>
+      </header>
+
+      {error ? <div className={managerStyles.alertError} role="alert">{error}</div> : null}
+
+      <section className={styles.newsSection} aria-label={tr("Actualités du club", "Club news")}>
+        {loading ? (
+          <div className={managerStyles.panel}>
+            <ListLoadingBlock label={tr("Chargement des news...", "Loading news...")} />
           </div>
-          <div className="glass-section">
-            <div className="glass-card">
-              <ListLoadingBlock label={tr("Chargement des news...", "Loading news...")} />
+        ) : news.length === 0 ? (
+          <div className={managerStyles.panel}>
+            <div className={managerStyles.empty}>
+              <Newspaper size={22} aria-hidden="true" />
+              <p>{tr("Aucune news pour le moment.", "No news yet.")}</p>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page" style={{ display: "grid", gap: 14 }}>
-        <div className="glass-section">
-          <div className="section-title">{resolveLocaleLabel(titleFr, titleEn, titleDe, titleIt)}</div>
-        </div>
-
-        {error ? (
-          <div className="glass-section">
-            <div className="marketplace-error">{error}</div>
-          </div>
-        ) : null}
-
-        <div className="glass-section">
-          {news.length === 0 ? (
-            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>{tr("Aucune news pour le moment.", "No news yet.")}</div>
-          ) : (
-            <div className="marketplace-list marketplace-list-top">
+        ) : (
+            <div className={styles.newsList}>
               {news.map((item) => {
                 const openHref = resolveOpenHref(item);
                 const publishedLabel = formatNewsPublishedLabel(item.published_at ?? item.scheduled_for ?? item.created_at, locale);
@@ -241,77 +235,43 @@ export default function ClubNewsFeed({ scope, homeHref, titleFr, titleEn, titleD
                 return (
                   <article
                     key={item.id}
-                    className="marketplace-item"
-                    style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 18, background: "rgba(255,255,255,0.82)", display: "grid", gap: 14 }}
+                    className={styles.newsArticle}
                   >
-                    <div className="glass-card" style={{ display: "grid", gap: 12, background: "rgba(255,255,255,0.96)", border: "1px solid rgba(0,0,0,0.08)" }}>
                       {publishedLabel ? (
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            justifySelf: "start",
-                            padding: 0,
-                            fontSize: 12,
-                            fontWeight: 900,
-                            color: "rgba(0,0,0,0.82)",
-                          }}
-                        >
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{publishedLabel}</div>
-                        </div>
+                        <p className={styles.publishedAt}>{publishedLabel}</p>
                       ) : null}
 
                       {linkedLabel ? (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <span className="pill-soft">{linkedLabel}</span>
+                        <div className={styles.labels}>
+                          <span className={managerStyles.badge}>{linkedLabel}</span>
                         </div>
                       ) : null}
 
-                      <div className="hr-soft" style={{ margin: "0" }} />
-
-                      <div className="card-title" style={{ marginBottom: 0 }}>{item.title}</div>
+                      <h2>{item.title}</h2>
 
                       {item.summary ? (
-                        <div style={{ fontSize: 14, color: "#111827", fontWeight: 700 }}>
-                          {item.summary}
-                        </div>
+                        <p className={styles.summary}>{item.summary}</p>
                       ) : null}
 
                       <div
-                        style={{ fontSize: 12, color: "rgba(0,0,0,0.72)", fontWeight: 700, lineHeight: 1.65 }}
+                        className={styles.body}
                         dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(item.body) }}
                       />
 
                       {openHref ? (
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <Link
-                            href={openHref}
-                            className="btn"
-                            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
-                          >
+                        <div className={styles.actions}>
+                          <Link href={openHref} className={managerStyles.secondary}>
+                            <ExternalLink size={15} aria-hidden="true" />
                             {tr("Ouvrir", "Open")}
                           </Link>
                         </div>
                       ) : null}
-                    </div>
                   </article>
                 );
               })}
             </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href={homeHref} className="pill-soft" style={{ textDecoration: "none" }}>
-            {tr("Retour à l'accueil", "Back home")}
-          </Link>
-          <span className="pill-soft">
-            <Bell size={14} />
-            {news.length} {tr("news", "news")}
-          </span>
-        </div>
-      </div>
-    </div>
+        )}
+      </section>
+    </main>
   );
 }

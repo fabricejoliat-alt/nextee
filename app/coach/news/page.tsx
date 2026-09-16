@@ -1,14 +1,3 @@
-import ClubNewsFeed from "@/components/news/ClubNewsFeed";
+import CoachNewsFeed from "@/components/coach/CoachNewsFeed";
 
-export default function CoachNewsPage() {
-  return (
-    <ClubNewsFeed
-      scope="coach"
-      homeHref="/coach"
-      titleFr="News coach"
-      titleEn="Coach news"
-      titleDe="Trainer-News"
-      titleIt="News coach"
-    />
-  );
-}
+export default function CoachNewsPage() { return <CoachNewsFeed />; }

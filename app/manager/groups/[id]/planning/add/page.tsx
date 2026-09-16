@@ -8,8 +8,13 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import EventCriteriaSelector, { replaceEventCriteria } from "@/components/evaluations/EventCriteriaSelector";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import {
   Calendar,
+  ArrowLeft,
   PlusCircle,
   Repeat,
   Trash2,
@@ -57,6 +62,7 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 type EventCoachRow = {
   event_id: string;
@@ -309,6 +315,18 @@ const fieldLabelStyle: React.CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
+const compactGreenButtonStyle: React.CSSProperties = {
+  height: 32,
+  padding: "0 10px",
+  borderRadius: 9,
+  background: "#eef4eb",
+  borderColor: "#c9d7c4",
+  color: "#35483b",
+  fontSize: 12,
+  fontWeight: 800,
+  boxShadow: "none",
+};
+
 type FilterMode = "upcoming" | "past" | "range";
 
 export default function CoachGroupPlanningPage() {
@@ -362,6 +380,8 @@ export default function CoachGroupPlanningPage() {
   const [eventTitle, setEventTitle] = useState<string>("");
   const [locationText, setLocationText] = useState<string>("");
   const [coachNote, setCoachNote] = useState<string>("");
+  const [requiresEvaluation, setRequiresEvaluation] = useState(true);
+  const [evaluationCriterionIds, setEvaluationCriterionIds] = useState<string[]>([]);
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
 
   // series
@@ -808,6 +828,7 @@ export default function CoachGroupPlanningPage() {
           duration_minutes: durationForDb,
           location_text: locationText.trim() || null,
           coach_note: coachNote.trim() || null,
+          requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
           created_by: meId,
         })
         .select("id")
@@ -837,6 +858,7 @@ export default function CoachGroupPlanningPage() {
       const attendeeIds = Array.from(new Set([...seededPlayerIds, ...guestIds]));
 
       await saveStructureForEvents([eventId]);
+      await replaceEventCriteria([eventId], requiresEvaluation ? evaluationCriterionIds : []);
 
       if (attendeeIds.length > 0 && meId) {
         const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
@@ -948,6 +970,7 @@ export default function CoachGroupPlanningPage() {
           duration_minutes: durationMinutes,
           location_text: locationText.trim() || null,
           coach_note: coachNote.trim() || null,
+          requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
           series_id: seriesId,
           created_by: meId,
         });
@@ -988,6 +1011,7 @@ export default function CoachGroupPlanningPage() {
       const attendeeIds = Array.from(new Set([...Array.from(seededPlayerIdSet), ...guestIds]));
 
       await saveStructureForEvents(createdEventIds);
+      await replaceEventCriteria(createdEventIds, requiresEvaluation ? evaluationCriterionIds : []);
 
       if (attendeeIds.length > 0 && meId && createdEventIds.length > 0) {
         const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
@@ -1114,66 +1138,77 @@ export default function CoachGroupPlanningPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {/* Header */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {tr("Ajouter un événement", "Add event")} — {group?.name ?? tr("Groupe", "Group")}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>{t("common.club")}: {clubName}</div>
-            </div>
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">Groupes</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? "Groupe"}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/manager/groups/${groupId}/planning`}>Planification</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <span>Ajouter un événement</span>
+      </nav>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning`}>
-                {t("common.back")}
-              </Link>
-            </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+      <div className={styles.topline}>
+        <div>
+          <h1>Ajouter un événement</h1>
+          <p className={styles.lead}>Planifiez un événement pour le groupe {group?.name ?? ""}.</p>
         </div>
+        <Link className={actionStyles.backButton} href={`/manager/groups/${groupId}/planning`}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          Retour à la planification
+        </Link>
+      </div>
 
-        {/* Create */}
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <Calendar size={16} />
-                  {tr("Créer un événement", "Create event")}
-                </div>
+      {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
 
-                <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setMode("single")}
-                    disabled={busy}
-                    style={mode === "single" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
-                  >
-                    {tr("Unique", "Single")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setMode("series")}
-                    disabled={busy}
-                    style={mode === "series" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
-                  >
-                    <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                    {tr("Récurrent", "Recurring")}
-                  </button>
-                </div>
+      {loading ? (
+        <section className={styles.quickPanel}><CompactLoadingBlock label="Chargement…" /></section>
+      ) : (
+        <>
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}>
+              <div>
+                <h2>Informations de l’événement</h2>
+                <p>Définissez le type, la date et les informations pratiques.</p>
               </div>
-
+            </div>
+            <div style={{ display: "grid", gap: 12 }}>
               {mode === "single" ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{tr("Récurrence", "Recurrence")}</span>
+                    <div className="mode-radio-group" role="radiogroup" aria-label={tr("Récurrence", "Recurrence")}>
+                      <label className={`mode-radio-option ${mode === "single" ? "is-active" : ""}`}>
+                        <input
+                          type="radio"
+                          name="event-mode"
+                          checked={mode === "single"}
+                          onChange={() => setMode("single")}
+                          disabled={busy}
+                        />
+                        <span>{tr("Unique", "Single")}</span>
+                      </label>
+
+                      <label className={`mode-radio-option ${String(mode) === "series" ? "is-active" : ""}`}>
+                        <input
+                          type="radio"
+                          name="event-mode"
+                          checked={String(mode) === "series"}
+                          onChange={() => setMode("series")}
+                          disabled={busy}
+                        />
+                        <span>
+                          <Repeat size={16} />
+                          {tr("Récurrent", "Recurring")}
+                        </span>
+                      </label>
+                    </div>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
-                    <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                    <select value={eventType} onChange={(e) => { const next = e.target.value as typeof eventType; setEventType(next); if (next !== "training") setRequiresEvaluation(false); }} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {eventTypeLabelLocalized(opt.value)}
@@ -1250,8 +1285,38 @@ export default function CoachGroupPlanningPage() {
               {mode === "series" ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
+                    <span style={fieldLabelStyle}>{tr("Récurrence", "Recurrence")}</span>
+                    <div className="mode-radio-group" role="radiogroup" aria-label={tr("Récurrence", "Recurrence")}>
+                      <label className={`mode-radio-option ${String(mode) === "single" ? "is-active" : ""}`}>
+                        <input
+                          type="radio"
+                          name="event-mode"
+                          checked={String(mode) === "single"}
+                          onChange={() => setMode("single")}
+                          disabled={busy}
+                        />
+                        <span>{tr("Unique", "Single")}</span>
+                      </label>
+
+                      <label className={`mode-radio-option ${String(mode) === "series" ? "is-active" : ""}`}>
+                        <input
+                          type="radio"
+                          name="event-mode"
+                          checked={String(mode) === "series"}
+                          onChange={() => setMode("series")}
+                          disabled={busy}
+                        />
+                        <span>
+                          <Repeat size={16} />
+                          {tr("Récurrent", "Recurring")}
+                        </span>
+                      </label>
+                    </div>
+                  </label>
+
+                  <label style={{ display: "grid", gap: 6 }}>
                     <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
-                    <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                    <select value={eventType} onChange={(e) => { const next = e.target.value as typeof eventType; setEventType(next); if (next !== "training") setRequiresEvaluation(false); }} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {eventTypeLabelLocalized(opt.value)}
@@ -1357,17 +1422,28 @@ export default function CoachGroupPlanningPage() {
                   style={{ minHeight: 96 }}
                 />
               </label>
+              {(eventType === "training" || eventType === "camp") ? (
+                <label className="user-mgmt-checkbox-label">
+                  <input type="checkbox" checked={requiresEvaluation} onChange={(e) => setRequiresEvaluation(e.target.checked)} disabled={busy} />
+                  <span>
+                    <b>Activité à évaluer</b>
+                  </span>
+                </label>
+              ) : null}
+              {(eventType === "training" || eventType === "camp") && requiresEvaluation && group ? (
+                <EventCriteriaSelector clubId={group.club_id} eventType={eventType} selectedIds={evaluationCriterionIds} onChange={setEvaluationCriterionIds} disabled={busy} />
+              ) : null}
             </div>
 
+          </section>
+
             {eventType === "training" ? (
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>
-                  {tr("Structure de l’entraînement (postes)", "Training structure (stations)")}
-                </div>
+              <section className={styles.quickPanel}>
+                <div className={styles.sectionHeading}><div><h2>Structure de l’entraînement</h2><p>Préparez les postes de travail à transmettre aux juniors.</p></div></div>
 
                 {structureItems.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    {tr("Ajoute des postes si tu veux préremplir l’entraînement des joueurs.", "Add stations if you want to prefill players' training.")}
+                    {tr("Ajoute des postes si tu veux préremplir l’entraînement des juniors.", "Add stations if you want to prefill players' training.")}
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
@@ -1406,7 +1482,7 @@ export default function CoachGroupPlanningPage() {
                           </label>
 
                           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <button type="button" className="btn btn-danger soft" onClick={() => removeStructureLine(idx)} disabled={busy}>
+                            <button type="button" className="btn" onClick={() => removeStructureLine(idx)} disabled={busy} style={compactGreenButtonStyle}>
                               {t("common.delete")}
                             </button>
                           </div>
@@ -1421,14 +1497,12 @@ export default function CoachGroupPlanningPage() {
                     + {tr("Ajouter un poste", "Add a station")}
                   </button>
                 </div>
-              </div>
+              </section>
             ) : null}
 
             {/* Select coaches */}
-            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Users size={16} /> {tr("Coachs attendus", "Expected coaches")}
-              </div>
+            <section className={styles.quickPanel}>
+              <div className={styles.sectionHeading}><div><h2>Coachs attendus</h2><p>Sélectionnez les coachs attendus à cet événement.</p></div></div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -1458,31 +1532,17 @@ export default function CoachGroupPlanningPage() {
                 ) : selectedCoachesList.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun coach sélectionné.", "No coach selected.")}</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {selectedCoachesList.map((c) => (
-                      <div key={c.id} style={lightRowCardStyle}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                          <div style={avatarBoxStyle} aria-hidden="true">
-                            {avatarNode(c as any)}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 950 }}>{fullName(c)}</div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="btn btn-danger soft"
-                          onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))}
-                          disabled={busy}
-                          style={{ padding: "10px 12px" }}
-                          aria-label="Retirer coach"
-                          title="Retirer"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <tbody>{selectedCoachesList.map((c) => (
+                        <tr key={c.id}>
+                          <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td>
+                          <td><b>{fullName(c)}</b></td>
+                          <td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label="Retirer coach" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -1493,49 +1553,25 @@ export default function CoachGroupPlanningPage() {
                 {coaches.length > 0 && candidateCoaches.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
                 ) : candidateCoaches.length > 0 ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {candidateCoaches.map((c) => (
-                      <div key={c.id} style={lightRowCardStyle}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                          <div style={avatarBoxStyle} aria-hidden="true">
-                            {avatarNode(c as any)}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 950 }}>{fullName(c)}</div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="glass-btn"
-                          onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])}
-                          disabled={busy}
-                          style={{
-                            width: 44,
-                            height: 42,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "rgba(255,255,255,0.70)",
-                            border: "1px solid rgba(0,0,0,0.08)",
-                          }}
-                          aria-label="Ajouter coach"
-                          title="Ajouter"
-                        >
-                          <PlusCircle size={18} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <tbody>{candidateCoaches.map((c) => (
+                        <tr key={c.id}>
+                          <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td>
+                          <td><b>{fullName(c)}</b></td>
+                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label="Ajouter coach" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 ) : null}
               </div>
-            </div>
+            </section>
 
             {/* Select players */}
-            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Users size={16} /> {tr("Joueurs attendus", "Expected players")}
-              </div>
+            <section className={styles.quickPanel}>
+              <div className={styles.sectionHeading}><div><h2>Juniors attendus</h2><p>Choisissez les juniors attendus à cet événement.</p></div></div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -1576,7 +1612,7 @@ export default function CoachGroupPlanningPage() {
                   value={queryPlayers}
                   onChange={(e) => setQueryPlayers(e.target.value)}
                   disabled={busy}
-                  placeholder={tr("Rechercher un joueur (nom, handicap)…", "Search a player (name, handicap)…")}
+                  placeholder={tr("Rechercher un junior (nom, handicap)…", "Search a player (name, handicap)…")}
                   style={{ paddingLeft: 44 }}
                 />
               </div>
@@ -1586,38 +1622,21 @@ export default function CoachGroupPlanningPage() {
                 <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedPlayersList.length})</div>
 
                 {players.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun joueur dans ce groupe.", "No player in this group.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun junior dans ce groupe.", "No player in this group.")}</div>
                 ) : selectedPlayersList.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun joueur sélectionné.", "No selected player.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun junior sélectionné.", "No selected player.")}</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {selectedPlayersList.map((p) => (
-                      <div key={p.id} style={lightRowCardStyle}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                          <div style={avatarBoxStyle} aria-hidden="true">
-                            {avatarNode(p)}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                              Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="btn btn-danger soft"
-                          onClick={() => toggleSelectedPlayer(p)}
-                          disabled={busy}
-                          style={{ padding: "10px 12px" }}
-                          aria-label="Retirer"
-                          title="Retirer"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <tbody>{selectedPlayersList.map((p) => (
+                        <tr key={p.id}>
+                          <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td>
+                          <td><b>{fullName(p)}</b></td>
+                          <td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Retirer junior" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -1629,52 +1648,25 @@ export default function CoachGroupPlanningPage() {
                 {players.length > 0 && candidatesPlayers.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
                 ) : candidatesPlayers.length > 0 ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {candidatesPlayers.map((p) => (
-                      <div key={p.id} style={lightRowCardStyle}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                          <div style={avatarBoxStyle} aria-hidden="true">
-                            {avatarNode(p)}
-                          </div>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                              Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="glass-btn"
-                          onClick={() => toggleSelectedPlayer(p)}
-                          disabled={busy}
-                          style={{
-                            width: 44,
-                            height: 42,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: "rgba(255,255,255,0.70)",
-                            border: "1px solid rgba(0,0,0,0.08)",
-                          }}
-                          aria-label="Ajouter joueur"
-                          title="Ajouter"
-                        >
-                          <PlusCircle size={18} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="user-mgmt-table-wrap">
+                    <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <tbody>{candidatesPlayers.map((p) => (
+                        <tr key={p.id}>
+                          <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td>
+                          <td><b>{fullName(p)}</b></td>
+                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Ajouter junior" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 ) : null}
               </div>
-            </div>
+            </section>
 
             {/* Club members visible as guests */}
-            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-              <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Users size={16} /> {tr("Invités", "Guests")}
-              </div>
+            <section className={styles.quickPanel}>
+              <div className={styles.sectionHeading}><div><h2>Invités</h2><p>Ajoutez des membres du club en complément du groupe.</p></div></div>
 
               <div style={{ position: "relative" }}>
                 <Search
@@ -1716,10 +1708,10 @@ export default function CoachGroupPlanningPage() {
 
                         <button
                           type="button"
-                          className="btn btn-danger soft"
+                          className="btn"
                           onClick={() => toggleSelectedGuest(m)}
                           disabled={busy}
-                          style={{ padding: "10px 12px" }}
+                          style={{ ...compactGreenButtonStyle, padding: "0 12px" }}
                           aria-label="Retirer invité"
                           title="Retirer"
                         >
@@ -1779,23 +1771,22 @@ export default function CoachGroupPlanningPage() {
                   {tr("Saisis une recherche pour ajouter des invités.", "Type a search to add guests.")}
                 </div>
               )}
+            </section>
+
+            <div className="user-mgmt-card-actions" style={{ paddingBottom: 8 }}>
+              <button
+                type="button"
+                className={actionStyles.primaryButton}
+                disabled={busy || !group}
+                onClick={() => (mode === "single" ? createSingleEvent() : createSeries())}
+              >
+                <PlusCircle size={18} />
+                {busy ? tr("Enregistrement…", "Saving…") : mode === "single" ? tr("Créer l’événement", "Create event") : tr("Créer la récurrence", "Create recurrence")}
+              </button>
             </div>
-
-            <button
-              type="button"
-              className="cta-green cta-green-inline"
-              disabled={busy || loading || !group}
-              onClick={() => (mode === "single" ? createSingleEvent() : createSeries())}
-              style={{ width: "100%", justifyContent: "center" }}
-            >
-              <PlusCircle size={18} />
-              {busy ? tr("Enregistrement…", "Saving…") : mode === "single" ? tr("Créer l’événement", "Create event") : tr("Créer la récurrence", "Create recurrence")}
-            </button>
-          </div>
-        </div>
-
-      </div>
-    </div>
+        </>
+      )}
+    </main>
   );
 }
 

@@ -5,10 +5,12 @@ import RoleGuard from "@/components/auth/RoleGuard";
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <AppI18nProvider>
-      <RoleGuard allow="manager">
-        <ManagerShell>{children}</ManagerShell>
-      </RoleGuard>
-    </AppI18nProvider>
+    <div className="manager-page manager-page-root">
+      <AppI18nProvider>
+        <RoleGuard allow="manager">
+          <ManagerShell>{children}</ManagerShell>
+        </RoleGuard>
+      </AppI18nProvider>
+    </div>
   );
 }

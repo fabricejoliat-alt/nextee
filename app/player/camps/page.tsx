@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, Users, X } from "lucide-react";
+import { CheckCircle2, MapPin, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
 type CampRow = {
@@ -283,8 +284,9 @@ export default function PlayerCampsPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Stages/camps" }]} />
         <div className="glass-section">
-          <div className="section-title">Stages/camps</div>
+          <h1 className="section-title">Stages/camps</h1>
           {error ? <div className="marketplace-error" style={{ marginTop: 12 }}>{error}</div> : null}
         </div>
 
@@ -295,20 +297,7 @@ export default function PlayerCampsPage() {
               <CampCardSkeleton />
             </div>
           ) : camps.length === 0 ? (
-            <div
-              style={{
-                border: "1px solid rgba(0,0,0,0.10)",
-                borderRadius: 18,
-                background: "rgba(255,255,255,0.90)",
-                color: "#000000",
-                textShadow: "none",
-                WebkitTextFillColor: "#000000",
-                fontWeight: 800,
-                padding: "16px 18px",
-                boxShadow: "none",
-                transition: "none",
-              }}
-            >
+            <div className="marketplace-empty">
               Aucun stage/camp disponible.
             </div>
           ) : (
@@ -408,8 +397,8 @@ export default function PlayerCampsPage() {
                               </div>
 
                               {day.location_text ? (
-                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                                  📍 {day.location_text}
+                                <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate player-meta-with-icon">
+                                  <MapPin size={14} aria-hidden="true" /> {day.location_text}
                                 </div>
                               ) : null}
 

@@ -1,285 +1,256 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Plus,
+  Save,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { PlusCircle } from "lucide-react";
 import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import { isSelectableCampGroup } from "@/lib/campsManagement";
+import EventCriteriaSelector from "@/components/evaluations/EventCriteriaSelector";
+import styles from "../Camps.module.css";
 
-type ClubRow = { id: string; name: string | null };
-type GroupRow = { id: string; name: string; club_id: string };
-type ProfileRow = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
-type ClubMemberRow = { user_id: string; club_id: string; role: string | null; is_active: boolean };
-type GroupPlayerRow = { group_id: string; player_user_id: string };
-
-type CampSummary = {
+type Profile = {
   id: string;
-  club_id: string;
-  title: string;
-  notes: string | null;
-  head_coach_user_id?: string | null;
-  head_coach?: ProfileRow | null;
-  group_ids: string[];
-  player_ids: string[];
-  coach_ids: string[];
-  player_registrations?: Array<{
-    player_id: string;
-    registration_status: "invited" | "registered" | "declined";
-    day_status_by_day_index: Record<string, "present" | "absent">;
-  }>;
-  days: Array<{
-    event_id?: string | null;
-    starts_at: string | null;
-    ends_at: string | null;
-    location_text: string | null;
-    practical_info: string | null;
-    coach_ids?: string[];
-  }>;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
-
-type PlayerRegistrationDraft = {
-  registration_status: "invited" | "registered" | "declined";
-  day_status_by_day_index: Record<string, "present" | "absent">;
-};
-
-type DayDraft = {
+type Group = { id: string; name: string; club_id: string; club_season_id: string | null };
+type Attendance =
+  | "expected"
+  | "present"
+  | "absent"
+  | "excused"
+  | "not_registered";
+type Day = {
   event_id?: string | null;
   starts_at: string;
   ends_at: string;
   location_text: string;
   practical_info: string;
   coach_ids: string[];
+  responsible_coach_id: string;
+  evaluation_enabled: boolean;
+  evaluation_criterion_ids: string[];
+  evaluation?: { required: number; completed: number };
+};
+type Registration = {
+  registration_status: "invited" | "registered" | "declined";
+  day_status_by_day_index: Record<string, Attendance>;
+};
+type Option = {
+  id?: string | null;
+  name: string;
+  description: string;
+  is_active: boolean;
+  applies_to_all_days: boolean;
+  day_indexes: number[];
+  capacity: number | null;
+  allows_quantity: boolean;
+  internal_note: string;
+  assigns_to_all_participants: boolean;
+  player_assignments: Array<{
+    player_id: string;
+    quantity: number;
+    note?: string | null;
+  }>;
+};
+type Camp = {
+  id: string;
+  club_id: string;
+  title: string;
+  notes: string | null;
+  status: string;
+  capacity: number | null;
+  head_coach_user_id: string | null;
+  group_ids: string[];
+  player_ids: string[];
+  coach_ids: string[];
+  player_registrations: Array<{
+    player_id: string;
+    registration_status: Registration["registration_status"];
+    day_status_by_day_index: Record<string, Attendance>;
+  }>;
+  days: Array<Day & { responsible_coach_id?: string | null }>;
+  options: Option[];
 };
 
-function fullName(p?: { first_name: string | null; last_name: string | null } | null) {
-  const first = String(p?.first_name ?? "").trim();
-  const last = String(p?.last_name ?? "").trim();
-  return `${first} ${last}`.trim() || "—";
-}
-
-function toInputDateTime(date: Date) {
-  const pad = (value: number) => String(value).padStart(2, "0");
+const pad = (value: number) => String(value).padStart(2, "0");
+function localInput(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
-
-function isoToInputDateTime(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const date = new Date(raw);
-  return Number.isFinite(date.getTime()) ? toInputDateTime(date) : "";
-}
-
-function nextMorning(offsetDays = 0) {
+function defaultDate(offset = 1, hour = 9) {
   const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  date.setHours(9, 0, 0, 0);
-  return toInputDateTime(date);
+  date.setDate(date.getDate() + offset);
+  date.setHours(hour, 0, 0, 0);
+  return localInput(date);
+}
+function fromIso(value?: string | null) {
+  const date = new Date(value ?? "");
+  return Number.isFinite(date.getTime()) ? localInput(date) : "";
+}
+function shortDate(value?: string | null) {
+  const date = new Date(value ?? "");
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("fr-CH").format(date)
+    : "Date à définir";
+}
+function fullName(profile?: Profile | null) {
+  return (
+    `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "—"
+  );
+}
+function initials(profile?: Profile | null) {
+  return (
+    `${profile?.first_name?.[0] ?? ""}${profile?.last_name?.[0] ?? ""}`.toUpperCase() ||
+    "?"
+  );
+}
+function unique(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+function isAvailableCampGroup(group: Group) {
+  const name = String(group.name ?? "").trim();
+  return Boolean(group.club_season_id) && !name.startsWith("__ARCHIVE_") && isSelectableCampGroup(name);
+}
+function emptyOption(): Option {
+  return {
+    id: null,
+    name: "",
+    description: "",
+    is_active: true,
+    applies_to_all_days: true,
+    day_indexes: [],
+    capacity: null,
+    allows_quantity: false,
+    internal_note: "",
+    assigns_to_all_participants: true,
+    player_assignments: [],
+  };
+}
+function emptyDay(index = 0): Day {
+  return {
+    event_id: null,
+    starts_at: defaultDate(index + 1, 9),
+    ends_at: defaultDate(index + 1, 16),
+    location_text: "",
+    practical_info: "",
+    coach_ids: [],
+    responsible_coach_id: "",
+    evaluation_enabled: false,
+    evaluation_criterion_ids: [],
+  };
 }
 
-function nextAfternoon(offsetDays = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  date.setHours(16, 0, 0, 0);
-  return toInputDateTime(date);
+function Avatar({ profile }: { profile?: Profile | null }) {
+  return (
+    <span className={styles.avatar}>
+      {profile?.avatar_url ? (
+        <img src={profile.avatar_url} alt="" />
+      ) : (
+        initials(profile)
+      )}
+    </span>
+  );
 }
 
-function normalizeRegistrationStatus(value: unknown): PlayerRegistrationDraft["registration_status"] {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "registered" || normalized === "declined") return normalized;
-  return "invited";
-}
-
-function normalizePresenceStatus(value: unknown): "present" | "absent" {
-  return String(value ?? "").trim().toLowerCase() === "absent" ? "absent" : "present";
-}
-
-function buildPlayerRegistrationDrafts(
-  playerIds: string[],
-  dayCount: number,
-  source:
-    | Record<string, { registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }>
-    | Array<{ player_id: string; registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }>
-) {
-  const sourceMap: Record<string, { registration_status?: string | null; day_status_by_day_index?: Record<string, string | null | undefined> | null }> =
-    Array.isArray(source)
-      ? Object.fromEntries(source.map((entry) => [String(entry.player_id ?? "").trim(), entry]))
-      : source;
-  const next: Record<string, PlayerRegistrationDraft> = {};
-  playerIds.forEach((playerId) => {
-    const entry = sourceMap[playerId] ?? null;
-    next[playerId] = {
-      registration_status: normalizeRegistrationStatus(entry?.registration_status),
-      day_status_by_day_index: Object.fromEntries(
-        Array.from({ length: dayCount }, (_, index) => [String(index), normalizePresenceStatus(entry?.day_status_by_day_index?.[String(index)])])
-      ),
-    };
-  });
-  return next;
-}
-
-export default function ManagerCampEditorPage() {
+export default function CampEditorPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const requestedCampId = String(searchParams.get("campId") ?? "").trim();
-
+  const params = useSearchParams();
+  const campId = String(params.get("campId") ?? "");
+  const duplicateId = String(params.get("duplicateId") ?? "");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [editingCampId, setEditingCampId] = useState<string | null>(requestedCampId || null);
-  const [availableCamps, setAvailableCamps] = useState<CampSummary[]>([]);
-
-  const [clubs, setClubs] = useState<ClubRow[]>([]);
-  const [groups, setGroups] = useState<GroupRow[]>([]);
-  const [coachMembers, setCoachMembers] = useState<ProfileRow[]>([]);
-  const [playerMembers, setPlayerMembers] = useState<ProfileRow[]>([]);
-  const [groupPlayerIds, setGroupPlayerIds] = useState<Record<string, string[]>>({});
-
   const [clubId, setClubId] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
-  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
-  const [playerRegistrations, setPlayerRegistrations] = useState<Record<string, PlayerRegistrationDraft>>({});
+  const [capacity, setCapacity] = useState<number | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [players, setPlayers] = useState<Profile[]>([]);
+  const [coaches, setCoaches] = useState<Profile[]>([]);
+  const [groupPlayers, setGroupPlayers] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [playerIds, setPlayerIds] = useState<string[]>([]);
+  const [coachIds, setCoachIds] = useState<string[]>([]);
   const [headCoachId, setHeadCoachId] = useState("");
-  const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
-  const [days, setDays] = useState<DayDraft[]>([
-    {
-      event_id: null,
-      starts_at: nextMorning(1),
-      ends_at: nextAfternoon(1),
-      location_text: "",
-      practical_info: "",
-      coach_ids: [],
-    },
-  ]);
+  const [days, setDays] = useState<Day[]>([]);
+  const [registrations, setRegistrations] = useState<
+    Record<string, Registration>
+  >({});
+  const [options, setOptions] = useState<Option[]>([]);
 
-  function applyCampToForm(camp: CampSummary) {
-    setEditingCampId(camp.id);
+  async function authHeaders(json = false) {
+    const { data } = await supabase.auth.getSession();
+    return {
+      ...(json ? { "Content-Type": "application/json" } : {}),
+      Authorization: `Bearer ${data.session?.access_token ?? ""}`,
+    };
+  }
+  function hydrate(camp: Camp, duplicate: boolean) {
     setClubId(camp.club_id);
-    setTitle(camp.title);
+    setTitle(duplicate ? `${camp.title} — copie` : camp.title);
     setNotes(normalizeCampRichTextHtml(camp.notes ?? ""));
-    setSelectedGroupIds(camp.group_ids ?? []);
-    setSelectedPlayerIds(camp.player_ids ?? []);
-    setPlayerRegistrations(buildPlayerRegistrationDrafts(camp.player_ids ?? [], camp.days?.length ?? 0, camp.player_registrations ?? []));
-    setHeadCoachId(String(camp.head_coach_user_id ?? camp.head_coach?.id ?? ""));
-    setSelectedCoachIds(camp.coach_ids ?? []);
+    setCapacity(camp.capacity ?? null);
+    setGroupIds(camp.group_ids ?? []);
+    setPlayerIds(camp.player_ids ?? []);
+    setCoachIds(camp.coach_ids ?? []);
+    setHeadCoachId(camp.head_coach_user_id ?? "");
     setDays(
       (camp.days ?? []).map((day) => ({
-        event_id: day.event_id ?? null,
-        starts_at: isoToInputDateTime(day.starts_at),
-        ends_at: isoToInputDateTime(day.ends_at),
+        ...day,
+        event_id: duplicate ? null : day.event_id,
+        starts_at: fromIso(day.starts_at),
+        ends_at: fromIso(day.ends_at),
         location_text: day.location_text ?? "",
         practical_info: day.practical_info ?? "",
-        coach_ids: day.coach_ids ?? [],
-      }))
+        responsible_coach_id:
+          day.responsible_coach_id ?? camp.head_coach_user_id ?? "",
+        evaluation_enabled: Boolean(day.evaluation_enabled),
+        evaluation_criterion_ids: Array.isArray(day.evaluation_criterion_ids) ? day.evaluation_criterion_ids : [],
+      })),
     );
-  }
-
-  async function authHeaders() {
-    const { data } = await supabase.auth.getSession();
-    return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
-  }
-
-  async function loadContext() {
-    const { data: authRes, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !authRes.user) throw new Error("Session invalide.");
-
-    const managerMembershipsRes = await supabase
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", authRes.user.id)
-      .eq("role", "manager")
-      .eq("is_active", true);
-    if (managerMembershipsRes.error) throw new Error(managerMembershipsRes.error.message);
-
-    const clubIds = Array.from(new Set((managerMembershipsRes.data ?? []).map((row: any) => String(row.club_id ?? "").trim()).filter(Boolean)));
-    const clubsRes = clubIds.length > 0
-      ? await supabase.from("clubs").select("id,name").in("id", clubIds).order("name", { ascending: true })
-      : ({ data: [], error: null } as const);
-    if (clubsRes.error) throw new Error(clubsRes.error.message);
-
-    const clubRows: ClubRow[] = ((clubsRes.data ?? []) as ClubRow[]).filter((row) => String(row.id ?? "").trim().length > 0);
-    setClubs(clubRows);
-    const defaultClubId = clubRows[0]?.id ?? "";
-    setClubId((current) => current || defaultClubId);
-
-    const scopedClubIds = clubRows.map((row) => row.id);
-    if (scopedClubIds.length === 0) {
-      setGroups([]);
-      setCoachMembers([]);
-      setPlayerMembers([]);
-      setGroupPlayerIds({});
-      return;
-    }
-
-    const [groupsRes, clubMembersRes, groupPlayersRes] = await Promise.all([
-      supabase.from("coach_groups").select("id,name,club_id").in("club_id", scopedClubIds).eq("is_active", true).order("name", { ascending: true }),
-      supabase.from("club_members").select("user_id,club_id,role,is_active").in("club_id", scopedClubIds).eq("is_active", true).in("role", ["coach", "player"]),
-      supabase.from("coach_group_players").select("group_id,player_user_id"),
-    ]);
-    if (groupsRes.error) throw new Error(groupsRes.error.message);
-    if (clubMembersRes.error) throw new Error(clubMembersRes.error.message);
-    if (groupPlayersRes.error) throw new Error(groupPlayersRes.error.message);
-
-    const nextGroups = ((groupsRes.data ?? []) as GroupRow[]).filter((row) => scopedClubIds.includes(row.club_id));
-    setGroups(nextGroups);
-
-    const members = (clubMembersRes.data ?? []) as ClubMemberRow[];
-    const memberUserIds = Array.from(new Set(members.map((row) => String(row.user_id ?? "").trim()).filter(Boolean)));
-    const profilesRes = memberUserIds.length > 0
-      ? await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", memberUserIds)
-      : ({ data: [], error: null } as const);
-    if (profilesRes.error) throw new Error(profilesRes.error.message);
-
-    const profileById = new Map<string, ProfileRow>();
-    ((profilesRes.data ?? []) as ProfileRow[]).forEach((profile) => profileById.set(String(profile.id), profile));
-
-    setCoachMembers(
-      members
-        .filter((row) => row.role === "coach")
-        .map((row) => profileById.get(String(row.user_id ?? "").trim()) ?? null)
-        .filter((row): row is ProfileRow => Boolean(row))
-        .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"))
+    setRegistrations(
+      Object.fromEntries(
+        (camp.player_registrations ?? []).map((registration) => [
+          registration.player_id,
+          {
+            registration_status: registration.registration_status ?? "invited",
+            day_status_by_day_index: registration.day_status_by_day_index ?? {},
+          },
+        ]),
+      ),
     );
-    setPlayerMembers(
-      members
-        .filter((row) => row.role === "player")
-        .map((row) => profileById.get(String(row.user_id ?? "").trim()) ?? null)
-        .filter((row): row is ProfileRow => Boolean(row))
-        .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"))
+    setOptions(
+      (camp.options ?? []).map((option) => ({
+        ...option,
+        id: duplicate ? null : option.id,
+        name: option.name ?? "",
+        description: option.description ?? "",
+        internal_note: option.internal_note ?? "",
+        day_indexes: option.day_indexes ?? [],
+        player_assignments: option.player_assignments ?? [],
+        assigns_to_all_participants: (camp.player_ids ?? []).every((playerId) =>
+          (option.player_assignments ?? []).some(
+            (assignment) => assignment.player_id === playerId,
+          ),
+        ),
+      })),
     );
-
-    const groupPlayerMap: Record<string, string[]> = {};
-    ((groupPlayersRes.data ?? []) as GroupPlayerRow[]).forEach((row) => {
-      if (!groupPlayerMap[row.group_id]) groupPlayerMap[row.group_id] = [];
-      groupPlayerMap[row.group_id].push(String(row.player_user_id));
-    });
-    setGroupPlayerIds(groupPlayerMap);
-  }
-
-  async function loadCamps() {
-    const headers = await authHeaders();
-    const res = await fetch("/api/manager/camps", { headers, cache: "no-store" });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les stages."));
-    const nextCamps = (json?.camps ?? []) as CampSummary[];
-    setAvailableCamps(nextCamps);
-    setCoachMembers((current) => {
-      const next = [...current];
-      const seen = new Set(next.map((coach) => String(coach.id)));
-      nextCamps.forEach((camp) => {
-        const headCoach = camp.head_coach ?? null;
-        if (!headCoach?.id) return;
-        if (seen.has(String(headCoach.id))) return;
-        next.push(headCoach);
-        seen.add(String(headCoach.id));
-      });
-      return next.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
-    });
   }
 
   useEffect(() => {
@@ -287,382 +258,1185 @@ export default function ManagerCampEditorPage() {
       setLoading(true);
       setError(null);
       try {
-        await Promise.all([loadContext(), loadCamps()]);
-      } catch (err: any) {
-        setError(err?.message ?? "Erreur de chargement");
+        const { data: auth, error: authError } = await supabase.auth.getUser();
+        if (authError || !auth.user) throw new Error("Session invalide.");
+        const memberships = await supabase
+          .from("club_members")
+          .select("club_id,user_id,role,is_active")
+          .eq("is_active", true);
+        if (memberships.error) throw new Error(memberships.error.message);
+        const managerClubIds = unique(
+          (memberships.data ?? [])
+            .filter(
+              (row: any) =>
+                row.user_id === auth.user.id && row.role === "manager",
+            )
+            .map((row: any) => String(row.club_id)),
+        );
+        if (!managerClubIds.length)
+          throw new Error("Aucun club manager disponible.");
+        const activeClubId = managerClubIds[0];
+        setClubId(activeClubId);
+        const memberRows = (memberships.data ?? []).filter(
+          (row: any) =>
+            row.club_id === activeClubId &&
+            ["player", "coach"].includes(row.role),
+        );
+        const userIds = unique(
+          memberRows.map((row: any) => String(row.user_id)),
+        );
+        const [profilesRes, groupsRes, groupPlayersRes, campsRes] =
+          await Promise.all([
+            userIds.length
+              ? supabase
+                  .from("profiles")
+                  .select("id,first_name,last_name,avatar_url")
+                  .in("id", userIds)
+              : Promise.resolve({ data: [], error: null }),
+            supabase
+              .from("coach_groups")
+              .select("id,name,club_id,club_season_id")
+              .eq("club_id", activeClubId)
+              .eq("is_active", true)
+              .order("name"),
+            supabase
+              .from("coach_group_players")
+              .select("group_id,player_user_id"),
+            fetch("/api/manager/camps", {
+              headers: await authHeaders(),
+              cache: "no-store",
+            }).then(async (response) => ({
+              response,
+              payload: await response.json().catch(() => ({})),
+            })),
+          ]);
+        if (profilesRes.error || groupsRes.error || groupPlayersRes.error)
+          throw new Error(
+            profilesRes.error?.message ??
+              groupsRes.error?.message ??
+              groupPlayersRes.error?.message,
+          );
+        if (!campsRes.response.ok)
+          throw new Error(
+            String(
+              campsRes.payload?.error ?? "Impossible de charger les stages.",
+            ),
+          );
+        const profileMap = new Map(
+          (profilesRes.data ?? []).map((profile: any) => [
+            String(profile.id),
+            profile as Profile,
+          ]),
+        );
+        setPlayers(
+          memberRows
+            .filter((row: any) => row.role === "player")
+            .map((row: any) => profileMap.get(String(row.user_id)))
+            .filter(Boolean) as Profile[],
+        );
+        setCoaches(
+          memberRows
+            .filter((row: any) => row.role === "coach")
+            .map((row: any) => profileMap.get(String(row.user_id)))
+            .filter(Boolean) as Profile[],
+        );
+        setGroups(
+          ((groupsRes.data ?? []) as Group[]).filter(isAvailableCampGroup),
+        );
+        const mapping: Record<string, string[]> = {};
+        (groupPlayersRes.data ?? []).forEach((row: any) => {
+          (mapping[String(row.group_id)] ??= []).push(
+            String(row.player_user_id),
+          );
+        });
+        setGroupPlayers(mapping);
+        const requested = campId || duplicateId;
+        if (requested) {
+          const camp = (campsRes.payload?.camps ?? []).find(
+            (entry: Camp) => entry.id === requested,
+          );
+          if (!camp) throw new Error("Stage introuvable.");
+          hydrate(camp, Boolean(duplicateId));
+        }
+      } catch (cause: any) {
+        setError(cause?.message ?? "Erreur de chargement.");
       } finally {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [campId, duplicateId]);
 
   useEffect(() => {
-    if (!requestedCampId || availableCamps.length === 0) return;
-    const camp = availableCamps.find((entry) => entry.id === requestedCampId);
-    if (!camp) {
-      setError("Stage/camp introuvable.");
-      return;
-    }
-    applyCampToForm(camp);
-  }, [requestedCampId, availableCamps]);
-
-  const visibleGroups = useMemo(() => groups.filter((group) => group.club_id === clubId), [groups, clubId]);
-
-  useEffect(() => {
-    if (!editingCampId) {
-      setSelectedGroupIds([]);
-      setSelectedPlayerIds([]);
-      setHeadCoachId("");
-      setSelectedCoachIds([]);
-    }
-  }, [clubId, editingCampId]);
+    setRegistrations((current) =>
+      Object.fromEntries(
+        playerIds.map((playerId) => [
+          playerId,
+          current[playerId] ?? {
+            registration_status: "invited",
+            day_status_by_day_index: {},
+          },
+        ]),
+      ),
+    );
+  }, [playerIds]);
 
   useEffect(() => {
-    setSelectedGroupIds((current) => current.filter((groupId) => visibleGroups.some((group) => group.id === groupId)));
-  }, [visibleGroups]);
-
-  const suggestedPlayerIds = useMemo(() => {
-    const ids = new Set<string>();
-    selectedGroupIds.forEach((groupId) => {
-      (groupPlayerIds[groupId] ?? []).forEach((playerId) => ids.add(playerId));
-    });
-    return Array.from(ids);
-  }, [groupPlayerIds, selectedGroupIds]);
-
-  useEffect(() => {
-    if (suggestedPlayerIds.length === 0) return;
-    setSelectedPlayerIds((current) => {
-      const visibleCurrent = current.filter((playerId) => playerMembers.some((player) => player.id === playerId));
-      return Array.from(new Set([...visibleCurrent, ...suggestedPlayerIds]));
-    });
-  }, [suggestedPlayerIds, playerMembers]);
-
-  useEffect(() => {
-    setPlayerRegistrations((current) => buildPlayerRegistrationDrafts(selectedPlayerIds, days.length, current));
-  }, [selectedPlayerIds, days.length]);
-
-  useEffect(() => {
-    setSelectedCoachIds((current) => current.filter((coachId) => coachMembers.some((coach) => coach.id === coachId)));
-    if (headCoachId && !coachMembers.some((coach) => coach.id === headCoachId)) setHeadCoachId("");
-  }, [coachMembers, headCoachId]);
-
-  function toggleValue(values: string[], value: string) {
-    return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+    setOptions((current) =>
+      current.map((option) => {
+        if (!option.assigns_to_all_participants) return option;
+        const player_assignments = playerIds.map(
+          (player_id) =>
+            option.player_assignments.find(
+              (assignment) => assignment.player_id === player_id,
+            ) ?? { player_id, quantity: 1 },
+        );
+        const unchanged =
+          player_assignments.length === option.player_assignments.length &&
+          player_assignments.every(
+            (assignment, index) =>
+              assignment.player_id === option.player_assignments[index]?.player_id &&
+              assignment.quantity === option.player_assignments[index]?.quantity,
+          );
+        return unchanged ? option : { ...option, player_assignments };
+      }),
+    );
+  }, [playerIds]);
+  function toggle(values: string[], value: string) {
+    return values.includes(value)
+      ? values.filter((entry) => entry !== value)
+      : [...values, value];
   }
-
-  function updateDay(index: number, patch: Partial<DayDraft>) {
-    setDays((current) => current.map((day, dayIndex) => (dayIndex === index ? { ...day, ...patch } : day)));
+  function toggleGroup(groupId: string) {
+    const selected = !groupIds.includes(groupId);
+    setGroupIds((current) => toggle(current, groupId));
+    if (selected)
+      setPlayerIds((current) =>
+        unique([...current, ...(groupPlayers[groupId] ?? [])]),
+      );
   }
-
-  function addDay() {
-    setDays((current) => [
+  function syncGroups() {
+    setPlayerIds((current) =>
+      unique([...current, ...groupIds.flatMap((id) => groupPlayers[id] ?? [])]),
+    );
+  }
+  function updateDay(index: number, patch: Partial<Day>) {
+    setDays((current) =>
+      current.map((day, i) => (i === index ? { ...day, ...patch } : day)),
+    );
+  }
+  function move<T>(values: T[], index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= values.length) return values;
+    const next = [...values];
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  }
+  function updateOption(index: number, patch: Partial<Option>) {
+    setOptions((current) =>
+      current.map((option, i) =>
+        i === index ? { ...option, ...patch } : option,
+      ),
+    );
+  }
+  function addOption() {
+    setOptions((current) => [
       ...current,
       {
-        event_id: null,
-        starts_at: nextMorning(current.length + 1),
-        ends_at: nextAfternoon(current.length + 1),
-        location_text: "",
-        practical_info: "",
-        coach_ids: [],
+        ...emptyOption(),
+        player_assignments: playerIds.map((player_id) => ({
+          player_id,
+          quantity: 1,
+        })),
       },
     ]);
   }
-
-  function removeDay(index: number) {
-    setDays((current) => current.filter((_, dayIndex) => dayIndex !== index));
+  function optionAssignment(option: Option, playerId: string) {
+    return option.player_assignments.find(
+      (assignment) => assignment.player_id === playerId,
+    );
   }
 
-  function updatePlayerRegistration(playerId: string, patch: Partial<PlayerRegistrationDraft>) {
-    setPlayerRegistrations((current) => ({
-      ...current,
-      [playerId]: {
-        registration_status: current[playerId]?.registration_status ?? "invited",
-        day_status_by_day_index: current[playerId]?.day_status_by_day_index ?? {},
-        ...patch,
-      },
-    }));
-  }
-
-  async function saveCamp() {
+  async function save(status: "draft" | "scheduled") {
     setSaving(true);
     setError(null);
-    setSuccess(null);
     try {
-      const headers = {
-        "Content-Type": "application/json",
-        ...(await authHeaders()),
-      };
-      const isEditing = Boolean(editingCampId);
-      const res = await fetch(isEditing ? `/api/manager/camps/${editingCampId}` : "/api/manager/camps", {
-        method: isEditing ? "PATCH" : "POST",
-        headers,
-        body: JSON.stringify({
-          club_id: clubId,
-          title,
-          notes: normalizeCampRichTextHtml(notes),
-          group_ids: selectedGroupIds,
-          player_ids: selectedPlayerIds,
-          player_registrations: selectedPlayerIds.map((playerId) => ({
-            player_id: playerId,
-            registration_status: playerRegistrations[playerId]?.registration_status ?? "invited",
-            day_status_by_day_index: playerRegistrations[playerId]?.day_status_by_day_index ?? {},
-          })),
-          head_coach_user_id: headCoachId,
-          coach_ids: selectedCoachIds,
-          days,
-        }),
+      if (!title.trim()) throw new Error("Le nom du stage est requis.");
+      const validDays = days.filter((day) => day.starts_at && day.ends_at);
+      options.forEach((option, index) => {
+        if (!String(option.name ?? "").trim())
+          throw new Error(`Le nom de l’option ${index + 1} est requis.`);
+        if (!option.applies_to_all_days && option.day_indexes.length === 0)
+          throw new Error(
+            `Sélectionnez au moins une journée pour l’option « ${String(option.name ?? "").trim()} ».`,
+          );
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? (isEditing ? "Mise à jour impossible." : "Création impossible.")));
-      setSuccess(isEditing ? "Stage/camp mis à jour." : "Stage/camp créé.");
-      router.push("/manager/camps");
+      if (status === "scheduled") {
+        if (!headCoachId) throw new Error("Sélectionnez un head coach.");
+        if (!groupIds.length && !playerIds.length)
+          throw new Error("Ajoutez au moins un groupe ou un junior.");
+        if (!validDays.length) throw new Error("Ajoutez au moins une journée.");
+        const keys = new Set<string>();
+        validDays.forEach((day, index) => {
+          if (new Date(day.ends_at) <= new Date(day.starts_at))
+            throw new Error(
+              `L’heure de fin de la journée ${index + 1} doit être postérieure à l’heure de début.`,
+            );
+          const key = `${day.starts_at}|${day.ends_at}|${String(day.location_text ?? "").trim().toLowerCase()}`;
+          if (keys.has(key))
+            throw new Error("Deux journées identiques ont été détectées.");
+          keys.add(key);
+        });
+      }
+      const body = {
+        club_id: clubId,
+        title: title.trim(),
+        notes: normalizeCampRichTextHtml(notes),
+        capacity,
+        status,
+        group_ids: groupIds,
+        player_ids: playerIds,
+        coach_ids: coachIds,
+        head_coach_user_id: headCoachId,
+        days: status === "draft" ? validDays : days,
+        options: options.map((option) => ({
+          id: option.id,
+          name: option.name,
+          description: option.description,
+          is_active: option.is_active,
+          applies_to_all_days: option.applies_to_all_days,
+          day_indexes: option.day_indexes,
+          capacity: option.capacity,
+          allows_quantity: option.allows_quantity,
+          internal_note: option.internal_note,
+          player_assignments: option.player_assignments,
+        })),
+        player_registrations: playerIds.map((playerId) => ({
+          player_id: playerId,
+          ...(registrations[playerId] ?? {
+            registration_status: "invited",
+            day_status_by_day_index: {},
+          }),
+        })),
+      };
+      const editing = Boolean(campId && !duplicateId);
+      const response = await fetch(
+        editing ? `/api/manager/camps/${campId}` : "/api/manager/camps",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: await authHeaders(true),
+          body: JSON.stringify(body),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(String(payload?.error ?? "Enregistrement impossible."));
+      router.push(`/manager/camps/${payload.camp_id}`);
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message ?? (editingCampId ? "Mise à jour impossible." : "Création impossible."));
+    } catch (cause: any) {
+      setError(cause?.message ?? "Enregistrement impossible.");
     } finally {
       setSaving(false);
     }
   }
 
+  const selectedPlayers = useMemo(
+    () =>
+      playerIds
+        .map((id) => players.find((player) => player.id === id))
+        .filter(Boolean) as Profile[],
+    [playerIds, players],
+  );
+  const optionAssignments = options.reduce(
+    (sum, option) => sum + option.player_assignments.length,
+    0,
+  );
   return (
-    <div className="manager-page">
-      <div className="glass-section">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div className="section-title">{editingCampId ? "Éditer un stage/camp" : "Nouveau stage/camp"}</div>
-            <div className="section-subtitle">Créer un stage multi-jour avec présence par journée, coachs, structure et évaluation par jour.</div>
-          </div>
-          <Link href="/manager/camps" className="btn">Retour à la liste</Link>
+    <main className={styles.page}>
+      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+        <Link href="/manager/camps">Stages</Link>
+        <ChevronRight size={13} />
+        <span>{campId && !duplicateId ? "Modifier" : "Créer"}</span>
+      </nav>
+      <div className={styles.topline}>
+        <div>
+          <h1>
+            {campId && !duplicateId ? "Modifier le stage" : "Créer un stage"}
+          </h1>
         </div>
       </div>
-
-      <div className="glass-section">
-        <div className="glass-card" style={{ display: "grid", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900 }}>
-            <PlusCircle size={18} /> {editingCampId ? "Modifier le stage/camp" : "Configurer le stage/camp"}
-          </div>
-
-          {error ? <div className="marketplace-error">{error}</div> : null}
-          {success ? (
-            <div style={{ borderRadius: 12, padding: "10px 12px", background: "rgba(22,163,74,0.12)", border: "1px solid rgba(22,163,74,0.24)", color: "rgba(21,128,61,1)", fontWeight: 800 }}>
-              {success}
+      {error ? (
+        <div className={styles.alertError} role="alert">
+          {error}
+        </div>
+      ) : null}
+      {loading ? (
+        <section className={styles.panel}>
+          <ListLoadingBlock label="Préparation du formulaire…" />
+        </section>
+      ) : (
+        <>
+          <section className={styles.panel} style={{ order: 1 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Informations générales</h2>
+              </div>
             </div>
-          ) : null}
+            <div className={styles.grid2}>
+              <label className={styles.field}>
+                <span>
+                  Nom du stage <i className={styles.required}>*</i>
+                </span>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Stage de printemps"
+                />
+              </label>
+              <label className={styles.field}>
+                <span>Capacité maximale</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={capacity ?? ""}
+                  onChange={(event) =>
+                    setCapacity(
+                      event.target.value ? Number(event.target.value) : null,
+                    )
+                  }
+                  placeholder="Sans limite"
+                />
+              </label>
+            </div>
+            <div className={styles.richTextField}>
+              <span>Présentation et notes générales</span>
+              <TiptapSimpleEditor
+                value={notes}
+                onChange={setNotes}
+                placeholder="Objectifs, matériel à prévoir, informations pratiques…"
+              />
+            </div>
+          </section>
 
-          {loading ? (
-            <ListLoadingBlock label="Chargement" />
-          ) : (
-            <>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 800 }}>Organisation</span>
-                  <select className="input" value={clubId} onChange={(e) => setClubId(e.target.value)}>
-                    {clubs.map((club) => (
-                      <option key={club.id} value={club.id}>{club.name ?? "Club"}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 800 }}>Nom du stage</span>
-                  <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Camp de printemps" />
-                </label>
+          <section className={styles.panel} style={{ order: 3 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Journées</h2>
+                <p>
+                  Ajoutez et réordonnez les journées. Chaque journée devient une
+                  activité compatible avec le calendrier.
+                </p>
               </div>
-
-              <div style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontWeight: 800 }}>Notes générales</span>
-                <TiptapSimpleEditor value={notes} onChange={setNotes} placeholder="Informations générales du stage" />
-              </div>
-
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontWeight: 900 }}>Groupes concernés</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {visibleGroups.map((group) => (
-                    <label key={group.id} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                      <input type="checkbox" checked={selectedGroupIds.includes(group.id)} onChange={() => setSelectedGroupIds((current) => toggleValue(current, group.id))} />
-                      <span>{group.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontWeight: 900 }}>Joueurs invités</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {playerMembers.map((player) => (
-                    <label key={player.id} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                      <input type="checkbox" checked={selectedPlayerIds.includes(player.id)} onChange={() => setSelectedPlayerIds((current) => toggleValue(current, player.id))} />
-                      <span>{fullName(player)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {selectedPlayerIds.length > 0 ? (
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900 }}>Inscriptions des juniors</div>
-                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.58)", fontWeight: 700 }}>
-                      Choisis si le junior est seulement invité, déjà inscrit, ou décliné. Si le junior est inscrit, tu peux définir les jours présents/absents.
+              <button
+                className={styles.secondary}
+                type="button"
+                onClick={() =>
+                  setDays((current) => [...current, emptyDay(current.length)])
+                }
+              >
+                <Plus size={15} />
+                Ajouter une journée
+              </button>
+            </div>
+            <div className={styles.stack}>
+              {days.map((day, index) => (
+                <article
+                  className={styles.dayCard}
+                  key={`${day.event_id ?? "new"}-${index}`}
+                >
+                  <div className={styles.cardHead}>
+                    <div>
+                      <h3>Journée {index + 1}</h3>
+                      <span className={styles.muted}>
+                        {day.evaluation_enabled
+                          ? "Évaluation prévue"
+                          : "Sans évaluation"}
+                      </span>
+                    </div>
+                    <div className={styles.cardTools}>
+                      <button
+                        className={styles.iconButton}
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() =>
+                          setDays((current) => move(current, index, -1))
+                        }
+                        aria-label="Monter la journée"
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        className={styles.iconButton}
+                        type="button"
+                        disabled={index === days.length - 1}
+                        onClick={() =>
+                          setDays((current) => move(current, index, 1))
+                        }
+                        aria-label="Descendre la journée"
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                      <button
+                        className={`${styles.iconButton} ${styles.dangerIcon}`}
+                        type="button"
+                        disabled={days.length === 1}
+                        onClick={() =>
+                          setDays((current) =>
+                            current.filter((_, i) => i !== index),
+                          )
+                        }
+                        title="Supprimer"
+                        aria-label="Supprimer la journée"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {selectedPlayerIds.map((playerId) => {
-                      const player = playerMembers.find((entry) => entry.id === playerId) ?? null;
-                      const registration = playerRegistrations[playerId] ?? {
-                        registration_status: "invited" as const,
-                        day_status_by_day_index: {},
-                      };
-                      return (
-                        <div key={playerId} className="glass-card" style={{ display: "grid", gap: 10, border: "1px solid rgba(0,0,0,0.08)" }}>
-                          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 260px)" }}>
-                            <div style={{ fontWeight: 900 }}>{fullName(player)}</div>
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={{ fontWeight: 800 }}>Statut d’inscription</span>
-                              <select
-                                className="input"
-                                value={registration.registration_status}
-                                onChange={(e) =>
-                                  updatePlayerRegistration(playerId, {
-                                    registration_status: normalizeRegistrationStatus(e.target.value),
-                                  })
-                                }
-                              >
-                                <option value="invited">Invité</option>
-                                <option value="registered">Inscrit</option>
-                                <option value="declined">Refusé</option>
-                              </select>
-                            </label>
-                          </div>
-
-                          {registration.registration_status === "registered" ? (
-                            <div style={{ display: "grid", gap: 8 }}>
-                              <div style={{ fontWeight: 800 }}>Présence par journée</div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                {days.map((_, index) => (
-                                  <label key={`${playerId}-${index}`} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                                    <span style={{ fontWeight: 800 }}>Jour {index + 1}</span>
-                                    <select
-                                      className="input"
-                                      style={{ minWidth: 120 }}
-                                      value={registration.day_status_by_day_index[String(index)] ?? "present"}
-                                      onChange={(e) =>
-                                        updatePlayerRegistration(playerId, {
-                                          day_status_by_day_index: {
-                                            ...registration.day_status_by_day_index,
-                                            [String(index)]: normalizePresenceStatus(e.target.value),
-                                          },
-                                        })
-                                      }
-                                    >
-                                      <option value="present">Présent</option>
-                                      <option value="absent">Absent</option>
-                                    </select>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>
-                              Les présences par jour seront activées dès que ce junior passe au statut inscrit.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className={styles.grid3}>
+                    <label className={styles.field}>
+                      <span>
+                        Début <i className={styles.required}>*</i>
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={day.starts_at}
+                        onChange={(event) =>
+                          updateDay(index, { starts_at: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      <span>
+                        Fin <i className={styles.required}>*</i>
+                      </span>
+                      <input
+                        type="datetime-local"
+                        value={day.ends_at}
+                        onChange={(event) =>
+                          updateDay(index, { ends_at: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Lieu</span>
+                      <input
+                        value={day.location_text}
+                        onChange={(event) =>
+                          updateDay(index, {
+                            location_text: event.target.value,
+                          })
+                        }
+                        placeholder="Practice, parcours…"
+                      />
+                    </label>
                   </div>
-                </div>
-              ) : null}
+                  <div className={styles.grid2}>
+                    <label className={styles.field}>
+                      <span>Coach responsable</span>
+                      <select
+                        value={day.responsible_coach_id || headCoachId}
+                        onChange={(event) =>
+                          updateDay(index, {
+                            responsible_coach_id: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Choisir…</option>
+                        {coaches.map((coach) => (
+                          <option key={coach.id} value={coach.id}>
+                            {fullName(coach)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.field}>
+                      <span>Notes de la journée</span>
+                      <input
+                        value={day.practical_info}
+                        onChange={(event) =>
+                          updateDay(index, {
+                            practical_info: event.target.value,
+                          })
+                        }
+                        placeholder="Rendez-vous, repas, matériel…"
+                      />
+                    </label>
+                  </div>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={day.evaluation_enabled}
+                      onChange={(event) => {
+                        if (
+                          !event.target.checked &&
+                          Number(day.evaluation?.completed ?? 0) > 0 &&
+                          !window.confirm(
+                            "Des évaluations existent déjà pour cette journée. Elles seront conservées mais la journée ne sera plus proposée à l’évaluation. Continuer ?",
+                          )
+                        )
+                          return;
+                        updateDay(index, {
+                          evaluation_enabled: event.target.checked,
+                        });
+                      }}
+                    />
+                    <span>Journée à évaluer</span>
+                  </label>
+                  {day.evaluation_enabled ? (
+                    <EventCriteriaSelector clubId={clubId} eventType="camp" selectedIds={day.evaluation_criterion_ids ?? []} onChange={(ids) => updateDay(index, { evaluation_criterion_ids: ids })} disabled={saving} />
+                  ) : null}
+                  <div>
+                    <span className={styles.muted}>Coachs additionnels</span>
+                    <div className={styles.pillRow}>
+                      {coaches
+                        .filter(
+                          (coach) =>
+                            coach.id !==
+                            (day.responsible_coach_id || headCoachId),
+                        )
+                        .map((coach) => (
+                          <label className={styles.check} key={coach.id}>
+                            <input
+                              type="checkbox"
+                              checked={day.coach_ids.includes(coach.id)}
+                              onChange={() =>
+                                updateDay(index, {
+                                  coach_ids: toggle(day.coach_ids, coach.id),
+                                })
+                              }
+                            />
+                            <span>{fullName(coach)}</span>
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontWeight: 800 }}>Head coach du camp</span>
-                  <select className="input" value={headCoachId} onChange={(e) => setHeadCoachId(e.target.value)}>
-                    <option value="">Choisir…</option>
-                    {coachMembers.map((coach) => (
-                      <option key={coach.id} value={coach.id}>{fullName(coach)}</option>
-                    ))}
-                  </select>
-                </label>
+          <section className={styles.panel} style={{ order: 4 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Participants</h2>
+                <p>
+                  Les juniors ajoutés depuis un groupe sont photographiés dans
+                  le stage et ne changeront pas silencieusement par la suite.
+                </p>
               </div>
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={syncGroups}
+              >
+                <UserPlus size={15} />
+                Synchroniser les groupes
+              </button>
+            </div>
+            <div className={styles.stack}>
+              <div className={styles.selectionBlock}>
+                <div className={styles.sectionTitle}>
+                  <h3>Groupes</h3>
+                  <p>Seuls les groupes actifs créés depuis la gestion des groupes sont proposés.</p>
+                </div>
+                {groups.length === 0 ? <div className={styles.empty}>Aucun groupe standard disponible pour cette saison.</div> : <div className={styles.tableWrap}>
+                  <table className={`${styles.peopleTable} ${styles.groupSelectionTable}`}>
+                    <thead><tr><th>Groupe</th><th>Juniors</th><th>Sélection</th></tr></thead>
+                    <tbody>{groups.map((group) => <tr key={group.id}>
+                      <td><b>{group.name}</b></td>
+                      <td>{groupPlayers[group.id]?.length ?? 0}</td>
+                      <td><label className={styles.check}><input type="checkbox" checked={groupIds.includes(group.id)} onChange={() => toggleGroup(group.id)} /><span>{groupIds.includes(group.id) ? "Sélectionné" : "Ajouter"}</span></label></td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>}
+              </div>
+              <div className={styles.divider} />
+              <div className={styles.tableWrap}>
+                <table className={styles.peopleTable}>
+                  <thead>
+                    <tr>
+                      <th aria-label="Avatar"></th>
+                      <th>Junior</th>
+                      <th>Sélection</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map((player) => (
+                      <tr key={player.id}>
+                        <td>
+                          <Avatar profile={player} />
+                        </td>
+                        <td>
+                          <b>{fullName(player)}</b>
+                        </td>
+                        <td>
+                          <label className={styles.check}>
+                            <input
+                              type="checkbox"
+                              checked={playerIds.includes(player.id)}
+                              onChange={() =>
+                                setPlayerIds((current) =>
+                                  toggle(current, player.id),
+                                )
+                              }
+                            />
+                            <span>
+                              {playerIds.includes(player.id)
+                                ? "Ajouté"
+                                : "Ajouter"}
+                            </span>
+                          </label>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
 
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontWeight: 900 }}>Coachs additionnels du camp</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {coachMembers.filter((coach) => coach.id !== headCoachId).map((coach) => (
-                    <label key={coach.id} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                      <input type="checkbox" checked={selectedCoachIds.includes(coach.id)} onChange={() => setSelectedCoachIds((current) => toggleValue(current, coach.id))} />
+          <section className={styles.panel} style={{ order: 5 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Encadrement</h2>
+                <p>
+                  Définissez le head coach du stage et les coachs additionnels
+                  disponibles pour les journées.
+                </p>
+              </div>
+            </div>
+            <label className={styles.field}>
+              <span>
+                Head coach{" "}
+                {days.length ? <i className={styles.required}>*</i> : null}
+              </span>
+              <select
+                value={headCoachId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setHeadCoachId(id);
+                  setDays((current) =>
+                    current.map((day) => ({
+                      ...day,
+                      responsible_coach_id: day.responsible_coach_id || id,
+                    })),
+                  );
+                }}
+              >
+                <option value="">Choisir…</option>
+                {coaches.map((coach) => (
+                  <option key={coach.id} value={coach.id}>
+                    {fullName(coach)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div>
+              <div className={styles.sectionTitle}>
+                <h3>Coachs additionnels</h3>
+              </div>
+              <div className={styles.pillRow}>
+                {coaches
+                  .filter((coach) => coach.id !== headCoachId)
+                  .map((coach) => (
+                    <label className={styles.check} key={coach.id}>
+                      <input
+                        type="checkbox"
+                        checked={coachIds.includes(coach.id)}
+                        onChange={() =>
+                          setCoachIds((current) => toggle(current, coach.id))
+                        }
+                      />
                       <span>{fullName(coach)}</span>
                     </label>
                   ))}
-                </div>
               </div>
+            </div>
+          </section>
 
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div style={{ fontWeight: 900 }}>Journées du stage</div>
-                  <div style={{ fontSize: 12, color: "rgba(0,0,0,0.58)", fontWeight: 700 }}>
-                    Chaque journée peut avoir sa propre plage horaire, indépendamment de la limite technique des activités classiques.
-                  </div>
-                </div>
-                {days.map((day, index) => (
-                  <div key={index} className="glass-card" style={{ display: "grid", gap: 12, border: "1px solid rgba(0,0,0,0.08)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                      <div style={{ fontWeight: 900 }}>Jour {index + 1}</div>
-                      {days.length > 1 ? <button type="button" className="btn" onClick={() => removeDay(index)}>Supprimer</button> : null}
+          <section className={styles.panel} style={{ order: 6 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Participations et présences</h2>
+                <p>
+                  Une ligne par junior et une colonne par journée. Les statuts
+                  utilisent le système de présence existant.
+                </p>
+              </div>
+            </div>
+            {selectedPlayers.length === 0 ? (
+              <div className={styles.empty}>
+                Ajoutez des juniors pour configurer leurs participations.
+              </div>
+            ) : (
+              <div className={styles.tableWrap}>
+                <table className={styles.matrix}>
+                  <thead>
+                    <tr>
+                      <th>Junior</th>
+                      <th>Inscription</th>
+                      {days.map((_, index) => (
+                        <th key={index}>Jour {index + 1}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPlayers.map((player) => {
+                      const registration = registrations[player.id] ?? {
+                        registration_status: "invited",
+                        day_status_by_day_index: {},
+                      };
+                      return (
+                        <tr key={player.id}>
+                          <td>
+                            <div className={styles.person}>
+                              <Avatar profile={player} />
+                              <b>{fullName(player)}</b>
+                            </div>
+                          </td>
+                          <td>
+                            <select
+                              value={registration.registration_status}
+                              onChange={(event) =>
+                                setRegistrations((current) => ({
+                                  ...current,
+                                  [player.id]: {
+                                    ...registration,
+                                    registration_status: event.target
+                                      .value as Registration["registration_status"],
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="invited">Invité</option>
+                              <option value="registered">Inscrit</option>
+                              <option value="declined">Refusé</option>
+                            </select>
+                          </td>
+                          {days.map((_, dayIndex) => (
+                            <td key={dayIndex}>
+                              <select
+                                disabled={
+                                  registration.registration_status !==
+                                  "registered"
+                                }
+                                value={
+                                  registration.registration_status ===
+                                  "registered"
+                                    ? (registration.day_status_by_day_index[
+                                        String(dayIndex)
+                                      ] ?? "expected")
+                                    : "not_registered"
+                                }
+                                onChange={(event) =>
+                                  setRegistrations((current) => ({
+                                    ...current,
+                                    [player.id]: {
+                                      ...registration,
+                                      day_status_by_day_index: {
+                                        ...registration.day_status_by_day_index,
+                                        [String(dayIndex)]: event.target
+                                          .value as Attendance,
+                                      },
+                                    },
+                                  }))
+                                }
+                              >
+                                <option value="expected">Prévu</option>
+                                <option value="present">Présent</option>
+                                <option value="excused">Absent excusé</option>
+                                <option value="absent">
+                                  Absent non excusé
+                                </option>
+                                <option value="not_registered">
+                                  Non inscrit
+                                </option>
+                              </select>
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className={styles.panel} style={{ order: 2 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Options facultatives</h2>
+                <p>
+                  Créez une option valable pour tout le stage, comme « Je
+                  dispose d’un abonnement de transport », ou une option limitée
+                  à certaines journées. Aucun calcul de facturation n’est
+                  effectué.
+                </p>
+              </div>
+              <button
+                className={styles.secondary}
+                type="button"
+                onClick={addOption}
+              >
+                <Plus size={15} />
+                Ajouter une option
+              </button>
+            </div>
+            {options.length === 0 ? (
+              <div className={styles.empty}>Aucune option configurée.</div>
+            ) : (
+              <div className={styles.stack}>
+                {options.map((option, index) => (
+                  <article
+                    className={styles.optionCard}
+                    key={`${option.id ?? "new"}-${index}`}
+                  >
+                    <div className={styles.cardHead}>
+                      <h3>Option {index + 1}</h3>
+                      <div className={styles.cardTools}>
+                        <button
+                          className={styles.iconButton}
+                          type="button"
+                          disabled={!index}
+                          onClick={() =>
+                            setOptions((current) => move(current, index, -1))
+                          }
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          className={styles.iconButton}
+                          type="button"
+                          disabled={index === options.length - 1}
+                          onClick={() =>
+                            setOptions((current) => move(current, index, 1))
+                          }
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <button
+                          className={`${styles.iconButton} ${styles.dangerIcon}`}
+                          type="button"
+                          title="Supprimer"
+                          aria-label="Supprimer l’option"
+                          onClick={() =>
+                            setOptions((current) =>
+                              current.filter((_, i) => i !== index),
+                            )
+                          }
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={{ fontWeight: 800 }}>Début</span>
-                        <input type="datetime-local" className="input" value={day.starts_at} onChange={(e) => updateDay(index, { starts_at: e.target.value })} />
+                    <div className={styles.grid2}>
+                      <label className={styles.field}>
+                        <span>
+                          Nom <i className={styles.required}>*</i>
+                        </span>
+                        <input
+                          value={option.name}
+                          onChange={(event) =>
+                            updateOption(index, { name: event.target.value })
+                          }
+                          placeholder="Je dispose d’un abonnement de transport"
+                        />
                       </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={{ fontWeight: 800 }}>Fin</span>
-                        <input type="datetime-local" className="input" value={day.ends_at} onChange={(e) => updateDay(index, { ends_at: e.target.value })} />
+                      <label className={styles.field}>
+                        <span>Capacité maximale</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={option.capacity ?? ""}
+                          onChange={(event) =>
+                            updateOption(index, {
+                              capacity: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            })
+                          }
+                        />
                       </label>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={{ fontWeight: 800 }}>Lieu</span>
-                        <input className="input" value={day.location_text} onChange={(e) => updateDay(index, { location_text: e.target.value })} placeholder="Practice, parcours, autre site" />
+                      <label className={styles.field}>
+                        <span>Description</span>
+                        <input
+                          value={option.description}
+                          onChange={(event) =>
+                            updateOption(index, {
+                              description: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Note interne</span>
+                        <input
+                          value={option.internal_note}
+                          onChange={(event) =>
+                            updateOption(index, {
+                              internal_note: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>Portée de l’option</span>
+                        <select
+                          value={
+                            option.applies_to_all_days
+                              ? "camp"
+                              : "selected_days"
+                          }
+                          onChange={(event) =>
+                            updateOption(index, {
+                              applies_to_all_days:
+                                event.target.value === "camp",
+                              day_indexes:
+                                event.target.value === "camp"
+                                  ? []
+                                  : option.day_indexes,
+                            })
+                          }
+                        >
+                          <option value="camp">Option de stage</option>
+                          <option value="selected_days">
+                            Option par journée
+                          </option>
+                        </select>
                       </label>
                     </div>
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontWeight: 800 }}>Informations pratiques du jour</span>
-                      <textarea className="input" rows={3} value={day.practical_info} onChange={(e) => updateDay(index, { practical_info: e.target.value })} placeholder="Rendez-vous, matériel, repas, etc." />
-                    </label>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontWeight: 800 }}>Coachs de cette journée</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {coachMembers.map((coach) => {
-                          const checked = coach.id === headCoachId || day.coach_ids.includes(coach.id);
+                    <div className={styles.pillRow}>
+                      <label className={styles.check}>
+                        <input
+                          type="checkbox"
+                          checked={option.is_active}
+                          onChange={(event) =>
+                            updateOption(index, {
+                              is_active: event.target.checked,
+                            })
+                          }
+                        />
+                        <span>Option active</span>
+                      </label>
+                      <label className={styles.check}>
+                        <input
+                          type="checkbox"
+                          checked={option.allows_quantity}
+                          onChange={(event) =>
+                            updateOption(index, {
+                              allows_quantity: event.target.checked,
+                            })
+                          }
+                        />
+                        <span>Quantité par participant</span>
+                      </label>
+                    </div>
+                    {!option.applies_to_all_days ? (
+                      <div className={styles.stack}>
+                        <div className={styles.sectionTitle}>
+                          <h3>Journées concernées</h3>
+                          <p>
+                            Sélectionnez au moins une journée pour cette option.
+                          </p>
+                        </div>
+                        <div className={styles.pillRow}>
+                          {days.map((day, dayIndex) => (
+                            <label className={styles.check} key={dayIndex}>
+                              <input
+                                type="checkbox"
+                                checked={option.day_indexes.includes(dayIndex)}
+                                onChange={() =>
+                                  updateOption(index, {
+                                    day_indexes: option.day_indexes.includes(
+                                      dayIndex,
+                                    )
+                                      ? option.day_indexes.filter(
+                                          (value) => value !== dayIndex,
+                                        )
+                                      : [...option.day_indexes, dayIndex],
+                                  })
+                                }
+                              />
+                              <span>
+                                Jour {dayIndex + 1} · {shortDate(day.starts_at)}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div>
+                      <div className={styles.sectionTitle}>
+                        <h3>Attribution aux juniors</h3>
+                        <p>
+                          {option.player_assignments.reduce(
+                            (sum, entry) => sum + entry.quantity,
+                            0,
+                          )}{" "}
+                          sélection(s)
+                          {option.capacity
+                            ? ` · ${Math.max(0, option.capacity - option.player_assignments.reduce((sum, entry) => sum + entry.quantity, 0))} restante(s)`
+                          : ""}
+                        </p>
+                      </div>
+                      <div className={styles.pillRow}>
+                        <label className={styles.check}>
+                          <input
+                            type="checkbox"
+                            checked={option.assigns_to_all_participants}
+                            onChange={(event) =>
+                              updateOption(index, {
+                                assigns_to_all_participants:
+                                  event.target.checked,
+                                player_assignments: event.target.checked
+                                  ? selectedPlayers.map((player) =>
+                                      optionAssignment(option, player.id) ?? {
+                                        player_id: player.id,
+                                        quantity: 1,
+                                      },
+                                    )
+                                  : [],
+                              })
+                            }
+                          />
+                          <span>Tous les participants</span>
+                        </label>
+                      </div>
+                      <div className={styles.pillRow}>
+                        {selectedPlayers.map((player) => {
+                          const assignment = optionAssignment(
+                            option,
+                            player.id,
+                          );
                           return (
-                            <label key={coach.id} className="pill-soft" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: coach.id === headCoachId ? "default" : "pointer" }}>
-                              <input type="checkbox" checked={checked} disabled={coach.id === headCoachId} onChange={() => updateDay(index, { coach_ids: toggleValue(day.coach_ids, coach.id) })} />
-                              <span>{fullName(coach)}{coach.id === headCoachId ? " • head coach" : ""}</span>
+                            <label className={styles.check} key={player.id}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(assignment)}
+                                onChange={() =>
+                                  updateOption(index, {
+                                    assigns_to_all_participants: false,
+                                    player_assignments: assignment
+                                      ? option.player_assignments.filter(
+                                          (entry) =>
+                                            entry.player_id !== player.id,
+                                        )
+                                      : [
+                                          ...option.player_assignments,
+                                          { player_id: player.id, quantity: 1 },
+                                        ],
+                                  })
+                                }
+                              />
+                              <span>{fullName(player)}</span>
+                              {assignment && option.allows_quantity ? (
+                                <input
+                                  aria-label={`Quantité pour ${fullName(player)}`}
+                                  style={{ width: 54, height: 30 }}
+                                  type="number"
+                                  min={1}
+                                  value={assignment.quantity}
+                                  onChange={(event) =>
+                                    updateOption(index, {
+                                      player_assignments:
+                                        option.player_assignments.map(
+                                          (entry) =>
+                                            entry.player_id === player.id
+                                              ? {
+                                                  ...entry,
+                                                  quantity: Math.max(
+                                                    1,
+                                                    Number(
+                                                      event.target.value,
+                                                    ) || 1,
+                                                  ),
+                                                }
+                                              : entry,
+                                        ),
+                                    })
+                                  }
+                                />
+                              ) : null}
                             </label>
                           );
                         })}
                       </div>
                     </div>
-                  </div>
+                  </article>
                 ))}
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                  <button type="button" className="btn" onClick={addDay}>Ajouter une journée</button>
-                </div>
               </div>
+            )}
+          </section>
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="button" className="btn" onClick={() => router.push("/manager/camps")} disabled={saving}>Annuler</button>
-                  <button type="button" className="btn" onClick={() => void saveCamp()} disabled={saving || !clubId || !title || !headCoachId || selectedGroupIds.length === 0 || selectedPlayerIds.length === 0 || days.length === 0}>
-                    {saving ? (editingCampId ? "Enregistrement…" : "Création…") : editingCampId ? "Enregistrer les modifications" : "Créer le stage/camp"}
-                  </button>
-                </div>
+          <section className={styles.panel} style={{ order: 7 }}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Récapitulatif</h2>
+                <p>Vérifiez la configuration avant de planifier le stage.</p>
               </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+            </div>
+            <div className={styles.summaryGrid}>
+              <div className={styles.summaryItem}>
+                <span>Journées</span>
+                <b>{days.length}</b>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Participants</span>
+                <b>
+                  {playerIds.length}
+                  {capacity ? ` / ${capacity}` : ""}
+                </b>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Encadrement</span>
+                <b>
+                  {headCoachId ? 1 + coachIds.length : coachIds.length} coach(s)
+                </b>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Journées évaluables</span>
+                <b>{days.filter((day) => day.evaluation_enabled).length}</b>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Options</span>
+                <b>{options.length}</b>
+              </div>
+              <div className={styles.summaryItem}>
+                <span>Attributions d’options</span>
+                <b>{optionAssignments}</b>
+              </div>
+            </div>
+            {capacity != null && playerIds.length > capacity ? (
+              <div className={styles.alertWarning}>
+                La capacité du stage est dépassée de{" "}
+                {playerIds.length - capacity} place(s).
+              </div>
+            ) : null}
+          </section>
+          <div className={styles.stickyActions} style={{ order: 8 }}>
+            <div className={styles.actions}>
+              <button
+                type="button"
+                className={styles.secondary}
+                disabled={saving}
+                onClick={() => void save("draft")}
+              >
+                <Save size={15} />
+                {saving ? "Enregistrement…" : "Enregistrer le brouillon"}
+              </button>
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={saving}
+                onClick={() => void save("scheduled")}
+              >
+                <Save size={15} />
+                {saving ? "Enregistrement…" : "Planifier le stage"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </main>
   );
 }

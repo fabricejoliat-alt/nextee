@@ -1,0 +1,38 @@
+.recipient {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recipient svg { flex: 0 0 auto; }
+
+.previewSection {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.previewLabel {
+  color: #738076;
+  font: 400 11px/1.35 var(--font-inter), sans-serif;
+}
+
+.preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #e3e9e2;
+  border-radius: 10px;
+  background: #fbfdf9;
+}
+
+.previewSubject {
+  color: #35483b;
+  font: 400 13px/1.45 var(--font-inter), sans-serif;
+}
+
+.previewBody {
+  color: #4d5c50;
+  white-space: pre-wrap;
+  font: 400 13px/1.6 var(--font-inter), sans-serif;
+}

@@ -1,0 +1,16 @@
+.period {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  color: #526056;
+  font: 600 11px/1.35 var(--font-inter), sans-serif;
+}
+
+.period span {
+  color: #7a857c;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}

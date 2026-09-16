@@ -5,10 +5,13 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Pencil } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, MapPin, Pencil } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import campsStyles from "@/app/manager/camps/Camps.module.css";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import activityStyles from "../PlayerActivities.module.css";
+import styles from "./PlayerTrainingsToComplete.module.css";
 
 type SessionRow = {
   id: string;
@@ -45,6 +48,7 @@ type PlannedEventRow = {
   club_id: string | null;
   group_id: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 
 type IncompleteEvent = {
@@ -69,45 +73,8 @@ type IncompleteSession = {
 
 type Row = IncompleteEvent | IncompleteSession;
 
-function fmtDateTime(iso: string, locale: string) {
-  return new Intl.DateTimeFormat(pickLocaleText(locale, "fr-CH", "en-US"), {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
-
-function fmtDateLabelNoTime(iso: string, locale: string) {
-  const d = new Date(iso);
-  if (locale === "en") {
-    return new Intl.DateTimeFormat("en-US", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    }).format(d);
-  }
-  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
-  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
-}
-
-function fmtHourLabel(iso: string, locale: string) {
-  const d = new Date(iso);
-  if (locale === "en") {
-    return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
-  }
-  const h = d.getHours();
-  const m = d.getMinutes();
-  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
-}
-
-function sameDay(aIso: string, bIso: string) {
-  const a = new Date(aIso);
-  const b = new Date(bIso);
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function dateLocale(locale: string) {
+  return locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 }
 
 export default function PlayerTrainingsToCompletePage() {
@@ -118,7 +85,6 @@ export default function PlayerTrainingsToCompletePage() {
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
   const [eventById, setEventById] = useState<Record<string, PlannedEventRow>>({});
-  const [attendeeStatusByEventId, setAttendeeStatusByEventId] = useState<Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null>>({});
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   useEffect(() => {
@@ -134,7 +100,6 @@ export default function PlayerTrainingsToCompletePage() {
           setClubNameById({});
           setGroupNameById({});
           setEventById({});
-          setAttendeeStatusByEventId({});
           setLoading(false);
           return;
         }
@@ -194,7 +159,6 @@ export default function PlayerTrainingsToCompletePage() {
           if (!eventId) return;
           attendanceMap[eventId] = row.status ?? null;
         });
-        setAttendeeStatusByEventId(attendanceMap);
 
         const incompletePastSessions: IncompleteSession[] = sessions
           .filter((s) => new Date(s.start_at).getTime() < nowTs)
@@ -223,7 +187,7 @@ export default function PlayerTrainingsToCompletePage() {
         if (eventIds.length > 0) {
           const eRes = await supabase
             .from("club_events")
-            .select("id,event_type,starts_at,ends_at,duration_minutes,location_text,status,club_id,group_id")
+            .select("id,event_type,starts_at,ends_at,duration_minutes,location_text,status,club_id,group_id,requires_evaluation")
             .in("id", eventIds);
           if (eRes.error) throw new Error(eRes.error.message);
           events = (eRes.data ?? []) as PlannedEventRow[];
@@ -284,6 +248,7 @@ export default function PlayerTrainingsToCompletePage() {
 
         const incompleteEvents: IncompleteEvent[] = events
           .filter((ev) => ev.status === "scheduled")
+          .filter((ev) => ev.requires_evaluation)
           .filter((ev) => ev.event_type === "training" || ev.event_type === "camp")
           .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
           .filter((ev) => {
@@ -304,7 +269,11 @@ export default function PlayerTrainingsToCompletePage() {
             group_id: ev.group_id,
           }));
 
-        const merged = [...incompleteEvents, ...incompletePastSessions].sort(
+        const evaluationEventIds = new Set(events.filter((event) => event.requires_evaluation).map((event) => event.id));
+        const merged = [
+          ...incompleteEvents,
+          ...incompletePastSessions.filter((session) => !session.club_event_id || evaluationEventIds.has(session.club_event_id)),
+        ].sort(
           (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime()
         );
         setRows(merged);
@@ -315,7 +284,6 @@ export default function PlayerTrainingsToCompletePage() {
         setClubNameById({});
         setGroupNameById({});
         setEventById({});
-        setAttendeeStatusByEventId({});
       } finally {
         setLoading(false);
       }
@@ -323,188 +291,80 @@ export default function PlayerTrainingsToCompletePage() {
   }, [t]);
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div className="section-title" style={{ marginBottom: 0 }}>
-              {pickLocaleText(locale, "Entraînements à évaluer", "Trainings to complete")}
+    <div className={`player-dashboard-bg ${styles.page}`}>
+      <div className={`app-shell ${styles.shell}`}>
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "À évaluer", "To evaluate") }]} />
+
+        <header className={campsStyles.topline}>
+          <div>
+            <h1>{pickLocaleText(locale, "Activités à évaluer", "Activities to evaluate")}</h1>
+            <p className={campsStyles.lead}>{pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")}</p>
+          </div>
+          <Link className={styles.backButton} href="/player/golf/trainings">
+            <ArrowLeft size={15} aria-hidden="true" />
+            {pickLocaleText(locale, "Retour aux activités", "Back to activities")}
+          </Link>
+        </header>
+
+        {error ? <div className={styles.error} role="alert">{error}</div> : null}
+
+        <section className={styles.panel} aria-labelledby="evaluation-list-title">
+          <div className={styles.panelHeading}>
+            <div>
+              <h2 id="evaluation-list-title">{pickLocaleText(locale, "À évaluer", "To evaluate")}</h2>
+              <p>{pickLocaleText(locale, "Complétez les activités qui nécessitent votre ressenti.", "Complete the activities that require your feedback.")}</p>
             </div>
+            {!loading && performanceEnabled ? <strong>{rows.length}</strong> : null}
           </div>
 
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
+          {loading ? <EvaluationListSkeleton label={t("common.loading")} /> : !performanceEnabled ? (
+            <div className={styles.emptyState}>
+              <AlertCircle size={22} aria-hidden="true" />
+              <strong>{pickLocaleText(locale, "Évaluations indisponibles", "Evaluations unavailable")}</strong>
+              <p>{pickLocaleText(locale, "Le mode performance doit être activé pour évaluer les activités.", "Performance mode must be enabled to evaluate activities.")}</p>
+            </div>
+          ) : rows.length === 0 ? (
+            <div className={styles.emptyState}>
+              <CheckCircle2 size={24} aria-hidden="true" />
+              <strong>{pickLocaleText(locale, "Vous êtes à jour", "You're up to date")}</strong>
+              <p>{pickLocaleText(locale, "Aucune activité ne nécessite une évaluation.", "No activity needs an evaluation.")}</p>
+            </div>
+          ) : (
+            <div className={styles.activityList}>
+              {rows.map((row) => {
+                if (row.kind === "event") {
+                  const clubName = row.club_id ? clubNameById[row.club_id] ?? t("common.club") : t("common.club");
+                  const groupName = row.group_id ? groupNameById[row.group_id] ?? pickLocaleText(locale, "Groupe", "Group") : pickLocaleText(locale, "Groupe", "Group");
+                  const type = row.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training");
+                  return <EvaluationActivityCard key={`event-${row.id}`} start={row.starts_at} type={type} title={`${type} · ${groupName}`} organizer={clubName} location={row.location_text} href={`/player/golf/trainings/new?club_event_id=${row.id}`} locale={locale}/>;
+                }
 
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <ListLoadingBlock label={t("common.loading")} />
-            ) : !performanceEnabled ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                  {pickLocaleText(
-                    locale,
-                    "Le mode performance doit être activé pour évaluer les entraînements.",
-                    "Performance mode must be enabled to evaluate trainings."
-                  )}
-                </div>
-                <div>
-                  <Link className="btn" href="/player/golf/trainings?type=training">
-                    {t("common.back")}
-                  </Link>
-                </div>
-              </div>
-            ) : rows.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {pickLocaleText(locale, "Aucun entraînement à évaluer.", "No training to complete.")}
-              </div>
-            ) : (
-              <div className="marketplace-list marketplace-list-top">
-                {rows.map((row) => {
-                  if (row.kind === "event") {
-                    const clubName = row.club_id ? (clubNameById[row.club_id] ?? t("common.club")) : t("common.club");
-                    const groupName = row.group_id ? (groupNameById[row.group_id] ?? (pickLocaleText(locale, "Groupe", "Group"))) : (pickLocaleText(locale, "Groupe", "Group"));
-                    const eventEnd =
-                      row.ends_at ??
-                      new Date(new Date(row.starts_at).getTime() + Math.max(1, Number(row.duration_minutes ?? 0)) * 60_000).toISOString();
-                    const isMultiDay = !sameDay(row.starts_at, eventEnd);
-                    const eventTitle =
-                      row.event_type === "camp"
-                        ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${groupName}`
-                        : `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
-                    return (
-                      <div
-                        key={`event-${row.id}`}
-                        className="marketplace-item"
-                        style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}
-                      >
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                            {isMultiDay ? (
-                              <div>
-                                {fmtDateLabelNoTime(row.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
-                              </div>
-                            ) : (
-                              <div>
-                                {fmtDateLabelNoTime(row.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
-                                <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                  {locale === "fr"
-                                    ? `• de ${fmtHourLabel(row.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
-                                    : `• from ${fmtHourLabel(row.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                          <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                            <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                              {eventTitle}
-                            </div>
-                            <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                              {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
-                            </div>
-                          </div>
-
-                          {row.location_text ? (
-                            <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                              📍 {row.location_text}
-                            </div>
-                          ) : null}
-
-                          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
-                            <Link className="btn" href={`/player/golf/trainings/new?club_event_id=${row.id}`}>
-                              <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                              {pickLocaleText(locale, "Évaluer", "Evaluate")}
-                            </Link>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <Link key={`session-${row.id}`} href={`/player/golf/trainings/${row.id}/edit`} className="marketplace-link">
-                      <div className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {(() => {
-                            const linkedEvent = row.club_event_id ? eventById[row.club_event_id] : null;
-                            if (linkedEvent && (linkedEvent.event_type === "training" || linkedEvent.event_type === "camp")) {
-                              const clubName = linkedEvent.club_id ? (clubNameById[linkedEvent.club_id] ?? t("common.club")) : t("common.club");
-                              const groupName = linkedEvent.group_id
-                                ? (groupNameById[linkedEvent.group_id] ?? (pickLocaleText(locale, "Groupe", "Group")))
-                                : (pickLocaleText(locale, "Groupe", "Group"));
-                              const eventEnd =
-                                linkedEvent.ends_at ??
-                                new Date(new Date(linkedEvent.starts_at).getTime() + Math.max(1, Number(linkedEvent.duration_minutes ?? 0)) * 60_000).toISOString();
-                              const isMultiDay = !sameDay(linkedEvent.starts_at, eventEnd);
-                              const title =
-                                linkedEvent.event_type === "camp"
-                                  ? `${pickLocaleText(locale, "Stage/Camp", "Camp")} • ${groupName}`
-                                  : `${pickLocaleText(locale, "Entraînement", "Training")} • ${groupName}`;
-                              const place = (row.location_text ?? linkedEvent.location_text ?? "").trim();
-                              return (
-                                <>
-                                  <div style={{ display: "grid", gap: 2, fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>
-                                    {isMultiDay ? (
-                                      <div>
-                                        {fmtDateLabelNoTime(linkedEvent.starts_at, pickLocaleText(locale, "fr", "en"))} {pickLocaleText(locale, "au", "to")} {fmtDateLabelNoTime(eventEnd, pickLocaleText(locale, "fr", "en"))}
-                                      </div>
-                                    ) : (
-                                      <div>
-                                        {fmtDateLabelNoTime(linkedEvent.starts_at, pickLocaleText(locale, "fr", "en"))}{" "}
-                                        <span style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                                          {locale === "fr"
-                                            ? `• de ${fmtHourLabel(linkedEvent.starts_at, "fr")} à ${fmtHourLabel(eventEnd, "fr")}`
-                                            : `• from ${fmtHourLabel(linkedEvent.starts_at, "en")} to ${fmtHourLabel(eventEnd, "en")}`}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="hr-soft" style={{ margin: "1px 0" }} />
-                                  <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                                    <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                      {title}
-                                    </div>
-                                    <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }} className="truncate">
-                                      {pickLocaleText(locale, "Organisé par", "Organized by")} {clubName}
-                                    </div>
-                                  </div>
-                                  {place ? (
-                                    <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                                      📍 {place}
-                                    </div>
-                                  ) : null}
-                                </>
-                              );
-                            }
-                            return (
-                              <>
-                                <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                  {pickLocaleText(locale, "Séance à compléter", "Session to complete")}
-                                </div>
-                                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" }}>
-                                  {fmtDateTime(row.starts_at, pickLocaleText(locale, "fr", "en"))}
-                                </div>
-                                {row.location_text ? (
-                                  <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }} className="truncate">
-                                    📍 {row.location_text}
-                                  </div>
-                                ) : null}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                const linkedEvent = row.club_event_id ? eventById[row.club_event_id] : null;
+                const clubName = linkedEvent?.club_id ? clubNameById[linkedEvent.club_id] ?? t("common.club") : pickLocaleText(locale, "Activité personnelle", "Personal activity");
+                const groupName = linkedEvent?.group_id ? groupNameById[linkedEvent.group_id] ?? pickLocaleText(locale, "Groupe", "Group") : null;
+                const type = linkedEvent?.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training");
+                return <EvaluationActivityCard key={`session-${row.id}`} start={linkedEvent?.starts_at ?? row.starts_at} type={type} title={groupName ? `${type} · ${groupName}` : pickLocaleText(locale, "Entraînement personnel", "Personal training")} organizer={clubName} location={row.location_text ?? linkedEvent?.location_text ?? null} href={`/player/golf/trainings/${row.id}/edit`} locale={locale}/>;
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
+}
+
+function EvaluationDateTile({ iso, locale }: { iso: string; locale: string }) {
+  const date = new Date(iso);
+  const intlLocale = dateLocale(locale);
+  return <div className={activityStyles.dateTile} aria-label={new Intl.DateTimeFormat(intlLocale, { dateStyle: "full" }).format(date)}><span>{new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(date).replace(".", "")}</span><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat(intlLocale, { month: "short" }).format(date).replace(".", "")}</span></div>;
+}
+
+function EvaluationActivityCard({ start, type, title, organizer, location, href, locale }: { start: string; type: string; title: string; organizer: string; location: string | null; href: string; locale: string }) {
+  const time = new Intl.DateTimeFormat(dateLocale(locale), { hour: "2-digit", minute: "2-digit" }).format(new Date(start));
+  const evaluateLabel = pickLocaleText(locale, "Évaluer", "Evaluate");
+  return <article className={activityStyles.dayCard}><EvaluationDateTile iso={start} locale={locale}/><div className={activityStyles.dayActivities}><div className={activityStyles.activityRow}><div className={activityStyles.time}><Clock3 size={14} aria-hidden="true"/>{time}</div><div className={activityStyles.activityMain}><span className={activityStyles.typePill}>{type}</span><h3>{title}</h3><p><span>{organizer}</span>{location ? <span><MapPin size={13} aria-hidden="true"/>{location}</span> : null}</p></div><div className={activityStyles.activityAction}><span className={`${activityStyles.status} ${activityStyles.warning}`}><AlertCircle size={13} aria-hidden="true"/>{pickLocaleText(locale, "À évaluer", "To evaluate")}</span><Link className={styles.evaluateIcon} href={href} aria-label={evaluateLabel} title={evaluateLabel}><Pencil size={16} aria-hidden="true"/></Link></div></div></div></article>;
+}
+
+function EvaluationListSkeleton({ label }: { label: string }) {
+  return <div className={styles.listSkeleton} aria-live="polite" aria-busy="true" aria-label={label}>{Array.from({ length: 2 }, (_, index) => <div className={styles.skeletonCard} key={index}><span/><div><span/><span/><span/></div><span/></div>)}</div>;
 }

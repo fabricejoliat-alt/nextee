@@ -1,6 +1,5 @@
-import PlayerSupportCenter from "@/components/messages/PlayerSupportCenter";
+import { redirect } from "next/navigation";
 
 export default function PlayerSupportPage() {
-  return <PlayerSupportCenter />;
+  redirect("/player");
 }
-

@@ -14,16 +14,16 @@ type VolumeRow = {
 };
 
 const DEFAULT_ROWS: VolumeRow[] = [
-  { ftem_code: "F1", level_label: "Junior Explorer I", handicap_label: "54.0", handicap_min: 54, handicap_max: 54, motivation_text: "", minutes_offseason: 180, minutes_inseason: 180, sort_order: 10 },
-  { ftem_code: "F2", level_label: "Junior Explorer II", handicap_label: "36.1-53.9", handicap_min: 36.1, handicap_max: 53.9, motivation_text: "", minutes_offseason: 240, minutes_inseason: 240, sort_order: 20 },
-  { ftem_code: "F3", level_label: "Junior Explorer III", handicap_label: "18.1-36.0", handicap_min: 18.1, handicap_max: 36.0, motivation_text: "", minutes_offseason: 360, minutes_inseason: 360, sort_order: 30 },
-  { ftem_code: "T1", level_label: "Junior Competitor", handicap_label: "10.1-18.0", handicap_min: 10.1, handicap_max: 18.0, motivation_text: "", minutes_offseason: 720, minutes_inseason: 600, sort_order: 40 },
-  { ftem_code: "T2", level_label: "Junior Challenger", handicap_label: "5.1-10.0", handicap_min: 5.1, handicap_max: 10.0, motivation_text: "", minutes_offseason: 960, minutes_inseason: 840, sort_order: 50 },
-  { ftem_code: "T3", level_label: "Junior Performer", handicap_label: "0.0-5.0", handicap_min: 0, handicap_max: 5.0, motivation_text: "", minutes_offseason: 1440, minutes_inseason: 1320, sort_order: 60 },
-  { ftem_code: "T4", level_label: "Junior Elite", handicap_label: "+0.1 a +2.0", handicap_min: -2.0, handicap_max: -0.1, motivation_text: "", minutes_offseason: 1920, minutes_inseason: 1800, sort_order: 70 },
-  { ftem_code: "E1", level_label: "International Elite", handicap_label: "+2.1 a +4.0", handicap_min: -4.0, handicap_max: -2.1, motivation_text: "", minutes_offseason: 2400, minutes_inseason: 2280, sort_order: 80 },
-  { ftem_code: "E2", level_label: "World Elite", handicap_label: "+4.1 a +6.0", handicap_min: -6.0, handicap_max: -4.1, motivation_text: "", minutes_offseason: 3000, minutes_inseason: 2760, sort_order: 90 },
-  { ftem_code: "M", level_label: "Champion", handicap_label: "Tour level", handicap_min: null, handicap_max: null, motivation_text: "", minutes_offseason: 3600, minutes_inseason: 3300, sort_order: 100 },
+  { ftem_code: "F1", level_label: "Junior Explorer I", handicap_label: "54.0", handicap_min: 54, handicap_max: 54, motivation_text: "Tu découvres le golf et développes les bases du jeu. Un volume d’entraînement d’une heure par semaine t’aide à construire les fondations de ton futur niveau.", minutes_offseason: 180, minutes_inseason: 180, sort_order: 10 },
+  { ftem_code: "F2", level_label: "Junior Explorer II", handicap_label: "36.1-53.9", handicap_min: 36.1, handicap_max: 53.9, motivation_text: "Tu apprends à jouer sur le parcours et à devenir autonome. Un volume d’une à 2 heures d’entraînement par semaine permet de progresser régulièrement.", minutes_offseason: 240, minutes_inseason: 240, sort_order: 20 },
+  { ftem_code: "F3", level_label: "Junior Explorer III", handicap_label: "18.1-36.0", handicap_min: 18.1, handicap_max: 36.0, motivation_text: "Tu développes ton jeu et gagnes en régularité. Un volume de 4 à 6 heures par semaine t’aide à franchir les prochaines étapes.", minutes_offseason: 360, minutes_inseason: 360, sort_order: 30 },
+  { ftem_code: "T1", level_label: "Junior Competitor", handicap_label: "10.1-18.0", handicap_min: 10.1, handicap_max: 18.0, motivation_text: "Aujourd’hui tu es un joueur compétitif. Tu développes un niveau avancé et te rapproches du single handicap. Pour progresser et performer en tournoi, un volume d’entraînement de 8 à 10 heures par semaine est recommandé.", minutes_offseason: 720, minutes_inseason: 600, sort_order: 40 },
+  { ftem_code: "T2", level_label: "Junior Challenger", handicap_label: "5.1-10.0", handicap_min: 5.1, handicap_max: 10.0, motivation_text: "Un volume de 12 à 15 heures par semaine permet de faire la différence en compétition.", minutes_offseason: 960, minutes_inseason: 840, sort_order: 50 },
+  { ftem_code: "T3", level_label: "Junior Performer", handicap_label: "0.0-5.0", handicap_min: 0, handicap_max: 5.0, motivation_text: "Tu fais partie des joueurs de performance. Ton entraînement vise maintenant l’excellence avec 18 à 22 heures d’entraînement par semaine.", minutes_offseason: 1440, minutes_inseason: 1320, sort_order: 60 },
+  { ftem_code: "T4", level_label: "Junior Elite", handicap_label: "+0.1 a +2.0", handicap_min: -2.0, handicap_max: -0.1, motivation_text: "Tu évolues parmi les meilleurs juniors. Pour viser les tournois nationaux et internationaux, l’entraînement atteint 22 à 25 heures par semaine.", minutes_offseason: 1920, minutes_inseason: 1800, sort_order: 70 },
+  { ftem_code: "E1", level_label: "International Elite", handicap_label: "+2.1 a +4.0", handicap_min: -4.0, handicap_max: -2.1, motivation_text: "Tu évolues au niveau élite amateur. Ton entraînement se situe généralement autour de 25 à 30 heures par semaine.", minutes_offseason: 2400, minutes_inseason: 2280, sort_order: 80 },
+  { ftem_code: "E2", level_label: "World Elite", handicap_label: "+4.1 a +6.0", handicap_min: -6.0, handicap_max: -4.1, motivation_text: "Tu fais partie de l’élite internationale. Ton entraînement est celui d’un athlète de haut niveau avec environ 30 heures par semaine ou plus.", minutes_offseason: 3000, minutes_inseason: 2760, sort_order: 90 },
+  { ftem_code: "M", level_label: "Champion", handicap_label: "Tour level", handicap_min: null, handicap_max: null, motivation_text: "Tu vises l’excellence au plus haut niveau du golf mondial. L’entraînement dépasse généralement 30 heures par semaine et chaque détail compte.", minutes_offseason: 3600, minutes_inseason: 3300, sort_order: 100 },
 ];
 
 const DEFAULT_SEASON_MONTHS = [4, 5, 6, 7, 8, 9, 10];
@@ -94,7 +94,7 @@ async function ensureDefaults(supabaseAdmin: any, clubId: string) {
     .select("id")
     .eq("organization_id", clubId)
     .limit(1);
-  if (!rowsRes.data || rowsRes.data.length === 0) {
+  if (!settingsRes.data && (!rowsRes.data || rowsRes.data.length === 0)) {
     await supabaseAdmin.from("training_volume_targets").insert(
       DEFAULT_ROWS.map((r) => ({
         organization_id: clubId,
@@ -138,6 +138,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         offseason_months: sanitizeMonths(settingsRes.data?.offseason_months ?? DEFAULT_OFFSEASON_MONTHS),
       },
       rows: rowsRes.data ?? [],
+      defaults: {
+        settings: {
+          season_months: DEFAULT_SEASON_MONTHS,
+          offseason_months: DEFAULT_OFFSEASON_MONTHS,
+        },
+        rows: DEFAULT_ROWS,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
@@ -158,12 +165,13 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const offseasonMonths = sanitizeMonths(body?.offseason_months);
     const rows = Array.isArray(body?.rows) ? body.rows : [];
 
-    if (seasonMonths.length === 0 || offseasonMonths.length === 0) {
-      return NextResponse.json({ error: "Les mois de saison et hors saison sont requis." }, { status: 400 });
-    }
     const overlap = seasonMonths.some((m) => offseasonMonths.includes(m));
     if (overlap) {
       return NextResponse.json({ error: "Un mois ne peut pas être à la fois en saison et hors saison." }, { status: 400 });
+    }
+    const coveredMonths = new Set([...seasonMonths, ...offseasonMonths]);
+    if (coveredMonths.size !== 12) {
+      return NextResponse.json({ error: "Chaque mois doit être défini en saison ou hors saison." }, { status: 400 });
     }
 
     const normalizedRows: VolumeRow[] = rows
@@ -193,10 +201,6 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
       })
       .filter((r: VolumeRow) => r.ftem_code && r.level_label);
 
-    if (normalizedRows.length === 0) {
-      return NextResponse.json({ error: "Aucune ligne valide à sauvegarder." }, { status: 400 });
-    }
-
     const uniqueCodes = new Set(normalizedRows.map((r) => r.ftem_code));
     if (uniqueCodes.size !== normalizedRows.length) {
       return NextResponse.json({ error: "Les codes FTEM doivent être uniques." }, { status: 400 });
@@ -219,14 +223,16 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
       .eq("organization_id", clubId);
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 400 });
 
-    const { error: insErr } = await supabaseAdmin.from("training_volume_targets").insert(
-      normalizedRows.map((row) => ({
-        organization_id: clubId,
-        ...row,
-        updated_at: new Date().toISOString(),
-      }))
-    );
-    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 400 });
+    if (normalizedRows.length > 0) {
+      const { error: insErr } = await supabaseAdmin.from("training_volume_targets").insert(
+        normalizedRows.map((row) => ({
+          organization_id: clubId,
+          ...row,
+          updated_at: new Date().toISOString(),
+        }))
+      );
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 400 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

@@ -1,0 +1,9 @@
+.dateField {
+  width: 190px;
+}
+
+@media (max-width: 640px) {
+  .dateField {
+    width: 100%;
+  }
+}

@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Trophy } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Award, CalendarDays, ChevronDown, CircleHelp, Medal, Sparkles, Target, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import styles from "./PlayerOrderOfMerit.module.css";
 
 type Org = { id: string; name: string };
 type OMRankingRow = {
@@ -151,6 +154,7 @@ export default function PlayerOrderOfMeritPage() {
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
   const [pointDetails, setPointDetails] = useState<PointDetailCard[]>([]);
+  const [showAllDetails, setShowAllDetails] = useState(false);
 
   const txt = useMemo(
     () => ({
@@ -200,6 +204,24 @@ export default function PlayerOrderOfMeritPage() {
         "Der Performance-Modus muss aktiviert sein, um am Order of Merit teilzunehmen.",
         "La modalità performance deve essere attivata per partecipare all'Ordine di merito."
       ),
+      subtitle: labelByLocale(locale, "Ton classement, tes points et leur origine sur une seule page.", "Your ranking, points and their origin on one page.", "Deine Rangliste und Punkte auf einer Seite.", "Classifica e punti in un'unica pagina."),
+      fullRanking: labelByLocale(locale, "Classement général", "Full ranking", "Gesamtrangliste", "Classifica generale"),
+      methodTitle: labelByLocale(locale, "Comment sont calculés les points ?", "How are points calculated?", "Wie werden Punkte berechnet?", "Come vengono calcolati i punti?"),
+      methodLead: labelByLocale(locale, "Le classement additionne les meilleurs résultats en tournoi et les bonus acquis sur la période.", "The ranking adds the best tournament results and bonuses earned over the period.", "Die Rangliste addiert die besten Turnierergebnisse und Boni des Zeitraums.", "La classifica somma i migliori risultati e i bonus del periodo."),
+      bestResults: labelByLocale(locale, "Résultats retenus", "Results counted", "Gewertete Ergebnisse", "Risultati conteggiati"),
+      bestResultsText: labelByLocale(locale, "5 meilleurs tours jusqu’au 31 mai, 10 jusqu’au 31 juillet, puis 15 jusqu’à la fin de l’année.", "Best 5 rounds through May 31, 10 through July 31, then 15 through year-end.", "Die besten 5, 10 bzw. 15 Runden je nach Jahreszeit.", "I migliori 5, 10 o 15 giri secondo il periodo dell'anno."),
+      tournamentFormula: labelByLocale(locale, "Points de tournoi", "Tournament points", "Turnierpunkte", "Punti torneo"),
+      formulaText: labelByLocale(locale, "Net : [100 + (Course Rating − score net) × 5] × coefficient, avec un minimum de 0. Brut : [150 + Slope Rating + (Course Rating − score brut) × 5] × coefficient. Sur plusieurs tours, l’algorithme utilise les scores moyens ; sur 9 trous, handicap, Course Rating et Slope Rating sont adaptés.", "Net: [100 + (Course Rating − net score) × 5] × coefficient, with a minimum of 0. Gross: [150 + Slope Rating + (Course Rating − gross score) × 5] × coefficient. Multi-round events use average scores; handicap, Course Rating and Slope Rating are adjusted for 9 holes.", "Netto und Brutto werden aus Score, Course Rating, Slope Rating und Koeffizient berechnet; Mehrfachrunden nutzen den Durchschnitt, 9-Loch-Werte werden angepasst.", "Netto e lordo dipendono da score, Course Rating, Slope Rating e coefficiente; su più giri vale la media e i valori sono adattati su 9 buche."),
+      coefficients: labelByLocale(locale, "Coefficient du niveau", "Level coefficient", "Niveau-Koeffizient", "Coefficiente livello"),
+      coefficientsText: labelByLocale(locale, "Interne ×0,8 · Club ×1 · Régional ×1,2 · National ×1,4 · International ×1,6.", "Internal ×0.8 · Club ×1 · Regional ×1.2 · National ×1.4 · International ×1.6.", "Intern ×0,8 · Club ×1 · Regional ×1,2 · National ×1,4 · International ×1,6.", "Interno ×0,8 · Club ×1 · Regionale ×1,2 · Nazionale ×1,4 · Internazionale ×1,6."),
+      bonusesTitle: labelByLocale(locale, "Bonus", "Bonuses", "Boni", "Bonus"),
+      bonusesText: labelByLocale(locale, "2/3/4 tours : +5/+10/+15 net et +10/+20/+30 brut. Tournoi exceptionnel : +100 net, +150 brut. Match play gagné : +10. Présence : +5 par entraînement, +15 par jour de camp. Podium interne : 15/10/5 points.", "2/3/4 rounds: +5/+10/+15 net and +10/+20/+30 gross. Exceptional event: +100 net, +150 gross. Match-play win: +10. Attendance: +5 per training, +15 per camp day. Internal podium: 15/10/5 points.", "Zusatzpunkte für Mehrrundenturniere, besondere Turniere, Matchplay, Anwesenheit und interne Podien.", "Bonus per tornei su più giri, eventi eccezionali, match play, presenze e podi interni."),
+      rankingRule: labelByLocale(locale, "Classement", "Ranking", "Rangliste", "Classifica"),
+      rankingRuleText: labelByLocale(locale, "Total = points des tournois retenus + bonus. Les classements net et brut sont calculés séparément, du total le plus élevé au plus faible.", "Total = counted tournament points + bonuses. Net and gross rankings are calculated separately, highest total first.", "Total = gewertete Turnierpunkte + Boni; Netto und Brutto werden getrennt gereiht.", "Totale = punti torneo conteggiati + bonus; netto e lordo sono classificati separatamente."),
+      pointsSuffix: labelByLocale(locale, "pts", "pts", "Pkt.", "pt"),
+      recentActivity: labelByLocale(locale, "Mouvements de points", "Points activity", "Punkteverlauf", "Movimenti punti"),
+      showAll: labelByLocale(locale, "Afficher tous les mouvements", "Show all activity", "Alle Bewegungen anzeigen", "Mostra tutti i movimenti"),
+      showLess: labelByLocale(locale, "Afficher moins", "Show less", "Weniger anzeigen", "Mostra meno"),
     }),
     [locale]
   );
@@ -521,233 +543,96 @@ export default function PlayerOrderOfMeritPage() {
     return a.full_name.localeCompare(b.full_name);
   });
 
-  return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="section-title" style={{ marginBottom: 0, display: "inline-flex", gap: 8, alignItems: "center" }}>
-            <Trophy size={18} />
-            {txt.title}
-          </div>
+  const visibleDetails = showAllDetails ? pointDetails : pointDetails.slice(0, 6);
+
+  return <div className="player-dashboard-bg player-om-page">
+    <div className="app-shell marketplace-page">
+      <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: txt.title }]} />
+      <section className="glass-section">
+        <div className="marketplace-header">
+          <div><h1 className="section-title">{txt.title}</h1><p className="section-subtitle">{txt.subtitle}</p></div>
         </div>
+      </section>
 
-        {loading ? (
-          <div className="glass-section">
-            <div className="glass-card">
-              <ListLoadingBlock label={txt.loading} />
+      {error ? <div className="marketplace-error" role="alert">{error}</div> : null}
+      {loading ? <section className={styles.panel}><ListLoadingBlock label={txt.loading} /></section> : !performanceEnabled ?
+        <div className="marketplace-error">{txt.perfRequired}</div> : <div className={styles.page}>
+          <section className={`${styles.panel} ${styles.filters}`} aria-label={txt.summaryAsOf}>
+            {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>{orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label> : null}
+            <label className={styles.field}><span>{txt.rankingDateFrom}</span><input type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} /></label>
+            <label className={styles.field}><span>{txt.rankingDateTo}</span><input type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} /></label>
+            <div className={styles.segmented} aria-label={`${txt.rankingNet} / ${txt.rankingBrut}`}>
+              <button type="button" className={rankingMode === "net" ? styles.segmentActive : ""} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button>
+              <button type="button" className={rankingMode === "brut" ? styles.segmentActive : ""} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button>
             </div>
+          </section>
+
+          <section className={styles.summarySection} aria-labelledby="my-merit-summary">
+            <div className={styles.summaryIdentity}>
+              <div className={styles.myAvatar}>
+                {meRow && avatarByPlayerId[meRow.player_id] ? <Image src={avatarByPlayerId[meRow.player_id] ?? ""} alt="" fill sizes="56px" unoptimized /> : <span>{initialsFromName(meRow?.full_name ?? "?")}</span>}
+              </div>
+              <div><span className={styles.eyebrow}>{txt.mySummary}</span><h2 id="my-merit-summary">{meRow?.full_name ?? txt.notRanked}</h2><p><CalendarDays size={14} aria-hidden="true" />{fmtActivityDate(rankingFrom, locale)} — {fmtActivityDate(rankingTo, locale)}</p></div>
+            </div>
+            {meRow ? <div className={styles.summaryMetrics}>
+              <SummaryMetric icon={<Medal size={18} />} label={txt.summaryRankNet} rank={meRow.rank_net} tournament={meRow.tournament_points_net} bonus={meRow.bonus_points_net} total={meRow.total_points_net} txt={txt} active={rankingMode === "net"} />
+              <SummaryMetric icon={<Trophy size={18} />} label={txt.summaryRankBrut} rank={meRow.rank_brut} tournament={meRow.tournament_points_brut} bonus={meRow.bonus_points_brut} total={meRow.total_points_brut} txt={txt} active={rankingMode === "brut"} />
+            </div> : null}
+          </section>
+
+          <div className={styles.mainGrid}>
+            <section className={styles.panel} aria-labelledby="full-ranking-title">
+              <header className={styles.panelHeader}><div><h2 id="full-ranking-title">{txt.fullRanking}</h2><p>{periodLabel}</p></div><span className={styles.modeBadge}>{rankingMode === "net" ? txt.rankingNet : txt.rankingBrut}</span></header>
+              {!organizationId || orgs.length === 0 ? <EmptyState text={txt.noOrg} /> : rankingLoading ? <ListLoadingBlock label={txt.loading} /> : sortedRows.length === 0 ? <EmptyState text={txt.rankingEmpty} /> : <div className={styles.rankingList}>
+                {sortedRows.map((row) => {
+                  const rank = rankingMode === "net" ? row.rank_net : row.rank_brut;
+                  const total = rankingMode === "net" ? row.total_points_net : row.total_points_brut;
+                  const tournament = rankingMode === "net" ? row.tournament_points_net : row.tournament_points_brut;
+                  const bonus = rankingMode === "net" ? row.bonus_points_net : row.bonus_points_brut;
+                  return <div key={row.player_id} className={`${styles.rankingRow} ${row.player_id === effectiveUserId ? styles.rankingRowMe : ""}`}>
+                    <span className={`${styles.rank} ${rank <= 3 ? styles.podiumRank : ""}`}>{rank <= 3 ? <Medal size={15} aria-hidden="true" /> : null}#{rank}</span>
+                    <div className={styles.avatar}>{avatarByPlayerId[row.player_id] ? <Image src={avatarByPlayerId[row.player_id] ?? ""} alt="" fill sizes="38px" unoptimized /> : <span>{initialsFromName(row.full_name)}</span>}</div>
+                    <div className={styles.player}><strong>{row.full_name}</strong><small>{txt.rankingTournament} {points(tournament)} · {txt.rankingBonus} {points(bonus)}</small></div>
+                    <div className={styles.total}><strong>{points(total)}</strong><span>{txt.pointsSuffix}</span></div>
+                  </div>;
+                })}
+              </div>}
+            </section>
+
+            <aside className={`${styles.panel} ${styles.method}`} aria-labelledby="method-title">
+              <header className={styles.panelHeader}><div><span className={styles.headerIcon}><CircleHelp size={18} aria-hidden="true" /></span><h2 id="method-title">{txt.methodTitle}</h2><p>{txt.methodLead}</p></div></header>
+              <MethodItem icon={<Award size={16} />} title={txt.bestResults} text={txt.bestResultsText} />
+              <MethodItem icon={<Target size={16} />} title={txt.tournamentFormula} text={txt.formulaText} />
+              <MethodItem icon={<Trophy size={16} />} title={txt.coefficients} text={txt.coefficientsText} />
+              <MethodItem icon={<Sparkles size={16} />} title={txt.bonusesTitle} text={txt.bonusesText} />
+              <MethodItem icon={<Medal size={16} />} title={txt.rankingRule} text={txt.rankingRuleText} />
+            </aside>
           </div>
-        ) : (
-          !performanceEnabled ? (
-            <div className="glass-section">
-              <div className="marketplace-error">{txt.perfRequired}</div>
-            </div>
-          ) : (
-          <>
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>{txt.organization}</div>
-                <select
-                  className="search-input"
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  style={{ width: "100%" }}
-                >
-                  {orgs.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-                {orgs.length === 0 ? <div style={{ opacity: 0.72 }}>{txt.noOrg}</div> : null}
-              </div>
-            </div>
 
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>{txt.mySummary}</div>
-                {!meRow ? (
-                  <div style={{ opacity: 0.72 }}>{txt.notRanked}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontSize: 13, opacity: 0.75 }}>
-                      {txt.summaryAsOf} {fmtActivityDate(rankingFrom, locale)} - {fmtActivityDate(rankingTo, locale)}
-                    </div>
-                    <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 10,
-                          padding: "10px 12px",
-                          background: "#fff",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankNet}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{meRow.rank_net}</div>
-                        <div style={{ fontSize: 13, marginTop: 4 }}>
-                          {txt.rankingTournament}: <strong>{points(meRow.tournament_points_net)}</strong> · {txt.rankingBonus}:{" "}
-                          <strong>{points(meRow.bonus_points_net)}</strong>
-                        </div>
-                        <div style={{ fontSize: 13 }}>
-                          {txt.rankingTotal}: <strong>{points(meRow.total_points_net)}</strong>
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 10,
-                          padding: "10px 12px",
-                          background: "#fff",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankBrut}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{meRow.rank_brut}</div>
-                        <div style={{ fontSize: 13, marginTop: 4 }}>
-                          {txt.rankingTournament}: <strong>{points(meRow.tournament_points_brut)}</strong> · {txt.rankingBonus}:{" "}
-                          <strong>{points(meRow.bonus_points_brut)}</strong>
-                        </div>
-                        <div style={{ fontSize: 13 }}>
-                          {txt.rankingTotal}: <strong>{points(meRow.total_points_brut)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateFrom}</span>
-                    <input className="search-input" type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} />
-                  </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateTo}</span>
-                    <input className="search-input" type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} />
-                  </label>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <button
-                    type="button"
-                    className={`btn ${rankingMode === "net" ? "btn-active-om-light" : ""}`}
-                    onClick={() => setRankingMode("net")}
-                    aria-pressed={rankingMode === "net"}
-                    style={{ width: "100%" }}
-                  >
-                    {txt.rankingNet}
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${rankingMode === "brut" ? "btn-active-om-light" : ""}`}
-                    onClick={() => setRankingMode("brut")}
-                    aria-pressed={rankingMode === "brut"}
-                    style={{ width: "100%" }}
-                  >
-                    {txt.rankingBrut}
-                  </button>
-                </div>
-                {periodLabel ? <div style={{ fontSize: 13, opacity: 0.72 }}>{periodLabel}</div> : null}
-                {!organizationId || orgs.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.noOrg}</div>
-                ) : rankingLoading ? (
-                  <ListLoadingBlock label={txt.loading} />
-                ) : sortedRows.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.rankingEmpty}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {sortedRows.map((r) => (
-                      <div key={r.player_id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <div
-                              style={{
-                                minWidth: 44,
-                                height: 28,
-                                borderRadius: 999,
-                                border: "1px solid rgba(0,0,0,0.10)",
-                                display: "grid",
-                                placeItems: "center",
-                                fontWeight: 900,
-                                fontSize: 13,
-                              }}
-                            >
-                              #{rankingMode === "net" ? r.rank_net : r.rank_brut}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: "50%",
-                                  overflow: "hidden",
-                                  background: "rgba(0,0,0,0.08)",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {avatarByPlayerId[r.player_id] ? (
-                                  <img src={avatarByPlayerId[r.player_id] ?? ""} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                ) : (
-                                  <span>{initialsFromName(r.full_name)}</span>
-                                )}
-                              </div>
-                              <div style={{ fontWeight: 800 }}>{r.full_name}</div>
-                            </div>
-                          </div>
-                          <div style={{ fontWeight: 900, fontSize: 16 }}>
-                            {rankingMode === "net" ? points(r.total_points_net) : points(r.total_points_brut)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>{txt.details}</div>
-                {!organizationId || orgs.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.noOrg}</div>
-                ) : detailsLoading ? (
-                  <ListLoadingBlock label={txt.loading} />
-                ) : pointDetails.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.detailsEmpty}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {pointDetails.map((d) => (
-                      <div key={d.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                            <div style={{ fontWeight: 800 }}>{d.title}</div>
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>{d.dateLabel ?? String(d.date).slice(0, 10)}</div>
-                          </div>
-                          {d.subtitle ? <div style={{ fontSize: 13, opacity: 0.78 }}>{d.subtitle}</div> : null}
-                          <div style={{ fontSize: 13, opacity: 0.85 }}>
-                            {txt.rankingNet}: <strong>{points(d.pointsNet)}</strong> · {txt.rankingBrut}: <strong>{points(d.pointsBrut)}</strong>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-          )
-        )}
-
-        {error ? (
-          <div className="glass-section">
-            <div className="marketplace-error">{error}</div>
-          </div>
-        ) : null}
-      </div>
+          <section className={styles.panel} aria-labelledby="points-detail-title">
+            <header className={styles.panelHeader}><div><h2 id="points-detail-title">{txt.recentActivity}</h2><p>{txt.details}</p></div></header>
+            {!organizationId || orgs.length === 0 ? <EmptyState text={txt.noOrg} /> : detailsLoading ? <ListLoadingBlock label={txt.loading} /> : pointDetails.length === 0 ? <EmptyState text={txt.detailsEmpty} /> : <>
+              <div className={styles.detailsList}>{visibleDetails.map((detail) => <article key={detail.id} className={styles.detailRow}>
+                <time dateTime={String(detail.date).slice(0, 10)}>{detail.dateLabel ?? String(detail.date).slice(0, 10)}</time>
+                <div><strong>{detail.title}</strong>{detail.subtitle ? <p>{detail.subtitle}</p> : null}</div>
+                <div className={styles.detailPoints}><span>{txt.rankingNet}<b>{points(detail.pointsNet)}</b></span><span>{txt.rankingBrut}<b>{points(detail.pointsBrut)}</b></span></div>
+              </article>)}</div>
+              {pointDetails.length > 6 ? <button type="button" className={styles.moreButton} onClick={() => setShowAllDetails((current) => !current)}>{showAllDetails ? txt.showLess : txt.showAll}<ChevronDown size={15} className={showAllDetails ? styles.chevronUp : ""} aria-hidden="true" /></button> : null}
+            </>}
+          </section>
+        </div>}
     </div>
-  );
+  </div>;
+}
+
+function SummaryMetric({ icon, label, rank, tournament, bonus, total, txt, active }: { icon: ReactNode; label: string; rank: number; tournament: number | string; bonus: number | string; total: number | string; txt: Record<string, string>; active: boolean }) {
+  return <article className={`${styles.summaryMetric} ${active ? styles.summaryMetricActive : ""}`}><div className={styles.metricTop}><span>{icon}</span><small>{label}</small><b>#{rank}</b></div><div className={styles.metricTotal}>{points(total)} <span>{txt.pointsSuffix}</span></div><p>{txt.rankingTournament} <strong>{points(tournament)}</strong> · {txt.rankingBonus} <strong>{points(bonus)}</strong></p></article>;
+}
+
+function MethodItem({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
+  return <div className={styles.methodItem}><span>{icon}</span><div><strong>{title}</strong><p>{text}</p></div></div>;
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className={styles.empty}>{text}</div>;
 }

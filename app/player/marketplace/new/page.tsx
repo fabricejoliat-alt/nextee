@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 const CATEGORIES = [
   "Driver",
@@ -360,13 +362,14 @@ export default function MarketplaceNew() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Ajouter une annonce" }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 Publier une annonce
-              </div>
+              </h1>
 
               <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
                 Les annonces ne sont visibles que par les juniors de ton club
@@ -374,10 +377,12 @@ export default function MarketplaceNew() {
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/marketplace">
+              <Link className="btn" href="/player/marketplace">
+                <ArrowLeft size={15} aria-hidden="true" />
                 Retour
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
+              <Link className="btn" href="/player/marketplace/mine">
+                <List size={15} aria-hidden="true" />
                 Mes annonces
               </Link>
             </div>
@@ -673,15 +678,9 @@ export default function MarketplaceNew() {
                 </label>
 
                 <button
-                  className="btn"
+                  className="cta-green cta-green-inline"
                   type="submit"
                   disabled={!canPublish || busy}
-                  style={{
-                    width: "100%",
-                    background: "var(--green-dark)",
-                    borderColor: "var(--green-dark)",
-                    color: "#fff",
-                  }}
                 >
                   {busy ? "Publication…" : "Publier"}
                 </button>

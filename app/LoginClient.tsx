@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import styles from "./LoginClient.module.css";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -137,185 +138,66 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-bg">
-      <div className="auth-shell">
-        <div style={{ width: "100%", maxWidth: 420, display: "grid", gap: 14 }}>
-          <div className="auth-card">
-            <div className="auth-brand-wrapper">
-              <div className="auth-brand auth-brand--dark">
-                <span className="auth-brand-nex">Activi</span>
-                <span className="auth-brand-tee">Tee</span>
-              </div>
-              <div className="auth-tagline">Organize. Track. Develop.</div>
+    <main className={styles.page}>
+      <div className={styles.image} aria-hidden="true" />
+      <div className={styles.shell}>
+        <section className={styles.intro} aria-labelledby="welcome-title">
+          <div className={`brand ${styles.brand}`} aria-label="ActiviTee"><span className="brand-nex">Activi</span><span className="brand-tee">Tee</span></div>
+          <p className={styles.eyebrow}>La plateforme de gestion des sections juniors de golf</p>
+          <h1 id="welcome-title">Faire grandir les jeunes golfeurs, ensemble.</h1>
+          <p className={styles.introText}>ActiviTee réunit clubs, coachs, juniors et familles pour organiser la section junior, accompagner la progression des jeunes et suivre leur activité sportive au quotidien.</p>
+        </section>
+
+        <section className={styles.loginColumn} aria-labelledby="login-title">
+          <div className={styles.loginCard}>
+            <div className={styles.cardHeading}>
+              <h2 id="login-title">Accéder à ActiviTee</h2>
+              <p>Connectez-vous avec votre identifiant ou votre adresse e-mail.</p>
             </div>
-
-            <form onSubmit={handleLogin} className="auth-form">
-              <div className="field auth-field">
-                <label>Email ou username</label>
-                <input
-                  required
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  autoComplete="username"
-                />
+            <form onSubmit={handleLogin} className={styles.form}>
+              <div className={styles.field}>
+                <label htmlFor="login-identifier">E-mail ou identifiant</label>
+                <input id="login-identifier" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" />
               </div>
-
-              <div className="field auth-field">
-                <label>Mot de passe</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
+              <div className={styles.field}>
+                <label htmlFor="login-password">Mot de passe</label>
+                <input id="login-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
               </div>
+              {error ? <div className={styles.error} role="alert">{error}</div> : null}
+              <button className={styles.submit} type="submit" disabled={loading}>{loading ? "Connexion…" : "Se connecter"}</button>
+              <button type="button" className={`${styles.secondary} ${styles.forgot}`} onClick={() => { setRecoverOpen((current) => !current); setRecoverMessage(null); setContactOpen(false); setContactMessage(null); }}>Identifiant ou mot de passe oublié ?</button>
 
-            {error && <div className="auth-error">{error}</div>}
-
-            <button className="cta-green auth-submit" type="submit" disabled={loading}>
-              {loading ? "Connexion…" : "Se connecter"}
-            </button>
-
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setRecoverOpen((current) => !current);
-                setRecoverMessage(null);
-                setContactOpen(false);
-                setContactMessage(null);
-              }}
-            >
-              Identifiant ou mot de passe oublié ?
-            </button>
-
-            {recoverOpen ? (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  padding: 12,
-                  borderRadius: 14,
-                  border: "1px solid rgba(0,0,0,0.08)",
-                  background: "rgba(255,255,255,0.72)",
-                }}
-              >
-                <div style={{ fontSize: 13, color: "rgba(0,0,0,0.66)", fontWeight: 700 }}>
-                  Saisis ton e-mail ou ton username. Si tu es junior et que tu n’as pas d'adresse e-mail, le lien de récupération sera envoyé à tes parents. Si tu ne te souviens pas de ton username,{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setContactOpen((current) => !current);
-                      setContactMessage(null);
-                    }}
-                    style={{
-                      border: 0,
-                      background: "transparent",
-                      padding: 0,
-                      margin: 0,
-                      color: "rgba(15,118,110,1)",
-                      fontWeight: 900,
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                    }}
-                  >
-                    clique ici
-                  </button>
-                </div>
-                <div style={{ display: "grid", gap: 10 }}>
-                  <input
-                    required
-                    className="input"
-                    value={recoverIdentifier}
-                    onChange={(e) => setRecoverIdentifier(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void handleRecoverAccess();
-                      }
-                    }}
-                    placeholder="Email ou username"
-                    autoComplete="username"
-                  />
-                  <button className="btn" type="button" onClick={() => void handleRecoverAccess()} disabled={recoverLoading || !recoverIdentifier.trim()}>
-                    {recoverLoading ? "Envoi…" : "Récupérer mes accès"}
-                  </button>
-                </div>
-                {recoverMessage ? <div className="auth-footnote" style={{ marginTop: 0 }}>{recoverMessage}</div> : null}
-
-                {contactOpen ? (
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      paddingTop: 10,
-                      borderTop: "1px solid rgba(0,0,0,0.08)",
-                    }}
-                  >
-                    <div style={{ fontSize: 13, color: "rgba(0,0,0,0.66)", fontWeight: 700 }}>
-                      Remplis ce formulaire. La demande sera envoyée à ActiviTee.
-                    </div>
-                    <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                      <input
-                        className="input"
-                        value={contactFirstName}
-                        onChange={(e) => setContactFirstName(e.target.value)}
-                        placeholder="Prénom"
-                      />
-                      <input
-                        className="input"
-                        value={contactLastName}
-                        onChange={(e) => setContactLastName(e.target.value)}
-                        placeholder="Nom"
-                      />
-                    </div>
-                    <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                      <input
-                        type="date"
-                        className="input"
-                        value={contactBirthDate}
-                        onChange={(e) => setContactBirthDate(e.target.value)}
-                      />
-                      <input
-                        className="input"
-                        value={contactClub}
-                        onChange={(e) => setContactClub(e.target.value)}
-                        placeholder="Club"
-                      />
-                    </div>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => void handleRecoverUsernameContact()}
-                      disabled={
-                        contactLoading ||
-                        !contactFirstName.trim() ||
-                        !contactLastName.trim() ||
-                        !contactBirthDate.trim() ||
-                        !contactClub.trim()
-                      }
-                    >
-                      {contactLoading ? "Envoi…" : "Envoyer la demande"}
-                    </button>
-                    {contactMessage ? <div className="auth-footnote" style={{ marginTop: 0 }}>{contactMessage}</div> : null}
+              {recoverOpen ? (
+                <div className={styles.recovery}>
+                  <div className={styles.recoveryCopy}>Saisis ton e-mail ou ton username. Si tu es junior et que tu n’as pas d&apos;adresse e-mail, le lien de récupération sera envoyé à tes parents. Si tu ne te souviens pas de ton username, <button type="button" className={styles.textAction} onClick={() => { setContactOpen((current) => !current); setContactMessage(null); }}>clique ici</button>.</div>
+                  <div className={styles.recoveryForm}>
+                    <input required value={recoverIdentifier} onChange={(e) => setRecoverIdentifier(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleRecoverAccess(); } }} placeholder="E-mail ou identifiant" autoComplete="username" aria-label="E-mail ou identifiant à récupérer" />
+                    <button className={styles.secondary} type="button" onClick={() => void handleRecoverAccess()} disabled={recoverLoading || !recoverIdentifier.trim()}>{recoverLoading ? "Envoi…" : "Récupérer mes accès"}</button>
                   </div>
-                ) : null}
-              </div>
-            ) : null}
-
-              {isLocalDev ? (
-                <div className="auth-footnote">
-                  <Link href="/dev/impersonate">Mode dev: se connecter en tant qu’un autre utilisateur</Link>
+                  {recoverMessage ? <div className={styles.message} role="status">{recoverMessage}</div> : null}
+                  {contactOpen ? (
+                    <div className={styles.contactBlock}>
+                      <div className={styles.contactIntro}>Remplis ce formulaire. La demande sera envoyée à ActiviTee.</div>
+                      <div className={styles.contactGrid}>
+                        <input value={contactFirstName} onChange={(e) => setContactFirstName(e.target.value)} placeholder="Prénom" aria-label="Prénom" />
+                        <input value={contactLastName} onChange={(e) => setContactLastName(e.target.value)} placeholder="Nom" aria-label="Nom" />
+                      </div>
+                      <div className={styles.contactGrid}>
+                        <input type="date" value={contactBirthDate} onChange={(e) => setContactBirthDate(e.target.value)} aria-label="Date de naissance" />
+                        <input value={contactClub} onChange={(e) => setContactClub(e.target.value)} placeholder="Club" aria-label="Club" />
+                      </div>
+                      <button className={styles.secondary} type="button" onClick={() => void handleRecoverUsernameContact()} disabled={contactLoading || !contactFirstName.trim() || !contactLastName.trim() || !contactBirthDate.trim() || !contactClub.trim()}>{contactLoading ? "Envoi…" : "Envoyer la demande"}</button>
+                      {contactMessage ? <div className={styles.message} role="status">{contactMessage}</div> : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
+              {isLocalDev ? <div className={styles.devLink}><Link href="/dev/impersonate">Mode dev : se connecter en tant qu’un autre utilisateur</Link></div> : null}
             </form>
           </div>
-          <div className="auth-footnote" style={{ color: "rgba(255,255,255,0.88)", textAlign: "center", marginTop: 0 }}>
-          Contact et support: info@activitee.golf
-          </div>
-        </div>
+          <p className={styles.support}>Contact et support : info@activitee.golf</p>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

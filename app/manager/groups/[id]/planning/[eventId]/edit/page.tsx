@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
+import { ArrowLeft, Repeat, Trash2, PlusCircle, Search } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import EventCriteriaSelector, { replaceEventCriteria } from "@/components/evaluations/EventCriteriaSelector";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -27,6 +30,7 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 
 type SeriesRow = {
@@ -152,6 +156,16 @@ const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
+};
+const compactGreenButtonStyle: React.CSSProperties = {
+  width: 42,
+  height: 32,
+  padding: 0,
+  borderRadius: 9,
+  background: "#eef4eb",
+  borderColor: "#c9d7c4",
+  color: "#35483b",
+  boxShadow: "none",
 };
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
@@ -314,6 +328,8 @@ export default function CoachEventEditPage() {
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
   const [locationText, setLocationText] = useState<string>("");
   const [coachNote, setCoachNote] = useState<string>("");
+  const [requiresEvaluation, setRequiresEvaluation] = useState(true);
+  const [evaluationCriterionIds, setEvaluationCriterionIds] = useState<string[]>([]);
 
   // series fields
   const [weekday, setWeekday] = useState<number>(2);
@@ -559,7 +575,7 @@ export default function CoachEventEditPage() {
       // event
       const eRes = await supabase
         .from("club_events")
-        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .eq("id", eventId)
         .maybeSingle();
 
@@ -575,12 +591,24 @@ export default function CoachEventEditPage() {
       setDurationMinutes(ev.duration_minutes);
       setLocationText(ev.location_text ?? "");
       setCoachNote(ev.coach_note ?? "");
+      setRequiresEvaluation(Boolean(ev.requires_evaluation));
+      const criterionLinks = await supabase
+        .from("club_event_evaluation_criteria")
+        .select("criterion_id,position")
+        .eq("event_id", eventId)
+        .eq("is_enabled", true)
+        .order("position");
+      if (criterionLinks.error) throw new Error(criterionLinks.error.message);
+      setEvaluationCriterionIds((criterionLinks.data ?? []).map((row: any) => String(row.criterion_id ?? "")).filter(Boolean));
 
       // group
       const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
       if (gRes.error) throw new Error(gRes.error.message);
       if (!gRes.data) throw new Error("Groupe introuvable.");
       setGroup(gRes.data as GroupRow);
+      const isSpecificGroup =
+        String(gRes.data.name ?? "").trim() === "Groupe spécifique" ||
+        String(gRes.data.name ?? "").startsWith("__EVENT_SPECIFIQUE__");
 
       // club name
       const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
@@ -662,21 +690,34 @@ export default function CoachEventEditPage() {
         avatar_url: m.avatar_url ?? null,
       }));
 
-      // ✅ group players (BD: coach_group_players.player_user_id)
-      const plRes = await supabase
-        .from("coach_group_players")
-        .select("player_user_id, profiles:player_user_id ( id, first_name, last_name, handicap, avatar_url )")
-        .eq("group_id", groupId);
+      // A specific activity is not restricted to the members of its support
+      // group: any active junior of the club may be expected.
+      let plList: ProfileLite[];
+      if (isSpecificGroup) {
+        plList = cmList
+          .filter((member) => member.role === "player")
+          .map((member) => ({
+            id: member.id,
+            first_name: member.first_name,
+            last_name: member.last_name,
+            avatar_url: member.avatar_url ?? null,
+            handicap: null,
+          }));
+      } else {
+        const plRes = await supabase
+          .from("coach_group_players")
+          .select("player_user_id, profiles:player_user_id ( id, first_name, last_name, handicap, avatar_url )")
+          .eq("group_id", groupId);
 
-      if (plRes.error) throw new Error(plRes.error.message);
-
-      const plList: ProfileLite[] = (plRes.data ?? []).map((r: any) => ({
-        id: r.profiles?.id ?? r.player_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        handicap: r.profiles?.handicap ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
-      }));
+        if (plRes.error) throw new Error(plRes.error.message);
+        plList = (plRes.data ?? []).map((r: any) => ({
+          id: r.profiles?.id ?? r.player_user_id,
+          first_name: r.profiles?.first_name ?? null,
+          last_name: r.profiles?.last_name ?? null,
+          handicap: r.profiles?.handicap ?? null,
+          avatar_url: r.profiles?.avatar_url ?? null,
+        }));
+      }
       plList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
       setPlayers(plList);
 
@@ -914,6 +955,7 @@ export default function CoachEventEditPage() {
         duration_minutes: durationForDb,
         location_text: locationText.trim() || null,
         coach_note: coachNote.trim() || null,
+        requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
       };
       if (event.event_type !== eventType) eventUpdatePayload.event_type = eventType;
       if ((event.title ?? null) !== (eventTitle.trim() || null)) eventUpdatePayload.title = eventTitle.trim() || null;
@@ -938,6 +980,7 @@ export default function CoachEventEditPage() {
       }
 
       await replaceStructureForEvent(eventId);
+      await replaceEventCriteria([eventId], requiresEvaluation ? evaluationCriterionIds : []);
 
       if (hasPlayerVisibleChange && attendeeIdsSelected.length > 0 && meId) {
         const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
@@ -1120,6 +1163,7 @@ export default function CoachEventEditPage() {
             duration_minutes: durationMinutes,
             location_text: locationText.trim() || null,
             coach_note: coachNote.trim() || null,
+            requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
             series_id: event.series_id,
             created_by: meId || series.created_by,
           });
@@ -1157,6 +1201,7 @@ export default function CoachEventEditPage() {
         }
 
         await applyStructureForEvents(createdEventIds);
+        await replaceEventCriteria(createdEventIds, requiresEvaluation ? evaluationCriterionIds : []);
       }
 
       await syncPlayerChangesOnFuturePlannedEvents();
@@ -1290,75 +1335,59 @@ export default function CoachEventEditPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Modifier — {group?.name ?? "Groupe"}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                Club: {clubName || "Club"}
-              </div>
-            </div>
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">Groupes</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? "Groupe"}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/manager/groups/${groupId}/planning`}>Planification</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/manager/groups/${groupId}/planning/${eventId}`}>Activité</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <span>Modifier</span>
+      </nav>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning/${eventId}`}>
-                Retour
-              </Link>
-            </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+      <div className={styles.topline}>
+        <div>
+          <h1>Modifier l’activité</h1>
+          <p className={styles.lead}>Modifiez les informations et les participants de l’activité du groupe {group?.name ?? ""}.</p>
         </div>
+        <Link className={actionStyles.backButton} href={`/manager/groups/${groupId}/planning/${eventId}`}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          Retour à l’activité
+        </Link>
+      </div>
 
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-            {loading ? (
-              <CompactLoadingBlock label="Chargement..." />
-            ) : !event ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
+      {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
+
+      {loading ? (
+        <section className={styles.quickPanel}><CompactLoadingBlock label="Chargement..." /></section>
+      ) : !event ? (
+        <section className={styles.quickPanel}><div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune activité trouvée.</div></section>
             ) : (
               <>
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                  {/* Scope switch if recurring */}
-                  {event.series_id ? (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => setEditScope("occurrence")}
-                        style={
-                          editScope === "occurrence"
-                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                            : {}
-                        }
-                      >
-                        Cette occurrence
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy || !series}
-                        onClick={() => setEditScope("series")}
-                        style={
-                          editScope === "series"
-                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                            : {}
-                        }
-                      >
-                        <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                        Récurrence
-                      </button>
-
-                      <div style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        ℹ️ Récurrence = supprime & recrée les occurrences futures
+                <section className={styles.quickPanel}>
+                  <div className={styles.sectionHeading}>
+                    <div><h2>Informations de l’activité</h2><p>Définissez le type, l’horaire et les informations pratiques.</p></div>
+                  </div>
+                  {/* Recurrence scope */}
+                  {
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>Récurrence</span>
+                      <div className="mode-radio-group" role="radiogroup" aria-label="Récurrence">
+                        <label className={`mode-radio-option ${editScope === "occurrence" ? "is-active" : ""}`}>
+                          <input type="radio" name="edit-scope" checked={editScope === "occurrence"} onChange={() => setEditScope("occurrence")} disabled={busy} />
+                          <span>Unique</span>
+                        </label>
+                        <label className={`mode-radio-option ${editScope === "series" ? "is-active" : ""}`}>
+                          <input type="radio" name="edit-scope" checked={editScope === "series"} onChange={() => setEditScope("series")} disabled={busy || !series} />
+                          <span><Repeat size={16} />Récurrent</span>
+                        </label>
                       </div>
-                    </div>
-                  ) : null}
+                      {event.series_id ? <p style={{ margin: 0, color: "#778278", fontSize: 12, lineHeight: 1.45 }}>La modification de la récurrence met à jour les occurrences futures.</p> : null}
+                    </label>
+                  }
 
                   {event.series_id ? <div className="hr-soft" /> : null}
 
@@ -1454,6 +1483,21 @@ export default function CoachEventEditPage() {
                           style={{ minHeight: 96 }}
                         />
                       </label>
+
+                      {(eventType === "training" || eventType === "camp") ? (
+                        <label className="user-mgmt-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={requiresEvaluation}
+                            onChange={(e) => setRequiresEvaluation(e.target.checked)}
+                            disabled={busy}
+                          />
+                          <span><b>Activité à évaluer</b></span>
+                        </label>
+                      ) : null}
+                      {(eventType === "training" || eventType === "camp") && requiresEvaluation && group ? (
+                        <EventCriteriaSelector clubId={group.club_id} eventType={eventType} selectedIds={evaluationCriterionIds} onChange={setEvaluationCriterionIds} disabled={busy} />
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -1587,14 +1631,29 @@ export default function CoachEventEditPage() {
                             />
                           </label>
 
-                          <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 900 }}>
+                          {(eventType === "training" || eventType === "camp") ? (
+                            <label className="user-mgmt-checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={requiresEvaluation}
+                                onChange={(e) => setRequiresEvaluation(e.target.checked)}
+                                disabled={busy}
+                              />
+                              <span><b>Activité à évaluer</b></span>
+                            </label>
+                          ) : null}
+                          {(eventType === "training" || eventType === "camp") && requiresEvaluation && group ? (
+                            <EventCriteriaSelector clubId={group.club_id} eventType={eventType} selectedIds={evaluationCriterionIds} onChange={setEvaluationCriterionIds} disabled={busy} />
+                          ) : null}
+
+                          <label className="user-mgmt-checkbox-label">
                             <input
                               type="checkbox"
                               checked={seriesActive}
                               onChange={(e) => setSeriesActive(e.target.checked)}
                               disabled={busy}
                             />
-                            Récurrence active
+                            <span><b>Récurrence active</b></span>
                           </label>
 
                           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -1604,13 +1663,11 @@ export default function CoachEventEditPage() {
                       )}
                     </div>
                   ) : null}
-                </div>
+                </section>
 
                 {eventType === "training" ? (
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    Structure de l’entraînement (postes)
-                  </div>
+                <section className={styles.quickPanel}>
+                  <div className={styles.sectionHeading}><div><h2>Structure de l’entraînement</h2><p>Préparez les postes de travail à transmettre aux juniors.</p></div></div>
 
                   {structureItems.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
@@ -1668,14 +1725,12 @@ export default function CoachEventEditPage() {
                       + Ajouter un poste
                     </button>
                   </div>
-                </div>
+                </section>
                 ) : null}
 
                 {/* Coachs attendus */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Coachs de cette occurrence
-                  </div>
+                <section className={styles.quickPanel}>
+                  <div className={styles.sectionHeading}><div><h2>Coachs attendus</h2><p>Sélectionnez les coachs attendus à cette activité.</p></div></div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
@@ -1703,30 +1758,15 @@ export default function CoachEventEditPage() {
                     ) : selectedCoachesList.length === 0 ? (
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach sélectionné.</div>
                     ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
+                      <div className="user-mgmt-table-wrap">
+                        <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <tbody>
                         {selectedCoachesList.map((c) => (
-                          <div key={c.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(c as any)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))}
-                              disabled={busy}
-                              style={{ padding: "10px 12px" }}
-                              aria-label="Retirer coach"
-                              title="Retirer"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
+                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label="Retirer coach" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
                         ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
@@ -1736,48 +1776,23 @@ export default function CoachEventEditPage() {
                     {coaches.length > 0 && candidateCoaches.length === 0 ? (
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
                     ) : candidateCoaches.length > 0 ? (
-                      <div style={{ display: "grid", gap: 10 }}>
+                      <div className="user-mgmt-table-wrap">
+                        <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <tbody>
                         {candidateCoaches.map((c) => (
-                          <div key={c.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(c as any)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="glass-btn"
-                              onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])}
-                              disabled={busy}
-                              style={{
-                                width: 44,
-                                height: 42,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: "rgba(255,255,255,0.70)",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                              }}
-                              aria-label="Ajouter coach"
-                              title="Ajouter"
-                            >
-                              <PlusCircle size={18} />
-                            </button>
-                          </div>
+                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label="Ajouter coach" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
                         ))}
+                          </tbody>
+                        </table>
                       </div>
                     ) : null}
                   </div>
-                </div>
+                </section>
 
                 {/* Joueurs attendus */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Joueurs attendus
-                  </div>
+                <section className={styles.quickPanel}>
+                  <div className={styles.sectionHeading}><div><h2>Juniors attendus</h2><p>Choisissez les juniors attendus à cette activité.</p></div></div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
@@ -1831,34 +1846,15 @@ export default function CoachEventEditPage() {
                     ) : selectedPlayersList.length === 0 ? (
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
                     ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
+                      <div className="user-mgmt-table-wrap">
+                        <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <tbody>
                         {selectedPlayersList.map((p) => (
-                          <div key={p.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(p)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                  Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => toggleSelectedPlayer(p)}
-                              disabled={busy}
-                              style={{ padding: "10px 12px" }}
-                              aria-label="Retirer"
-                              title="Retirer"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
+                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Retirer junior" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
                         ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
@@ -1869,52 +1865,23 @@ export default function CoachEventEditPage() {
                     {players.length > 0 && candidatesPlayers.length === 0 ? (
                       <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
                     ) : candidatesPlayers.length > 0 ? (
-                      <div style={{ display: "grid", gap: 10 }}>
+                      <div className="user-mgmt-table-wrap">
+                        <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
+                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <tbody>
                         {candidatesPlayers.map((p) => (
-                          <div key={p.id} style={lightRowCardStyle}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(p)}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                  Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="glass-btn"
-                              onClick={() => toggleSelectedPlayer(p)}
-                              disabled={busy}
-                              style={{
-                                width: 44,
-                                height: 42,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: "rgba(255,255,255,0.70)",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                              }}
-                              aria-label="Ajouter joueur"
-                              title="Ajouter"
-                            >
-                              <PlusCircle size={18} />
-                            </button>
-                          </div>
+                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Ajouter junior" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
                         ))}
+                          </tbody>
+                        </table>
                       </div>
                     ) : null}
                   </div>
-                </div>
+                </section>
 
                 {/* Invités */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Invités
-                  </div>
+                <section className={styles.quickPanel}>
+                  <div className={styles.sectionHeading}><div><h2>Invités</h2><p>Ajoutez des membres du club en complément du groupe.</p></div></div>
 
                   <div style={{ position: "relative" }}>
                     <Search
@@ -2019,61 +1986,35 @@ export default function CoachEventEditPage() {
                       Saisis une recherche pour ajouter des invités.
                     </div>
                   )}
+                </section>
+
+                <div className="user-mgmt-card-actions" style={{ paddingBottom: 8 }}>
+                  {editScope === "occurrence" ? (
+                    <button type="button" className={actionStyles.primaryButton} disabled={!canSaveOccurrence} onClick={saveOccurrenceOnly}>
+                      {busy ? "Enregistrement…" : "Enregistrer cette occurrence"}
+                    </button>
+                  ) : (
+                    <button type="button" className={actionStyles.primaryButton} disabled={!canSaveSeries} onClick={saveSeriesAndRegenerateFuture}>
+                      {busy ? "Enregistrement…" : "Enregistrer la récurrence"}
+                    </button>
+                  )}
                 </div>
 
-                {/* Save */}
-                {editScope === "occurrence" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!canSaveOccurrence}
-                    onClick={saveOccurrenceOnly}
-                    style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
-                  >
-                    {busy ? "Saving…" : "Enregistrer cette occurrence"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={!canSaveSeries}
-                    onClick={saveSeriesAndRegenerateFuture}
-                    style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
-                  >
-                    {busy ? "Saving…" : "Save recurrence (future)"}
-                  </button>
-                )}
-
-                {/* Delete */}
-                <button
-                  type="button"
-                  className="btn btn-danger soft"
-                  disabled={busy}
-                  onClick={removeThisEvent}
-                  style={{ width: "100%" }}
-                >
-                  <Trash2 size={16} style={{ marginRight: 8, verticalAlign: "middle" }} />
-                  Supprimer cette occurrence
-                </button>
-
-                {event.series_id ? (
-                  <button
-                    type="button"
-                    className="btn btn-danger soft"
-                    disabled={busy}
-                    onClick={removeWholeSeries}
-                    style={{ width: "100%" }}
-                  >
-                    <Trash2 size={16} style={{ marginRight: 8, verticalAlign: "middle" }} />
-                    Supprimer la récurrence entière
-                  </button>
-                ) : null}
+                <section className={actionStyles.dangerZone}>
+                  <div>
+                    <div className={actionStyles.dangerIcon}><Trash2 size={18} aria-hidden="true" /></div>
+                    <div><h2>Suppression</h2><p>Cette action est irréversible.</p></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" className={actionStyles.dangerButton} disabled={busy} onClick={removeThisEvent}>
+                      Supprimer cette occurrence
+                    </button>
+                    {event.series_id ? <button type="button" className={actionStyles.dangerButton} disabled={busy} onClick={removeWholeSeries}>Supprimer la récurrence</button> : null}
+                  </div>
+                </section>
               </>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
+    </main>
   );
 }
 

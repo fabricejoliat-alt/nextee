@@ -8,6 +8,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type Item = {
   id: string;
@@ -181,8 +182,17 @@ export default function MarketplaceDetailPage() {
     return (
       <div className="player-dashboard-bg">
         <div className="app-shell marketplace-page">
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Détail" }]} />
           <div className="glass-section">
-            <div className="glass-card"><CompactLoadingBlock label={t("common.loading")} /></div>
+            <div className="marketplace-header">
+              <div>
+                <h1 className="section-title">{t("nav.marketplace")}</h1>
+                <div className="section-subtitle">{t("common.loading")}</div>
+              </div>
+            </div>
+          </div>
+          <div className="glass-section">
+            <CompactLoadingBlock label={t("common.loading")} />
           </div>
         </div>
       </div>
@@ -218,13 +228,14 @@ export default function MarketplaceDetailPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Détail" }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {headerTitle}
-              </div>
+              </h1>
               <div className="marketplace-filter-label" style={{ marginTop: 0 }}>
                 {fmtDate(item.created_at, dateLocale)}
               </div>

@@ -1,5 +1,5 @@
-import UserManagementWorkspace from "@/components/manager/UserManagementWorkspace";
+import FamilyEmailConfigurationPage from "@/components/manager/FamilyEmailConfigurationPage";
 
 export default function ManagerUserManagementEmailConfigurationPage() {
-  return <UserManagementWorkspace section="email-configuration" />;
+  return <FamilyEmailConfigurationPage />;
 }

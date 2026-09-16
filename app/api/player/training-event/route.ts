@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status,title")
+      .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status,title,requires_evaluation")
       .eq("id", eventId)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
       location_text: string | null;
       status: string | null;
       title: string | null;
+      requires_evaluation: boolean | null;
     };
 
     const campDayRes = event.event_type === "camp"
@@ -116,6 +117,20 @@ export async function GET(req: NextRequest) {
     if (playerStructureRes.error) return NextResponse.json({ error: playerStructureRes.error.message }, { status: 400 });
     if (campRes.error) return NextResponse.json({ error: campRes.error.message }, { status: 400 });
     if (eventCoachLinksRes.error) return NextResponse.json({ error: eventCoachLinksRes.error.message }, { status: 400 });
+
+    const customCriteriaRes = await supabaseAdmin
+      .from("club_event_evaluation_criteria")
+      .select("*")
+      .eq("event_id", eventId)
+      .eq("is_enabled", true)
+      .in("snapshot_respondent", ["player", "both"])
+      .order("position");
+    if (customCriteriaRes.error) return NextResponse.json({ error: customCriteriaRes.error.message }, { status: 400 });
+    const customCriterionIds = (customCriteriaRes.data ?? []).map((row: any) => String(row.id));
+    const customResponsesRes = customCriterionIds.length
+      ? await supabaseAdmin.from("club_event_evaluation_responses").select("event_criterion_id,value_json").eq("event_id", eventId).eq("player_id", effectivePlayerId).eq("respondent_role", "player").in("event_criterion_id", customCriterionIds)
+      : ({ data: [], error: null } as const);
+    if (customResponsesRes.error) return NextResponse.json({ error: customResponsesRes.error.message }, { status: 400 });
 
     const feedbackCoachIds = ((feedbackRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
     const linkedCoachIds = ((eventCoachLinksRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
@@ -202,6 +217,8 @@ export async function GET(req: NextRequest) {
       coachProfiles: coachProfilesRes.data ?? [],
       plannedStructureItems:
         (playerStructureRes.data ?? []).length > 0 ? playerStructureRes.data ?? [] : commonStructureRes.data ?? [],
+      customEvaluationCriteria: customCriteriaRes.data ?? [],
+      customEvaluationResponses: customResponsesRes.data ?? [],
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

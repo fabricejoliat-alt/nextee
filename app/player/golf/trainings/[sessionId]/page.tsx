@@ -7,9 +7,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Flame, Mountain, Smile } from "lucide-react";
+import { Flame, MapPin, Mountain, Smile } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -314,13 +315,14 @@ export default function PlayerTrainingDetailPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Activités", href: "/player/golf/trainings" }, { label: "Détail" }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {t("trainingDetail.title")}
-              </div>
+              </h1>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
@@ -402,8 +404,8 @@ export default function PlayerTrainingDetailPage() {
                     </div>
 
                     {displayLocation ? (
-                      <div className="truncate" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
-                        📍 {displayLocation}
+                      <div className="truncate player-meta-with-icon" style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800, fontSize: 12 }}>
+                        <MapPin size={14} aria-hidden="true" /> {displayLocation}
                       </div>
                     ) : null}
 

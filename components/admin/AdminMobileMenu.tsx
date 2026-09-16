@@ -9,9 +9,9 @@ type NavItem = { href: string; label: string };
 
 const NAV: NavItem[] = [
   { href: "/admin", label: "Accueil" },
+  { href: "/admin/users", label: "Managers" },
   { href: "/admin/organizations", label: "Organisations" },
-  { href: "/admin/users", label: "Utilisateurs" },
-  { href: "/admin/settings", label: "Réglages" },
+  { href: "/admin/translations", label: "Traductions" },
   { href: "/admin/notifications", label: "Notifications" },
 ];
 

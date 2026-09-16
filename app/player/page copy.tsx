@@ -419,7 +419,7 @@ export default function PlayerHomePage() {
 
           <div style={{ minWidth: 0 }}>
             <div className="hero-title">
-              {loading ? "Salut…" : `${displayHello(profile)} 👋`}
+              {loading ? "Salut…" : displayHello(profile)}
             </div>
 
             <div className="hero-sub">

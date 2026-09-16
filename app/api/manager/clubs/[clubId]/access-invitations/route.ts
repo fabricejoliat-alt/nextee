@@ -1,883 +1,378 @@
+import { createHash, randomBytes } from "crypto";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createHash, randomBytes } from "crypto";
+import {
+  cleanFamilyEmail,
+  defaultFamilyMailConfig,
+  PLAYER_GUIDE_URL,
+  renderFamilyTemplate,
+  type AccessStatus,
+  type FamilyMailConfig,
+  type InvitationKind,
+} from "@/lib/familyAccess";
 
 export const runtime = "nodejs";
 
-const PLAYER_GUIDE_URL =
-  "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf";
-
-type AuthUserSummary = {
-  id: string;
-  email: string | null;
-  last_sign_in_at: string | null;
-};
-
-type InvitationKind = "parent_access" | "junior_access";
-type MailConfig = {
-  parent_subject: string;
-  parent_body: string;
-  junior_subject: string;
-  junior_body: string;
-};
-
-type ParentAccessRow = {
-  parent_user_id: string;
-  parent_name: string;
-  parent_username: string | null;
-  parent_email: string | null;
-  parent_status: "not_ready" | "ready" | "sent" | "activated" | "error";
-  parent_last_sent_at: string | null;
-  parent_send_count: number;
-  linked_juniors: Array<{
-    junior_user_id: string;
-    junior_name: string;
-    junior_username: string | null;
-    player_consent_status: "granted" | "pending" | "adult" | null;
-    junior_status: "not_ready" | "ready" | "sent" | "activated" | "error";
-    junior_last_sent_at: string | null;
-    junior_send_count: number;
-  }>;
-};
+type AuthSummary = { email: string | null; last_sign_in_at: string | null };
+type Profile = { id: string; first_name: string | null; last_name: string | null; username: string | null };
+type GuardianLink = { player_id: string; guardian_user_id: string; relation: string | null; is_primary: boolean | null };
+type InvitationLog = { recipient_user_id: string; target_user_id: string; invitation_kind: InvitationKind; last_sent_at: string | null; send_count: number | null; last_error: string | null; sent_to_email: string | null };
 
 function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value;
 }
 
-function resolveAppBaseUrl(req: NextRequest) {
-  const candidates = [
-    process.env.APP_URL || "",
-    process.env.NEXT_PUBLIC_APP_URL || "",
-    process.env.NEXT_PUBLIC_SITE_URL || "",
-  ]
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const isUnsafeHost = (input: string) => {
-    try {
-      const url = new URL(input);
-      const host = url.hostname.trim().toLowerCase();
-      return host === "localhost" || host === "127.0.0.1" || host === "::1";
-    } catch {
-      return true;
-    }
-  };
-
-  const configured = candidates.find((value) => !isUnsafeHost(value));
-  if (configured) return configured.replace(/\/+$/, "");
-
-  const requestOrigin = new URL(req.url).origin.replace(/\/+$/, "");
-  if (!isUnsafeHost(requestOrigin)) return requestOrigin;
-
-  return "https://www.activitee.golf";
+function fullName(profile: Profile | undefined) {
+  return `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "Utilisateur";
 }
 
-function cleanName(first: string | null | undefined, last: string | null | undefined) {
-  const name = `${first ?? ""} ${last ?? ""}`.trim();
-  return name || "Utilisateur";
+function appBaseUrl() {
+  const configured = [process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL]
+    .map((value) => String(value ?? "").trim())
+    .find((value) => value && !/localhost|127\.0\.0\.1/i.test(value));
+  return (configured || "https://www.activitee.golf").replace(/\/+$/, "");
 }
 
-function cleanEmail(raw: string | null | undefined) {
-  const email = String(raw ?? "").trim().toLowerCase();
-  if (!email || email.endsWith("@noemail.local")) return null;
-  return email;
-}
-
-function computeAge(birthDate: string | null | undefined) {
-  if (!birthDate) return null;
-  const d = new Date(birthDate);
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
-  return age >= 0 ? age : null;
-}
-
-function randomPassword(len = 12) {
+function randomPassword(length = 12) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-async function issueParentInvitationToken(
-  supabaseAdmin: any,
-  payload: {
-    clubId: string;
-    userId: string;
-    sentToEmail: string;
-    sentBy: string;
-  }
-) {
-  const rawToken = randomBytes(32).toString("hex");
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error: cleanupError } = await supabaseAdmin
-    .from("access_invitation_tokens")
-    .delete()
-    .eq("club_id", payload.clubId)
-    .eq("user_id", payload.userId)
-    .eq("invitation_kind", "parent_access")
-    .is("consumed_at", null);
-  if (cleanupError) throw new Error(cleanupError.message);
-
-  const { error: insertError } = await supabaseAdmin.from("access_invitation_tokens").insert({
-    club_id: payload.clubId,
-    user_id: payload.userId,
-    invitation_kind: "parent_access",
-    sent_to_email: payload.sentToEmail,
-    token_hash: tokenHash,
-    expires_at: expiresAt,
-    sent_by: payload.sentBy,
-  });
-  if (insertError) throw new Error(insertError.message);
-
-  return { rawToken, expiresAt };
-}
-
-function parseMailFrom(value: string) {
-  const raw = String(value ?? "").trim();
-  const m = raw.match(/^(.+?)\s*<([^>]+)>$/);
-  if (m) {
-    return {
-      name: m[1].trim().replace(/^"|"$/g, ""),
-      email: m[2].trim(),
-    };
-  }
-  return { name: "ActiviTee", email: raw };
-}
-
-function defaultMailConfig(): MailConfig {
-  return {
-    parent_subject: "ActiviTee • Accès parent {{club_name}}",
-    parent_body: [
-      "Bonjour {{parent_name}},",
-      "",
-      "Votre accès parent ActiviTee pour {{club_name}} est prêt.",
-      "",
-      "Identifiant: {{parent_username_or_existing}}",
-      "Définir / réinitialiser votre mot de passe: {{reset_url}}",
-      "Ce lien est valable 7 jours et peut être utilisé une seule fois.",
-      "Connexion à l'application: {{app_url}}",
-      "Mode d'emploi: {{player_guide_url}}",
-      "",
-      "Depuis votre espace parent, vous pourrez suivre les informations utiles et gérer le consentement de votre enfant si nécessaire.",
-      "",
-      "L'équipe ActiviTee",
-    ].join("\n"),
-    junior_subject: "ActiviTee • Accès junior {{junior_name}}",
-    junior_body: [
-      "Bonjour {{parent_name}},",
-      "",
-      "Voici les accès ActiviTee de {{junior_name}} pour {{club_name}}.",
-      "",
-      "Identifiant junior: {{junior_username}}",
-      "Mot de passe temporaire: {{temp_password}}",
-      "Connexion à l'application: {{app_url}}",
-      "Mode d'emploi: {{player_guide_url}}",
-      "",
-      "Merci de transmettre ces accès à votre enfant ou de l'accompagner lors de sa première connexion.",
-      "",
-      "L'équipe ActiviTee",
-    ].join("\n"),
-  };
-}
-
-async function loadMailConfig(supabaseAdmin: any, clubId: string) {
-  const defaults = defaultMailConfig();
-  const { data, error } = await supabaseAdmin
-    .from("club_access_invitation_mail_configs")
-    .select("parent_subject,parent_body,junior_subject,junior_body")
-    .eq("club_id", clubId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return {
-    parent_subject: String(data?.parent_subject ?? defaults.parent_subject),
-    parent_body: String(data?.parent_body ?? defaults.parent_body),
-    junior_subject: String(data?.junior_subject ?? defaults.junior_subject),
-    junior_body: String(data?.junior_body ?? defaults.junior_body),
-  } satisfies MailConfig;
-}
-
-const LINK_TOKEN_RE = /\[\[ACTIVITEE_LINK:([^:\]]+):([^\]]+)\]\]/g;
-
-function isHttpUrl(value: string) {
-  return /^https?:\/\//i.test(value.trim());
-}
-
-function createLinkToken(label: string, url: string) {
-  return `[[ACTIVITEE_LINK:${encodeURIComponent(label)}:${encodeURIComponent(url)}]]`;
-}
-
-function renderMailTemplate(
-  template: string,
-  variables: Record<string, string>,
-  linkMode: "text" | "token" = "text"
-) {
-  return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_, key: string, label?: string) => {
-    const value = variables[key] ?? "";
-    if (!value) return "";
-    if (!label) return value;
-    if (!isHttpUrl(value)) return `${label}: ${value}`;
-    return linkMode === "token" ? createLinkToken(label, value) : `${label}: ${value}`;
-  });
-}
-
-function renderTemplateText(text: string) {
-  return text.replace(LINK_TOKEN_RE, (_, encodedLabel: string, encodedUrl: string) => {
-    return `${decodeURIComponent(encodedLabel)}: ${decodeURIComponent(encodedUrl)}`;
-  });
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-}
-
-function linkLabelForUrl(url: string) {
-  if (url.includes("/reset-password?")) return "Cliquez ici pour definir votre mot de passe";
-  if (url.includes("ActiviTee_V1_player.pdf")) return "Cliquez ici pour ouvrir le guide d'utilisation";
-  return "Cliquez ici";
-}
-
-function linkifyHtml(value: string) {
-  return value.replace(/https?:\/\/[^\s<]+/g, (url) => {
-    const href = url.replace(/&amp;/g, "&");
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${linkLabelForUrl(
-      href
-    )}</a>`;
-  });
-}
-
-function renderInlineHtml(value: string) {
-  let html = "";
-  let lastIndex = 0;
-  for (const match of value.matchAll(LINK_TOKEN_RE)) {
-    const index = match.index ?? 0;
-    const raw = match[0];
-    const label = decodeURIComponent(match[1] ?? "");
-    const url = decodeURIComponent(match[2] ?? "");
-    html += linkifyHtml(escapeHtml(value.slice(lastIndex, index)));
-    html += `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#166534;text-decoration:underline">${escapeHtml(label)}</a>`;
-    lastIndex = index + raw.length;
-  }
-  html += linkifyHtml(escapeHtml(value.slice(lastIndex)));
-  return html.replace(/\n/g, "<br/>");
-}
-
-function textToHtml(text: string) {
-  return `<div style="font-family:Arial,sans-serif;color:#132018;line-height:1.5">${text
-    .split("\n\n")
-    .map((block) => `<p>${renderInlineHtml(block)}</p>`)
-    .join("")}</div>`;
-}
-
-async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
-
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token" };
-
-  const callerId = callerData.user.id;
-
-  const { data: adminRow } = await supabaseAdmin.from("app_admins").select("user_id").eq("user_id", callerId).maybeSingle();
-  if (adminRow) return { ok: true as const, callerId };
-
-  const { data: membership } = await supabaseAdmin
-    .from("club_members")
-    .select("id,role,is_active")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!membership || membership.role !== "manager") {
-    return { ok: false as const, status: 403, error: "Forbidden" };
-  }
-
+async function authorize(req: NextRequest, db: any, clubId: string) {
+  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return { ok: false as const, status: 401, error: "Missing token" };
+  const caller = await db.auth.getUser(token);
+  if (caller.error || !caller.data.user) return { ok: false as const, status: 401, error: "Invalid token" };
+  const callerId = caller.data.user.id;
+  const [admin, membership] = await Promise.all([
+    db.from("app_admins").select("user_id").eq("user_id", callerId).maybeSingle(),
+    db.from("club_members").select("id").eq("club_id", clubId).eq("user_id", callerId).eq("role", "manager").eq("is_active", true).maybeSingle(),
+  ]);
+  if (!admin.data && !membership.data) return { ok: false as const, status: 403, error: "Forbidden" };
   return { ok: true as const, callerId };
 }
 
-async function fetchAuthUsersByIds(supabaseAdmin: any, userIds: string[]) {
-  const out = new Map<string, AuthUserSummary>();
-  if (userIds.length === 0) return out;
-
-  const wanted = new Set(userIds);
-  let page = 1;
-  const perPage = 1000;
-
-  while (wanted.size > 0) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-    const users = data?.users ?? [];
-    if (users.length === 0) break;
-
+async function authUsers(db: any, ids: string[]) {
+  const result = new Map<string, AuthSummary>();
+  const wanted = new Set(ids);
+  for (let page = 1; wanted.size > 0; page += 1) {
+    const response = await db.auth.admin.listUsers({ page, perPage: 1000 });
+    if (response.error) throw response.error;
+    const users = response.data?.users ?? [];
     for (const user of users) {
       if (!wanted.has(user.id)) continue;
-      out.set(user.id, {
-        id: user.id,
-        email: user.email ?? null,
-        last_sign_in_at: user.last_sign_in_at ?? null,
-      });
+      result.set(user.id, { email: cleanFamilyEmail(user.email), last_sign_in_at: user.last_sign_in_at ?? null });
       wanted.delete(user.id);
     }
-
-    if (users.length < perPage) break;
-    page += 1;
+    if (users.length < 1000) break;
   }
-
-  for (const userId of wanted) {
-    out.set(userId, { id: userId, email: null, last_sign_in_at: null });
-  }
-
-  return out;
+  for (const id of wanted) result.set(id, { email: null, last_sign_in_at: null });
+  return result;
 }
 
-async function upsertInvitationLog(
-  supabaseAdmin: any,
-  payload: {
-    clubId: string;
-    recipientUserId: string;
-    targetUserId: string;
-    invitationKind: InvitationKind;
-    sentToEmail: string;
-    sentBy: string;
-    lastError?: string | null;
-  }
-) {
-  const { data: existing, error: existingErr } = await supabaseAdmin
-    .from("access_invitation_logs")
-    .select("id,send_count")
-    .eq("club_id", payload.clubId)
-    .eq("recipient_user_id", payload.recipientUserId)
-    .eq("target_user_id", payload.targetUserId)
-    .eq("invitation_kind", payload.invitationKind)
+async function loadFamilyMailConfig(db: any, clubId: string): Promise<FamilyMailConfig> {
+  const defaults = defaultFamilyMailConfig();
+  let response: any = await db
+    .from("club_access_invitation_mail_configs")
+    .select("parent_subject,parent_body,junior_subject,junior_body,junior_direct_subject,junior_direct_body,junior_parent_subject,junior_parent_body,consent_subject,consent_body,periodic_report_subject,periodic_report_body")
+    .eq("club_id", clubId)
     .maybeSingle();
-  if (existingErr) throw new Error(existingErr.message);
-
-  if (existing?.id) {
-    const { error } = await supabaseAdmin
-      .from("access_invitation_logs")
-      .update({
-        sent_to_email: payload.sentToEmail,
-        sent_by: payload.sentBy,
-        last_sent_at: new Date().toISOString(),
-        send_count: Number(existing.send_count ?? 0) + 1,
-        last_error: payload.lastError ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-    if (error) throw new Error(error.message);
-    return;
+  if (response.error && /column|schema cache/i.test(response.error.message)) {
+    response = await db
+      .from("club_access_invitation_mail_configs")
+      .select("parent_subject,parent_body,junior_subject,junior_body,junior_direct_subject,junior_direct_body,junior_parent_subject,junior_parent_body,consent_subject,consent_body")
+      .eq("club_id", clubId)
+      .maybeSingle();
+    if (response.error && /column|schema cache/i.test(response.error.message)) {
+      response = await db
+        .from("club_access_invitation_mail_configs")
+        .select("parent_subject,parent_body,junior_subject,junior_body")
+        .eq("club_id", clubId)
+        .maybeSingle();
+    }
   }
-
-  const { error } = await supabaseAdmin.from("access_invitation_logs").insert({
-    club_id: payload.clubId,
-    recipient_user_id: payload.recipientUserId,
-    target_user_id: payload.targetUserId,
-    invitation_kind: payload.invitationKind,
-    sent_to_email: payload.sentToEmail,
-    sent_by: payload.sentBy,
-    last_sent_at: new Date().toISOString(),
-    send_count: 1,
-    last_error: payload.lastError ?? null,
-    updated_at: new Date().toISOString(),
-  });
-  if (error) throw new Error(error.message);
-}
-
-async function sendBrevoEmail(args: {
-  toEmail: string;
-  toName: string;
-  subject: string;
-  textContent: string;
-  htmlContent: string;
-}) {
-  const brevoApiKey = mustEnv("BREVO_API_KEY");
-  const sender = parseMailFrom(process.env.MAIL_FROM || "ActiviTee <noreply@activitee.golf>");
-  const sendRes = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "api-key": brevoApiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sender,
-      to: [{ email: args.toEmail, name: args.toName }],
-      subject: args.subject,
-      textContent: args.textContent,
-      htmlContent: args.htmlContent,
-    }),
-  });
-
-  const sendJson = await sendRes.json().catch(() => ({}));
-  if (!sendRes.ok) {
-    throw new Error(String(sendJson?.message ?? "Email send failed"));
-  }
-}
-
-function buildParentEmail(params: {
-  clubName: string;
-  parentName: string;
-  parentUsername: string | null;
-  resetUrl: string;
-  appUrl: string;
-  template: MailConfig;
-}) {
-  const variables = {
-    club_name: params.clubName,
-    parent_name: params.parentName,
-    parent_username: params.parentUsername ?? "",
-    parent_username_or_existing: params.parentUsername || "votre compte parent déjà existant",
-    reset_url: params.resetUrl,
-    app_url: params.appUrl,
-    player_guide_url: PLAYER_GUIDE_URL,
+  if (response.error) throw new Error(response.error.message);
+  const row = response.data;
+  return {
+    parent_subject: String(row?.parent_subject ?? defaults.parent_subject),
+    parent_body: String(row?.parent_body ?? defaults.parent_body),
+    junior_direct_subject: String(row?.junior_direct_subject ?? row?.junior_subject ?? defaults.junior_direct_subject),
+    junior_direct_body: String(row?.junior_direct_body ?? row?.junior_body ?? defaults.junior_direct_body),
+    junior_parent_subject: String(row?.junior_parent_subject ?? row?.junior_subject ?? defaults.junior_parent_subject),
+    junior_parent_body: String(row?.junior_parent_body ?? row?.junior_body ?? defaults.junior_parent_body),
+    consent_subject: String(row?.consent_subject ?? defaults.consent_subject),
+    consent_body: String(row?.consent_body ?? defaults.consent_body),
+    periodic_report_subject: String(row?.periodic_report_subject ?? defaults.periodic_report_subject),
+    periodic_report_body: String(row?.periodic_report_body ?? defaults.periodic_report_body),
   };
-  const subject = renderMailTemplate(params.template.parent_subject, variables, "text");
-  const renderedBody = renderMailTemplate(params.template.parent_body, variables, "token");
-  return { subject, text: renderTemplateText(renderedBody), html: textToHtml(renderedBody) };
 }
 
-function buildJuniorEmail(params: {
-  clubName: string;
-  parentName: string;
-  juniorName: string;
-  juniorUsername: string | null;
-  tempPassword: string;
-  appUrl: string;
-  template: MailConfig;
-}) {
-  const variables = {
-    club_name: params.clubName,
-    parent_name: params.parentName,
-    junior_name: params.juniorName,
-    junior_username: params.juniorUsername ?? "non renseigné",
-    temp_password: params.tempPassword,
-    app_url: params.appUrl,
-    player_guide_url: PLAYER_GUIDE_URL,
-  };
-  const subject = renderMailTemplate(params.template.junior_subject, variables, "text");
-  const renderedBody = renderMailTemplate(params.template.junior_body, variables, "token");
-  return { subject, text: renderTemplateText(renderedBody), html: textToHtml(renderedBody) };
+function latestLog(logs: InvitationLog[], kind: InvitationKind, targetUserId: string, recipientUserId?: string) {
+  return logs
+    .filter((log) => log.invitation_kind === kind && log.target_user_id === targetUserId && (!recipientUserId || log.recipient_user_id === recipientUserId))
+    .sort((left, right) => String(right.last_sent_at ?? "").localeCompare(String(left.last_sent_at ?? "")))[0];
 }
 
-function computeStatus(args: {
-  email: string | null;
-  activatedAt: string | null;
-  lastSentAt: string | null;
-  lastError: string | null;
-}): "not_ready" | "ready" | "sent" | "activated" | "error" {
-  if (!args.email) return "not_ready";
+function accessStatus(args: { email: string | null; username: string | null; activatedAt: string | null; log?: InvitationLog; expiresAt?: string | null }): AccessStatus {
+  if (!args.email || !args.username) return "not_ready";
   if (args.activatedAt) return "activated";
-  if (args.lastError) return "error";
-  if (args.lastSentAt) return "sent";
+  if (args.log?.last_error) return "error";
+  if (args.expiresAt && new Date(args.expiresAt).getTime() < Date.now()) return "expired";
+  if (args.log?.last_sent_at) return "sent";
   return "ready";
 }
 
-async function loadClubDataset(supabaseAdmin: any, clubId: string) {
-  const [clubRes, playersRes, parentsRes, linksRes, logsRes] = await Promise.all([
-    supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle(),
-    supabaseAdmin
-      .from("club_members")
-      .select("user_id,player_course_track,is_active,role")
-      .eq("club_id", clubId)
-      .eq("role", "player")
-      .eq("is_active", true),
-    supabaseAdmin
-      .from("club_members")
-      .select("user_id,is_active,role")
-      .eq("club_id", clubId)
-      .eq("role", "parent")
-      .eq("is_active", true),
-    supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id,is_primary,relation"),
-    supabaseAdmin
-      .from("access_invitation_logs")
-      .select("recipient_user_id,target_user_id,invitation_kind,last_sent_at,send_count,last_error,sent_to_email")
-      .eq("club_id", clubId),
+async function loadDataset(db: any, clubId: string) {
+  const [club, members, links, logs, tokens] = await Promise.all([
+    db.from("clubs").select("id,name").eq("id", clubId).maybeSingle(),
+    db.from("club_members").select("user_id,role,is_active").eq("club_id", clubId).eq("is_active", true).in("role", ["player", "parent"]),
+    db.from("player_guardians").select("player_id,guardian_user_id,relation,is_primary"),
+    db.from("access_invitation_logs").select("recipient_user_id,target_user_id,invitation_kind,last_sent_at,send_count,last_error,sent_to_email").eq("club_id", clubId),
+    db.from("access_invitation_tokens").select("user_id,expires_at,consumed_at,created_at").eq("club_id", clubId).eq("invitation_kind", "parent_access").order("created_at", { ascending: false }),
   ]);
+  for (const response of [club, members, links, logs, tokens]) if (response.error) throw new Error(response.error.message);
 
-  if (clubRes.error) throw new Error(clubRes.error.message);
-  if (playersRes.error) throw new Error(playersRes.error.message);
-  if (parentsRes.error) throw new Error(parentsRes.error.message);
-  if (linksRes.error) throw new Error(linksRes.error.message);
-  if (logsRes.error) throw new Error(logsRes.error.message);
+  const playerIds = new Set<string>();
+  const parentIds = new Set<string>();
+  for (const member of members.data ?? []) {
+    if (member.role === "player") playerIds.add(String(member.user_id));
+    if (member.role === "parent") parentIds.add(String(member.user_id));
+  }
+  const relevantLinks = ((links.data ?? []) as GuardianLink[]).filter((link) => playerIds.has(String(link.player_id)));
+  relevantLinks.forEach((link) => parentIds.add(String(link.guardian_user_id)));
+  const allIds = Array.from(new Set([...playerIds, ...parentIds]));
+  const profiles = new Map<string, Profile>();
+  if (allIds.length) {
+    const response = await db.from("profiles").select("id,first_name,last_name,username").in("id", allIds);
+    if (response.error) throw new Error(response.error.message);
+    for (const profile of response.data ?? []) profiles.set(String(profile.id), profile as Profile);
+  }
+  const auth = await authUsers(db, allIds);
+  const invitationLogs = (logs.data ?? []) as InvitationLog[];
+  const tokenByParent = new Map<string, { expires_at: string | null; consumed_at: string | null }>();
+  for (const token of tokens.data ?? []) if (!tokenByParent.has(String(token.user_id))) tokenByParent.set(String(token.user_id), token);
 
-  const rawPlayers = (playersRes.data ?? []) as Array<{ user_id: string; player_course_track: string | null }>;
-  const rawParents = (parentsRes.data ?? []) as Array<{ user_id: string }>;
-  const rawLinks = (linksRes.data ?? []) as Array<{
-    player_id: string | null;
-    guardian_user_id: string | null;
-    is_primary: boolean | null;
-    relation: string | null;
-  }>;
-  const logs = (logsRes.data ?? []) as Array<{
-    recipient_user_id: string;
-    target_user_id: string;
-    invitation_kind: InvitationKind;
-    last_sent_at: string | null;
-    send_count: number | null;
-    last_error: string | null;
-    sent_to_email: string | null;
-  }>;
-
-  const playerIds = Array.from(new Set(rawPlayers.map((row) => String(row.user_id ?? "")).filter(Boolean)));
-  const clubParentIds = Array.from(new Set(rawParents.map((row) => String(row.user_id ?? "")).filter(Boolean)));
-  const linkedParentIds = Array.from(
-    new Set(rawLinks.map((row) => String(row.guardian_user_id ?? "")).filter(Boolean))
-  );
-  const parentIds = Array.from(new Set([...clubParentIds, ...linkedParentIds]));
-
-  const allProfileIds = Array.from(new Set([...playerIds, ...parentIds, ...linkedParentIds]));
-  const profileById = new Map<
-    string,
-    { id: string; first_name: string | null; last_name: string | null; username: string | null; birth_date: string | null }
-  >();
-  if (allProfileIds.length > 0) {
-    const profilesRes = await supabaseAdmin
-      .from("profiles")
-      .select("id,first_name,last_name,username,birth_date")
-      .in("id", allProfileIds);
-    if (profilesRes.error) throw new Error(profilesRes.error.message);
-    for (const row of profilesRes.data ?? []) {
-      profileById.set(String((row as any).id), {
-        id: String((row as any).id),
-        first_name: ((row as any).first_name ?? null) as string | null,
-        last_name: ((row as any).last_name ?? null) as string | null,
-        username: ((row as any).username ?? null) as string | null,
-        birth_date: ((row as any).birth_date ?? null) as string | null,
-      });
-    }
+  const linksByPlayer = new Map<string, GuardianLink[]>();
+  const linksByParent = new Map<string, GuardianLink[]>();
+  for (const link of relevantLinks) {
+    linksByPlayer.set(link.player_id, [...(linksByPlayer.get(link.player_id) ?? []), link]);
+    linksByParent.set(link.guardian_user_id, [...(linksByParent.get(link.guardian_user_id) ?? []), link]);
   }
 
-  const authById = await fetchAuthUsersByIds(supabaseAdmin, Array.from(new Set([...parentIds, ...playerIds])));
+  const parents = Array.from(parentIds).map((id) => {
+    const profile = profiles.get(id);
+    const authUser = auth.get(id);
+    const log = latestLog(invitationLogs, "parent_access", id, id);
+    const token = tokenByParent.get(id);
+    return {
+      parent_user_id: id,
+      parent_name: fullName(profile),
+      parent_username: profile?.username ?? null,
+      parent_email: authUser?.email ?? null,
+      parent_status: accessStatus({ email: authUser?.email ?? null, username: profile?.username ?? null, activatedAt: authUser?.last_sign_in_at ?? null, log, expiresAt: token && !token.consumed_at ? token.expires_at : null }),
+      parent_last_sent_at: log?.last_sent_at ?? null,
+      parent_last_activity_at: authUser?.last_sign_in_at ?? null,
+      parent_send_count: Number(log?.send_count ?? 0),
+      linked_juniors: (linksByParent.get(id) ?? []).map((link) => ({
+        junior_user_id: link.player_id,
+        junior_name: fullName(profiles.get(link.player_id)),
+        relation: link.relation,
+        is_primary: Boolean(link.is_primary),
+      })),
+    };
+  }).sort((left, right) => left.parent_name.localeCompare(right.parent_name, "fr"));
 
-  const eligiblePlayerIds = new Set(
-    rawPlayers
-      .filter((row) => {
-        const playerId = String(row.user_id ?? "");
-        if (!playerId) return false;
-        const track = String(row.player_course_track ?? "").trim().toLowerCase();
-        if (!track || track === "no_course") return false;
-        const age = computeAge(profileById.get(playerId)?.birth_date ?? null);
-        return !(age != null && age >= 18);
-      })
-      .map((row) => String(row.user_id ?? ""))
-  );
+  const juniors = Array.from(playerIds).map((id) => {
+    const profile = profiles.get(id);
+    const juniorAuth = auth.get(id);
+    const guardianLinks = (linksByPlayer.get(id) ?? []).map((link) => {
+      const parentAuth = auth.get(link.guardian_user_id);
+      return {
+        parent_user_id: link.guardian_user_id,
+        parent_name: fullName(profiles.get(link.guardian_user_id)),
+        parent_email: parentAuth?.email ?? null,
+        relation: link.relation,
+        is_primary: Boolean(link.is_primary),
+      };
+    });
+    const usableParents = guardianLinks.filter((parent) => Boolean(parent.parent_email));
+    const primary = usableParents.find((parent) => parent.is_primary);
+    const directEmail = juniorAuth?.email ?? null;
+    const selected = directEmail ? null : primary ?? (usableParents.length === 1 ? usableParents[0] : null);
+    const recipientKind = directEmail ? "junior" : selected ? "parent" : usableParents.length > 1 ? "selection_required" : "missing";
+    const recipientId = directEmail ? id : selected?.parent_user_id ?? null;
+    const recipientEmail = directEmail ?? selected?.parent_email ?? null;
+    const log = latestLog(invitationLogs, "junior_access", id, recipientId ?? undefined);
+    const sentExpired = log?.last_sent_at && Date.now() - new Date(log.last_sent_at).getTime() > 7 * 86400000 ? log.last_sent_at : null;
+    return {
+      junior_user_id: id,
+      junior_name: fullName(profile),
+      junior_username: profile?.username ?? null,
+      junior_email: directEmail,
+      parents: guardianLinks,
+      recipient_kind: recipientKind,
+      recipient_user_id: recipientId,
+      recipient_name: directEmail ? fullName(profile) : selected?.parent_name ?? null,
+      recipient_email: recipientEmail,
+      junior_status: accessStatus({ email: recipientEmail, username: profile?.username ?? null, activatedAt: juniorAuth?.last_sign_in_at ?? null, log, expiresAt: sentExpired }),
+      junior_last_sent_at: log?.last_sent_at ?? null,
+      junior_last_activity_at: juniorAuth?.last_sign_in_at ?? null,
+      junior_send_count: Number(log?.send_count ?? 0),
+    };
+  }).sort((left, right) => left.junior_name.localeCompare(right.junior_name, "fr"));
 
-  const consentStatusByPlayerId = new Map<string, "granted" | "pending" | "adult" | null>();
-  if (playerIds.length > 0) {
-    const consentRowsRes = await supabaseAdmin
-      .from("club_members")
-      .select("user_id,player_consent_status")
-      .in("user_id", playerIds)
-      .eq("role", "player")
-      .eq("is_active", true);
-    if (consentRowsRes.error) throw new Error(consentRowsRes.error.message);
+  return { club: { id: clubId, name: String(club.data?.name ?? "Club") }, parents, juniors, mail_config: await loadFamilyMailConfig(db, clubId) };
+}
 
-    const rawByPlayer = new Map<string, string[]>();
-    for (const row of consentRowsRes.data ?? []) {
-      const playerId = String((row as any).user_id ?? "");
-      if (!playerId) continue;
-      const list = rawByPlayer.get(playerId) ?? [];
-      list.push(String((row as any).player_consent_status ?? ""));
-      rawByPlayer.set(playerId, list);
-    }
-    for (const [playerId, statuses] of rawByPlayer.entries()) {
-      if (statuses.includes("granted")) consentStatusByPlayerId.set(playerId, "granted");
-      else if (statuses.includes("adult")) consentStatusByPlayerId.set(playerId, "adult");
-      else if (statuses.includes("pending")) consentStatusByPlayerId.set(playerId, "pending");
-      else {
-        const age = computeAge(profileById.get(playerId)?.birth_date ?? null);
-        consentStatusByPlayerId.set(playerId, age != null && age >= 18 ? "adult" : "pending");
-      }
-    }
-  }
+function html(text: string) {
+  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<div style="font-family:Arial,sans-serif;color:#132018;line-height:1.55">${escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#166534">$1</a>').replace(/\n/g, "<br>")}</div>`;
+}
 
-  const eligibleLinks = rawLinks.filter((row) => {
-    const playerId = String(row.player_id ?? "");
-    const guardianId = String(row.guardian_user_id ?? "");
-    return Boolean(playerId && guardianId && eligiblePlayerIds.has(playerId));
+async function sendEmail(args: { toEmail: string; toName: string; subject: string; body: string }) {
+  const from = String(process.env.MAIL_FROM || "ActiviTee <noreply@activitee.golf>");
+  const match = from.match(/^(.+?)\s*<([^>]+)>$/);
+  const sender = match ? { name: match[1].trim(), email: match[2].trim() } : { name: "ActiviTee", email: from };
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: { "api-key": mustEnv("BREVO_API_KEY"), "Content-Type": "application/json" },
+    body: JSON.stringify({ sender, to: [{ email: args.toEmail, name: args.toName }], subject: args.subject, textContent: args.body, htmlContent: html(args.body) }),
   });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(String(body?.message ?? "Échec de l’envoi"));
+}
 
-  const linksByParent = new Map<string, Array<{ player_id: string; is_primary: boolean | null; relation: string | null }>>();
-  const linkedPlayerIds = new Set<string>();
-  for (const row of eligibleLinks) {
-    const parentId = String(row.guardian_user_id ?? "");
-    const playerId = String(row.player_id ?? "");
-    linkedPlayerIds.add(playerId);
-    const list = linksByParent.get(parentId) ?? [];
-    list.push({ player_id: playerId, is_primary: row.is_primary ?? null, relation: row.relation ?? null });
-    linksByParent.set(parentId, list);
+async function logSend(db: any, args: { clubId: string; recipientId: string; targetId: string; kind: InvitationKind; email: string; callerId: string; error?: string | null }) {
+  const existing = await db.from("access_invitation_logs").select("id,send_count").eq("club_id", args.clubId).eq("recipient_user_id", args.recipientId).eq("target_user_id", args.targetId).eq("invitation_kind", args.kind).maybeSingle();
+  if (existing.error) throw new Error(existing.error.message);
+  const values = { sent_to_email: args.email, sent_by: args.callerId, last_sent_at: new Date().toISOString(), send_count: Number(existing.data?.send_count ?? 0) + 1, last_error: args.error ?? null, updated_at: new Date().toISOString() };
+  const response = existing.data?.id
+    ? await db.from("access_invitation_logs").update(values).eq("id", existing.data.id)
+    : await db.from("access_invitation_logs").insert({ club_id: args.clubId, recipient_user_id: args.recipientId, target_user_id: args.targetId, invitation_kind: args.kind, ...values });
+  if (response.error) throw new Error(response.error.message);
+}
+
+async function parentToken(db: any, args: { clubId: string; parentId: string; email: string; callerId: string }) {
+  const raw = randomBytes(32).toString("hex");
+  const hash = createHash("sha256").update(raw).digest("hex");
+  await db.from("access_invitation_tokens").delete().eq("club_id", args.clubId).eq("user_id", args.parentId).eq("invitation_kind", "parent_access").is("consumed_at", null);
+  const response = await db.from("access_invitation_tokens").insert({ club_id: args.clubId, user_id: args.parentId, invitation_kind: "parent_access", sent_to_email: args.email, token_hash: hash, expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), sent_by: args.callerId });
+  if (response.error) throw new Error(response.error.message);
+  return raw;
+}
+
+async function sendOne(db: any, clubId: string, callerId: string, payload: any, requireReady = false) {
+  const dataset = await loadDataset(db, clubId);
+  const kind = String(payload?.kind ?? "") as InvitationKind;
+  if (kind === "parent_access") {
+    const parent = dataset.parents.find((row) => row.parent_user_id === String(payload.parent_user_id ?? ""));
+    if (!parent || !parent.parent_email || !parent.parent_username) throw new Error("Informations parent incomplètes");
+    if (requireReady && parent.parent_status !== "ready") throw new Error("Invitation parent ignorée : l’état n’est pas prêt");
+    const token = await parentToken(db, { clubId, parentId: parent.parent_user_id, email: parent.parent_email, callerId });
+    const variables = { club_name: dataset.club.name, parent_name: parent.parent_name, parent_username: parent.parent_username, parent_username_or_existing: parent.parent_username, reset_url: `${appBaseUrl()}/reset-password?invite_token=${encodeURIComponent(token)}`, app_url: `${appBaseUrl()}/`, player_guide_url: PLAYER_GUIDE_URL };
+    const subject = renderFamilyTemplate(dataset.mail_config.parent_subject, variables);
+    const body = renderFamilyTemplate(dataset.mail_config.parent_body, variables);
+    try {
+      await sendEmail({ toEmail: parent.parent_email, toName: parent.parent_name, subject, body });
+      await logSend(db, { clubId, recipientId: parent.parent_user_id, targetId: parent.parent_user_id, kind, email: parent.parent_email, callerId });
+    } catch (error) {
+      await logSend(db, { clubId, recipientId: parent.parent_user_id, targetId: parent.parent_user_id, kind, email: parent.parent_email, callerId, error: error instanceof Error ? error.message : "Échec de l’envoi" });
+      throw error;
+    }
+    return;
   }
-
-  const logByKey = new Map<string, (typeof logs)[number]>();
-  for (const log of logs) {
-    logByKey.set(`${log.invitation_kind}:${log.recipient_user_id}:${log.target_user_id}`, log);
+  if (kind !== "junior_access") throw new Error("Type d’invitation invalide");
+  const junior = dataset.juniors.find((row) => row.junior_user_id === String(payload.junior_user_id ?? ""));
+  if (!junior) throw new Error("Junior introuvable");
+  const requestedRecipientId = String(payload.recipient_user_id ?? junior.recipient_user_id ?? "");
+  const linkedRecipient = junior.parents.find((parent) => parent.parent_user_id === requestedRecipientId && parent.parent_email);
+  const direct = Boolean(junior.junior_email);
+  const recipientId = direct ? junior.junior_user_id : linkedRecipient?.parent_user_id;
+  const recipientEmail = direct ? junior.junior_email : linkedRecipient?.parent_email;
+  const recipientName = direct ? junior.junior_name : linkedRecipient?.parent_name;
+  if (!recipientId || !recipientEmail || !recipientName || !junior.junior_username) throw new Error("Informations d’accès à compléter");
+  const becomesReadyAfterSelection = junior.junior_status === "not_ready" && !direct && Boolean(linkedRecipient);
+  if (requireReady && junior.junior_status !== "ready" && !becomesReadyAfterSelection) throw new Error("Accès junior ignoré : l’état n’est pas prêt");
+  const password = randomPassword();
+  const update = await db.auth.admin.updateUserById(junior.junior_user_id, { password });
+  if (update.error) throw new Error(update.error.message);
+  const variables = { club_name: dataset.club.name, parent_name: linkedRecipient?.parent_name ?? "", junior_name: junior.junior_name, junior_username: junior.junior_username, temp_password: password, app_url: `${appBaseUrl()}/`, player_guide_url: PLAYER_GUIDE_URL };
+  const subjectTemplate = direct ? dataset.mail_config.junior_direct_subject : dataset.mail_config.junior_parent_subject;
+  const bodyTemplate = direct ? dataset.mail_config.junior_direct_body : dataset.mail_config.junior_parent_body;
+  try {
+    await sendEmail({ toEmail: recipientEmail, toName: recipientName, subject: renderFamilyTemplate(subjectTemplate, variables), body: renderFamilyTemplate(bodyTemplate, variables) });
+    await logSend(db, { clubId, recipientId, targetId: junior.junior_user_id, kind, email: recipientEmail, callerId });
+  } catch (error) {
+    await logSend(db, { clubId, recipientId, targetId: junior.junior_user_id, kind, email: recipientEmail, callerId, error: error instanceof Error ? error.message : "Échec de l’envoi" });
+    throw error;
   }
+}
 
-  const parentRows: ParentAccessRow[] = parentIds
-    .map((parentUserId) => {
-      const parentProfile = profileById.get(parentUserId);
-      const parentAuth = authById.get(parentUserId);
-      const parentEmail = cleanEmail(parentAuth?.email ?? null);
-      const parentLog = logByKey.get(`parent_access:${parentUserId}:${parentUserId}`);
-      const juniors = (linksByParent.get(parentUserId) ?? [])
-        .map((link) => {
-          const juniorProfile = profileById.get(link.player_id);
-          const juniorAuth = authById.get(link.player_id);
-          const juniorLog = logByKey.get(`junior_access:${parentUserId}:${link.player_id}`);
-          return {
-            junior_user_id: link.player_id,
-            junior_name: cleanName(juniorProfile?.first_name, juniorProfile?.last_name),
-            junior_username: juniorProfile?.username ?? null,
-            player_consent_status: consentStatusByPlayerId.get(link.player_id) ?? null,
-            junior_status: computeStatus({
-              email: parentEmail,
-              activatedAt: juniorAuth?.last_sign_in_at ?? null,
-              lastSentAt: juniorLog?.last_sent_at ?? null,
-              lastError: juniorLog?.last_error ?? null,
-            }),
-            junior_last_sent_at: juniorLog?.last_sent_at ?? null,
-            junior_last_activity_at: juniorAuth?.last_sign_in_at ?? null,
-            junior_send_count: Number(juniorLog?.send_count ?? 0),
-          };
-        })
-        .sort((a, b) => a.junior_name.localeCompare(b.junior_name, "fr"));
-
-      return {
-        parent_user_id: parentUserId,
-        parent_name: cleanName(parentProfile?.first_name, parentProfile?.last_name),
-        parent_username: parentProfile?.username ?? null,
-        parent_email: parentEmail,
-        parent_status: computeStatus({
-          email: parentEmail,
-          activatedAt: parentAuth?.last_sign_in_at ?? null,
-          lastSentAt: parentLog?.last_sent_at ?? null,
-          lastError: parentLog?.last_error ?? null,
-        }),
-        parent_last_sent_at: parentLog?.last_sent_at ?? null,
-        parent_last_activity_at: parentAuth?.last_sign_in_at ?? null,
-        parent_send_count: Number(parentLog?.send_count ?? 0),
-        linked_juniors: juniors,
-      };
-    })
-    .sort((a, b) => a.parent_name.localeCompare(b.parent_name, "fr"));
-
-  const juniorsWithoutParent = Array.from(eligiblePlayerIds)
-    .filter((playerId) => !linkedPlayerIds.has(playerId))
-    .map((playerId) => {
-      const profile = profileById.get(playerId);
-      const auth = authById.get(playerId);
-      return {
-        user_id: playerId,
-        name: cleanName(profile?.first_name, profile?.last_name),
-        username: profile?.username ?? null,
-        player_consent_status: consentStatusByPlayerId.get(playerId) ?? null,
-        activated_at: auth?.last_sign_in_at ?? null,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-
-  return {
-    club: { id: String(clubRes.data?.id ?? clubId), name: String(clubRes.data?.name ?? "Club") },
-    parents: parentRows,
-    juniors_without_parent: juniorsWithoutParent,
-    mail_config: await loadMailConfig(supabaseAdmin, clubId),
-  };
+function database() {
+  return createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
-    if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-      auth: { persistSession: false },
-    });
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const db = database();
+    const auth = await authorize(req, db, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
-    const data = await loadClubDataset(supabaseAdmin, clubId);
-    return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json(await loadDataset(db, clubId), { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
-    if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-      auth: { persistSession: false },
-    });
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const db = database();
+    const auth = await authorize(req, db, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
     const body = await req.json().catch(() => ({}));
-    const kind = String(body?.kind ?? "") as InvitationKind;
-    const parentUserId = String(body?.parent_user_id ?? "");
-    const juniorUserId = String(body?.junior_user_id ?? "");
-
-    if (kind !== "parent_access" && kind !== "junior_access") {
-      return NextResponse.json({ error: "Invalid kind" }, { status: 400 });
-    }
-    if (!parentUserId) return NextResponse.json({ error: "Missing parent_user_id" }, { status: 400 });
-    if (kind === "junior_access" && !juniorUserId) {
-      return NextResponse.json({ error: "Missing junior_user_id" }, { status: 400 });
-    }
-
-    const dataset = await loadClubDataset(supabaseAdmin, clubId);
-    const parent = dataset.parents.find((row) => row.parent_user_id === parentUserId);
-    if (!parent) return NextResponse.json({ error: "Parent introuvable" }, { status: 404 });
-    if (!parent.parent_email) {
-      return NextResponse.json({ error: "Aucune adresse e-mail parent exploitable" }, { status: 400 });
-    }
-
-    const appBaseUrl = resolveAppBaseUrl(req);
-    const appUrl = `${appBaseUrl}/`;
-    const resetPasswordUrl = `${appBaseUrl}/reset-password`;
-
-    if (kind === "parent_access") {
-      const invite = await issueParentInvitationToken(supabaseAdmin, {
-        clubId,
-        userId: parent.parent_user_id,
-        sentToEmail: parent.parent_email,
-        sentBy: auth.callerId,
-      });
-      const resetUrl = `${resetPasswordUrl}?invite_token=${encodeURIComponent(invite.rawToken)}`;
-
-      const mail = buildParentEmail({
-        clubName: dataset.club.name,
-        parentName: parent.parent_name,
-        parentUsername: parent.parent_username,
-        resetUrl,
-        appUrl,
-        template: dataset.mail_config,
-      });
-
+    const items = Array.isArray(body.items) ? body.items : [body];
+    if (items.length > 100) return NextResponse.json({ error: "Maximum 100 envois par lot" }, { status: 400 });
+    const summary = { sent: 0, skipped: 0, errors: [] as Array<{ index: number; error: string }> };
+    for (let index = 0; index < items.length; index += 1) {
       try {
-        await sendBrevoEmail({
-          toEmail: parent.parent_email,
-          toName: parent.parent_name,
-          subject: mail.subject,
-          textContent: mail.text,
-          htmlContent: mail.html,
-        });
-        await upsertInvitationLog(supabaseAdmin, {
-          clubId,
-          recipientUserId: parent.parent_user_id,
-          targetUserId: parent.parent_user_id,
-          invitationKind: "parent_access",
-          sentToEmail: parent.parent_email,
-          sentBy: auth.callerId,
-          lastError: null,
-        });
-      } catch (error: any) {
-        await upsertInvitationLog(supabaseAdmin, {
-          clubId,
-          recipientUserId: parent.parent_user_id,
-          targetUserId: parent.parent_user_id,
-          invitationKind: "parent_access",
-          sentToEmail: parent.parent_email,
-          sentBy: auth.callerId,
-          lastError: error?.message ?? "Email send failed",
-        });
-        throw error;
+        await sendOne(db, clubId, auth.callerId, items[index], items.length > 1);
+        summary.sent += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Envoi impossible";
+        if (/incomplètes|compléter|introuvable|ignoré/i.test(message)) summary.skipped += 1;
+        else summary.errors.push({ index, error: message });
       }
-
-      return NextResponse.json({ ok: true });
     }
-
-    const junior = parent.linked_juniors.find((row) => row.junior_user_id === juniorUserId);
-    if (!junior) return NextResponse.json({ error: "Junior introuvable pour ce parent" }, { status: 404 });
-
-    const tempPassword = randomPassword(12);
-    const updateRes = await supabaseAdmin.auth.admin.updateUserById(juniorUserId, { password: tempPassword });
-    if (updateRes.error) {
-      return NextResponse.json({ error: updateRes.error.message }, { status: 400 });
-    }
-
-    const mail = buildJuniorEmail({
-      clubName: dataset.club.name,
-      parentName: parent.parent_name,
-      juniorName: junior.junior_name,
-      juniorUsername: junior.junior_username,
-      tempPassword,
-      appUrl,
-      template: dataset.mail_config,
-    });
-
-    try {
-      await sendBrevoEmail({
-        toEmail: parent.parent_email,
-        toName: parent.parent_name,
-        subject: mail.subject,
-        textContent: mail.text,
-        htmlContent: mail.html,
-      });
-      await upsertInvitationLog(supabaseAdmin, {
-        clubId,
-        recipientUserId: parent.parent_user_id,
-        targetUserId: juniorUserId,
-        invitationKind: "junior_access",
-        sentToEmail: parent.parent_email,
-        sentBy: auth.callerId,
-        lastError: null,
-      });
-    } catch (error: any) {
-      await upsertInvitationLog(supabaseAdmin, {
-        clubId,
-        recipientUserId: parent.parent_user_id,
-        targetUserId: juniorUserId,
-        invitationKind: "junior_access",
-        sentToEmail: parent.parent_email,
-        sentBy: auth.callerId,
-        lastError: error?.message ?? "Email send failed",
-      });
-      throw error;
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json({ ok: summary.errors.length === 0, summary }, { status: summary.errors.length ? 207 : 200 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
-    if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-      auth: { persistSession: false },
-    });
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const db = database();
+    const auth = await authorize(req, db, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
     const body = await req.json().catch(() => ({}));
-    const defaults = defaultMailConfig();
-    const patch = {
-      club_id: clubId,
-      parent_subject: String(body?.parent_subject ?? "").trim() || defaults.parent_subject,
-      parent_body: String(body?.parent_body ?? "").trim() || defaults.parent_body,
-      junior_subject: String(body?.junior_subject ?? "").trim() || defaults.junior_subject,
-      junior_body: String(body?.junior_body ?? "").trim() || defaults.junior_body,
+    const defaults = defaultFamilyMailConfig();
+    const value = (key: keyof FamilyMailConfig) => String(body[key] ?? "").trim() || defaults[key];
+    const config: FamilyMailConfig = {
+      parent_subject: value("parent_subject"), parent_body: value("parent_body"),
+      junior_direct_subject: value("junior_direct_subject"), junior_direct_body: value("junior_direct_body"),
+      junior_parent_subject: value("junior_parent_subject"), junior_parent_body: value("junior_parent_body"),
+      consent_subject: value("consent_subject"), consent_body: value("consent_body"),
+      periodic_report_subject: value("periodic_report_subject"), periodic_report_body: value("periodic_report_body"),
     };
-    const { error } = await supabaseAdmin
-      .from("club_access_invitation_mail_configs")
-      .upsert(patch, { onConflict: "club_id" });
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    return NextResponse.json({ ok: true, mail_config: await loadMailConfig(supabaseAdmin, clubId) });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    const response = await db.from("club_access_invitation_mail_configs").upsert({ club_id: clubId, parent_subject: config.parent_subject, parent_body: config.parent_body, junior_subject: config.junior_parent_subject, junior_body: config.junior_parent_body, ...config, updated_at: new Date().toISOString() }, { onConflict: "club_id" });
+    if (response.error) return NextResponse.json({ error: response.error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, mail_config: config });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

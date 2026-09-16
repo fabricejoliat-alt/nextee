@@ -1,0 +1,132 @@
+.managerContent {
+  display: contents;
+}
+
+.pageHeader {
+  display: grid;
+  gap: 14px;
+}
+
+.headerActions > * {
+  box-sizing: border-box !important;
+  height: 42px !important;
+  min-height: 42px;
+  max-height: 42px;
+  padding-block: 0;
+  line-height: 1;
+}
+
+.panelContent {
+  display: grid;
+  gap: 16px;
+}
+
+.panelTitle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.panelTitle h2,
+.panelTitle p {
+  margin: 0;
+}
+
+.panelIcon,
+.notificationIcon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf3ea;
+  color: var(--primary);
+}
+
+.panelIcon {
+  width: 34px;
+  height: 34px;
+}
+
+.notificationList {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #e5ebe3;
+  border-radius: 13px;
+}
+
+.notificationItem {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 15px 16px;
+  background: #fff;
+  transition: background .15s ease;
+}
+
+.notificationRow + .notificationRow {
+  border-top: 1px solid #edf1eb;
+}
+
+.notificationItem:hover {
+  background: #fafcf8;
+}
+
+.notificationUnread {
+  background: #f6faf4;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.notificationUnread:hover {
+  background: #f2f8ef;
+}
+
+.notificationIcon {
+  width: 32px;
+  height: 32px;
+}
+
+.notificationContent {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #435047;
+}
+
+.notificationContent > div:first-child {
+  color: #2f4135;
+  font-size: 13px !important;
+  font-weight: 750 !important;
+}
+
+.notificationDate {
+  color: #7a857c;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 36px 18px;
+  border: 1px dashed #dfe7dd;
+  border-radius: 13px;
+  background: #fafcf8;
+  color: #738076;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .notificationItem {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 10px;
+    padding: 13px 12px;
+  }
+
+  .notificationIcon {
+    width: 30px;
+    height: 30px;
+  }
+}

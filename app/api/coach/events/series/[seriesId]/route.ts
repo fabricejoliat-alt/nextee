@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isOrgStaffMember, requireCaller } from "@/app/api/messages/_lib";
+import { requireCaller } from "@/app/api/messages/_lib";
+import { hasCoachClubPermission } from "@/lib/coachAuthorization";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -85,7 +86,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ seriesId
     const clubId = String((seriesRes.data as { club_id?: string | null }).club_id ?? "").trim();
     if (!clubId) return NextResponse.json({ error: "Series club missing" }, { status: 400 });
 
-    const staffAllowed = await isOrgStaffMember(supabaseAdmin, clubId, callerId);
+    const groupRes = await supabaseAdmin.from("club_events").select("group_id").eq("series_id", seriesId).limit(1).maybeSingle();
+    if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
+    const groupId = String(groupRes.data?.group_id ?? "").trim();
+    const staffAllowed = await hasCoachClubPermission(supabaseAdmin, callerId, clubId, "planning", groupId);
     if (!staffAllowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const eventsRes = await supabaseAdmin.from("club_events").select("id").eq("series_id", seriesId);

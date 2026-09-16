@@ -1,6 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import {
+  COMPETITION_CATEGORIES,
+  COMPETITION_LEVELS,
+  REMINDER_CHANNELS,
+  competitionTournamentYear,
+  isHttpUrl,
+  type CompetitionCategory,
+  type CompetitionLevel,
+  type ReminderChannel,
+} from "@/lib/competitions";
+
+type CompetitionUpdatePayload = {
+  eventType?: string;
+  title?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  competitionStartDate?: string | null;
+  competitionEndDate?: string | null;
+  locationText?: string | null;
+  competitionLevel?: CompetitionLevel | null;
+  competitionCategory?: CompetitionCategory | null;
+  externalRegistrationUrl?: string | null;
+  competitionNote?: string | null;
+  playerTarget?: { ids?: string[] };
+  coachTarget?: { ids?: string[] };
+  reminder?: {
+    enabled?: boolean;
+    scheduledFor?: string | null;
+    channel?: ReminderChannel | null;
+    messageTemplate?: string | null;
+  };
+};
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -10,6 +42,38 @@ function mustEnv(name: string) {
 
 function uniq(values: string[]) {
   return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
+}
+
+async function managerEventContext(req: NextRequest, eventId: string) {
+  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
+
+  const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
+  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
+  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token" };
+
+  const eventRes = await supabaseAdmin
+    .from("club_events")
+    .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,competition_level,competition_category,external_registration_url,competition_note")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (eventRes.error) return { ok: false as const, status: 400, error: eventRes.error.message };
+  if (!eventRes.data?.id) return { ok: false as const, status: 404, error: "Event not found" };
+
+  const callerId = String(callerData.user.id ?? "").trim();
+  const clubId = String(eventRes.data.club_id ?? "").trim();
+  const managerRes = await supabaseAdmin
+    .from("club_members")
+    .select("id")
+    .eq("club_id", clubId)
+    .eq("user_id", callerId)
+    .eq("role", "manager")
+    .eq("is_active", true)
+    .maybeSingle();
+  if (managerRes.error) return { ok: false as const, status: 400, error: managerRes.error.message };
+  if (!managerRes.data?.id) return { ok: false as const, status: 403, error: "Forbidden" };
+
+  return { ok: true as const, supabaseAdmin, callerId, clubId, event: eventRes.data };
 }
 
 function formatTrainingMoment(iso: string) {
@@ -138,6 +202,214 @@ async function notifyEventDeletion(
     url,
     recipientUserIds: recipients,
   });
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
+  try {
+    const { eventId: rawEventId } = await ctx.params;
+    const eventId = String(rawEventId ?? "").trim();
+    if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
+
+    const context = await managerEventContext(req, eventId);
+    if (!context.ok) return NextResponse.json({ error: context.error }, { status: context.status });
+    if (String(context.event.event_type ?? "") !== "competition") {
+      return NextResponse.json({ error: "This editor is only available for competitions" }, { status: 400 });
+    }
+
+    const [attendeesRes, coachesRes, reminderRes] = await Promise.all([
+      context.supabaseAdmin.from("club_event_attendees").select("player_id").eq("event_id", eventId),
+      context.supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
+      context.supabaseAdmin
+        .from("club_event_reminders")
+        .select("id,scheduled_for,channel,message_template,status,sent_at,last_error")
+        .eq("event_id", eventId)
+        .maybeSingle(),
+    ]);
+    if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
+    if (coachesRes.error) return NextResponse.json({ error: coachesRes.error.message }, { status: 400 });
+    if (reminderRes.error) return NextResponse.json({ error: reminderRes.error.message }, { status: 400 });
+
+    return NextResponse.json({
+      event: context.event,
+      player_ids: uniq(((attendeesRes.data ?? []) as Array<{ player_id: string | null }>).map((row) => String(row.player_id ?? ""))),
+      coach_ids: uniq(((coachesRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => String(row.coach_id ?? ""))),
+      reminder: reminderRes.data ?? null,
+    });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
+  try {
+    const { eventId: rawEventId } = await ctx.params;
+    const eventId = String(rawEventId ?? "").trim();
+    if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
+
+    const context = await managerEventContext(req, eventId);
+    if (!context.ok) return NextResponse.json({ error: context.error }, { status: context.status });
+    if (String(context.event.event_type ?? "") !== "competition") {
+      return NextResponse.json({ error: "Seules les compétitions peuvent être modifiées ici." }, { status: 400 });
+    }
+
+    const payload = (await req.json().catch(() => ({}))) as CompetitionUpdatePayload;
+    const title = String(payload.title ?? "").trim();
+    const level = String(payload.competitionLevel ?? "") as CompetitionLevel;
+    const category = String(payload.competitionCategory ?? "") as CompetitionCategory;
+    const locationText = String(payload.locationText ?? "").trim();
+    const note = String(payload.competitionNote ?? "").trim();
+    const externalUrl = String(payload.externalRegistrationUrl ?? "").trim();
+    const startInput = String(payload.startsAt ?? "");
+    const endInput = String(payload.endsAt ?? "");
+    const startsAt = new Date(startInput);
+    const endsAt = new Date(endInput);
+
+    if (!title) return NextResponse.json({ error: "Le nom de la compétition est obligatoire." }, { status: 400 });
+    if (!COMPETITION_LEVELS.includes(level)) return NextResponse.json({ error: "Niveau invalide." }, { status: 400 });
+    if (!COMPETITION_CATEGORIES.includes(category)) return NextResponse.json({ error: "Catégorie invalide." }, { status: 400 });
+    if (!isHttpUrl(externalUrl)) return NextResponse.json({ error: "Lien externe invalide." }, { status: 400 });
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt < startsAt) {
+      return NextResponse.json({ error: "Période de compétition invalide." }, { status: 400 });
+    }
+    const yearCheck = competitionTournamentYear(
+      String(payload.competitionStartDate ?? "").trim(),
+      String(payload.competitionEndDate ?? "").trim(),
+    );
+    if (yearCheck.error) return NextResponse.json({ error: yearCheck.error }, { status: 400 });
+
+    const playerIds = uniq(payload.playerTarget?.ids ?? []);
+    const coachIds = uniq(payload.coachTarget?.ids ?? []);
+    if (playerIds.length === 0) return NextResponse.json({ error: "Sélectionnez au moins un joueur." }, { status: 400 });
+
+    const membersRes = await context.supabaseAdmin
+      .from("club_members")
+      .select("user_id,role")
+      .eq("club_id", context.clubId)
+      .eq("is_active", true)
+      .in("user_id", uniq([...playerIds, ...coachIds]));
+    if (membersRes.error) return NextResponse.json({ error: membersRes.error.message }, { status: 400 });
+    const memberRows = (membersRes.data ?? []) as Array<{ user_id: string | null; role: string | null }>;
+    const validPlayers = new Set(memberRows.filter((row) => row.role === "player").map((row) => String(row.user_id)));
+    const validCoaches = new Set(memberRows.filter((row) => row.role === "coach").map((row) => String(row.user_id)));
+    if (playerIds.some((id) => !validPlayers.has(id)) || coachIds.some((id) => !validCoaches.has(id))) {
+      return NextResponse.json({ error: "Un participant n’appartient pas au club de la compétition." }, { status: 400 });
+    }
+
+    const reminderRes = await context.supabaseAdmin
+      .from("club_event_reminders")
+      .select("id,status,sent_at")
+      .eq("event_id", eventId)
+      .maybeSingle();
+    if (reminderRes.error) return NextResponse.json({ error: reminderRes.error.message }, { status: 400 });
+    const existingReminder = reminderRes.data as { id: string; status: string; sent_at: string | null } | null;
+    const reminderCanChange = !existingReminder || existingReminder.status === "pending";
+    const nextReminder = reminderCanChange && payload.reminder?.enabled
+      ? {
+          scheduledFor: new Date(String(payload.reminder.scheduledFor ?? "")),
+          channel: String(payload.reminder.channel ?? "") as ReminderChannel,
+          message: String(payload.reminder.messageTemplate ?? "").trim(),
+        }
+      : null;
+    if (
+      nextReminder &&
+      (Number.isNaN(nextReminder.scheduledFor.getTime()) ||
+        nextReminder.scheduledFor.getTime() <= Date.now() ||
+        nextReminder.scheduledFor >= startsAt ||
+        !REMINDER_CHANNELS.includes(nextReminder.channel) ||
+        !nextReminder.message)
+    ) {
+      return NextResponse.json({ error: "Configuration du rappel invalide." }, { status: 400 });
+    }
+
+    const groupId = String(context.event.group_id ?? "").trim();
+    if (groupId) {
+      const [deleteGroupPlayersRes, deleteGroupCoachesRes] = await Promise.all([
+        context.supabaseAdmin.from("coach_group_players").delete().eq("group_id", groupId),
+        context.supabaseAdmin.from("coach_group_coaches").delete().eq("group_id", groupId),
+      ]);
+      if (deleteGroupPlayersRes.error) return NextResponse.json({ error: deleteGroupPlayersRes.error.message }, { status: 400 });
+      if (deleteGroupCoachesRes.error) return NextResponse.json({ error: deleteGroupCoachesRes.error.message }, { status: 400 });
+      const groupPlayersInsert = await context.supabaseAdmin.from("coach_group_players").insert(
+        playerIds.map((playerId) => ({ group_id: groupId, player_user_id: playerId })),
+      );
+      if (groupPlayersInsert.error) return NextResponse.json({ error: groupPlayersInsert.error.message }, { status: 400 });
+      if (coachIds.length > 0) {
+        const groupCoachesInsert = await context.supabaseAdmin.from("coach_group_coaches").insert(
+          coachIds.map((coachId, index) => ({ group_id: groupId, coach_user_id: coachId, is_head: index === 0 })),
+        );
+        if (groupCoachesInsert.error) return NextResponse.json({ error: groupCoachesInsert.error.message }, { status: 400 });
+      }
+      const groupUpdate = await context.supabaseAdmin.from("coach_groups").update({
+        name: `Compétition · ${title}`,
+        head_coach_user_id: coachIds[0] ?? null,
+      }).eq("id", groupId);
+      if (groupUpdate.error) return NextResponse.json({ error: groupUpdate.error.message }, { status: 400 });
+    }
+
+    const updateRes = await context.supabaseAdmin
+      .from("club_events")
+      .update({
+        title,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        duration_minutes: Math.min(300, Math.max(1, Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000))),
+        location_text: locationText || null,
+        competition_level: level,
+        competition_category: category,
+        external_registration_url: externalUrl || null,
+        competition_note: note || null,
+        requires_evaluation: false,
+      })
+      .eq("id", eventId);
+    if (updateRes.error) return NextResponse.json({ error: updateRes.error.message }, { status: 400 });
+
+    const [deleteAttendeesRes, deleteCoachesRes] = await Promise.all([
+      context.supabaseAdmin.from("club_event_attendees").delete().eq("event_id", eventId),
+      context.supabaseAdmin.from("club_event_coaches").delete().eq("event_id", eventId),
+    ]);
+    if (deleteAttendeesRes.error) return NextResponse.json({ error: deleteAttendeesRes.error.message }, { status: 400 });
+    if (deleteCoachesRes.error) return NextResponse.json({ error: deleteCoachesRes.error.message }, { status: 400 });
+
+    const attendeeInsert = await context.supabaseAdmin.from("club_event_attendees").insert(
+      playerIds.map((playerId) => ({ event_id: eventId, player_id: playerId, status: "expected" })),
+    );
+    if (attendeeInsert.error) return NextResponse.json({ error: attendeeInsert.error.message }, { status: 400 });
+    if (coachIds.length > 0) {
+      const coachInsert = await context.supabaseAdmin.from("club_event_coaches").insert(
+        coachIds.map((coachId) => ({ event_id: eventId, coach_id: coachId })),
+      );
+      if (coachInsert.error) return NextResponse.json({ error: coachInsert.error.message }, { status: 400 });
+    }
+
+    if (existingReminder?.status === "pending") {
+      if (nextReminder) {
+        const reminderUpdate = await context.supabaseAdmin.from("club_event_reminders").update({
+          scheduled_for: nextReminder.scheduledFor.toISOString(),
+          channel: nextReminder.channel,
+          message_template: nextReminder.message,
+          last_error: null,
+        }).eq("id", existingReminder.id).eq("status", "pending");
+        if (reminderUpdate.error) return NextResponse.json({ error: reminderUpdate.error.message }, { status: 400 });
+      } else {
+        const reminderDelete = await context.supabaseAdmin.from("club_event_reminders").delete().eq("id", existingReminder.id).eq("status", "pending");
+        if (reminderDelete.error) return NextResponse.json({ error: reminderDelete.error.message }, { status: 400 });
+      }
+    } else if (!existingReminder && nextReminder) {
+      const reminderInsert = await context.supabaseAdmin.from("club_event_reminders").insert({
+        event_id: eventId,
+        scheduled_for: nextReminder.scheduledFor.toISOString(),
+        channel: nextReminder.channel,
+        message_template: nextReminder.message,
+        status: "pending",
+        created_by: context.callerId,
+      });
+      if (reminderInsert.error) return NextResponse.json({ error: reminderInsert.error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true, firstEventId: eventId });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {

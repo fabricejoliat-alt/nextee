@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Item = {
@@ -199,17 +201,20 @@ export default function PlayerMarketplaceHome() {
   return (
     <div className="player-dashboard-bg player-marketplace-page">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace") }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
-            <div className="section-title">{t("nav.marketplace")}</div>
+            <h1 className="section-title">{t("nav.marketplace")}</h1>
 
-            <div className="marketplace-actions">
-              <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
+            <div className="marketplace-actions marketplace-header-actions">
+              <Link className="btn" href="/player/marketplace/mine">
+                <List size={15} aria-hidden="true" />
                 {t("player.myListings")}
               </Link>
 
-              <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
+              <Link className="btn btn-primary" href="/player/marketplace/new">
+                <Plus size={15} aria-hidden="true" />
                 {t("player.newListing")}
               </Link>
             </div>

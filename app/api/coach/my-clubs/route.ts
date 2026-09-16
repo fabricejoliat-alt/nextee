@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
     const { data: memberships, error: membershipsError } = await supabaseAdmin
       .from("club_members")
-      .select("club_id")
+      .select("club_id,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups")
       .eq("user_id", callerId)
       .eq("role", "coach")
       .eq("is_active", true);
@@ -44,10 +44,19 @@ export async function GET(req: NextRequest) {
       clubNameById.set(String((row as any).id), String((row as any).name ?? "Club"));
     }
 
-    const clubs = clubIds.map((id) => ({
-      id,
-      name: clubNameById.get(id) ?? "Club",
-    }));
+    const membershipByClub = new Map((memberships ?? []).map((membership: any) => [String(membership.club_id), membership]));
+    const clubs = clubIds.map((id) => {
+      const membership: any = membershipByClub.get(id);
+      return {
+        id,
+        name: clubNameById.get(id) ?? "Club",
+        permissions: {
+          can_manage_assigned_groups: Boolean(membership?.can_manage_assigned_groups),
+          can_manage_assigned_group_planning: Boolean(membership?.can_manage_assigned_group_planning),
+          can_transfer_players_between_club_groups: Boolean(membership?.can_transfer_players_between_club_groups),
+        },
+      };
+    });
 
     return NextResponse.json({ clubs });
   } catch (e: any) {

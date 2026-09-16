@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -19,7 +19,7 @@ function sanitizeMonths(value: unknown): number[] {
   return Array.from(uniq);
 }
 
-async function canReadTrainingVolume(supabaseAdmin: any, callerId: string, clubId: string, playerId?: string | null) {
+async function canReadTrainingVolume(supabaseAdmin: SupabaseClient, callerId: string, clubId: string, playerId?: string | null) {
   const effectivePlayerId = (playerId ?? callerId).trim();
 
   const directPlayerMembership = await supabaseAdmin
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const allowed = await canReadTrainingVolume(supabaseAdmin, callerData.user.id, clubId, playerId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const [settingsRes, rowsRes] = await Promise.all([
+    const [settingsRes, rowsRes, seasonsRes] = await Promise.all([
       supabaseAdmin
         .from("training_volume_settings")
         .select("season_months,offseason_months")
@@ -96,10 +96,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         .eq("organization_id", clubId)
         .order("sort_order", { ascending: true })
         .order("ftem_code", { ascending: true }),
+      supabaseAdmin
+        .from("club_seasons")
+        .select("id,name,starts_on,ends_on,is_current")
+        .eq("club_id", clubId)
+        .order("starts_on", { ascending: false }),
     ]);
 
     if (settingsRes.error) return NextResponse.json({ error: settingsRes.error.message }, { status: 400 });
     if (rowsRes.error) return NextResponse.json({ error: rowsRes.error.message }, { status: 400 });
+    if (seasonsRes.error) return NextResponse.json({ error: seasonsRes.error.message }, { status: 400 });
 
     return NextResponse.json({
       settings: {
@@ -107,8 +113,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         offseason_months: sanitizeMonths(settingsRes.data?.offseason_months ?? []),
       },
       rows: rowsRes.data ?? [],
+      seasons: seasonsRes.data ?? [],
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Server error" }, { status: 500 });
   }
 }

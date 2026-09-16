@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/competition-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/periodic-reports",
+      "schedule": "15 7 * * *"
+    }
+  ]
+}

@@ -9,12 +9,19 @@ import PlayerConsentGate from "@/components/player/PlayerConsentGate";
 export default function PlayerLayoutShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isConsentPage = pathname === "/player/consent-required";
+  const isPlayerHome = pathname === "/player";
 
   return (
     <>
       {!isConsentPage ? <PlayerHeader /> : null}
       <PlayerConsentGate />
-      <main className={`app-shell player-shell${isConsentPage ? " player-shell--consent" : ""}`}>{children}</main>
+      {isConsentPage ? (
+        <main className="app-shell admin-shell manager-shell player-shell player-shell--consent">{children}</main>
+      ) : (
+        <div className={`manager-scroll-area player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`}>
+          <main className="app-shell admin-shell manager-shell player-shell">{children}</main>
+        </div>
+      )}
       {!isConsentPage ? <PlayerMobileNav /> : null}
 
       <style>{`

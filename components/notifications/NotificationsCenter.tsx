@@ -14,19 +14,30 @@ import {
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Bell, CheckCheck, Settings, Trash2 } from "lucide-react";
+import { Bell, Check, CheckCheck, ChevronRight, ExternalLink, Settings, Trash2 } from "lucide-react";
+import campsStyles from "@/app/manager/camps/Camps.module.css";
+import styles from "@/components/notifications/NotificationsCenter.module.css";
 
 type Props = {
   homeHref: string;
   settingsHref: string;
+  /** The visual chrome can be shared by Manager and Coach without changing notification scope. */
+  designVariant?: "management" | "player";
   titleFr: string;
   titleEn: string;
   titleDe: string;
   titleIt: string;
 };
+type RowRecord = Record<string, unknown>;
 
-export default function NotificationsCenter({ homeHref, settingsHref, titleFr, titleEn, titleDe, titleIt }: Props) {
+export default function NotificationsCenter({ homeHref, settingsHref, designVariant, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale, t } = useI18n();
+  const managerDesign = designVariant === "management" || homeHref === "/manager";
+  // The manager deliberately hides message notifications. Coach keeps them because
+  // they lead to contextual conversations, while sharing the same page design.
+  const managerScope = homeHref === "/manager";
+  const hideThreadNotifications = managerScope || homeHref === "/player";
+  const areaLabel = managerScope ? "Manager" : homeHref === "/coach" ? "Coach" : "Player";
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
     if (locale === "de") return de ?? en;
@@ -129,7 +140,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
 
       const data = await loadMyNotifications(uid);
       setRows(data);
-      applyPwaBadge(data.filter((r) => !r.recipient.is_read).length);
+      applyPwaBadge(data.filter((r) => !hideThreadNotifications || r.notification?.kind !== "thread_message").filter((r) => !r.recipient.is_read).length);
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.", "Ladefehler.", "Errore di caricamento.")));
       setRows([]);
@@ -162,7 +173,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       document.removeEventListener("visibilitychange", onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hideThreadNotifications]);
 
   useEffect(() => {
     if (!userId) return;
@@ -189,6 +200,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   }, [userId]);
 
   useEffect(() => {
+    if (managerScope) return;
     (async () => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
@@ -201,9 +213,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       const json = await res.json().catch(() => ({}));
       if (res.ok) setViewerRole(String(json?.membership?.role ?? "player"));
     })();
-  }, []);
+  }, [managerScope]);
 
   useEffect(() => {
+    if (hideThreadNotifications) return;
     (async () => {
       const threadIds = Array.from(
         new Set(
@@ -223,7 +236,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       if (res.error) return;
       const next = { ...threadTitlesById };
       for (const row of res.data ?? []) {
-        next[String((row as any).id)] = String((row as any).title ?? "").trim();
+        const value = row as RowRecord;
+        next[String(value.id ?? "")] = String(value.title ?? "").trim();
       }
       setThreadTitlesById(next);
 
@@ -235,13 +249,14 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
         const nextMeta = { ...threadMetaById };
         const profileIds = new Set<string>();
         for (const row of metaRes.data ?? []) {
-          const id = String((row as any).id ?? "");
-          const thread_type = String((row as any).thread_type ?? "");
-          const player_id = String((row as any).player_id ?? "");
-          const created_by = String((row as any).created_by ?? "");
-          const player_thread_scope = String((row as any).player_thread_scope ?? "direct");
-          const event_id = String((row as any).event_id ?? "");
-          const group_id = String((row as any).group_id ?? "");
+          const value = row as RowRecord;
+          const id = String(value.id ?? "");
+          const thread_type = String(value.thread_type ?? "");
+          const player_id = String(value.player_id ?? "");
+          const created_by = String(value.created_by ?? "");
+          const player_thread_scope = String(value.player_thread_scope ?? "direct");
+          const event_id = String(value.event_id ?? "");
+          const group_id = String(value.group_id ?? "");
           nextMeta[id] = { thread_type, player_id, created_by, player_thread_scope, event_id, group_id };
           if (player_id) profileIds.add(player_id);
           if (created_by) profileIds.add(created_by);
@@ -256,10 +271,11 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
             .in("id", missingProfiles);
           if (!profRes.error) {
             const nextProfiles = { ...profileNamesById };
-            for (const p of profRes.data ?? []) {
-              const fullName = `${String((p as any).first_name ?? "").trim()} ${String((p as any).last_name ?? "").trim()}`.trim();
-              const fallback = String((p as any).username ?? "").trim();
-              nextProfiles[String((p as any).id)] = fullName || fallback || String((p as any).id).slice(0, 8);
+            for (const profile of profRes.data ?? []) {
+              const value = profile as RowRecord;
+              const fullName = `${String(value.first_name ?? "").trim()} ${String(value.last_name ?? "").trim()}`.trim();
+              const fallback = String(value.username ?? "").trim();
+              nextProfiles[String(value.id ?? "")] = fullName || fallback || String(value.id ?? "").slice(0, 8);
             }
             setProfileNamesById(nextProfiles);
           }
@@ -267,9 +283,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [hideThreadNotifications, rows]);
 
   useEffect(() => {
+    if (hideThreadNotifications) return;
     (async () => {
       const threadIds = Array.from(
         new Set(
@@ -308,9 +325,13 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
       }
       setThreadUnreadById(next);
     })();
-  }, [rows]);
+  }, [hideThreadNotifications, rows]);
 
-  const unreadCount = useMemo(() => rows.filter((r) => !r.recipient.is_read).length, [rows]);
+  const visibleRows = useMemo(
+    () => hideThreadNotifications ? rows.filter((row) => row.notification?.kind !== "thread_message") : rows,
+    [hideThreadNotifications, rows]
+  );
+  const unreadCount = useMemo(() => visibleRows.filter((row) => !row.recipient.is_read).length, [visibleRows]);
 
   function fmtDate(iso?: string | null) {
     if (!iso) return "—";
@@ -362,8 +383,14 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
     if (busy || !userId) return;
     setBusy(true);
     try {
-      await markAllNotificationsRead(userId);
-      setRows((prev) => prev.map((r) => ({ ...r, recipient: { ...r.recipient, is_read: true } })));
+      if (hideThreadNotifications) {
+        const visibleUnreadIds = visibleRows.filter((row) => !row.recipient.is_read).map((row) => row.recipient.id);
+        await Promise.all(visibleUnreadIds.map((id) => markNotificationRead(id)));
+        setRows((prev) => prev.map((row) => visibleUnreadIds.includes(row.recipient.id) ? { ...row, recipient: { ...row.recipient, is_read: true } } : row));
+      } else {
+        await markAllNotificationsRead(userId);
+        setRows((prev) => prev.map((row) => ({ ...row, recipient: { ...row.recipient, is_read: true } })));
+      }
       applyPwaBadge(0);
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: 0 } }));
     } catch (e: unknown) {
@@ -462,30 +489,42 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
+    <div className={managerDesign ? campsStyles.page : "player-dashboard-bg"}>
+      <div className={managerDesign ? styles.managerContent : "app-shell marketplace-page"}>
+        {managerDesign ? (
+          <nav className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
+            <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><span>Notifications</span>
+          </nav>
+        ) : null}
+        <div className={managerDesign ? styles.pageHeader : "glass-section"}>
+          <div className={managerDesign ? campsStyles.topline : "marketplace-header"}>
             <div style={{ display: "grid", gap: 4 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {locale === "fr" ? titleFr : locale === "de" ? titleDe : locale === "it" ? titleIt : titleEn}
-              </div>
+              {managerDesign ? (
+                <><h1>{tr("Centre de notifications", "Notification center", "Benachrichtigungscenter", "Centro notifiche")}</h1><p className={campsStyles.lead}>{tr("Consultez les dernières activités et accédez rapidement aux éléments concernés.", "Review recent activity and quickly open the related items.", "Prüfen Sie die neuesten Aktivitäten und öffnen Sie die zugehörigen Elemente.", "Consulta le attività recenti e apri rapidamente gli elementi correlati.")}</p></>
+              ) : (
+                <div className="section-title" style={{ marginBottom: 0 }}>
+                  {locale === "fr" ? titleFr : locale === "de" ? titleDe : locale === "it" ? titleIt : titleEn}
+                </div>
+              )}
             </div>
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={homeHref}>{t("common.back")}</Link>
+            <div className={managerDesign ? `${campsStyles.actions} ${styles.headerActions}` : "marketplace-actions"} style={managerDesign ? undefined : { marginTop: 2 }}>
+              {managerDesign ? <>
+                <Link className={campsStyles.secondary} href={settingsHref}><Settings size={15} />{tr("Paramètres", "Settings", "Einstellungen", "Impostazioni")}</Link>
+                <button className={campsStyles.primary} type="button" disabled={busy || unreadCount === 0} onClick={onReadAll}><CheckCheck size={16} />{tr("Tout marquer comme lu", "Mark all as read", "Alle als gelesen markieren", "Segna tutto come letto")}</button>
+              </> : <Link className="cta-green cta-green-inline" href={homeHref}>{t("common.back")}</Link>}
             </div>
           </div>
-          {error ? <div className="marketplace-error">{error}</div> : null}
+          {error ? <div className={managerDesign ? campsStyles.alertError : "marketplace-error"} role="alert">{error}</div> : null}
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 950 }}>
-                <Bell size={16} />
-                {tr("Centre de notifications", "Notification center")}
+        <div className={managerDesign ? campsStyles.panel : "glass-section"}>
+          <div className={managerDesign ? styles.panelContent : "glass-card"} style={managerDesign ? undefined : { display: "grid", gap: 10 }}>
+            <div className={managerDesign ? campsStyles.panelHeader : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div className={managerDesign ? styles.panelTitle : undefined} style={managerDesign ? undefined : { display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 950 }}>
+                {managerDesign ? <span className={styles.panelIcon}><Bell size={16} /></span> : <Bell size={16} />}
+                {managerDesign ? <div><h2>{tr("Toutes les notifications", "All notifications", "Alle Benachrichtigungen", "Tutte le notifiche")}</h2><p>{visibleRows.length} notification{visibleRows.length > 1 ? "s" : ""}, dont {unreadCount} non lue{unreadCount > 1 ? "s" : ""}.</p></div> : tr("Centre de notifications", "Notification center")}
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {!managerDesign ? <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Link className="btn" href={settingsHref}>
                   <Settings size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
                   {tr("Paramètres", "Settings", "Einstellungen", "Impostazioni")}
@@ -494,16 +533,16 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                   <CheckCheck size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
                   {tr("Tout marquer lu", "Mark all read", "Alle als gelesen markieren", "Segna tutto come letto")}
                 </button>
-              </div>
+              </div> : null}
             </div>
 
             {loading ? (
               <ListLoadingBlock label={t("common.loading")} />
-            ) : rows.length === 0 ? (
-              <div style={{ opacity: 0.8, fontWeight: 800 }}>{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
+            ) : visibleRows.length === 0 ? (
+              <div className={managerDesign ? styles.emptyState : undefined} style={managerDesign ? undefined : { opacity: 0.8, fontWeight: 800 }}>{managerDesign ? <Bell size={21} aria-hidden="true" /> : null}{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
             ) : (
-              <div className="marketplace-list marketplace-list-top" style={{ minWidth: 0, overflowX: "hidden" }}>
-                {rows.map((r) => {
+              <div className={managerDesign ? styles.notificationList : "marketplace-list marketplace-list-top"} style={{ minWidth: 0, overflowX: "hidden" }}>
+                {visibleRows.map((r) => {
                   const n = r.notification;
                   const href = resolveNotificationHref(n);
                   const threadId = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_id ?? "").trim() : "";
@@ -545,8 +584,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                     isEventThread && threadUnreadCount > 1 ? "" : (n?.body ?? "");
                   const card = (
                     <div
-                      className="marketplace-item"
-                      style={{
+                      className={managerDesign ? `${styles.notificationItem} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : "marketplace-item"}
+                      style={managerDesign ? undefined : {
                         width: "100%",
                         minWidth: 0,
                         boxSizing: "border-box",
@@ -556,7 +595,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                           : {}),
                       }}
                     >
-                      <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                      {managerDesign ? <span className={styles.notificationIcon}><Bell size={15} /></span> : null}
+                      <div className={managerDesign ? styles.notificationContent : undefined} style={managerDesign ? undefined : { display: "grid", gap: 6, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                           <div
                             style={{
@@ -570,7 +610,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                           >
                             {notificationTitle}
                           </div>
-                          {!r.recipient.is_read ? <span className="pill-soft">{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
+                          {!r.recipient.is_read ? <span className={managerDesign ? campsStyles.badge : "pill-soft"}>{tr("Nouveau", "New", "Neu", "Nuovo")}</span> : null}
                         </div>
                         {isEventThread && eventLine ? (
                           <div
@@ -632,24 +672,26 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                             {notificationBody}
                           </div>
                         ) : null}
-                        <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        <div className={managerDesign ? styles.notificationDate : undefined} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
+                        <div className={managerDesign ? campsStyles.actions : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           {href ? (
                             <Link
                               href={href}
-                              className="btn"
+                              className={managerDesign ? campsStyles.secondary : "btn"}
                               onClick={() => {
                                 applyChildContextFromNotification(n, href);
                                 if (!r.recipient.is_read) void onRead(r.recipient.id);
                               }}
                             >
-                              {tr("Ouvrir", "Open", "Öffnen", "Apri")}
+                              {managerDesign ? <ExternalLink size={14} /> : null}{tr("Ouvrir", "Open", "Öffnen", "Apri")}
                             </Link>
                           ) : null}
                           {!r.recipient.is_read ? (
                             <button
-                              className="btn"
+                              className={managerDesign ? campsStyles.iconButton : "btn"}
                               type="button"
+                              title={tr("Marquer comme lu", "Mark as read", "Als gelesen markieren", "Segna come letto")}
+                              aria-label={tr("Marquer comme lu", "Mark as read", "Als gelesen markieren", "Segna come letto")}
                               disabled={busy}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -657,11 +699,11 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                                 void onRead(r.recipient.id);
                               }}
                             >
-                              {tr("Marquer lu", "Mark read", "Als gelesen markieren", "Segna come letto")}
+                              {managerDesign ? <Check size={15} /> : tr("Marquer lu", "Mark read", "Als gelesen markieren", "Segna come letto")}
                             </button>
                           ) : null}
                           <button
-                            className="btn btn-danger soft"
+                            className={managerDesign ? `${campsStyles.iconButton} ${campsStyles.dangerIcon}` : "btn btn-danger soft"}
                             type="button"
                             title={tr("Effacer", "Delete", "Löschen", "Elimina")}
                             aria-label={tr("Effacer", "Delete", "Löschen", "Elimina")}
@@ -679,7 +721,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, titleFr, t
                     </div>
                   );
                   return (
-                    <div key={r.recipient.id} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
+                    <div key={r.recipient.id} className={managerDesign ? styles.notificationRow : undefined} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
                       {card}
                     </div>
                   );

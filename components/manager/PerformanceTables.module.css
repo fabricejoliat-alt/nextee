@@ -1,0 +1,29 @@
+.scope :global(table) td {
+  color: #526056;
+  font: 500 11px/1.25 var(--font-inter), sans-serif;
+}
+
+.scope :global(table) td a,
+.scope :global(table) td b {
+  color: #2f4135;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.scope :global(table) td small {
+  color: #7a857c;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.memberTable th:first-child,
+.memberTable td:first-child {
+  width: 42px;
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.memberTable th:nth-child(2),
+.memberTable td:nth-child(2) {
+  padding-left: 12px;
+}

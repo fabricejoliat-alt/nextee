@@ -1,8 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import {
+  COMPETITION_CATEGORIES,
+  COMPETITION_LEVELS,
+  REMINDER_CHANNELS,
+  competitionTournamentYear,
+  isHttpUrl,
+  type CompetitionCategory,
+  type CompetitionLevel,
+  type ReminderChannel,
+} from "@/lib/competitions";
 
-type EventType = "training" | "interclub" | "camp" | "session" | "event";
+type EventType = "training" | "interclub" | "camp" | "session" | "event" | "competition";
 type TargetMode = "none" | "all" | "selected";
 type CreateMode = "single" | "series";
 
@@ -20,6 +30,21 @@ type CreatePayload = {
   durationMinutes?: number;
   locationText?: string | null;
   coachNote?: string | null;
+  requiresEvaluation?: boolean;
+  evaluationCriterionIds?: string[];
+  competitionClubId?: string | null;
+  competitionStartDate?: string | null;
+  competitionEndDate?: string | null;
+  competitionLevel?: CompetitionLevel | null;
+  competitionCategory?: CompetitionCategory | null;
+  externalRegistrationUrl?: string | null;
+  competitionNote?: string | null;
+  reminder?: {
+    enabled: boolean;
+    scheduledFor?: string | null;
+    channel?: ReminderChannel | null;
+    messageTemplate?: string | null;
+  };
   series?: {
     weekday: number;
     timeOfDay: string;
@@ -83,7 +108,14 @@ function formatDateTimeLabel(startsAtIso: string, endsAtIso: string | null) {
   })
     .format(start)
     .replace(":", "h");
-  return `${d} à ${s}`;
+  if (!endsAtIso) return `${d} à ${s}`;
+  const endDate = new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Zurich",
+  }).format(new Date(endsAtIso));
+  return d === endDate ? `${d} à ${s}` : `${d} au ${endDate}`;
 }
 
 async function dispatchPushForRecipients(
@@ -145,7 +177,8 @@ async function createEventNotification(
   startsAtIso: string,
   endsAtIso: string | null,
   locationText: string | null,
-  recipientUserIds: string[]
+  recipientUserIds: string[],
+  eventTitle?: string | null,
 ) {
   const recipients = uniq(recipientUserIds).filter((id) => id && id !== actorUserId);
   if (recipients.length === 0) return;
@@ -154,14 +187,21 @@ async function createEventNotification(
   const location = String(locationText ?? "").trim() || "Lieu à définir";
 
   const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
+  const isCompetition = eventType === "competition";
   const title =
-    eventType === "interclub"
+    isCompetition
+      ? `Nouvelle compétition · ${String(eventTitle ?? "").trim() || "Compétition"}`
+      : eventType === "interclub"
       ? "Nouvel interclub prévu"
       : isTrainingOrInterclub
       ? "Nouvel entrainement prévu"
       : "Nouvelle activité prévue";
-  const body = isTrainingOrInterclub ? `Le ${dateTime} • ${location}` : `Date Heure: ${dateTime}\nLieu: ${location}`;
-  const url = `/player/golf/trainings/new?club_event_id=${eventId}`;
+  const body = isCompetition
+    ? `Du ${dateTime} · ${location}\nL’inscription se fait sur une plateforme externe.`
+    : isTrainingOrInterclub
+      ? `Le ${dateTime} • ${location}`
+      : `Date Heure: ${dateTime}\nLieu: ${location}`;
+  const url = isCompetition ? "/player/golf/trainings?type=competition" : `/player/golf/trainings/new?club_event_id=${eventId}`;
 
   const ins = await supabaseAdmin
     .from("notifications")
@@ -237,6 +277,7 @@ export async function GET(req: NextRequest) {
         .select("id,name,club_id,is_active,head_coach_user_id")
         .in("club_id", ctx.clubIds)
         .neq("name", "__ARCHIVE_HISTORIQUE__")
+        .not("club_season_id", "is", null)
         .eq("is_active", true)
         .order("name", { ascending: true }),
       supabaseAdmin
@@ -282,9 +323,9 @@ export async function GET(req: NextRequest) {
     const headCoachIds = uniq(groups.map((g) => String(g.head_coach_user_id ?? "")));
     const profileIds = uniq([...userIds, ...headCoachIds]);
 
-    let profileById = new Map<string, { first_name: string | null; last_name: string | null }>();
+    let profileById = new Map<string, { first_name: string | null; last_name: string | null; birth_date: string | null }>();
     if (profileIds.length > 0) {
-      const profilesRes = await supabaseAdmin.from("profiles").select("id,first_name,last_name").in("id", profileIds);
+      const profilesRes = await supabaseAdmin.from("profiles").select("id,first_name,last_name,birth_date").in("id", profileIds);
       if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
       profileById = new Map(
         (profilesRes.data ?? []).map((p: any) => [
@@ -292,6 +333,7 @@ export async function GET(req: NextRequest) {
           {
             first_name: (p.first_name ?? null) as string | null,
             last_name: (p.last_name ?? null) as string | null,
+            birth_date: (p.birth_date ?? null) as string | null,
           },
         ])
       );
@@ -304,7 +346,7 @@ export async function GET(req: NextRequest) {
       return `${first} ${last}`.trim() || id;
     };
 
-    const usersByRole: Record<"player" | "coach" | "parent", Array<{ id: string; club_id: string; name: string }>> = {
+    const usersByRole: Record<"player" | "coach" | "parent", Array<{ id: string; club_id: string; name: string; birth_date: string | null }>> = {
       player: [],
       coach: [],
       parent: [],
@@ -317,13 +359,14 @@ export async function GET(req: NextRequest) {
     };
 
     for (const row of memberRows) {
-      const key = `${row.role}:${row.user_id}`;
+      const key = `${row.role}:${row.club_id}:${row.user_id}`;
       if (seenByRole[row.role].has(key)) continue;
       seenByRole[row.role].add(key);
       usersByRole[row.role].push({
         id: row.user_id,
         club_id: row.club_id,
         name: fullName(row.user_id),
+        birth_date: profileById.get(row.user_id)?.birth_date ?? null,
       });
     }
 
@@ -383,6 +426,63 @@ export async function POST(req: NextRequest) {
     if (!payload?.mode || !payload?.eventType || !payload?.groupTarget) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
+    const allowedEventTypes: EventType[] = ["training", "interclub", "camp", "session", "event", "competition"];
+    if (!allowedEventTypes.includes(payload.eventType)) {
+      return NextResponse.json({ error: "Invalid event type" }, { status: 400 });
+    }
+
+    const isCompetition = payload.eventType === "competition";
+    const competitionClubId = String(payload.competitionClubId ?? "").trim();
+    const competitionLevel = String(payload.competitionLevel ?? "").trim() as CompetitionLevel;
+    const competitionCategory = String(payload.competitionCategory ?? "").trim() as CompetitionCategory;
+    const externalRegistrationUrl = String(payload.externalRegistrationUrl ?? "").trim();
+    const competitionNote = String(payload.competitionNote ?? "").trim();
+
+    if (isCompetition) {
+      if (payload.mode !== "single") {
+        return NextResponse.json({ error: "Une compétition doit être une activité unique." }, { status: 400 });
+      }
+      if (!String(payload.title ?? "").trim()) {
+        return NextResponse.json({ error: "Le nom de la compétition est obligatoire." }, { status: 400 });
+      }
+      if (!ctx.clubIds.includes(competitionClubId)) {
+        return NextResponse.json({ error: "Club de la compétition invalide." }, { status: 400 });
+      }
+      if (!COMPETITION_LEVELS.includes(competitionLevel)) {
+        return NextResponse.json({ error: "Le niveau de la compétition est obligatoire." }, { status: 400 });
+      }
+      if (!COMPETITION_CATEGORIES.includes(competitionCategory)) {
+        return NextResponse.json({ error: "La catégorie d’âge est obligatoire." }, { status: 400 });
+      }
+      if (!isHttpUrl(externalRegistrationUrl)) {
+        return NextResponse.json({ error: "Le lien d’inscription externe doit être une URL HTTP ou HTTPS valide." }, { status: 400 });
+      }
+      const startDate = String(payload.competitionStartDate ?? "").trim();
+      const endDate = String(payload.competitionEndDate ?? "").trim();
+      const yearCheck = competitionTournamentYear(startDate, endDate);
+      if (yearCheck.error) return NextResponse.json({ error: yearCheck.error }, { status: 400 });
+
+      if (payload.reminder?.enabled) {
+        const scheduledFor = new Date(String(payload.reminder.scheduledFor ?? ""));
+        const channel = String(payload.reminder.channel ?? "") as ReminderChannel;
+        const messageTemplate = String(payload.reminder.messageTemplate ?? "").trim();
+        const competitionStartsAt = new Date(String(payload.startsAt ?? ""));
+        if (
+          Number.isNaN(scheduledFor.getTime()) ||
+          scheduledFor.getTime() <= Date.now() ||
+          Number.isNaN(competitionStartsAt.getTime()) ||
+          scheduledFor >= competitionStartsAt
+        ) {
+          return NextResponse.json({ error: "Le rappel doit être planifié dans le futur et avant le début de la compétition." }, { status: 400 });
+        }
+        if (!REMINDER_CHANNELS.includes(channel)) {
+          return NextResponse.json({ error: "Canal de rappel invalide." }, { status: 400 });
+        }
+        if (!messageTemplate) {
+          return NextResponse.json({ error: "Le texte du rappel est obligatoire." }, { status: 400 });
+        }
+      }
+    }
 
     const [groupsRes, membersRes, guardiansRes] = await Promise.all([
       supabaseAdmin
@@ -390,6 +490,7 @@ export async function POST(req: NextRequest) {
         .select("id,name,club_id,head_coach_user_id")
         .in("club_id", ctx.clubIds)
         .neq("name", "__ARCHIVE_HISTORIQUE__")
+        .not("club_season_id", "is", null)
         .eq("is_active", true),
       supabaseAdmin
         .from("club_members")
@@ -397,14 +498,14 @@ export async function POST(req: NextRequest) {
         .in("club_id", ctx.clubIds)
         .eq("is_active", true)
         .in("role", ["player", "coach", "parent"]),
-      supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id").eq("can_view", true),
+      supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id").or("can_view.is.null,can_view.eq.true"),
     ]);
 
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
     if (membersRes.error) return NextResponse.json({ error: membersRes.error.message }, { status: 400 });
     if (guardiansRes.error) return NextResponse.json({ error: guardiansRes.error.message }, { status: 400 });
 
-    const groups = (groupsRes.data ?? []) as Array<{ id: string; club_id: string; head_coach_user_id: string | null }>;
+    const groups = (groupsRes.data ?? []) as Array<{ id: string; name: string | null; club_id: string; head_coach_user_id: string | null }>;
     const groupById = new Map(groups.map((g) => [g.id, g]));
     const allGroupIds = uniq(groups.map((g) => g.id));
 
@@ -461,19 +562,63 @@ export async function POST(req: NextRequest) {
     const selectedCoaches = new Set(uniq(payload.coachTarget.ids ?? []));
     const selectedParents = new Set(uniq(payload.parentTarget.ids ?? []));
 
-    if (targetGroupIds.length === 0 && selectedPlayers.size > 0 && selectedCoaches.size > 0) {
-      targetGroupIds = allGroupIds.filter((gid) => {
-        const gp = groupPlayersMap.get(gid) ?? new Set<string>();
-        const gc = groupCoachesMap.get(gid) ?? new Set<string>();
-        const hasAllSelectedPlayers = Array.from(selectedPlayers).every((pid) => gp.has(pid));
-        const hasSelectedCoach = Array.from(selectedCoaches).some((cid) => gc.has(cid));
-        return hasAllSelectedPlayers && hasSelectedCoach;
+    if (isCompetition) targetGroupIds = [];
+
+    // Direct selections are supported even when people belong to different
+    // groups. We create an activity-only group so existing event, attendance
+    // and evaluation permissions keep their group-based invariant.
+    if (targetGroupIds.length === 0 && selectedPlayers.size > 0 && (selectedCoaches.size > 0 || isCompetition)) {
+      const compatibleClubIds = ctx.clubIds.filter((clubId) => {
+        if (isCompetition && clubId !== competitionClubId) return false;
+        const roles = roleByClub[clubId];
+        if (!roles) return false;
+        return (
+          Array.from(selectedPlayers).every((id) => roles.players.has(id)) &&
+          Array.from(selectedCoaches).every((id) => roles.coaches.has(id))
+        );
       });
+      if (compatibleClubIds.length !== 1) {
+        return NextResponse.json({ error: "Les joueurs et coachs sélectionnés doivent appartenir à un seul club." }, { status: 400 });
+      }
+
+      const clubId = compatibleClubIds[0];
+      const supportGroupName = isCompetition
+        ? `Compétition · ${String(payload.title ?? "").trim()}`
+        : "Groupe spécifique";
+      const supportGroupIns = await supabaseAdmin
+        .from("coach_groups")
+        .insert({
+          club_id: clubId,
+          club_season_id: null,
+          name: supportGroupName,
+          is_active: true,
+          head_coach_user_id: Array.from(selectedCoaches)[0] ?? null,
+        })
+        .select("id,club_id,head_coach_user_id")
+        .single();
+      if (supportGroupIns.error || !supportGroupIns.data) {
+        throw new Error(supportGroupIns.error?.message ?? "Could not create the activity group");
+      }
+
+      const supportGroup = { ...(supportGroupIns.data as { id: string; club_id: string; head_coach_user_id: string | null }), name: supportGroupName };
+      const playersIns = await supabaseAdmin
+        .from("coach_group_players")
+        .insert(Array.from(selectedPlayers).map((player_user_id) => ({ group_id: supportGroup.id, player_user_id })));
+      const coachesIns = selectedCoaches.size > 0
+        ? await supabaseAdmin.from("coach_group_coaches").insert(Array.from(selectedCoaches).map((coach_user_id) => ({ group_id: supportGroup.id, coach_user_id, is_head: coach_user_id === supportGroup.head_coach_user_id })))
+        : ({ error: null } as const);
+      if (playersIns.error || coachesIns.error) {
+        await supabaseAdmin.from("coach_groups").delete().eq("id", supportGroup.id);
+        throw new Error(playersIns.error?.message ?? coachesIns.error?.message ?? "Could not assign activity participants");
+      }
+
+      targetGroupIds = [supportGroup.id];
+      groupById.set(supportGroup.id, supportGroup);
+      groupPlayersMap.set(supportGroup.id, new Set(selectedPlayers));
+      groupCoachesMap.set(supportGroup.id, new Set(selectedCoaches));
     }
 
-    if (targetGroupIds.length === 0) {
-      return NextResponse.json({ error: "No target groups or compatible player/coach selection" }, { status: 400 });
-    }
+    if (targetGroupIds.length === 0) return NextResponse.json({ error: "Aucun groupe ou joueur sélectionné." }, { status: 400 });
 
     const guardiansByPlayer = new Map<string, Set<string>>();
     ((guardiansRes.data ?? []) as Array<{ player_id: string; guardian_user_id: string }>).forEach((r) => {
@@ -485,7 +630,7 @@ export async function POST(req: NextRequest) {
 
     const createdEvents: string[] = [];
     const createdSeries: string[] = [];
-    const attendeeRows: Array<{ event_id: string; player_id: string; status: "present" }> = [];
+    const attendeeRows: Array<{ event_id: string; player_id: string; status: "present" | "expected" }> = [];
     const coachRows: Array<{ event_id: string; coach_id: string }> = [];
 
     const duration = Math.max(1, Number(payload.durationMinutes ?? 60));
@@ -500,15 +645,20 @@ export async function POST(req: NextRequest) {
           group_id: group.id,
           club_id: group.club_id,
           event_type: payload.eventType,
-          title: String(payload.title ?? "").trim() || null,
+          title: String(payload.title ?? "").trim() || (group.name === "Groupe spécifique" ? "Activité spécifique" : null),
           starts_at: startsAtIso,
           ends_at: endsAtIso,
           duration_minutes: Math.min(duration, 240),
           location_text: String(payload.locationText ?? "").trim() || null,
           coach_note: String(payload.coachNote ?? "").trim() || null,
+          competition_level: isCompetition ? competitionLevel : null,
+          competition_category: isCompetition ? competitionCategory : null,
+          external_registration_url: isCompetition ? externalRegistrationUrl || null : null,
+          competition_note: isCompetition ? competitionNote || null : null,
           series_id: seriesId,
           created_by: ctx.callerId,
           status: "scheduled",
+          requires_evaluation: Boolean(payload.requiresEvaluation),
         })
         .select("id")
         .single();
@@ -517,11 +667,18 @@ export async function POST(req: NextRequest) {
       const eventId = String(eventIns.data.id);
       createdEvents.push(eventId);
 
+      const evaluationCriterionIds = uniq(Array.isArray(payload.evaluationCriterionIds) ? payload.evaluationCriterionIds : []);
+      if (Boolean(payload.requiresEvaluation) && evaluationCriterionIds.length) {
+        if (evaluationCriterionIds.length > 3) throw new Error("Trois critères personnalisés maximum par activité.");
+        const links = await supabaseAdmin.from("club_event_evaluation_criteria").insert(evaluationCriterionIds.map((criterionId, index) => ({ event_id: eventId, criterion_id: criterionId, position: index + 1 })));
+        if (links.error) throw new Error(links.error.message);
+      }
+
       const groupPlayers = groupPlayersMap.get(groupId) ?? new Set<string>();
       const groupCoaches = groupCoachesMap.get(groupId) ?? new Set<string>();
       const clubRoles = roleByClub[group.club_id] ?? { players: new Set<string>(), coaches: new Set<string>(), parents: new Set<string>() };
 
-      let playerTargetIds = new Set<string>();
+      const playerTargetIds = new Set<string>();
       if (payload.playerTarget.mode === "all") {
         groupPlayers.forEach((id) => playerTargetIds.add(id));
       } else if (payload.playerTarget.mode === "selected") {
@@ -530,7 +687,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      let coachTargetIds = new Set<string>();
+      const coachTargetIds = new Set<string>();
       if (payload.coachTarget.mode === "all") {
         clubRoles.coaches.forEach((id) => coachTargetIds.add(id));
       } else if (payload.coachTarget.mode === "selected") {
@@ -541,7 +698,7 @@ export async function POST(req: NextRequest) {
         groupCoaches.forEach((id) => coachTargetIds.add(id));
       }
 
-      let parentTargetIds = new Set<string>();
+      const parentTargetIds = new Set<string>();
       if (payload.parentTarget.mode === "all") {
         clubRoles.parents.forEach((id) => parentTargetIds.add(id));
       } else if (payload.parentTarget.mode === "selected") {
@@ -561,10 +718,26 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      playerTargetIds.forEach((id) => attendeeRows.push({ event_id: eventId, player_id: id, status: "present" }));
+      if (isCompetition) {
+        playerTargetIds.forEach((pid) => {
+          const linked = guardiansByPlayer.get(pid);
+          if (!linked) return;
+          linked.forEach((guardianId) => {
+            if (clubRoles.parents.has(guardianId)) parentTargetIds.add(guardianId);
+          });
+        });
+      }
+
+      playerTargetIds.forEach((id) => attendeeRows.push({
+        event_id: eventId,
+        player_id: id,
+        status: isCompetition ? "expected" : "present",
+      }));
       coachTargetIds.forEach((id) => coachRows.push({ event_id: eventId, coach_id: id }));
 
-      parentTargetIds.forEach((id) => attendeeRows.push({ event_id: eventId, player_id: id, status: "present" }));
+      if (!isCompetition) {
+        parentTargetIds.forEach((id) => attendeeRows.push({ event_id: eventId, player_id: id, status: "present" }));
+      }
 
       // Best-effort notifications for attendees (players + targeted parents).
       // Do not fail event creation if notification delivery fails.
@@ -577,7 +750,8 @@ export async function POST(req: NextRequest) {
           startsAtIso,
           endsAtIso,
           String(payload.locationText ?? "").trim() || null,
-          [...playerTargetIds, ...parentTargetIds]
+          [...playerTargetIds, ...parentTargetIds],
+          String(payload.title ?? "").trim() || null,
         );
       } catch {
         // silent: activity creation must remain successful even if notifications fail
@@ -659,6 +833,20 @@ export async function POST(req: NextRequest) {
         onConflict: "event_id,coach_id",
       });
       if (coachIns.error) throw new Error(coachIns.error.message);
+    }
+
+    if (isCompetition && payload.reminder?.enabled && createdEvents[0]) {
+      const reminderIns = await supabaseAdmin.from("club_event_reminders").insert({
+        event_id: createdEvents[0],
+        scheduled_for: new Date(String(payload.reminder.scheduledFor)).toISOString(),
+        channel: payload.reminder.channel,
+        message_template: String(payload.reminder.messageTemplate ?? "").trim(),
+        status: "pending",
+        created_by: ctx.callerId,
+      });
+      if (reminderIns.error) {
+        console.error("Competition reminder creation failed", reminderIns.error.message);
+      }
     }
 
     return NextResponse.json({

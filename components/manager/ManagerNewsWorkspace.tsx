@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CalendarClock, Mail, Pencil, PlusCircle, Search, Trash2, Users } from "lucide-react";
+import Link from "next/link";
+import { Pencil, PlusCircle, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+import listStyles from "@/app/manager/camps/Camps.module.css";
+import newsStyles from "@/components/manager/ManagerNewsWorkspace.module.css";
 
 type NewsStatus = "draft" | "scheduled" | "published" | "archived";
 type NewsTargetType = "role" | "user" | "group" | "group_category" | "age_band";
@@ -38,6 +43,9 @@ type LinkedEventOption = {
   title: string;
   event_type: string | null;
   starts_at: string | null;
+  target_user_ids: string[];
+  group_name: string | null;
+  head_coach_name: string | null;
 };
 
 type LinkedCampOption = {
@@ -142,11 +150,11 @@ function statusLabel(status: NewsStatus) {
   return "Brouillon";
 }
 
-function statusStyle(status: NewsStatus) {
-  if (status === "published") return { background: "#dcfce7", color: "#166534" };
-  if (status === "scheduled") return { background: "#dbeafe", color: "#1d4ed8" };
-  if (status === "archived") return { background: "#f3f4f6", color: "#4b5563" };
-  return { background: "#fef3c7", color: "#92400e" };
+function statusBadgeClass(status: NewsStatus) {
+  if (status === "published") return listStyles.badgeDone;
+  if (status === "scheduled") return listStyles.badgeProgress;
+  if (status === "archived") return listStyles.badgeArchived;
+  return listStyles.badgeDraft;
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -172,11 +180,9 @@ function eventTypeLabel(value: string | null) {
 }
 
 function linkedEventOptionLabel(option: LinkedEventOption) {
-  return `${option.title} • ${eventTypeLabel(option.event_type)}`;
-}
-
-function linkedCampOptionLabel(option: LinkedCampOption) {
-  return option.title;
+  const date = option.starts_at ? formatDateTime(option.starts_at) : "Date inconnue";
+  const title = option.title && option.title !== "Événement" ? ` · ${option.title}` : "";
+  return `${eventTypeLabel(option.event_type)}${title} · ${option.group_name ?? "Groupe spécifique"} · ${date} · Coach: ${option.head_coach_name ?? "Non défini"}`;
 }
 
 function toDatetimeLocal(value: string | null | undefined) {
@@ -247,20 +253,19 @@ export default function ManagerNewsWorkspace() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [clubs, setClubs] = useState<ClubOption[]>([]);
   const [selectedClubId, setSelectedClubId] = useState("");
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [groups, setGroups] = useState<GroupOption[]>([]);
   const [groupCategories, setGroupCategories] = useState<string[]>([]);
   const [ageBands, setAgeBands] = useState<AgeBandOption[]>([]);
   const [linkedEvents, setLinkedEvents] = useState<LinkedEventOption[]>([]);
-  const [linkedCamps, setLinkedCamps] = useState<LinkedCampOption[]>([]);
   const [groupPlayerUserIdsByGroupId, setGroupPlayerUserIdsByGroupId] = useState<Record<string, string[]>>({});
   const [groupCoachUserIdsByGroupId, setGroupCoachUserIdsByGroupId] = useState<Record<string, string[]>>({});
   const [groupIdsByCategory, setGroupIdsByCategory] = useState<Record<string, string[]>>({});
   const [news, setNews] = useState<NewsRow[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
+  const [deletingNewsId, setDeletingNewsId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const [form, setForm] = useState<NewsFormState>(emptyForm);
 
@@ -284,27 +289,23 @@ export default function ManagerNewsWorkspace() {
       const json = (await res.json().catch(() => ({}))) as BootstrapResponse & { error?: string };
       if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les actualités."));
 
-      setClubs(Array.isArray(json.clubs) ? json.clubs : []);
       setSelectedClubId(String(json.selected_club_id ?? ""));
       setMembers(Array.isArray(json.target_options?.members) ? json.target_options.members : []);
       setGroups(Array.isArray(json.target_options?.groups) ? json.target_options.groups : []);
       setGroupCategories(Array.isArray(json.target_options?.group_categories) ? json.target_options.group_categories : []);
       setAgeBands(Array.isArray(json.target_options?.age_bands) ? json.target_options.age_bands : []);
       setLinkedEvents(Array.isArray(json.target_options?.club_events) ? json.target_options.club_events : []);
-      setLinkedCamps(Array.isArray(json.target_options?.camps) ? json.target_options.camps : []);
       setGroupPlayerUserIdsByGroupId(json.target_options?.group_player_user_ids_by_group_id ?? {});
       setGroupCoachUserIdsByGroupId(json.target_options?.group_coach_user_ids_by_group_id ?? {});
       setGroupIdsByCategory(json.target_options?.group_ids_by_category ?? {});
       setNews(Array.isArray(json.news) ? json.news : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Impossible de charger les actualités.");
-      setClubs([]);
       setMembers([]);
       setGroups([]);
       setGroupCategories([]);
       setAgeBands([]);
       setLinkedEvents([]);
-      setLinkedCamps([]);
       setGroupPlayerUserIdsByGroupId({});
       setGroupCoachUserIdsByGroupId({});
       setGroupIdsByCategory({});
@@ -374,6 +375,24 @@ export default function ManagerNewsWorkspace() {
     return selected;
   }, [form.targets, groupIdsByCategory, groupPlayerUserIdsByGroupId, groupCoachUserIdsByGroupId, members]);
 
+  const linkedActivity = useMemo(
+    () => linkedEvents.find((event) => event.id === form.linked_club_event_id) ?? null,
+    [form.linked_club_event_id, linkedEvents]
+  );
+  const targetsLockedByActivity = Boolean(linkedActivity);
+
+  function linkActivity(eventId: string) {
+    const activity = linkedEvents.find((item) => item.id === eventId);
+    setForm((previous) => ({
+      ...previous,
+      linked_club_event_id: eventId,
+      linked_camp_id: "",
+      targets: activity
+        ? activity.target_user_ids.map((userId) => ({ target_type: "user" as const, target_value: userId }))
+        : previous.targets,
+    }));
+  }
+
   function openCreateForm() {
     setEditingNewsId(null);
     setForm(emptyForm());
@@ -442,15 +461,16 @@ export default function ManagerNewsWorkspace() {
     }
   }
 
-  async function deleteNews(newsId: string) {
-    const confirmed = window.confirm("Supprimer cette actualité ?");
+  async function deleteNews(row: NewsRow) {
+    const confirmed = window.confirm(`Supprimer l’actualité « ${row.title} » ?`);
     if (!confirmed) return;
 
+    setDeletingNewsId(row.id);
     setError(null);
     setMessage(null);
     try {
       const headers = await authHeaders();
-      const res = await fetch(`/api/manager/news/${newsId}`, {
+      const res = await fetch(`/api/manager/news/${row.id}`, {
         method: "DELETE",
         headers,
       });
@@ -460,66 +480,27 @@ export default function ManagerNewsWorkspace() {
       await load(selectedClubId);
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Suppression impossible.");
+    } finally {
+      setDeletingNewsId(null);
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ display: "grid", gap: 16 }}>
-        <ListLoadingBlock label="Chargement des actualités..." />
-      </div>
-    );
-  }
-
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div className="glass-section">
-        <div className="glass-card" style={{ display: "grid", gap: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Actualités
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.62)" }}>
-                Module pour publier des news ciblées avec notification in-app immédiate. La programmation est déjà stockée; l’exécution automatique sera branchée dans la prochaine passe.
-              </div>
-            </div>
-            <button type="button" className="btn btn-primary" onClick={openCreateForm}>
-              <PlusCircle size={16} style={{ marginRight: 6 }} />
-              Nouvelle actualité
-            </button>
-          </div>
-
-          <div style={{ display: "grid", gap: 8, maxWidth: 360 }}>
-            <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Organisation</span>
-            <select
-              className="input"
-              value={selectedClubId}
-              onChange={(event) => {
-                const nextClubId = event.target.value;
-                setSelectedClubId(nextClubId);
-                void load(nextClubId);
-              }}
-            >
-              {clubs.map((club) => (
-                <option key={club.id} value={club.id}>
-                  {club.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {message ? <div style={{ color: "#166534", fontWeight: 800 }}>{message}</div> : null}
-          {error ? <div style={{ color: "#b91c1c", fontWeight: 800 }}>{error}</div> : null}
-        </div>
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager">Manager</Link><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>Actualités</span>
+      </nav>
+      <div className={styles.topline}>
+        <div><h1>Actualités</h1><p className={styles.lead}>Créez et diffusez des informations ciblées à votre club.</p></div>
+        <button type="button" className={actionStyles.primaryButton} onClick={openCreateForm}><PlusCircle size={16} />Nouvelle actualité</button>
       </div>
+      {message ? <div className={actionStyles.successAlert}>{message}</div> : null}
+      {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
 
       {formOpen ? (
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 16 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>
-              {editingNewsId ? "Modifier l’actualité" : "Créer une actualité"}
-            </div>
+        <>
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>{editingNewsId ? "Modifier l’actualité" : "Créer l’actualité"}</h2><p>Rédigez le contenu et associez, si besoin, une activité planifiée.</p></div></div>
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(220px,280px)", gap: 12 }}>
               <label style={{ display: "grid", gap: 6 }}>
@@ -577,19 +558,13 @@ export default function ManagerNewsWorkspace() {
               </label>
             ) : null}
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12 }}>
+            <div style={{ display: "grid", gap: 12 }}>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à un événement club</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à une activité planifiée</span>
                 <select
                   className="input"
                   value={form.linked_club_event_id}
-                  onChange={(event) =>
-                    setForm((previous) => ({
-                      ...previous,
-                      linked_club_event_id: event.target.value,
-                      linked_camp_id: event.target.value ? "" : previous.linked_camp_id,
-                    }))
-                  }
+                  onChange={(event) => linkActivity(event.target.value)}
                 >
                   <option value="">Aucun</option>
                   {linkedEvents.map((row) => (
@@ -599,49 +574,30 @@ export default function ManagerNewsWorkspace() {
                   ))}
                 </select>
               </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à un stage/camp</span>
-                <select
-                  className="input"
-                  value={form.linked_camp_id}
-                  onChange={(event) =>
-                    setForm((previous) => ({
-                      ...previous,
-                      linked_camp_id: event.target.value,
-                      linked_club_event_id: event.target.value ? "" : previous.linked_club_event_id,
-                    }))
-                  }
-                >
-                  <option value="">Aucun</option>
-                  {linkedCamps.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {linkedCampOptionLabel(row)}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </div>
 
+          </section>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Diffusion</h2><p>Choisissez les canaux d’envoi et la visibilité de cette actualité.</p></div></div>
             <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Diffusion</div>
-              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 700 }}>
+              <label className="user-mgmt-checkbox-label">
                 <input
                   type="checkbox"
                   checked={form.send_notification}
                   onChange={(event) => setForm((previous) => ({ ...previous, send_notification: event.target.checked }))}
                 />
-                Envoyer une notification in-app
+                Envoyer une notification dans l’application
               </label>
-              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 700 }}>
+              <label className="user-mgmt-checkbox-label">
                 <input
                   type="checkbox"
                   checked={form.send_email}
                   onChange={(event) => setForm((previous) => ({ ...previous, send_email: event.target.checked }))}
                 />
-                Envoyer aussi un e-mail
+                Envoyer un e-mail de notification
               </label>
-              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 700 }}>
+              <label className="user-mgmt-checkbox-label">
                 <input
                   type="checkbox"
                   checked={form.include_linked_parents}
@@ -649,7 +605,7 @@ export default function ManagerNewsWorkspace() {
                 />
                 Inclure les parents liés des joueurs ciblés
               </label>
-              <label style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 700 }}>
+              <label className="user-mgmt-checkbox-label">
                 <input
                   type="checkbox"
                   checked={form.visible_on_home}
@@ -658,11 +614,16 @@ export default function ManagerNewsWorkspace() {
                 Afficher sur l’accueil
               </label>
             </div>
+          </section>
 
-            <div style={{ display: "grid", gap: 14 }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>
-                Ciblage
-              </div>
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Ciblage</h2><p>Sélectionnez les rôles, groupes ou personnes qui recevront cette actualité.</p></div></div>
+            <fieldset className="manager-news-targeting" disabled={targetsLockedByActivity} style={{ display: "grid", gap: 14, minWidth: 0, margin: 0, padding: 0, border: 0 }}>
+              {targetsLockedByActivity ? (
+                <p style={{ margin: 0, color: "#778278", fontSize: 12, fontWeight: 700 }}>
+                  Les cibles correspondent aux joueurs et coachs de l’activité liée.
+                </p>
+              ) : null}
 
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Rôles entiers</div>
@@ -767,7 +728,7 @@ export default function ManagerNewsWorkspace() {
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Tranches d’âge</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Tranche d’âge</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {ageBands.map((band) => {
                     const target = { target_type: "age_band" as const, target_value: band.key };
@@ -872,7 +833,7 @@ export default function ManagerNewsWorkspace() {
                   ))}
                 </div>
               </div>
-            </div>
+            </fieldset>
 
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -895,217 +856,95 @@ export default function ManagerNewsWorkspace() {
                 ))}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" className="btn" onClick={() => setFormOpen(false)} disabled={saving}>
+                <button type="button" className={actionStyles.secondaryButton} onClick={() => setFormOpen(false)} disabled={saving}>
                   Annuler
                 </button>
-                <button type="button" className="btn btn-primary" onClick={() => void submitForm()} disabled={saving}>
+                <button type="button" className={actionStyles.primaryButton} onClick={() => void submitForm()} disabled={saving}>
                   {saving ? "Enregistrement..." : editingNewsId ? "Mettre à jour" : "Créer l’actualité"}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </section>
+        </>
       ) : null}
 
-      <div className="glass-section">
-        <div className="glass-card" style={{ display: "grid", gap: 14 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>
-            Actualités existantes
+      <section className={listStyles.panel}>
+        <div className={listStyles.panelHeader}>
+          <div>
+            <h2>Liste des actualités</h2>
+            <p>
+              {loading
+                ? "Chargement..."
+                : `${news.length} actualité${news.length > 1 ? "s" : ""} affichée${news.length > 1 ? "s" : ""}.`}
+            </p>
           </div>
-
-          {news.length === 0 ? (
-            <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune actualité pour le moment.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {news.map((row) => {
-                const badge = statusStyle(row.status);
-                const notificationCount = Number(row.last_dispatch_result?.notification_sent_count ?? 0);
-                const emailCount = Number(row.last_dispatch_result?.email_sent_count ?? 0);
-                return (
-                  <div
-                    key={row.id}
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 16,
-                      background: "rgba(255,255,255,0.86)",
-                      padding: 16,
-                      display: "grid",
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              borderRadius: 999,
-                              padding: "7px 10px",
-                              fontSize: 12,
-                              fontWeight: 900,
-                              background: badge.background,
-                              color: badge.color,
-                            }}
-                          >
-                            {statusLabel(row.status)}
-                          </span>
-                          <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                            Créée par {row.created_by_name ?? "Manager"}
-                          </span>
-                          {row.visible_on_home ? (
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                borderRadius: 999,
-                                padding: "7px 10px",
-                                fontSize: 12,
-                                fontWeight: 900,
-                                background: "rgba(59,130,246,0.10)",
-                                color: "#1d4ed8",
-                              }}
-                            >
-                              Accueil
-                            </span>
-                          ) : null}
-                        </div>
-                        <div style={{ fontSize: 18, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>{row.title}</div>
-                        {row.summary ? (
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.62)" }}>{row.summary}</div>
-                        ) : null}
-                        {row.linked_club_event_label || row.linked_camp_label ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.56)" }}>
-                            {row.linked_club_event_label
-                              ? `Événement lié: ${row.linked_club_event_label}`
-                              : `Stage/Camp lié: ${row.linked_camp_label}`}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button type="button" className="btn" onClick={() => openEditForm(row)}>
-                          <Pencil size={14} style={{ marginRight: 6 }} />
-                          Modifier
-                        </button>
-                        <button type="button" className="btn btn-danger soft" onClick={() => void deleteNews(row.id)}>
-                          <Trash2 size={14} style={{ marginRight: 6 }} />
-                          Supprimer
-                        </button>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.78)", lineHeight: 1.6 }}
-                      dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(row.body) }}
-                    />
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 10 }}>
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "rgba(255,255,255,0.72)",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 900 }}>
-                          <CalendarClock size={14} />
-                          Date
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.status === "scheduled" ? formatDateTime(row.scheduled_for) : formatDateTime(row.published_at || row.created_at)}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "rgba(255,255,255,0.72)",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 900 }}>
-                          <Bell size={14} />
-                          Notification
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.send_notification ? `${notificationCount} destinataire(s)` : "Désactivée"}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "rgba(255,255,255,0.72)",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 900 }}>
-                          <Mail size={14} />
-                          E-mail
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.send_email ? `${emailCount} envoi(s)` : "Désactivé"}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "rgba(255,255,255,0.72)",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 900 }}>
-                          <Users size={14} />
-                          Parents liés
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                          {row.include_linked_parents ? "Inclus" : "Non inclus"}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {row.targets.map((target) => (
-                        <span
-                          key={targetKey(target)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            borderRadius: 999,
-                            padding: "7px 10px",
-                            background: "rgba(0,0,0,0.06)",
-                            fontSize: 12,
-                            fontWeight: 800,
-                          }}
-                        >
-                          {targetLabel(target, members, groups, ageBands)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
-      </div>
-    </div>
+
+        {loading ? (
+          <ListLoadingBlock label="Chargement des actualités..." />
+        ) : news.length === 0 ? (
+          <div className={listStyles.empty}>Aucune actualité pour le moment.</div>
+        ) : (
+          <div className={listStyles.tableWrap}>
+            <table className={`${listStyles.table} ${newsStyles.newsTable}`}>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Titre</th>
+                  <th>Statut</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {news.map((row) => {
+                  const displayDate = row.status === "scheduled" ? row.scheduled_for : row.published_at || row.created_at;
+
+                  return (
+                    <tr key={row.id}>
+                      <td data-label="Date" className={newsStyles.dateCell}>
+                        {formatDateTime(displayDate)}
+                      </td>
+                      <td data-label="Titre">
+                        <div className={listStyles.titleCell}>
+                          <b>{row.title}</b>
+                        </div>
+                      </td>
+                      <td data-label="Statut">
+                        <span className={`${listStyles.badge} ${statusBadgeClass(row.status)}`}>
+                          {statusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td data-label="Actions">
+                        <div className={listStyles.actions}>
+                          <button
+                            type="button"
+                            className={listStyles.iconButton}
+                            title="Modifier"
+                            aria-label={`Modifier ${row.title}`}
+                            onClick={() => openEditForm(row)}
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${listStyles.iconButton} ${listStyles.dangerIcon}`}
+                            title="Supprimer"
+                            aria-label={`Supprimer ${row.title}`}
+                            disabled={deletingNewsId === row.id}
+                            onClick={() => void deleteNews(row)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

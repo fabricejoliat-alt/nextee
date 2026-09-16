@@ -11,6 +11,7 @@ import {
   normalizeSchedule,
   normalizeTargets,
   resolveNewsRecipients,
+  resolveLinkedEventTargets,
   validateLinkedNewsContent,
 } from "@/app/api/manager/news/_lib";
 
@@ -83,17 +84,24 @@ export async function POST(req: NextRequest) {
     const includeLinkedParents = Boolean(body.include_linked_parents);
     const linkedClubEventId = normalizeLinkedItemId(body.linked_club_event_id);
     const linkedCampId = normalizeLinkedItemId(body.linked_camp_id);
-    const targets = normalizeTargets(body.targets);
+    let targets = normalizeTargets(body.targets);
 
     if (!clubId || !ctx.managedClubs.some((club) => club.id === clubId)) {
       return NextResponse.json({ error: "Club invalide." }, { status: 400 });
     }
     if (!title) return NextResponse.json({ error: "Titre obligatoire." }, { status: 400 });
-    if (targets.length === 0) return NextResponse.json({ error: "Ajoute au moins une cible." }, { status: 400 });
     if (status === "scheduled" && !scheduledFor) {
       return NextResponse.json({ error: "Date de programmation obligatoire." }, { status: 400 });
     }
     await validateLinkedNewsContent({ supabaseAdmin, clubId, linkedClubEventId, linkedCampId });
+    const linkedEventTargets = await resolveLinkedEventTargets(supabaseAdmin, linkedClubEventId);
+    if (linkedEventTargets) targets = linkedEventTargets;
+    if (targets.length === 0) {
+      return NextResponse.json(
+        { error: linkedClubEventId ? "L’activité liée ne contient aucun joueur ou coach." : "Ajoute au moins une cible." },
+        { status: 400 }
+      );
+    }
 
     const publishedAt = normalizedStatus === "published" ? new Date().toISOString() : null;
 

@@ -6,7 +6,7 @@ type PlayerFieldDef = {
   club_id: string;
   field_key: string;
   label: string;
-  field_type: "text" | "boolean" | "select";
+  field_type: "text" | "short_text" | "long_text" | "number" | "date" | "select" | "radio" | "checkbox" | "boolean";
   options_json: string[] | null;
   is_active: boolean;
   sort_order: number;
@@ -14,6 +14,12 @@ type PlayerFieldDef = {
   visible_in_profile: boolean;
   editable_in_profile: boolean;
   legacy_binding: "player_course_track" | "player_membership_paid" | "player_playing_right_paid" | null;
+  scope: "permanent" | "season";
+  description: string | null;
+  is_required: boolean;
+  visibility: "manager" | "staff" | "player" | "restricted";
+  editable_by: "manager" | "staff" | "player" | "none";
+  is_sensitive: boolean;
 };
 
 const MEMBER_ROLES = ["manager", "coach", "player", "parent"] as const;
@@ -109,7 +115,7 @@ function normalizeLegacyCourseTrackValue(field: Pick<PlayerFieldDef, "label" | "
 async function fetchClubPlayerFields(supabaseAdmin: any, clubId: string) {
   const { data, error } = await supabaseAdmin
     .from("club_player_fields")
-    .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
+    .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
     .eq("club_id", clubId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
@@ -129,6 +135,12 @@ async function fetchClubPlayerFields(supabaseAdmin: any, clubId: string) {
       applies_to_roles: normalizeFieldRoles(row.applies_to_roles),
       ...normalizeProfileVisibility(row.visible_in_profile, row.editable_in_profile),
       legacy_binding: (row.legacy_binding ?? null) as PlayerFieldDef["legacy_binding"],
+      scope: (row.scope === "season" ? "season" : "permanent") as PlayerFieldDef["scope"],
+      description: typeof row.description === "string" ? row.description : null,
+      is_required: Boolean(row.is_required),
+      visibility: row.visibility as PlayerFieldDef["visibility"],
+      editable_by: row.editable_by as PlayerFieldDef["editable_by"],
+      is_sensitive: Boolean(row.is_sensitive),
     }))
     .filter((field) => field.is_active || !isSionSpecificPlayerField(field)) satisfies PlayerFieldDef[];
 }
@@ -239,7 +251,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const { data: membersRows, error: membersError } = await supabaseAdmin
       .from("club_members")
-      .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,created_at")
+      .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups,created_at")
       .eq("club_id", clubId)
       .order("created_at", { ascending: false });
 
@@ -272,7 +284,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
     }
 
-    const consentStatusByUserId = new Map<string, "granted" | "pending" | "adult" | null>();
+    const consentStatusByUserId = new Map<string, "granted" | "pending" | "refused" | "adult" | null>();
     if (userIds.length > 0) {
       const { data: consentRows, error: consentError } = await supabaseAdmin
         .from("club_members")
@@ -292,6 +304,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
       for (const [userId, statuses] of rawByUser.entries()) {
         if (statuses.includes("granted")) consentStatusByUserId.set(userId, "granted");
+        else if (statuses.includes("refused")) consentStatusByUserId.set(userId, "refused");
         else if (statuses.includes("adult")) consentStatusByUserId.set(userId, "adult");
         else if (statuses.includes("pending")) consentStatusByUserId.set(userId, "pending");
         else consentStatusByUserId.set(userId, null);
@@ -381,6 +394,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         role: m.role,
         is_active: m.is_active,
         is_performance: m.is_performance,
+        can_manage_assigned_groups: Boolean(m.can_manage_assigned_groups),
+        can_manage_assigned_group_planning: Boolean(m.can_manage_assigned_group_planning),
+        can_transfer_players_between_club_groups: Boolean(m.can_transfer_players_between_club_groups),
         player_course_track: m.player_course_track ?? null,
         player_membership_paid: m.player_membership_paid ?? null,
         player_playing_right_paid: m.player_playing_right_paid ?? null,
@@ -413,6 +429,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const role = String(body.role ?? "").trim();
     const isActive = body.is_active;
     const isPerformance = body.is_performance;
+    const canManageAssignedGroups = body.can_manage_assigned_groups;
+    const canManageAssignedGroupPlanning = body.can_manage_assigned_group_planning;
+    const canTransferPlayers = body.can_transfer_players_between_club_groups;
     const authEmailRaw = typeof body.auth_email === "string" ? body.auth_email : "";
     const authEmail = normalizeAuthEmailInput(authEmailRaw);
     const authPassword = typeof body.auth_password === "string" ? body.auth_password : "";
@@ -428,7 +447,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const playerConsentStatus =
       playerConsentStatusRaw === ""
         ? null
-        : playerConsentStatusRaw === "granted" || playerConsentStatusRaw === "pending" || playerConsentStatusRaw === "adult"
+        : playerConsentStatusRaw === "granted" || playerConsentStatusRaw === "pending" || playerConsentStatusRaw === "refused" || playerConsentStatusRaw === "adult"
         ? playerConsentStatusRaw
         : "__invalid__";
     if (playerConsentStatus === "__invalid__") {
@@ -454,6 +473,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (typeof isActive === "boolean") memberPatch.is_active = isActive;
     if (typeof isPerformance === "boolean") memberPatch.is_performance = isPerformance;
     const effectiveRole = role || (memberRow as any).role || "";
+    if (effectiveRole === "coach") {
+      if (typeof canManageAssignedGroups === "boolean") memberPatch.can_manage_assigned_groups = canManageAssignedGroups;
+      if (typeof canManageAssignedGroupPlanning === "boolean") memberPatch.can_manage_assigned_group_planning = canManageAssignedGroupPlanning;
+      if (typeof canTransferPlayers === "boolean") memberPatch.can_transfer_players_between_club_groups = canTransferPlayers;
+    } else if (role && role !== "coach") {
+      memberPatch.can_manage_assigned_groups = false;
+      memberPatch.can_manage_assigned_group_planning = false;
+      memberPatch.can_transfer_players_between_club_groups = false;
+    }
     const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const fieldById = new Map(playerFields.map((field) => [field.id, field]));
     const legacyCourseTrackField = playerFields.find((field) => field.legacy_binding === "player_course_track") ?? null;
@@ -633,25 +661,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
         return NextResponse.json({ error: "Invalid handedness" }, { status: 400 });
       }
       profilePatch.handedness = v || null;
-    }
-
-    if (has("handicap")) {
-      const raw = body.handicap;
-      if (raw == null || raw === "") {
-        profilePatch.handicap = null;
-      } else {
-        const rawText = typeof raw === "string" ? raw.trim().toUpperCase() : "";
-        if (rawText === "AP") {
-          profilePatch.handicap = null;
-          // AP is accepted as a non-numeric handicap marker.
-        } else {
-          const n = Number(raw);
-          if (!Number.isFinite(n)) {
-            return NextResponse.json({ error: "Invalid handicap" }, { status: 400 });
-          }
-          profilePatch.handicap = n;
-        }
-      }
     }
 
     if (Object.keys(profilePatch).length > 0) {

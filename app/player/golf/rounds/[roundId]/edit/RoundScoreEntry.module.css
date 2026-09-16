@@ -1,0 +1,88 @@
+.sectionCard { min-width: 0; }
+
+.modeCard,
+.gridCard,
+.holeCard,
+.detailsCard { display: grid; gap: 14px; min-width: 0; }
+
+.detailsCard { gap: 10px; }
+
+.modeOptions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.modeButton { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid #dce4da; border-radius: 10px; background: #fff; color: #35483b; font: 700 12px var(--font-inter), sans-serif; text-align: center; cursor: pointer; }
+.modeButtonActive { border-color: #35483b; background: #35483b; color: #fff; box-shadow: 0 7px 16px rgba(53, 72, 59, .14); }
+.modeButton:hover:not(.modeButtonActive) { background: #f6f9f5; }
+.modeButton:focus-visible { outline: 2px solid #82977a; outline-offset: 2px; }
+
+.cardTitle {
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e6ece4;
+  color: #35483b;
+  font: 750 17px/1.3 var(--font-inter-tight), var(--font-inter), sans-serif;
+  letter-spacing: -.02em;
+}
+
+.holeHeader { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.holeHeader .cardTitle { margin-bottom: 9px; padding: 0; border: 0; font-size: 14px; }
+.holeNumber { display: block; color: #283d2f; font: 750 31px/1 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.03em; }
+
+.scoreCore {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.scoreField { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid #e0e9dc; border-radius: 11px; background: #fff; }
+.parField { background: #fff; border-color: #cfdacf; }
+.resultField { background: #fff; border-color: #aac2a4; }
+.scoreField:only-child { grid-column: 1 / -1; }
+.scoreField > div:first-child { color: #35483b !important; font-size: 13px !important; }
+
+.holeNavigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 5px; }
+.holeNavigationThree { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.navButton,
+.actionButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font: 700 12px var(--font-inter), sans-serif;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.navButton { width: 100%; min-height: 48px; }
+.navSecondary { border: 1px solid #becfb8; background: #fff; color: #35483b; }
+.navPrimary,
+.primaryAction { border: 1px solid #35483b; background: #35483b; color: #fff; box-shadow: 0 7px 16px rgba(53, 72, 59, .14); }
+.navSecondary:hover:not(:disabled) { background: #f4f8f2; }
+.navPrimary:hover:not(:disabled),
+.primaryAction:hover:not(:disabled) { background: #2f4035; }
+.navButton:disabled,
+.actionButton:disabled { cursor: not-allowed; opacity: .5; box-shadow: none; }
+.navButton:focus-visible,
+.actionButton:focus-visible { outline: 2px solid #82977a; outline-offset: 2px; }
+
+.gridSaveButton,
+.saveMetaButton { justify-self: end; min-width: 190px; }
+.footerActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.footerActions .actionButton { min-width: 190px; }
+.dangerAction { border: 1px solid #e9c4c0; background: #fff0ef; color: #ad3d35; }
+.dangerAction:hover:not(:disabled) { background: #ffe4e1; }
+
+@media (max-width: 760px) {
+  .scoreCore { grid-template-columns: 1fr; }
+  .scoreField:only-child { grid-column: auto; }
+  .holeNavigationThree { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .holeNavigationThree > :last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 480px) {
+  .scoreField { padding: 12px; }
+  .footerActions .actionButton { flex: 0 1 auto; min-width: 0; }
+}

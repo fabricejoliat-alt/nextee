@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Trophy } from "lucide-react";
+import { ChevronRight, ListChecks } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import styles from "@/app/manager/camps/Camps.module.css";
+import omStyles from "./CoachOrderMerit.module.css";
 
 type ManagedOrg = { id: string; name: string };
 type OMRankingRow = {
@@ -27,6 +29,8 @@ type ProfileAvatarRow = {
   first_name?: string | null;
   last_name?: string | null;
 };
+type ClubMemberPerformanceRow = { user_id: string | null };
+type CoachClubsResponse = { clubs?: Array<{ id?: string | null; name?: string | null }>; error?: string };
 type EligiblePlayer = {
   player_id: string;
   full_name: string;
@@ -237,7 +241,7 @@ export default function CoachOrderOfMeritPage() {
     if (membersRes.error) throw new Error(membersRes.error.message);
 
     const playerIds = Array.from(
-      new Set((membersRes.data ?? []).map((row: any) => String(row?.user_id ?? "")).filter(Boolean))
+      new Set(((membersRes.data ?? []) as ClubMemberPerformanceRow[]).map((row) => String(row.user_id ?? "")).filter(Boolean))
     );
     if (playerIds.length === 0) {
       setEligiblePlayers([]);
@@ -443,11 +447,11 @@ export default function CoachOrderOfMeritPage() {
     try {
       const headers = await authHeader();
       const res = await fetch("/api/coach/my-clubs", { method: "GET", headers, cache: "no-store" });
-      const json = await res.json().catch(() => ({}));
+      const json = (await res.json().catch(() => ({}))) as CoachClubsResponse;
       if (!res.ok) throw new Error(String(json?.error ?? txt.genericError));
 
       const nextOrgs: ManagedOrg[] = (Array.isArray(json?.clubs) ? json.clubs : [])
-        .map((c: any) => ({ id: String(c?.id ?? ""), name: String(c?.name ?? "Club") }))
+        .map((club) => ({ id: String(club?.id ?? ""), name: String(club?.name ?? "Club") }))
         .filter((x: ManagedOrg) => Boolean(x.id));
       setOrgs(nextOrgs);
 
@@ -461,8 +465,8 @@ export default function CoachOrderOfMeritPage() {
       }
 
       await Promise.all([loadEligiblePlayers(nextOrgId), loadRanking(nextOrgId, rankingFrom, rankingTo)]);
-    } catch (e: any) {
-      setError(String(e?.message ?? txt.genericError));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : txt.genericError);
       setRankingRows([]);
       setEligiblePlayers([]);
       setPointDetails([]);
@@ -481,8 +485,8 @@ export default function CoachOrderOfMeritPage() {
     (async () => {
       try {
         await Promise.all([loadEligiblePlayers(organizationId), loadRanking(organizationId, rankingFrom, rankingTo)]);
-      } catch (e: any) {
-        setError(String(e?.message ?? txt.genericError));
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : txt.genericError);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -595,239 +599,50 @@ export default function CoachOrderOfMeritPage() {
     (async () => {
       try {
         await loadPointDetails(selectedPlayerId, organizationId, rankingFrom, rankingTo);
-      } catch (e: any) {
-        setError(String(e?.message ?? txt.genericError));
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : txt.genericError);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId, selectedPlayerId, rankingFrom, rankingTo]);
 
-  return (
-    <div className="player-dashboard-bg" style={{ color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="section-title" style={{ marginBottom: 0, display: "inline-flex", gap: 8, alignItems: "center" }}>
-            <Trophy size={18} />
-            {txt.title}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="glass-section">
-            <div className="glass-card">
-              <ListLoadingBlock label={txt.loading} />
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
-                <div style={{ fontWeight: 800 }}>{txt.organization}</div>
-                <select
-                  className="search-input"
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  style={{ width: "100%", color: "#111827", WebkitTextFillColor: "#111827" }}
-                >
-                  {orgs.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-                {orgs.length === 0 ? <div style={{ opacity: 0.72 }}>{txt.noOrg}</div> : null}
-              </div>
-            </div>
-
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
-                <div style={{ fontWeight: 800 }}>{txt.summary}</div>
-                {!selectedRow ? (
-                  <div style={{ opacity: 0.72 }}>{txt.notRanked}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontSize: 13, opacity: 0.75 }}>
-                      {txt.summaryAsOf} {fmtActivityDate(rankingFrom, locale)} - {fmtActivityDate(rankingTo, locale)}
-                    </div>
-                    <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
-                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankNet}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{selectedRow.rank_net}</div>
-                        <div style={{ fontSize: 13, marginTop: 4 }}>
-                          {txt.rankingTournament}: <strong>{points(selectedRow.tournament_points_net)}</strong> · {txt.rankingBonus}: <strong>{points(selectedRow.bonus_points_net)}</strong>
-                        </div>
-                        <div style={{ fontSize: 13 }}>
-                          {txt.rankingTotal}: <strong>{points(selectedRow.total_points_net)}</strong>
-                        </div>
-                      </div>
-                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, padding: "10px 12px", background: "#fff" }}>
-                        <div style={{ fontSize: 12, opacity: 0.72 }}>{txt.summaryRankBrut}</div>
-                        <div style={{ fontWeight: 900, marginTop: 2, fontSize: 18 }}>#{selectedRow.rank_brut}</div>
-                        <div style={{ fontSize: 13, marginTop: 4 }}>
-                          {txt.rankingTournament}: <strong>{points(selectedRow.tournament_points_brut)}</strong> · {txt.rankingBonus}: <strong>{points(selectedRow.bonus_points_brut)}</strong>
-                        </div>
-                        <div style={{ fontSize: 13 }}>
-                          {txt.rankingTotal}: <strong>{points(selectedRow.total_points_brut)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10, color: "#1f2937", WebkitTextFillColor: "#1f2937" }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateFrom}</span>
-                    <input
-                      className="search-input"
-                      type="date"
-                      value={rankingFrom}
-                      onChange={(e) => setRankingFrom(e.target.value)}
-                      style={{ color: "#111827", WebkitTextFillColor: "#111827" }}
-                    />
-                  </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, opacity: 0.75 }}>{txt.rankingDateTo}</span>
-                    <input
-                      className="search-input"
-                      type="date"
-                      value={rankingTo}
-                      onChange={(e) => setRankingTo(e.target.value)}
-                      style={{ color: "#111827", WebkitTextFillColor: "#111827" }}
-                    />
-                  </label>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <button type="button" className={`btn ${rankingMode === "net" ? "btn-active-om-light" : ""}`} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"} style={{ width: "100%" }}>
-                    {txt.rankingNet}
-                  </button>
-                  <button type="button" className={`btn ${rankingMode === "brut" ? "btn-active-om-light" : ""}`} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"} style={{ width: "100%" }}>
-                    {txt.rankingBrut}
-                  </button>
-                </div>
-                {periodLabel ? <div style={{ fontSize: 13, opacity: 0.72 }}>{periodLabel}</div> : null}
-                {!organizationId || orgs.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.noOrg}</div>
-                ) : rankingLoading ? (
-                  <ListLoadingBlock label={txt.loading} />
-                ) : sortedRows.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.rankingEmpty}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {sortedRows.map((r) => (
-                      <button
-                        key={r.player_id}
-                        type="button"
-                        className="marketplace-item"
-                        onClick={() => setSelectedPlayerId(r.player_id)}
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 12,
-                          textAlign: "left",
-                          background: r.player_id === selectedPlayerId ? "rgba(53,72,59,0.08)" : undefined,
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <div
-                              style={{
-                                minWidth: 44,
-                                height: 28,
-                                borderRadius: 999,
-                                border: "1px solid rgba(0,0,0,0.10)",
-                                display: "grid",
-                                placeItems: "center",
-                                fontWeight: 900,
-                                fontSize: 13,
-                              }}
-                            >
-                              #{rankingMode === "net" ? r.rank_net : r.rank_brut}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: "50%",
-                                  overflow: "hidden",
-                                  background: "rgba(0,0,0,0.08)",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {avatarByPlayerId[r.player_id] ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={avatarByPlayerId[r.player_id] ?? ""} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                ) : (
-                                  <span>{initialsFromName(r.full_name)}</span>
-                                )}
-                              </div>
-                              <div style={{ fontWeight: 800 }}>{r.full_name}</div>
-                            </div>
-                          </div>
-                          <div style={{ fontWeight: 900, fontSize: 16 }}>
-                            {rankingMode === "net" ? points(r.total_points_net) : points(r.total_points_brut)}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-section">
-              <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>{txt.details}</div>
-                {!organizationId || orgs.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.noOrg}</div>
-                ) : detailsLoading ? (
-                  <ListLoadingBlock label={txt.loading} />
-                ) : pointDetails.length === 0 ? (
-                  <div style={{ opacity: 0.72 }}>{txt.detailsEmpty}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {pointDetails.map((d) => (
-                      <div key={d.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 12 }}>
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                            <div style={{ fontWeight: 800 }}>{d.title}</div>
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>{d.dateLabel ?? String(d.date).slice(0, 10)}</div>
-                          </div>
-                          {d.subtitle ? <div style={{ fontSize: 13, opacity: 0.78 }}>{d.subtitle}</div> : null}
-                          <div style={{ fontSize: 13, opacity: 0.85 }}>
-                            {txt.rankingNet}: <strong>{points(d.pointsNet)}</strong> · {txt.rankingBrut}: <strong>{points(d.pointsBrut)}</strong>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {error ? (
-          <div className="glass-section">
-            <div className="marketplace-error">{error}</div>
-          </div>
-        ) : null}
+  return <main className={styles.page}>
+    <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><a href="/coach">Coach</a><ChevronRight size={13} aria-hidden="true" /><span>Suivi</span><ChevronRight size={13} aria-hidden="true" /><span>{txt.title}</span></nav>
+    <header className={styles.topline}><div><h1>{txt.title}</h1><p className={styles.lead}>Suivez les points de vos juniors sur la période sélectionnée.</p></div></header>
+    {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
+    <section className={styles.panel}>
+      <div className={styles.panelHeader}><div><h2>Filtres du classement</h2><p>Les données sont limitées aux clubs auxquels vous êtes rattaché.</p></div></div>
+      <div className={styles.toolbar}>
+        {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{orgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label> : null}
+        <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateFrom}</span><input type="date" value={rankingFrom} onChange={(event) => setRankingFrom(event.target.value)} /></label>
+        <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateTo}</span><input type="date" value={rankingTo} onChange={(event) => setRankingTo(event.target.value)} /></label>
+        <div className={styles.actions}><button type="button" className={rankingMode === "net" ? styles.primary : styles.secondary} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button><button type="button" className={rankingMode === "brut" ? styles.primary : styles.secondary} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button></div>
       </div>
-      <style>{`
-        .marketplace-page a,
-        .marketplace-page a[x-apple-data-detectors],
-        .marketplace-page [x-apple-data-detectors] {
-          color: inherit !important;
-          -webkit-text-fill-color: currentColor !important;
-          text-decoration: none !important;
-        }
-      `}</style>
-    </div>
-  );
+      {periodLabel ? <span className={styles.muted}>{periodLabel}</span> : null}
+    </section>
+    {loading ? <section className={styles.panel}><ListLoadingBlock label={txt.loading} /></section> : <>
+      <section className={styles.panel}>
+        <div className={styles.panelHeader}><div><h2>Classement</h2><p>{sortedRows.length} junior{sortedRows.length > 1 ? "s" : ""} sur la période.</p></div></div>
+        {!organizationId || orgs.length === 0 ? <div className={styles.empty}>{txt.noOrg}</div> : rankingLoading ? <ListLoadingBlock label={txt.loading} /> : sortedRows.length === 0 ? <div className={styles.empty}>{txt.rankingEmpty}</div> : (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead><tr><th>Rang</th><th>Junior</th><th>{txt.rankingTournament}</th><th>{txt.rankingBonus}</th><th>{txt.rankingTotal}</th><th>Action</th></tr></thead>
+              <tbody>{sortedRows.map((row) => (
+                <tr key={row.player_id}>
+                  <td data-label="Rang"><span className={styles.badge}>#{rankingMode === "net" ? row.rank_net : row.rank_brut}</span></td>
+                  <td data-label="Junior"><div className={styles.person}><span className={styles.avatar}>{avatarByPlayerId[row.player_id] ? <img src={avatarByPlayerId[row.player_id] ?? ""} alt="" /> : initialsFromName(row.full_name)}</span><b>{row.full_name}</b></div></td>
+                  <td data-label={txt.rankingTournament}>{points(rankingMode === "net" ? row.tournament_points_net : row.tournament_points_brut)}</td>
+                  <td data-label={txt.rankingBonus}>{points(rankingMode === "net" ? row.bonus_points_net : row.bonus_points_brut)}</td>
+                  <td data-label={txt.rankingTotal}><strong>{points(rankingMode === "net" ? row.total_points_net : row.total_points_brut)}</strong></td>
+                  <td data-label="Action"><button type="button" className={styles.secondary} onClick={() => setSelectedPlayerId(row.player_id)} aria-label={`Afficher le détail des points de ${row.full_name}`} title="Détail des points"><ListChecks size={15} aria-hidden="true" />Détail des points</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className={styles.panel}><div className={styles.panelHeader}><div><h2>{txt.summary}</h2><p>{txt.summaryAsOf} {fmtActivityDate(rankingFrom, locale)} – {fmtActivityDate(rankingTo, locale)}</p></div></div>{!selectedRow ? <div className={styles.empty}>{txt.notRanked}</div> : <div className={styles.metrics}><div className={styles.metric}><span>{txt.summaryRankNet}</span><b>#{selectedRow.rank_net}</b><p className={styles.muted}>{txt.rankingTotal}: {points(selectedRow.total_points_net)}</p></div><div className={styles.metric}><span>{txt.summaryRankBrut}</span><b>#{selectedRow.rank_brut}</b><p className={styles.muted}>{txt.rankingTotal}: {points(selectedRow.total_points_brut)}</p></div></div>}</section>
+      <section className={styles.panel}><div className={styles.panelHeader}><div><h2>{txt.details}</h2><p>{selectedRow?.full_name ?? ""}</p></div></div>{detailsLoading ? <ListLoadingBlock label={txt.loading} /> : pointDetails.length === 0 ? <div className={styles.empty}>{txt.detailsEmpty}</div> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Date</th><th>Élément</th><th>{txt.rankingNet}</th><th>{txt.rankingBrut}</th></tr></thead><tbody>{pointDetails.map((detail) => <tr key={detail.id}><td data-label="Date">{detail.dateLabel ?? String(detail.date).slice(0, 10)}</td><td data-label="Élément"><div className={styles.titleCell}><b>{detail.title}</b>{detail.subtitle ? <span className={styles.muted}>{detail.subtitle}</span> : null}</div></td><td data-label={txt.rankingNet}>{points(detail.pointsNet)}</td><td data-label={txt.rankingBrut}>{points(detail.pointsBrut)}</td></tr>)}</tbody></table></div>}</section>
+    </>}
+  </main>;
 }

@@ -1,5 +1,5 @@
-import UserManagementWorkspace from "@/components/manager/UserManagementWorkspace";
+import CoachesManagementPage from "@/components/manager/CoachesManagementPage";
 
 export default function ManagerUserManagementCoachesPage() {
-  return <UserManagementWorkspace section="coaches" />;
+  return <CoachesManagementPage />;
 }

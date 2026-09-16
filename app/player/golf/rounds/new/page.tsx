@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import styles from "./NewRound.module.css";
 
 type ApiCourseLite = {
   id: string | number;
@@ -247,6 +250,7 @@ export default function NewRoundPage() {
   const [tees, setTees] = useState<ApiTee[]>([]);
   const [selectedTeeId, setSelectedTeeId] = useState("");
   const [playHolesMode, setPlayHolesMode] = useState<PlayHolesMode>("18");
+  const [inputMode, setInputMode] = useState<"guided" | "grid">("guided");
 
   const selectedTee = useMemo(() => tees.find((t) => t.id === selectedTeeId) ?? null, [tees, selectedTeeId]);
   const selectedTeeHolesCount = selectedTee?.holes?.length ?? 0;
@@ -741,7 +745,7 @@ export default function NewRoundPage() {
     if (isMatchPlayCompetition) {
       router.push("/player/golf/rounds");
     } else {
-      router.push(`/player/golf/rounds/${createdRoundIds[0]}/edit`);
+      router.push(`/player/golf/rounds/${createdRoundIds[0]}/edit?mode=${inputMode}`);
     }
   }
 
@@ -756,23 +760,22 @@ export default function NewRoundPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Ajouter" }]} />
         <div className="glass-section">
-          <div className="marketplace-header">
+          <div className={`marketplace-header ${styles.heroHeader}`}>
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {t("roundsNew.title")}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
+              </h1>
+              <div className="section-subtitle">
                 {t("roundsNew.subtitle")}
               </div>
             </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
+            <div className={styles.heroActions}>
+              <Link className={styles.headerAction} href="/player/golf/rounds">
+                <ArrowLeft size={15} aria-hidden="true" />
                 {t("common.back")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player/golf/rounds">
-                {t("rounds.title")}
               </Link>
             </div>
           </div>
@@ -781,9 +784,13 @@ export default function NewRoundPage() {
         </div>
 
         <div className="glass-section">
-          <div className="glass-card">
-            <form onSubmit={createRound} style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 10 }}>
+          <div className={`glass-card ${styles.formCard}`}>
+            <div className={styles.cardHeader}>
+              <h2>{pickLocaleText(locale, "Informations du parcours", "Round details")}</h2>
+              <p>{pickLocaleText(locale, "Renseignez votre partie avant de passer à la carte de score.", "Set up your round before filling in the scorecard.")}</p>
+            </div>
+            <form onSubmit={createRound} className={styles.roundForm}>
+              <div className={styles.detailsGrid}>
                 <label style={{ display: "grid", gap: 6, width: "100%", minWidth: 0 }}>
                   <span style={fieldLabelStyle}>{t("common.date")}</span>
                   <input
@@ -1086,7 +1093,7 @@ export default function NewRoundPage() {
 
                     <button
                       type="button"
-                      className="btn"
+                      className={`${styles.actionButton} ${styles.secondaryAction} ${styles.courseAction}`}
                       onClick={() => {
                         setManualCourseOpen((v) => !v);
                         setSelectedCourse(null);
@@ -1096,6 +1103,7 @@ export default function NewRoundPage() {
                       }}
                       disabled={busy}
                     >
+                      <Plus size={15} aria-hidden="true" />
                       Ajouter un parcours
                     </button>
 
@@ -1184,7 +1192,7 @@ export default function NewRoundPage() {
                         </div>
                       </div>
 
-                      <button type="button" className="btn" onClick={resetCourse} disabled={busy}>
+                      <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.courseAction}`} onClick={resetCourse} disabled={busy}>
                         {t("common.change")}
                       </button>
                     </div>
@@ -1247,6 +1255,25 @@ export default function NewRoundPage() {
 
               <div className="hr-soft" />
 
+              {!isMatchPlayCompetition ? (
+                <fieldset className={styles.scoreSection}>
+                  <legend>{pickLocaleText(locale, "Saisie du score", "Score entry")}</legend>
+                  <div className={styles.scoreChoices}>
+                    <label className={`${styles.scoreChoice} ${inputMode === "guided" ? styles.scoreChoiceActive : ""}`}>
+                      <input type="radio" name="input-mode" checked={inputMode === "guided"} onChange={() => setInputMode("guided")} disabled={busy} />
+                      <span><strong>{pickLocaleText(locale, "Trou par trou", "Hole by hole")}</strong><small>{pickLocaleText(locale, "Guidé, idéal sur mobile", "Guided, ideal on mobile")}</small></span>
+                    </label>
+                    <label className={`${styles.scoreChoice} ${inputMode === "grid" ? styles.scoreChoiceActive : ""}`}>
+                      <input type="radio" name="input-mode" checked={inputMode === "grid"} onChange={() => setInputMode("grid")} disabled={busy} />
+                      <span><strong>{pickLocaleText(locale, "Tous les trous", "All holes")}</strong><small>{pickLocaleText(locale, "Grille rapide avec totaux", "Quick grid with totals")}</small></span>
+                    </label>
+                  </div>
+                  <p className={styles.scoreHint}>{pickLocaleText(locale, "Vous pourrez changer de mode à tout moment sans effacer les scores.", "You can switch modes at any time without losing scores.")}</p>
+                </fieldset>
+              ) : null}
+
+              <div className="hr-soft" />
+
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
                 <textarea
@@ -1258,23 +1285,21 @@ export default function NewRoundPage() {
                 />
               </label>
 
-              <button
-                className="cta-green cta-green-inline"
-                type="submit"
-                disabled={!canSave || busy}
-                style={{ width: "100%", justifyContent: "center" }}
-              >
-                {busy
-                  ? t("roundsNew.creating")
-                  : isMatchPlayCompetition
-                  ? pickLocaleText(locale, "Creer le match", "Create match")
-                  : t("roundsNew.createAndEnter")}
-              </button>
-
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 2 }}>
-                <Link className="btn" href="/player/golf/rounds">
+              <div className={styles.formActions}>
+                <Link className={`${styles.actionButton} ${styles.secondaryAction}`} href="/player/golf/rounds">
                   {t("common.cancel")}
                 </Link>
+                <button
+                  className={`${styles.actionButton} ${styles.primaryAction}`}
+                  type="submit"
+                  disabled={!canSave || busy}
+                >
+                  {busy
+                    ? t("roundsNew.creating")
+                    : isMatchPlayCompetition
+                    ? pickLocaleText(locale, "Creer le match", "Create match")
+                    : t("roundsNew.createAndEnter")}
+                </button>
               </div>
             </form>
           </div>

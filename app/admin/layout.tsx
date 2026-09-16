@@ -3,8 +3,10 @@ import AdminShell from "@/components/admin/AdminShell";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <RoleGuard allow="admin">
-      <AdminShell>{children}</AdminShell>
-    </RoleGuard>
+    <div className="admin-page admin-page-root">
+      <RoleGuard allow="admin">
+        <AdminShell>{children}</AdminShell>
+      </RoleGuard>
+    </div>
   );
 }

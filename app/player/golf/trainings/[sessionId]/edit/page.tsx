@@ -9,6 +9,7 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -492,13 +493,14 @@ export default function PlayerTrainingEditPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Activités", href: "/player/golf/trainings" }, { label: "Modifier" }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {t("trainingEdit.title")}
-              </div>
+              </h1>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>

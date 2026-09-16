@@ -5,6 +5,7 @@ export default function CoachNotificationSettingsPage() {
     <NotificationSettings
       homeHref="/coach"
       notificationsHref="/coach/notifications"
+      designVariant="management"
       titleFr="Paramètres notifications coach"
       titleEn="Coach notification settings"
       titleDe="Trainer-Benachrichtigungseinstellungen"

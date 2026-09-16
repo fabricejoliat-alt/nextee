@@ -6,7 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { CalendarDays, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+import { CalendarDays, ChevronLeft, ChevronRight, Trash2, MapPin, Pencil } from "lucide-react";
 
 type CalendarView = "month" | "week" | "day";
 
@@ -14,7 +16,7 @@ type EventRow = {
   id: string;
   group_id: string;
   club_id: string;
-  event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | "competition" | null;
   title: string | null;
   starts_at: string;
   ends_at: string | null;
@@ -23,6 +25,10 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+  competition_level: "internal" | "club" | "regional" | "national" | "international" | null;
+  competition_category: "u10" | "u12" | "u14" | "u16" | "u18" | "all" | null;
+  external_registration_url: string | null;
+  competition_note: string | null;
 };
 
 type ManagedClub = { id: string; name: string | null };
@@ -44,6 +50,12 @@ type MemberLite = {
   role: "manager" | "coach" | "player" | "parent";
   is_active: boolean | null;
   profiles?: { first_name: string | null; last_name: string | null } | null;
+};
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: "#53675a",
 };
 
 function startOfDay(d: Date) {
@@ -110,12 +122,23 @@ function dayHeaderLabel(d: Date, locale: string) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+function dateCardParts(date: Date, locale: string) {
+  const format = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale, options).format(date);
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  return {
+    day: capitalize(format({ weekday: "long" })),
+    month: capitalize(format({ month: "long" })),
+    number: date.getDate(),
+  };
+}
+
 function eventTypeLabel(v: EventRow["event_type"], locale: string) {
   const l = locale as "fr" | "en" | "de" | "it";
   if (v === "training") return pickLocaleText(l, "Entraînement", "Training");
   if (v === "interclub") return pickLocaleText(l, "Interclub", "Interclub");
   if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
   if (v === "session") return pickLocaleText(l, "Séance", "Session");
+  if (v === "competition") return pickLocaleText(l, "Compétition", "Competition");
   return pickLocaleText(l, "Activité", "Activity");
 }
 
@@ -124,7 +147,49 @@ function eventTypeColor(v: EventRow["event_type"]) {
   if (v === "interclub") return { bg: "rgba(59,130,246,0.16)", border: "rgba(59,130,246,0.46)", text: "rgba(30,64,175,1)" };
   if (v === "camp") return { bg: "rgba(245,158,11,0.16)", border: "rgba(245,158,11,0.50)", text: "rgba(120,53,15,1)" };
   if (v === "session") return { bg: "rgba(168,85,247,0.16)", border: "rgba(168,85,247,0.46)", text: "rgba(88,28,135,1)" };
+  if (v === "competition") return { bg: "rgba(217,164,65,0.18)", border: "rgba(181,126,24,0.52)", text: "rgba(105,69,10,1)" };
   return { bg: "rgba(15,23,42,0.10)", border: "rgba(15,23,42,0.24)", text: "rgba(15,23,42,1)" };
+}
+
+function competitionLevelLabel(value: EventRow["competition_level"]) {
+  if (value === "internal") return "Tournoi interne";
+  if (value === "club") return "Tournoi Club";
+  if (value === "regional") return "Régional";
+  if (value === "national") return "National";
+  if (value === "international") return "International";
+  return "—";
+}
+
+function competitionCategoryLabel(value: EventRow["competition_category"]) {
+  return value === "all" ? "Tous" : String(value ?? "—").toUpperCase();
+}
+
+function eventPeriodLabel(event: EventRow, locale: string) {
+  if (!event.ends_at) return dateTimeLabel(event.starts_at, locale);
+  if (event.event_type === "competition") {
+    const format = (iso: string) => new Intl.DateTimeFormat(locale, {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(iso));
+    return `${format(event.starts_at)} — ${format(event.ends_at)}`;
+  }
+  return `${dateTimeLabel(event.starts_at, locale)} — ${dateTimeLabel(event.ends_at, locale)}`;
+}
+
+function eventSpansMultipleDays(event: EventRow) {
+  if (!event.ends_at) return false;
+  const dateKey = (iso: string) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Zurich",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+  return dateKey(event.starts_at) !== dateKey(event.ends_at);
+}
+
+function eventTimeOrPeriodLabel(event: EventRow, locale: string) {
+  return event.event_type === "competition" ? eventPeriodLabel(event, locale) : timeLabel(event.starts_at, locale);
 }
 
 function overlapsDay(e: EventRow, d: Date) {
@@ -152,6 +217,7 @@ export default function CoachCalendarPage() {
   const [playerNameById, setPlayerNameById] = useState<Record<string, string>>({});
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [playerFilter, setPlayerFilter] = useState<string>("all");
+  const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
 
   const [view, setView] = useState<CalendarView>("month");
   const [anchorDate, setAnchorDate] = useState<Date>(new Date());
@@ -166,8 +232,21 @@ export default function CoachCalendarPage() {
     if (playerFilter !== "all") {
       list = list.filter((e) => (attendeeByEvent[e.id] ?? []).includes(playerFilter));
     }
+    if (eventTypeFilter !== "all") {
+      list = list.filter((event) => event.event_type === eventTypeFilter);
+    }
     return list;
-  }, [events, groupFilter, playerFilter, attendeeByEvent]);
+  }, [events, groupFilter, playerFilter, eventTypeFilter, attendeeByEvent]);
+
+  const activityStats = useMemo(() => {
+    const now = new Date();
+    const plannedEvents = events.filter((event) => event.status === "scheduled");
+    return {
+      completed: plannedEvents.filter((event) => new Date(event.starts_at).getTime() <= now.getTime()).length,
+      planned: plannedEvents.filter((event) => new Date(event.starts_at).getTime() > now.getTime()).length,
+      total: plannedEvents.length,
+    };
+  }, [events]);
 
   useEffect(() => {
     (async () => {
@@ -395,23 +474,14 @@ export default function CoachCalendarPage() {
     border: "none",
     borderRight: rightBorder ? "1px solid rgba(0,0,0,0.12)" : "none",
     borderRadius: 0,
-    background: active ? "rgba(55,65,81,1)" : "rgba(229,231,235,1)",
-    color: active ? "#fff" : "rgba(17,24,39,1)",
+    background: active ? "#35483b" : "#fff",
+    color: active ? "#fff" : "#35483b",
     fontWeight: 900,
     fontSize: 12,
     lineHeight: 1.1,
     padding: "7px 10px",
     cursor: "pointer",
   });
-  const detailCardStyle: React.CSSProperties = {
-    border: "1px solid rgba(0,0,0,0.10)",
-    borderRadius: 10,
-    background: "rgba(255,255,255,0.78)",
-    padding: 10,
-    display: "grid",
-    gap: 8,
-  };
-
   const canDeleteEvent = (e: EventRow) => !e.series_id;
 
   async function deleteEvent(eventId: string) {
@@ -447,27 +517,102 @@ export default function CoachCalendarPage() {
     }
   }
 
-  return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div className="section-title" style={{ marginBottom: 0 }}>
-              <CalendarDays size={18} style={{ verticalAlign: "middle", marginRight: 8 }} />
-              {tr("Gestion des activités", "Activity management")}
-            </div>
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/manager/events/new">
-                {tr("Ajouter une activité", "Add activity")}
-              </Link>
-            </div>
+  function renderEventDetail(event: EventRow) {
+    const isCompetition = event.event_type === "competition";
+    const showScheduleCard = !isCompetition || eventSpansMultipleDays(event);
+    const isSpecific = groupNames[event.group_id] === "Groupe spécifique" || event.title?.trim() === "Activité spécifique";
+    const title = eventTypeLabel(event.event_type, locale);
+    const duration = !isCompetition && event.duration_minutes ? `${event.duration_minutes} min` : null;
+    const customTitle = event.title?.trim() || "";
+    return (
+      <article className="manager-calendar-expanded">
+        <div className="planning-event-title-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+            <h3 className="planning-event-title">
+              {title}
+              {customTitle ? <span className="planning-event-custom-title"> — {customTitle}</span> : null}
+            </h3>
+            <span className="pill-soft">{event.series_id ? tr("Récurrent", "Recurring") : tr("Unique", "Single")}</span>
+            {isSpecific ? <span className="pill-soft planning-event-type">{tr("Activité spécifique", "Specific activity")}</span> : null}
           </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+          {duration ? <span className="pill-soft">{duration}</span> : null}
         </div>
 
-        <div className="glass-section" style={{ display: "grid", gap: 14 }}>
-          <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
+        <div className="manager-calendar-detail-grid">
+          <div><span>{tr("Groupe", "Group")}</span><b>{groupNames[event.group_id] ?? tr("Groupe spécifique", "Specific group")}</b></div>
+          {!isCompetition ? <div><span>{tr("Club", "Club")}</span><b>{clubNames[event.club_id] ?? tr("Club", "Club")}</b></div> : null}
+          {showScheduleCard ? <div><span>{isCompetition ? tr("Période", "Period") : tr("Horaire", "Schedule")}</span><b>{isCompetition ? eventPeriodLabel(event, dateLocale) : `${timeLabel(event.starts_at, dateLocale)}${event.ends_at ? ` — ${timeLabel(event.ends_at, dateLocale)}` : ""}`}</b></div> : null}
+          {isCompetition ? <div><span>{tr("Niveau", "Level")}</span><b>{competitionLevelLabel(event.competition_level)}</b></div> : null}
+          {isCompetition ? <div><span>{tr("Catégorie", "Category")}</span><b>{competitionCategoryLabel(event.competition_category)}</b></div> : null}
+        </div>
+
+        {(isCompetition ? event.competition_note : event.coach_note) ? <p className="manager-calendar-detail-note">{isCompetition ? event.competition_note : event.coach_note}</p> : null}
+
+        {isCompetition && event.external_registration_url ? (
+          <a className={actionStyles.primaryButton} href={event.external_registration_url} target="_blank" rel="noreferrer noopener" style={{ justifySelf: "start" }}>
+            {tr("S’inscrire sur la plateforme externe", "Register on the external platform")}
+          </a>
+        ) : null}
+
+        <div className="planning-event-footer">
+          <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{event.location_text?.trim() || tr("Lieu non disponible", "Location unavailable")}</span></span>
+          <div className="user-mgmt-card-actions">
+            {!isCompetition ? <Link className={actionStyles.secondaryButton} href={`/manager/groups/${event.group_id}/planning/${event.id}`}>{tr("Ouvrir", "Open")}</Link> : null}
+            <Link className={actionStyles.secondaryButton} href={isCompetition ? `/manager/events/new?event=${event.id}` : `/manager/groups/${event.group_id}/planning/${event.id}/edit`}><Pencil size={16} aria-hidden="true" />{tr("Éditer", "Edit")}</Link>
+            {canDeleteEvent(event) ? <button type="button" className={actionStyles.dangerButton} onClick={() => void deleteEvent(event.id)} disabled={deletingEventId === event.id}><Trash2 size={16} aria-hidden="true" />{deletingEventId === event.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}</button> : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
+        {tr("Gestion des activités / Activités", "Activity management / Activities")}
+      </nav>
+
+      <div className={styles.topline}>
+        <div>
+          <h1>{tr("Activités", "Activities")}</h1>
+          <p className={styles.lead}>{tr("Consultez et gérez les activités de vos groupes.", "View and manage your group activities.")}</p>
+        </div>
+        <Link className={actionStyles.primaryButton} href="/manager/events/new">
+          <CalendarDays size={16} aria-hidden="true" />
+          {tr("Ajouter une activité", "Add activity")}
+        </Link>
+      </div>
+
+      {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
+
+      <section className={styles.overview} aria-label={tr("Indicateurs des activités", "Activity statistics")}>
+        <div className={styles.statsGrid}>
+          <article className={styles.statCard}>
+            <span>{tr("Activités réalisées jusqu’à aujourd’hui", "Activities completed to date")}</span>
+            <b>{activityStats.completed}</b>
+            <small>{tr("depuis le début de l’historique du club", "across the club history")}</small>
+          </article>
+          <article className={styles.statCard}>
+            <span>{tr("Activités planifiées", "Planned activities")}</span>
+            <b>{activityStats.planned}</b>
+            <small>{tr("à venir", "upcoming")}</small>
+          </article>
+          <article className={styles.statCard}>
+            <span>{tr("Activités totales", "Total activities")}</span>
+            <b>{activityStats.total}</b>
+            <small>{tr("réalisées et planifiées", "completed and planned")}</small>
+          </article>
+        </div>
+      </section>
+
+        <section className={styles.quickPanel}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <h2>{tr("Filtrer les activités", "Filter activities")}</h2>
+              <p>{tr("Affinez la liste par vue, type d’activité, groupe ou junior.", "Refine the list by view, activity type, group or junior.")}</p>
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={segmentWrapStyle}>
                 <button onClick={() => setView("month")} style={segmentBtnStyle(view === "month", true)}>{tr("Mois", "Month")}</button>
@@ -475,9 +620,21 @@ export default function CoachCalendarPage() {
                 <button onClick={() => setView("day")} style={segmentBtnStyle(view === "day")}>{tr("Jour", "Day")}</button>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
               <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.75 }}>{tr("Groupe", "Group")}</span>
+                <span style={fieldLabelStyle}>{tr("Type d’activité", "Activity type")}</span>
+                <select value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)} className="input">
+                  <option value="all">{tr("Tous les types", "All types")}</option>
+                  <option value="training">{tr("Entraînement", "Training")}</option>
+                  <option value="interclub">Interclub</option>
+                  <option value="competition">{tr("Compétition", "Competition")}</option>
+                  <option value="camp">{tr("Stage", "Camp")}</option>
+                  <option value="session">{tr("Séance", "Session")}</option>
+                  <option value="event">{tr("Événement", "Event")}</option>
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={fieldLabelStyle}>{tr("Groupe", "Group")}</span>
                 <select
                   value={groupFilter}
                   onChange={(e) => setGroupFilter(e.target.value)}
@@ -490,7 +647,7 @@ export default function CoachCalendarPage() {
                 </select>
               </label>
               <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.75 }}>{tr("Joueur", "Player")}</span>
+                <span style={fieldLabelStyle}>{tr("Junior", "Junior")}</span>
                 <select
                   value={playerFilter}
                   onChange={(e) => setPlayerFilter(e.target.value)}
@@ -515,16 +672,17 @@ export default function CoachCalendarPage() {
                   <ChevronRight size={16} />
                 </button>
               </div>
-              <div style={{ fontSize: 16, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{headerLabel}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#35483b" }}>{headerLabel}</div>
             </div>
           </div>
+        </section>
 
           {loading ? (
-            <div className="glass-card"><ListLoadingBlock label={tr("Chargement...", "Loading...")} /></div>
+            <section className={styles.quickPanel}><ListLoadingBlock label={tr("Chargement...", "Loading...")} /></section>
           ) : (
             <>
               {view === "month" ? (
-                <div className="glass-card" style={{ padding: 10 }}>
+                <section className={styles.quickPanel} style={{ padding: 10 }}>
                   <div style={{ display: "grid", gap: 8 }}>
                     {daysInMonthGrid
                       .filter((d) => d.getMonth() === anchorDate.getMonth())
@@ -535,17 +693,21 @@ export default function CoachCalendarPage() {
                         return (
                           <div
                             key={k}
+                            className="manager-calendar-date-card"
                             style={{
                               border: isToday ? "2px solid rgba(34,197,94,0.75)" : "1px solid rgba(0,0,0,0.10)",
                               borderRadius: 12,
                               background: "rgba(255,255,255,0.76)",
                               padding: 10,
                               display: "grid",
-                              gap: 6,
+                              gridTemplateColumns: "110px minmax(0, 1fr)",
+                              columnGap: 14,
+                              alignItems: "stretch",
                               boxShadow: isToday ? "0 0 0 2px rgba(34,197,94,0.16) inset" : undefined,
                             }}
                           >
-                            <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>{dayHeaderLabel(d, dateLocale)}</div>
+                            {(() => { const date = dateCardParts(d, dateLocale); return <div className="planning-event-date manager-calendar-date-column" style={{ minHeight: 110 }}><div className="planning-event-day">{date.day}</div><div className="planning-event-number">{date.number}</div><div className="planning-event-month">{date.month}</div></div>; })()}
+                            <div style={{ display: "grid", alignContent: "center", gap: 6, minWidth: 0, padding: 10 }}>
                             {list.length > 0
                               ? list.map((e) => {
                                   const tone = eventTypeColor(e.event_type);
@@ -554,6 +716,7 @@ export default function CoachCalendarPage() {
                                     <div key={e.id} style={{ display: "grid", gap: 6 }}>
                                       <button
                                         type="button"
+                                        className="manager-calendar-activity"
                                         onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                                         style={{
                                           textAlign: "left",
@@ -567,62 +730,23 @@ export default function CoachCalendarPage() {
                                           cursor: "pointer",
                                         }}
                                       >
-                                        {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)} · {eventMetaLabel(e)}
+                                        {eventTimeOrPeriodLabel(e, dateLocale)} · {eventTypeLabel(e.event_type, locale)} · {eventMetaLabel(e)}
                                       </button>
-                                      {isSelected ? (
-                                        <div style={detailCardStyle}>
-                                          {e.title?.trim() ? (
-                                            <div style={{ fontSize: 14, fontWeight: 980, color: "rgba(0,0,0,0.88)" }}>{e.title}</div>
-                                          ) : null}
-                                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                            <span className="pill-soft">{eventTypeLabel(e.event_type, locale)}</span>
-                                            <span className="pill-soft">{eventMetaLabel(e)}</span>
-                                            <span className="pill-soft">{clubNames[e.club_id] ?? tr("Club", "Club")}</span>
-                                          </div>
-                                          <div style={{ fontSize: 13, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{dateTimeLabel(e.starts_at, dateLocale)}</div>
-                                          {e.ends_at ? (
-                                            <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                              {tr("Fin", "End")}: {dateTimeLabel(e.ends_at, dateLocale)}
-                                            </div>
-                                          ) : null}
-                                          {e.location_text ? <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>📍 {e.location_text}</div> : null}
-                                          {e.coach_note ? (
-                                            <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, background: "rgba(255,255,255,0.72)", padding: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>
-                                              {e.coach_note}
-                                            </div>
-                                          ) : null}
-                                          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                            {canDeleteEvent(e) ? (
-                                              <button
-                                                type="button"
-                                                className="cta-green cta-green-inline"
-                                                onClick={() => void deleteEvent(e.id)}
-                                                disabled={deletingEventId === e.id}
-                                                style={{ minWidth: 200, justifyContent: "center" }}
-                                              >
-                                                <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                                {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                              </button>
-                                            ) : null}
-                                            <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                              {tr("Accéder à l’activité", "Open activity")}
-                                            </Link>
-                                          </div>
-                                        </div>
-                                      ) : null}
+                                      {isSelected ? renderEventDetail(e) : null}
                                     </div>
                                   );
                                 })
-                              : null}
+                              : <span style={{ color: "#778178", fontSize: 12, fontWeight: 700 }}>{tr("Aucune activité", "No activity")}</span>}
+                            </div>
                           </div>
                         );
                       })}
                   </div>
-                </div>
+                </section>
               ) : null}
 
               {view === "week" ? (
-                <div className="glass-card" style={{ padding: 10 }}>
+                <section className={styles.quickPanel} style={{ padding: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                     {weekDays.map((d) => {
                       const k = ymd(d);
@@ -631,6 +755,7 @@ export default function CoachCalendarPage() {
                       return (
                         <div
                           key={k}
+                          className="manager-calendar-date-card"
                           style={{
                             border: isToday ? "2px solid rgba(34,197,94,0.75)" : "1px solid rgba(0,0,0,0.10)",
                             borderRadius: 12,
@@ -638,18 +763,22 @@ export default function CoachCalendarPage() {
                             padding: 8,
                             minHeight: 170,
                             display: "grid",
-                            gap: 6,
+                            gridTemplateColumns: "110px minmax(0, 1fr)",
+                            columnGap: 14,
+                            alignItems: "stretch",
                             boxShadow: isToday ? "0 0 0 2px rgba(34,197,94,0.16) inset" : undefined,
                           }}
                         >
-                          <div style={{ fontSize: 11, fontWeight: 950, color: "rgba(0,0,0,0.75)" }}>{dayHeaderLabel(d, dateLocale)}</div>
-                          {list.map((e) => {
+                          {(() => { const date = dateCardParts(d, dateLocale); return <div className="planning-event-date manager-calendar-date-column" style={{ minHeight: 150 }}><div className="planning-event-day">{date.day}</div><div className="planning-event-number">{date.number}</div><div className="planning-event-month">{date.month}</div></div>; })()}
+                          <div style={{ display: "grid", alignContent: "center", gap: 6, minWidth: 0, padding: 10 }}>
+                          {list.length > 0 ? list.map((e) => {
                             const tone = eventTypeColor(e.event_type);
                             const isSelected = selectedEventId === e.id;
                             return (
                               <div key={e.id} style={{ display: "grid", gap: 6 }}>
                                 <button
                                   type="button"
+                                  className="manager-calendar-activity"
                                   onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                                   style={{
                                     textAlign: "left",
@@ -663,71 +792,38 @@ export default function CoachCalendarPage() {
                                     cursor: "pointer",
                                   }}
                                 >
-                                  {timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)} · {eventMetaLabel(e)}
+                                  {eventTimeOrPeriodLabel(e, dateLocale)} · {eventTypeLabel(e.event_type, locale)} · {eventMetaLabel(e)}
                                 </button>
-                                {isSelected ? (
-                                  <div style={detailCardStyle}>
-                                    {e.title?.trim() ? (
-                                      <div style={{ fontSize: 14, fontWeight: 980, color: "rgba(0,0,0,0.88)" }}>{e.title}</div>
-                                    ) : null}
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                      <span className="pill-soft">{eventTypeLabel(e.event_type, locale)}</span>
-                                      <span className="pill-soft">{eventMetaLabel(e)}</span>
-                                      <span className="pill-soft">{clubNames[e.club_id] ?? tr("Club", "Club")}</span>
-                                    </div>
-                                    <div style={{ fontSize: 13, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{dateTimeLabel(e.starts_at, dateLocale)}</div>
-                                    {e.ends_at ? (
-                                      <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                        {tr("Fin", "End")}: {dateTimeLabel(e.ends_at, dateLocale)}
-                                      </div>
-                                    ) : null}
-                                    {e.location_text ? <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>📍 {e.location_text}</div> : null}
-                                    {e.coach_note ? (
-                                      <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, background: "rgba(255,255,255,0.72)", padding: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>
-                                        {e.coach_note}
-                                      </div>
-                                    ) : null}
-                                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                      {canDeleteEvent(e) ? (
-                                        <button
-                                          type="button"
-                                          className="cta-green cta-green-inline"
-                                          onClick={() => void deleteEvent(e.id)}
-                                          disabled={deletingEventId === e.id}
-                                          style={{ minWidth: 200, justifyContent: "center" }}
-                                        >
-                                          <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                          {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                        </button>
-                                      ) : null}
-                                      <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                        {tr("Accéder à l’activité", "Open activity")}
-                                      </Link>
-                                    </div>
-                                  </div>
-                                ) : null}
+                                {isSelected ? renderEventDetail(e) : null}
                               </div>
                             );
-                          })}
+                          }) : <span style={{ color: "#778178", fontSize: 12, fontWeight: 700 }}>{tr("Aucune activité", "No activity")}</span>}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
+                </section>
               ) : null}
 
               {view === "day" ? (
-                <div className="glass-card" style={{ padding: 12, display: "grid", gap: 10 }}>
+                <section className={styles.quickPanel} style={{ padding: 12, display: "grid", gap: 10 }}>
                   {dayEvents.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucune activité ce jour.", "No activity this day.")}</div>
+                    <div className="manager-calendar-date-card" style={{ display: "grid", gridTemplateColumns: "110px minmax(0,1fr)", columnGap: 14, alignItems: "stretch", border: "1px solid #e4ebe4", borderRadius: 12, padding: 10, background: "#fff" }}>
+                      {(() => { const date = dateCardParts(anchorDate, dateLocale); return <div className="planning-event-date manager-calendar-date-column" style={{ minHeight: 120 }}><div className="planning-event-day">{date.day}</div><div className="planning-event-number">{date.number}</div><div className="planning-event-month">{date.month}</div></div>; })()}
+                      <div style={{ display: "grid", alignContent: "center", padding: 10, fontSize: 12, fontWeight: 800, color: "#778178" }}>{tr("Aucune activité ce jour.", "No activity this day.")}</div>
+                    </div>
                   ) : (
                     dayEvents.map((e) => {
                       const tone = eventTypeColor(e.event_type);
                       const isSelected = selectedEventId === e.id;
                       return (
-                        <div key={e.id} style={{ display: "grid", gap: 6 }}>
+                        <div key={e.id} className="manager-calendar-date-card" style={{ display: "grid", gridTemplateColumns: "110px minmax(0,1fr)", columnGap: 14, alignItems: "stretch", border: "1px solid #e4ebe4", borderRadius: 12, padding: 10, background: "#fff" }}>
+                          {(() => { const date = dateCardParts(anchorDate, dateLocale); return <div className="planning-event-date manager-calendar-date-column" style={{ minHeight: 120 }}><div className="planning-event-day">{date.day}</div><div className="planning-event-number">{date.number}</div><div className="planning-event-month">{date.month}</div></div>; })()}
+                          <div style={{ display: "grid", alignContent: "center", gap: 6, minWidth: 0 }}>
                           <button
                             type="button"
+                            className="manager-calendar-activity"
                             onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                             style={{
                               textAlign: "left",
@@ -741,60 +837,19 @@ export default function CoachCalendarPage() {
                               cursor: "pointer",
                             }}
                           >
-                            <div style={{ fontSize: 12, fontWeight: 950 }}>{timeLabel(e.starts_at, dateLocale)} · {eventTypeLabel(e.event_type, locale)}</div>
+                            <div style={{ fontSize: 12, fontWeight: 950 }}>{eventTimeOrPeriodLabel(e, dateLocale)} · {eventTypeLabel(e.event_type, locale)}</div>
                             <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.85 }}>{eventMetaLabel(e)}</div>
                           </button>
-                          {isSelected ? (
-                            <div style={detailCardStyle}>
-                              {e.title?.trim() ? (
-                                <div style={{ fontSize: 14, fontWeight: 980, color: "rgba(0,0,0,0.88)" }}>{e.title}</div>
-                              ) : null}
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                <span className="pill-soft">{eventTypeLabel(e.event_type, locale)}</span>
-                                <span className="pill-soft">{eventMetaLabel(e)}</span>
-                                <span className="pill-soft">{clubNames[e.club_id] ?? tr("Club", "Club")}</span>
-                              </div>
-                              <div style={{ fontSize: 13, fontWeight: 950, color: "rgba(0,0,0,0.82)" }}>{dateTimeLabel(e.starts_at, dateLocale)}</div>
-                              {e.ends_at ? (
-                                <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
-                                  {tr("Fin", "End")}: {dateTimeLabel(e.ends_at, dateLocale)}
-                                </div>
-                              ) : null}
-                              {e.location_text ? <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>📍 {e.location_text}</div> : null}
-                              {e.coach_note ? (
-                                <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, background: "rgba(255,255,255,0.72)", padding: 8, fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)", whiteSpace: "pre-wrap" }}>
-                                  {e.coach_note}
-                                </div>
-                              ) : null}
-                              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                {canDeleteEvent(e) ? (
-                                  <button
-                                    type="button"
-                                    className="cta-green cta-green-inline"
-                                    onClick={() => void deleteEvent(e.id)}
-                                    disabled={deletingEventId === e.id}
-                                    style={{ minWidth: 200, justifyContent: "center" }}
-                                  >
-                                    <Trash2 size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                                    {deletingEventId === e.id ? tr("Suppression…", "Deleting...") : tr("Supprimer", "Delete")}
-                                  </button>
-                                ) : null}
-                                <Link className="cta-green cta-green-inline" style={{ minWidth: 200, justifyContent: "center" }} href={`/manager/groups/${e.group_id}/planning/${e.id}`}>
-                                  {tr("Accéder à l’activité", "Open activity")}
-                                </Link>
-                              </div>
-                            </div>
-                          ) : null}
+                          {isSelected ? renderEventDetail(e) : null}
+                          </div>
                         </div>
                       );
                     })
                   )}
-                </div>
+                </section>
               ) : null}
             </>
           )}
-        </div>
-      </div>
-    </div>
+    </main>
   );
 }

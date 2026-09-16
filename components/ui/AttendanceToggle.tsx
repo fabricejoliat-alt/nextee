@@ -4,6 +4,7 @@ type AttendanceToggleProps = {
   checked: boolean;
   onToggle: () => void;
   disabled?: boolean;
+  variant?: "segments" | "pill";
   leftLabel: string;
   rightLabel: string;
   ariaLabel: string;
@@ -14,11 +15,29 @@ export function AttendanceToggle({
   checked,
   onToggle,
   disabled = false,
+  variant = "segments",
   leftLabel,
   rightLabel,
   ariaLabel,
   disabledCursor = "not-allowed",
 }: AttendanceToggleProps) {
+  if (variant === "pill") {
+    return (
+      <button
+        type="button"
+        className={`player-home-attendance player-home-attendance--pill ${checked ? "is-present" : "is-absent"}`}
+        role="switch"
+        aria-checked={checked}
+        aria-label={ariaLabel}
+        onClick={onToggle}
+        disabled={disabled}
+      >
+        <i aria-hidden="true" />
+        <span>{checked ? rightLabel : leftLabel}</span>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -94,4 +113,3 @@ export function AttendanceToggle({
     </button>
   );
 }
-

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { PlusCircle, Search, Trash2, Users, Tag, User, X } from "lucide-react";
+import { CalendarDays, PlusCircle, Save, Trash2 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
 type Role = "coach" | "manager" | "player";
 
@@ -66,6 +68,7 @@ type PlannedEventLite = {
   status: "scheduled" | "cancelled";
   series_id?: string | null;
 };
+type Season = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
 
 function fullName(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
@@ -95,194 +98,18 @@ function avatarNode(p?: ProfileLite | null) {
   return initials(p);
 }
 
-/** Small, dependency-free searchable dropdown (combobox) */
-function SearchSelect({
-  label,
-  placeholder,
-  items,
-  itemSubtitle,
-  onSelect,
-  disabled,
-}: {
-  label: string;
-  placeholder: string;
-  items: ProfileLite[];
-  itemSubtitle?: (p: ProfileLite) => string;
-  onSelect: (p: ProfileLite) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    function onDocDown(e: MouseEvent) {
-      const el = wrapRef.current;
-      if (!el) return;
-      if (!el.contains(e.target as any)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocDown);
-    return () => document.removeEventListener("mousedown", onDocDown);
-  }, []);
-
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return items.slice(0, 20);
-    const res = items.filter((p) => {
-      const n = fullName(p).toLowerCase();
-      const h = typeof p.handicap === "number" ? String(p.handicap) : "";
-      return n.includes(qq) || h.includes(qq);
-    });
-    return res.slice(0, 20);
-  }, [items, q]);
-
-  return (
-    <div ref={wrapRef} style={{ display: "grid", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <span style={fieldLabelStyle}>{label}</span>
-        {q ? (
-          <button
-            type="button"
-            className="glass-btn"
-            onClick={() => setQ("")}
-            disabled={disabled}
-            style={{
-              height: 34,
-              padding: "0 10px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-            title="Effacer"
-            aria-label="Effacer"
-          >
-            <X size={16} />
-            Effacer
-          </button>
-        ) : null}
-      </div>
-
-      <div style={{ position: "relative" }}>
-        <Search
-          size={18}
-          style={{
-            position: "absolute",
-            left: 14,
-            top: "50%",
-            transform: "translateY(-50%)",
-            opacity: 0.7,
-          }}
-        />
-
-        <input
-          ref={inputRef}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            if (!open) setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          disabled={disabled}
-          placeholder={placeholder}
-          style={{ paddingLeft: 44 }}
-        />
-
-        {open ? (
-          <div
-            className="glass-card"
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: "calc(100% + 8px)",
-              padding: 10,
-              zIndex: 50,
-              maxHeight: 320,
-              overflow: "auto",
-              border: "1px solid rgba(0,0,0,0.10)",
-              background: "rgba(255,255,255,0.92)",
-            }}
-          >
-            {filtered.length === 0 ? (
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                Aucun résultat.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {filtered.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="glass-btn"
-                    disabled={disabled}
-                    onClick={() => {
-                      onSelect(p);
-                      setOpen(false);
-                      setQ("");
-                      inputRef.current?.blur();
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      padding: "10px 12px",
-                      textAlign: "left",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                      <div style={avatarBoxStyle} aria-hidden="true">
-                        {avatarNode(p)}
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 950 }} className="truncate">
-                          {fullName(p)}
-                        </div>
-                        {itemSubtitle ? (
-                          <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                            {itemSubtitle(p)}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        width: 42,
-                        height: 40,
-                        borderRadius: 12,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        background: "rgba(255,255,255,0.65)",
-                      }}
-                      aria-hidden="true"
-                      title="Ajouter"
-                    >
-                      <PlusCircle size={18} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div style={{ marginTop: 10, fontSize: 11, fontWeight: 800, opacity: 0.65 }}>
-              Affiche {filtered.length} résultat{filtered.length > 1 ? "s" : ""} (max 20). Tape pour filtrer.
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
+async function authHeader() {
+  const { data } = await supabase.auth.getSession();
+  return { Authorization: `Bearer ${data.session?.access_token ?? ""}` };
 }
 
 export default function CoachGroupEditPage() {
   const { t } = useI18n();
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const groupId = String((params as any)?.id ?? "");
+  const searchParams = useSearchParams();
+  const groupId = String(params?.id ?? "");
+  const requestedSeasonId = searchParams.get("season") ?? "";
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -294,6 +121,8 @@ export default function CoachGroupEditPage() {
   const [players, setPlayers] = useState<GroupPlayerRow[]>([]);
   const [coaches, setCoaches] = useState<GroupCoachRow[]>([]);
   const [plannedEvents, setPlannedEvents] = useState<PlannedEventLite[]>([]);
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [seasonId, setSeasonId] = useState(requestedSeasonId);
 
   // editable group info
   const [groupName, setGroupName] = useState("");
@@ -308,6 +137,8 @@ export default function CoachGroupEditPage() {
   const [clubMembersPlayers, setClubMembersPlayers] = useState<ProfileLite[]>([]);
   const [clubMembersCoaches, setClubMembersCoaches] = useState<ProfileLite[]>([]); // ✅ only role=coach
   const [playerPerformanceById, setPlayerPerformanceById] = useState<Record<string, boolean>>({});
+  const [queryPlayers, setQueryPlayers] = useState("");
+  const [queryCoaches, setQueryCoaches] = useState("");
 
   async function loadClubMembers(cid: string, uid: string) {
     if (!cid) {
@@ -399,14 +230,14 @@ export default function CoachGroupEditPage() {
       return;
     }
 
-    const g = (gRes.data ?? null) as any as CoachGroup | null;
+    const g = (gRes.data ?? null) as unknown as CoachGroup | null;
     if (!g) {
       setErr(t("coachGroupEdit.accessDeniedOrNotFound"));
       setLoading(false);
       return;
     }
 
-    const [managerRes, linkRes] = await Promise.all([
+    const [managerRes, linkRes, seasonsRes] = await Promise.all([
       supabase
         .from("club_members")
         .select("id")
@@ -421,6 +252,11 @@ export default function CoachGroupEditPage() {
         .eq("group_id", groupId)
         .eq("coach_user_id", uid)
         .maybeSingle(),
+      supabase
+        .from("club_seasons")
+        .select("id,name,starts_on,ends_on,is_current")
+        .eq("club_id", g.club_id)
+        .order("starts_on", { ascending: true }),
     ]);
 
     if (!managerRes.data && !linkRes.data) {
@@ -430,6 +266,11 @@ export default function CoachGroupEditPage() {
     }
 
     setGroup(g);
+    const loadedSeasons = (seasonsRes.data ?? []) as Season[];
+    setSeasons(loadedSeasons);
+    setSeasonId((current) => loadedSeasons.some((season) => season.id === current)
+      ? current
+      : loadedSeasons.find((season) => season.is_current)?.id ?? loadedSeasons[0]?.id ?? "");
 
     if (g) {
       setGroupName(g.name ?? "");
@@ -445,18 +286,9 @@ export default function CoachGroupEditPage() {
 
     setCats((catRes.data ?? []) as CategoryRow[]);
 
-    const pRes = await supabase
-      .from("coach_group_players")
-      .select(
-        `
-        id,group_id,
-        player_user_id,
-        profiles:profiles ( id, first_name, last_name, handicap, avatar_url )
-      `
-      )
-      .eq("group_id", groupId);
-
-    setPlayers((pRes.data ?? []) as any);
+    const pRes = await supabase.from("coach_group_players").select("id,group_id,player_user_id,profiles:profiles ( id, first_name, last_name, handicap, avatar_url )").eq("group_id", groupId);
+    if (pRes.error) throw new Error(pRes.error.message);
+    setPlayers((pRes.data ?? []) as unknown as GroupPlayerRow[]);
 
     const cRes = await supabase
       .from("coach_group_coaches")
@@ -471,7 +303,7 @@ export default function CoachGroupEditPage() {
       .eq("group_id", groupId)
       .order("is_head", { ascending: false });
 
-    setCoaches((cRes.data ?? []) as any);
+    setCoaches((cRes.data ?? []) as unknown as GroupCoachRow[]);
 
     const evRes = await supabase
       .from("club_events")
@@ -498,6 +330,10 @@ export default function CoachGroupEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
 
+  useEffect(() => {
+    if (requestedSeasonId && requestedSeasonId !== seasonId) setSeasonId(requestedSeasonId);
+  }, [requestedSeasonId, seasonId]);
+
   const planningSummary = useMemo(() => {
     const now = Date.now();
     const scheduled = plannedEvents.filter((e) => e.status === "scheduled");
@@ -518,8 +354,34 @@ export default function CoachGroupEditPage() {
     if (busy) return false;
     if (!group) return false;
     if (groupName.trim().length < 2) return false;
+    if (coaches.length === 0) return false;
     return true;
-  }, [busy, group, groupName]);
+  }, [busy, coaches.length, group, groupName]);
+
+  async function mutateGroupAssignment(
+    method: "POST" | "DELETE",
+    payload: Record<string, string>
+  ) {
+    if (!group?.club_id) return { error: "Groupe introuvable." };
+
+    const headers = {
+      "Content-Type": "application/json",
+      ...(await authHeader()),
+    };
+
+    const res = await fetch(`/api/admin/organizations/${group.club_id}/group-assignments`, {
+      method,
+      headers,
+      body: JSON.stringify(seasonId ? { ...payload, seasonId } : payload),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { error: String(json?.error ?? "Action impossible.") };
+    }
+
+    return { error: null as string | null };
+  }
 
   // --------- GROUP INFO ----------
   async function saveGroupInfo(e: React.FormEvent) {
@@ -583,13 +445,13 @@ export default function CoachGroupEditPage() {
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.rpc("coach_group_delete_category", {
-      p_group_id: groupId,
-      p_category_id: catId,
+    const response = await fetch(`/api/manager/groups/${groupId}/categories/${catId}`, {
+      method: "DELETE",
+      headers: await authHeader(),
     });
-
-    if (error) {
-      setErr(error.message);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setErr(String(result.error ?? "La catégorie n’a pas pu être supprimée."));
       setBusy(false);
       return;
     }
@@ -602,8 +464,12 @@ export default function CoachGroupEditPage() {
   const playerIdsInGroup = useMemo(() => new Set(players.map((p) => p.player_user_id)), [players]);
 
   const playerCandidates = useMemo(() => {
-    return clubMembersPlayers.filter((p) => !playerIdsInGroup.has(p.id));
-  }, [clubMembersPlayers, playerIdsInGroup]);
+    const query = queryPlayers.trim().toLowerCase();
+    return clubMembersPlayers
+      .filter((p) => !playerIdsInGroup.has(p.id))
+      .filter((p) => !query || fullName(p).toLowerCase().includes(query))
+      .slice(0, 30);
+  }, [clubMembersPlayers, playerIdsInGroup, queryPlayers]);
 
   async function addPlayerToGroup(p: ProfileLite) {
     if (!groupId || busy) return;
@@ -612,13 +478,14 @@ export default function CoachGroupEditPage() {
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.from("coach_group_players").insert({
-      group_id: groupId,
-      player_user_id: p.id,
+    const { error } = await mutateGroupAssignment("POST", {
+      actorType: "player",
+      userId: p.id,
+      toGroupId: groupId,
     });
 
     if (error) {
-      setErr(error.message);
+      setErr(error);
       setBusy(false);
       return;
     }
@@ -628,19 +495,20 @@ export default function CoachGroupEditPage() {
   }
 
   // ✅ FIX RLS: delete player via RPC (security definer)
-  async function removePlayerFromGroup(rowId: string) {
-    if (!rowId || busy) return;
+  async function removePlayerFromGroup(row: GroupPlayerRow) {
+    if (!row?.player_user_id || busy) return;
 
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.rpc("coach_group_delete_player", {
-      p_group_id: groupId,
-      p_group_player_id: rowId,
+    const { error } = await mutateGroupAssignment("DELETE", {
+      actorType: "player",
+      userId: row.player_user_id,
+      groupId,
     });
 
     if (error) {
-      setErr(error.message);
+      setErr(error);
       setBusy(false);
       return;
     }
@@ -675,8 +543,12 @@ export default function CoachGroupEditPage() {
   const coachIdsInGroup = useMemo(() => new Set(coaches.map((c) => c.coach_user_id)), [coaches]);
 
   const coachCandidates = useMemo(() => {
-    return clubMembersCoaches.filter((p) => !coachIdsInGroup.has(p.id));
-  }, [clubMembersCoaches, coachIdsInGroup]);
+    const query = queryCoaches.trim().toLowerCase();
+    return clubMembersCoaches
+      .filter((p) => !coachIdsInGroup.has(p.id))
+      .filter((p) => !query || fullName(p).toLowerCase().includes(query))
+      .slice(0, 30);
+  }, [clubMembersCoaches, coachIdsInGroup, queryCoaches]);
 
   async function addCoachToGroup(p: ProfileLite) {
     if (!groupId || busy) return;
@@ -685,14 +557,14 @@ export default function CoachGroupEditPage() {
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.from("coach_group_coaches").insert({
-      group_id: groupId,
-      coach_user_id: p.id,
-      is_head: false,
+    const { error } = await mutateGroupAssignment("POST", {
+      actorType: "coach",
+      userId: p.id,
+      toGroupId: groupId,
     });
 
     if (error) {
-      setErr(error.message);
+      setErr(error);
       setBusy(false);
       return;
     }
@@ -702,15 +574,19 @@ export default function CoachGroupEditPage() {
   }
 
   async function removeCoachFromGroup(row: GroupCoachRow) {
-    if (!row?.id || busy) return;
+    if (!row?.coach_user_id || busy) return;
     if (row.is_head) return;
 
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.from("coach_group_coaches").delete().eq("id", row.id);
+    const { error } = await mutateGroupAssignment("DELETE", {
+      actorType: "coach",
+      userId: row.coach_user_id,
+      groupId,
+    });
     if (error) {
-      setErr(error.message);
+      setErr(error);
       setBusy(false);
       return;
     }
@@ -745,443 +621,151 @@ export default function CoachGroupEditPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>{groupName || "Éditer un groupe"}</div>
-            </div>
+    <main className={styles.page}>
+      <nav className={actionStyles.breadcrumb} aria-label="Fil d’Ariane">
+        <Link href="/manager/groups">Groupes</Link>
+        <span aria-hidden="true">/</span>
+        <span>{group?.name ?? "Groupe"}</span>
+      </nav>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/manager/groups">
-                Mes groupes
-              </Link>
-
-              <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning`}>
-                Planification
-              </Link>
-            </div>
-          </div>
-
-          {err && <div className="marketplace-error">{err}</div>}
+      <div className={styles.topline}>
+        <div>
+          <h1>{group?.name ?? "Groupe"}</h1>
+          <p className={styles.lead}>Gérez les informations, les catégories, les juniors et l’encadrement du groupe.</p>
         </div>
-
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <CompactLoadingBlock label={t("common.loading")} />
-            ) : !group ? (
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                {t("coachGroupEdit.accessDeniedOrNotFound")}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {/* INFO EDIT (save button inside) */}
-                <form onSubmit={saveGroupInfo} style={{ display: "grid", gap: 12 }}>
-                  <div className="glass-card" style={{ padding: 14 }}>
-                    <div className="card-title">Info</div>
-
-                    <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Nom du groupe</span>
-                        <input
-                          value={groupName}
-                          onChange={(e) => setGroupName(e.target.value)}
-                          disabled={busy}
-                          placeholder="Nom du groupe"
-                        />
-                      </label>
-
-                      <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <input
-                          type="checkbox"
-                          checked={isActive}
-                          onChange={(e) => setIsActive(e.target.checked)}
-                          disabled={busy}
-                          style={{ width: 18, height: 18 }}
-                        />
-                        <span style={fieldLabelStyle}>Groupe actif</span>
-                      </label>
-
-                      <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <input
-                          type="checkbox"
-                          checked={isPerformance}
-                          onChange={(e) => setIsPerformance(e.target.checked)}
-                          disabled={busy}
-                          style={{ width: 18, height: 18 }}
-                        />
-                        <span style={fieldLabelStyle}>Mode performance (groupe)</span>
-                      </label>
-
-                      <button
-                        className="btn"
-                        type="submit"
-                        disabled={!canSaveInfo || busy}
-                        style={{
-                          width: "100%",
-                          background: "var(--green-dark)",
-                          borderColor: "var(--green-dark)",
-                          color: "#fff",
-                          marginTop: 6,
-                        }}
-                      >
-                        {busy ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-                {/* CATEGORIES */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Tag size={18} />
-                    Catégories
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    {cats.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        Aucune catégorie.
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {cats.map((c) => (
-                          <div key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span className="pill-soft">{c.category}</span>
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => removeCategory(c.id)}
-                              disabled={busy}
-                              style={{ padding: "8px 10px" }}
-                              aria-label={t("coachGroupNew.removeCategory")}
-                              title="Supprimer"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
-                      <input
-                        value={newCat}
-                        onChange={(e) => setNewCat(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("coachGroupEdit.addCategoryPlaceholder")}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCategory();
-                          }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        className="glass-btn"
-                        onClick={addCategory}
-                        disabled={busy || savingCat || !canAddCat}
-                        style={{
-                          width: 44,
-                          height: 42,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: "rgba(255,255,255,0.70)",
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          opacity: busy || savingCat || !canAddCat ? 0.6 : 1,
-                          pointerEvents: busy || savingCat || !canAddCat ? "none" : "auto",
-                        }}
-                        aria-label={t("coachGroupNew.addCategory")}
-                        title="Ajouter"
-                      >
-                        <PlusCircle size={18} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* PLAYERS */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={18} />
-                    Joueurs
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <SearchSelect
-                      label="Ajouter un joueur"
-                      placeholder="Tape un nom ou handicap…"
-                      items={playerCandidates}
-                      disabled={busy}
-                      itemSubtitle={(p) =>
-                        `Handicap ${typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}`
-                      }
-                      onSelect={addPlayerToGroup}
-                    />
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Dans le groupe ({players.length})</div>
-
-                      {players.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun joueur dans ce groupe.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {players
-                            .slice()
-                            .sort((a, b) => fullName(a.profiles).localeCompare(fullName(b.profiles), "fr"))
-                            .map((row) => {
-                              const p = row.profiles ?? null;
-                              return (
-                                <div
-                                  key={row.id}
-                                  style={{ ...lightRowCardStyle, cursor: "pointer" }}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() =>
-                                    router.push(
-                                      `/manager/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/manager/groups/${groupId}`)}`
-                                    )
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      router.push(
-                                        `/manager/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/manager/groups/${groupId}`)}`
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                    <div style={avatarBoxStyle} aria-hidden="true">
-                                      {avatarNode(p)}
-                                    </div>
-                                    <div style={{ minWidth: 0 }}>
-                                      <div style={{ fontWeight: 950 }} className="truncate">
-                                        {fullName(p)}
-                                      </div>
-                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                        Handicap {typeof p?.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div style={{ display: "flex", gap: 10 }}>
-                                    <button
-                                      type="button"
-                                      className={`btn ${playerPerformanceById[row.player_user_id] ? "btn-active-om-light" : ""}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        void togglePlayerPerformance(row.player_user_id);
-                                      }}
-                                      disabled={busy || isPerformance}
-                                      style={{ padding: "10px 12px" }}
-                                      title={isPerformance ? "Forcé ON via groupe performance" : "Activer / désactiver le mode performance"}
-                                    >
-                                      {isPerformance
-                                        ? "Performance ON (groupe)"
-                                        : playerPerformanceById[row.player_user_id]
-                                        ? "Performance ON"
-                                        : "Performance OFF"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-danger soft"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        void removePlayerFromGroup(row.id);
-                                      }}
-                                      disabled={busy}
-                                      style={{ padding: "10px 12px" }}
-                                      aria-label="Retirer joueur"
-                                      title="Retirer"
-                                    >
-                                      <Trash2 size={18} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* COACHES */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <User size={18} />
-                    Coachs
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      {t("coachGroupEdit.headCoachFixed")}
-                    </div>
-
-                    <SearchSelect
-                      label="Ajouter un coach"
-                      placeholder="Tape un nom…"
-                      items={coachCandidates}
-                      disabled={busy}
-                      itemSubtitle={() => "Coach"}
-                      onSelect={addCoachToGroup}
-                    />
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Dans le groupe ({coaches.length})</div>
-
-                      {coaches.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun coach associé.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {coaches.map((row) => {
-                            const p = row.profiles ?? null;
-                            return (
-                              <div key={row.id} style={lightRowCardStyle}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                  <div style={avatarBoxStyle} aria-hidden="true">
-                                    {avatarNode(p)}
-                                  </div>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 950 }} className="truncate">
-                                      {fullName(p)}
-                                    </div>
-                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                      {row.is_head ? t("trainingNew.headCoach") : t("trainingNew.extraCoach")}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                {row.is_head ? (
-                                  <span className="pill-soft">{t("trainingNew.headCoach")}</span>
-                                ) : (
-                                    <button
-                                      type="button"
-                                      className="btn btn-danger soft"
-                                      onClick={() => removeCoachFromGroup(row)}
-                                      disabled={busy}
-                                      style={{ padding: "10px 12px" }}
-                                      aria-label="Retirer coach"
-                                      title="Retirer"
-                                    >
-                                    <Trash2 size={18} />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* PLANNING */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">{t("coachGroupEdit.trainingPlanning")}</div>
-
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <span className="pill-soft">À venir: {planningSummary.upcomingCount}</span>
-                      <span className="pill-soft">Planifiés: {planningSummary.totalScheduled}</span>
-                      <span className="pill-soft">Récurrents: {planningSummary.recurringCount}</span>
-                    </div>
-
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                      {planningSummary.nextStartsAt
-                        ? `Prochain événement: ${new Intl.DateTimeFormat("fr-CH", {
-                            weekday: "short",
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(planningSummary.nextStartsAt))}`
-                        : planningSummary.totalScheduled > 0
-                        ? `${planningSummary.totalScheduled} événement${planningSummary.totalScheduled > 1 ? "s" : ""} planifié${planningSummary.totalScheduled > 1 ? "s" : ""}.`
-                        : t("coachGroupEdit.noUpcomingTraining")}
-                    </div>
-
-                    <Link
-                      className="cta-green cta-green-inline"
-                      href={`/manager/groups/${groupId}/planning`}
-                      style={{ width: "100%" }}
-                    >
-                      Gérer la planification
-                    </Link>
-                  </div>
-                </div>
-
-                {/* DELETE GROUP */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">Danger</div>
-
-                  <div style={{ marginTop: 8, fontWeight: 900, color: "#b91c1c" }}>
-                    Attention, la suppression du groupe est irréversible.
-                  </div>
-
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)", marginTop: 8 }}>
-                    <span>En tant que manager, tu peux supprimer ce groupe.</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={deleteGroup}
-                    disabled={busy}
-                    style={{ width: "100%", marginTop: 12 }}
-                  >
-                    <Trash2 size={18} />
-                    Supprimer le groupe
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+        <div className={actionStyles.topActions}>
+          <label className="groups-season-nav-select">
+            <select aria-label="Saison" value={seasonId} onChange={(event) => {
+              const nextSeasonId = event.target.value;
+              setSeasonId(nextSeasonId);
+              router.push(`/manager/groups/${groupId}?season=${encodeURIComponent(nextSeasonId)}`);
+            }} disabled={seasons.length === 0}>
+              {seasons.length === 0 ? <option value="">Aucune saison configurée</option> : null}
+              {seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? " · En cours" : ""}</option>)}
+            </select>
+          </label>
+          {group ? (
+            <Link className={actionStyles.primaryButton} href={`/manager/groups/${groupId}/planning${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ""}`}>
+              <CalendarDays size={16} aria-hidden="true" />
+              Planification
+            </Link>
+          ) : null}
         </div>
       </div>
-    </div>
+
+      {err ? <div className={actionStyles.errorAlert} role="alert">{err}</div> : null}
+
+      {loading ? (
+        <section className={styles.quickPanel}><CompactLoadingBlock label={t("common.loading")} /></section>
+      ) : !group ? (
+        <section className={styles.quickPanel}>{t("coachGroupEdit.accessDeniedOrNotFound")}</section>
+      ) : (
+        <>
+          <form className={styles.quickPanel} onSubmit={saveGroupInfo}>
+            <div className={styles.sectionHeading}><div><h2>Informations du groupe</h2><p>Modifiez les paramètres généraux du groupe.</p></div></div>
+            <div className="user-mgmt-form-grid">
+              <label className="user-mgmt-field">
+                <span className="user-mgmt-field-label">Nom du groupe <span aria-hidden="true">*</span></span>
+                <input value={groupName} onChange={(e) => setGroupName(e.target.value)} disabled={busy} required />
+              </label>
+              <div style={{ gridColumn: "1 / -1", display: "grid", gap: 10 }}>
+                <label className="user-mgmt-checkbox-label">
+                  <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} disabled={busy} />
+                  <span>Groupe actif</span>
+                </label>
+                <label className="user-mgmt-checkbox-label">
+                  <input type="checkbox" checked={isPerformance} onChange={(e) => setIsPerformance(e.target.checked)} disabled={busy} />
+                  <span>Mode performance</span>
+                </label>
+              </div>
+            </div>
+            <div className="user-mgmt-card-actions">
+              <button className={actionStyles.primaryButton} type="submit" disabled={!canSaveInfo}>
+                <Save size={16} aria-hidden="true" />{busy ? "Enregistrement…" : "Enregistrer les modifications"}
+              </button>
+            </div>
+          </form>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Catégories</h2><p>Ajoutez les catégories qui structurent ce groupe.</p></div></div>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+                <input value={newCat} onChange={(e) => setNewCat(e.target.value)} disabled={busy} placeholder={t("coachGroupEdit.addCategoryPlaceholder")} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addCategory(); } }} />
+                <button type="button" className={actionStyles.secondaryButton} onClick={() => void addCategory()} disabled={busy || savingCat || !canAddCat} aria-label="Ajouter une catégorie" title="Ajouter" style={{ width: 44, padding: 0 }}><PlusCircle size={18} /></button>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#6d786e", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  Catégories utilisées
+                </div>
+                {cats.length === 0 ? (
+                  <p className="user-mgmt-empty-state">Aucune catégorie ajoutée.</p>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {cats.map((cat) => (
+                      <div key={cat.id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <span className="pill-soft">{cat.category}</span>
+                        <button
+                          type="button"
+                          className="btn btn-danger soft"
+                          onClick={() => void removeCategory(cat.id)}
+                          disabled={busy}
+                          aria-label={`Supprimer ${cat.category}`}
+                          title="Supprimer"
+                          style={{ padding: "8px 10px" }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Juniors</h2><p>Gérez les juniors associés à ce groupe.</p></div></div>
+            <div style={{ display: "grid", gap: 20 }}>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Junior(s) du groupe ({players.length})</div>
+                {players.length === 0 ? <p className="user-mgmt-empty-state">Aucun junior dans ce groupe.</p> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Performance</th><th aria-label="Actions" /></tr></thead><tbody>{players.slice().sort((a,b) => fullName(a.profiles).localeCompare(fullName(b.profiles), "fr")).map((row) => <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(row.profiles)}</span></td><td><b>{fullName(row.profiles)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => void togglePlayerPerformance(row.player_user_id)} disabled={busy || isPerformance}>{isPerformance ? "Activé (groupe)" : playerPerformanceById[row.player_user_id] ? "Activé" : "Désactivé"}</button></td><td><button type="button" className="btn btn-danger soft" onClick={() => void removePlayerFromGroup(row)} disabled={busy} aria-label="Retirer le junior" title="Retirer"><Trash2 size={18} /></button></td></tr>)}</tbody></table></div>}
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="user-mgmt-field"><span className="user-mgmt-field-label">Ajouter un junior</span><input value={queryPlayers} onChange={(e) => setQueryPlayers(e.target.value)} disabled={busy} placeholder="Rechercher par nom…" /></label>
+                {playerCandidates.length === 0 ? <p className="user-mgmt-empty-state">Aucun junior à ajouter.</p> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead><tbody>{playerCandidates.map((person) => <tr key={person.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(person)}</span></td><td><b>{fullName(person)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => void addPlayerToGroup(person)} disabled={busy} aria-label={`Ajouter ${fullName(person)}`} title="Ajouter" style={{ width: 44, padding: 0 }}><PlusCircle size={18} /></button></td></tr>)}</tbody></table></div>}
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Coachs</h2><p>{t("coachGroupEdit.headCoachFixed")}</p></div></div>
+            <div style={{ display: "grid", gap: 20 }}>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="pill-soft">Coach(s) du groupe ({coaches.length})</div>
+                {coaches.length === 0 ? <div className={actionStyles.errorAlert} role="alert">Attention : ce groupe n’a aucun coach. Ajoutez-en au moins un avant de poursuivre.</div> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Rôle</th><th aria-label="Actions" /></tr></thead><tbody>{coaches.map((row) => <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(row.profiles)}</span></td><td><b>{fullName(row.profiles)}</b></td><td>{row.is_head ? <span className="pill-soft">Head coach</span> : "Coach"}</td><td>{row.is_head ? null : <button type="button" className="btn btn-danger soft" onClick={() => void removeCoachFromGroup(row)} disabled={busy} aria-label="Retirer le coach" title="Retirer"><Trash2 size={18} /></button>}</td></tr>)}</tbody></table></div>}
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="user-mgmt-field"><span className="user-mgmt-field-label">Ajouter un coach</span><input value={queryCoaches} onChange={(e) => setQueryCoaches(e.target.value)} disabled={busy} placeholder="Rechercher par nom…" /></label>
+                {coachCandidates.length === 0 ? <p className="user-mgmt-empty-state">Aucun coach à ajouter.</p> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead><tbody>{coachCandidates.map((person) => <tr key={person.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(person)}</span></td><td><b>{fullName(person)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => void addCoachToGroup(person)} disabled={busy} aria-label={`Ajouter ${fullName(person)}`} title="Ajouter" style={{ width: 44, padding: 0 }}><PlusCircle size={18} /></button></td></tr>)}</tbody></table></div>}
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.quickPanel}>
+            <div className={styles.sectionHeading}><div><h2>Planification</h2><p>Consultez et gérez les entraînements de ce groupe.</p></div></div>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><span className="pill-soft">À venir : {planningSummary.upcomingCount}</span><span className="pill-soft">Planifiés : {planningSummary.totalScheduled}</span><span className="pill-soft">Récurrents : {planningSummary.recurringCount}</span></div>
+              <p className="user-mgmt-empty-state" style={{ margin: 0 }}>{planningSummary.nextStartsAt ? `Prochain événement : ${new Intl.DateTimeFormat("fr-CH", { weekday: "short", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(planningSummary.nextStartsAt))}` : t("coachGroupEdit.noUpcomingTraining")}</p>
+              <div className="user-mgmt-card-actions"><Link className={actionStyles.primaryButton} href={`/manager/groups/${groupId}/planning${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ""}`}><CalendarDays size={16} />Gérer la planification</Link></div>
+            </div>
+          </section>
+
+          <section className={actionStyles.dangerZone}>
+            <div><div><h2>Supprimer le groupe</h2><p>Cette action est irréversible. Les événements futurs seront supprimés et l’historique passé sera conservé.</p></div></div>
+            <button type="button" className={actionStyles.dangerButton} onClick={() => void deleteGroup()} disabled={busy}><Trash2 size={16} />Supprimer le groupe</button>
+          </section>
+        </>
+      )}
+    </main>
   );
 }
-
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
-
-const avatarBoxStyle: React.CSSProperties = {
-  width: 42,
-  height: 42,
-  borderRadius: 14,
-  overflow: "hidden",
-  background: "rgba(255,255,255,0.65)",
-  border: "1px solid rgba(0,0,0,0.08)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 950,
-  color: "var(--green-dark)",
-  flexShrink: 0,
-};
-
-const lightRowCardStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.08)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.65)",
-  padding: 12,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};

@@ -9,6 +9,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { invalidateClientPageCacheByPrefix } from "@/lib/clientPageCache";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
@@ -270,6 +271,7 @@ export default function PlayerCampNewPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Stages/camps", href: "/player/camps" }, { label: "Ajouter" }]} />
         {loading ? (
           <div className="glass-section">
             <div className="glass-card" style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
@@ -280,9 +282,9 @@ export default function PlayerCampNewPage() {
           <>
         <div className="glass-section">
           <div className="marketplace-header">
-            <div className="section-title" style={{ marginBottom: 0 }}>
+            <h1 className="section-title" style={{ marginBottom: 0 }}>
               {pickLocaleText(locale, isEditing ? "Éditer le stage" : "Nouveau stage", isEditing ? "Edit camp" : "New camp")}
-            </div>
+            </h1>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
               <Link className="cta-green cta-green-inline" href="/player/golf/trainings?type=camp">

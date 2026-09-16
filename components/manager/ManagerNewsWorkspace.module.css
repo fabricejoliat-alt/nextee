@@ -1,0 +1,15 @@
+.newsTable{
+  min-width: 620px;
+}
+
+.dateCell{
+  white-space: nowrap;
+  color: #526056;
+  font-size: 11px;
+}
+
+@media(max-width:640px){
+  .newsTable{
+    min-width: 0;
+  }
+}

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
+import { Building2, ChevronRight, Filter, Plus, Search } from "lucide-react";
+import styles from "./OrganizationsAdmin.module.css";
 
 type OrgType = "club" | "academy" | "federation";
 
@@ -34,13 +36,23 @@ export default function OrganizationsAdmin() {
   const [orgType, setOrgType] = useState<OrgType>("club");
   const [slugTouched, setSlugTouched] = useState(false);
 
-  // Edit
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editSlug, setEditSlug] = useState("");
-  const [editOrgType, setEditOrgType] = useState<OrgType>("club");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | OrgType>("all");
+  const [tablePage, setTablePage] = useState(1);
 
   const canCreate = useMemo(() => name.trim().length >= 2, [name]);
+  const filteredOrganizations = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase("fr");
+    return organizations.filter((organization) => {
+      const matchesSearch = !normalizedSearch || [organization.name, organization.slug ?? "", organization.org_type]
+        .some((value) => value.toLocaleLowerCase("fr").includes(normalizedSearch));
+      const matchesType = typeFilter === "all" || organization.org_type === typeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [organizations, search, typeFilter]);
+  const tablePageSize = 8;
+  const tableTotalPages = Math.max(1, Math.ceil(filteredOrganizations.length / tablePageSize));
+  const visibleOrganizations = filteredOrganizations.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize);
 
   async function loadOrganizations() {
     setLoading(true);
@@ -113,302 +125,160 @@ export default function OrganizationsAdmin() {
     await loadOrganizations();
   }
 
-  function startEdit(org: Organization) {
-    setEditingId(org.id);
-    setEditName(org.name ?? "");
-    setEditSlug(org.slug ?? "");
-    setEditOrgType(org.org_type ?? "club");
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditName("");
-    setEditSlug("");
-    setEditOrgType("club");
-  }
-
-  async function saveEdit() {
-    if (!editingId) return;
-    setError(null);
-
-    const finalSlug = (editSlug || slugify(editName)).trim() || null;
-    const finalName = editName.trim();
-
-    const orgRes = await supabase
-      .from("organizations")
-      .update({
-        name: finalName,
-        slug: finalSlug,
-        org_type: editOrgType,
-      })
-      .eq("id", editingId);
-
-    if (orgRes.error) {
-      setError(orgRes.error.message);
-      return;
-    }
-
-    const clubRes = await supabase
-      .from("clubs")
-      .update({
-        name: finalName,
-        slug: finalSlug,
-      })
-      .eq("id", editingId);
-
-    if (clubRes.error) {
-      setError(`clubs: ${clubRes.error.message}`);
-      return;
-    }
-
-    cancelEdit();
-    await loadOrganizations();
-  }
-
-  async function deleteOrganization(org: Organization) {
-    const ok = confirm(
-      `Supprimer l’organisation "${org.name}" ?\n\nCette action est irréversible.`
-    );
-    if (!ok) return;
-
-    setError(null);
-    console.log("Deleting organization:", org.id);
-
-    // 1️⃣ Supprimer coach_players (si existe)
-    try {
-      const cp = await supabase
-        .from("coach_players")
-        .delete()
-        .eq("club_id", org.id);
-
-      if (cp.error) {
-        const msg = cp.error.message.toLowerCase();
-        if (!msg.includes("does not exist")) {
-          setError(`coach_players: ${cp.error.message}`);
-          return;
-        }
-      }
-    } catch {
-      // ignore si table inexistante
-    }
-
-    // 2️⃣ Supprimer club_members
-    const cm = await supabase
-      .from("club_members")
-      .delete()
-      .eq("club_id", org.id);
-
-    if (cm.error) {
-      setError(`club_members: ${cm.error.message}`);
-      return;
-    }
-
-    // 3️⃣ Supprimer l'organisation
-    const delOrg = await supabase
-      .from("organizations")
-      .delete()
-      .eq("id", org.id);
-
-    if (delOrg.error) {
-      setError(`organizations: ${delOrg.error.message}`);
-      return;
-    }
-
-    // 4️⃣ Supprimer la ligne legacy club
-    const delClub = await supabase
-      .from("clubs")
-      .delete()
-      .eq("id", org.id);
-
-    if (delClub.error) {
-      setError(`clubs: ${delClub.error.message}`);
-      return;
-    }
-
-    if (editingId === org.id) cancelEdit();
-
-    await loadOrganizations();
-  }
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>
-          Gestion des Organisations
-        </h1>
-        <p style={{ marginTop: 6, color: "var(--muted)" }}>
-          Ajouter, modifier ou supprimer des organisations.
-        </p>
-      </div>
+    <div className={styles.page}>
+      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+        <Link href="/admin">Administration</Link>
+        <ChevronRight size={14} aria-hidden="true" />
+        <span>Organisations</span>
+      </nav>
+      <h1 className={styles.pageTitle}>Organisations</h1>
 
       {error && (
-        <div
-          style={{
-            border: "1px solid #ffcccc",
-            background: "#fff5f5",
-            padding: 12,
-            borderRadius: 12,
-            color: "#a00",
-          }}
-        >
+        <div className={styles.errorAlert} role="alert">
           {error}
         </div>
       )}
 
-      {/* Create */}
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Ajouter une organisation</h2>
+      <section className={styles.creationCard} id="new-organization">
+        <div className={styles.sectionHeader}>
+          <div className={styles.sectionIcon}><Building2 size={21} /></div>
+          <div>
+            <h2>Nouvelle organisation</h2>
+            <p>Les informations pourront être modifiées à tout moment.</p>
+          </div>
+        </div>
 
-        <form
-          onSubmit={createOrganization}
-          style={{ display: "grid", gap: 10, maxWidth: 520 }}
-        >
-          <input
-            placeholder="Nom de l’organisation"
-            value={name}
-            onChange={(e) => {
-              const v = e.target.value;
-              setName(v);
-              if (!slugTouched) setSlug(slugify(v));
-            }}
-            style={inputStyle}
-          />
+        <form onSubmit={createOrganization} className={styles.formGrid}>
+          <label className={`${styles.field} ${styles.nameField}`}>
+            <span>Nom de l’organisation</span>
+            <input
+              placeholder="Ex. Golf Club de Sion"
+              value={name}
+              onChange={(e) => {
+                const v = e.target.value;
+                setName(v);
+                if (!slugTouched) setSlug(slugify(v));
+              }}
+            />
+          </label>
 
-          <input
-            placeholder="Slug"
-            value={slug}
-            onChange={(e) => {
-              setSlugTouched(true);
-              setSlug(e.target.value);
-            }}
-            style={inputStyle}
-          />
+          <label className={styles.field}>
+            <span>Type d’organisation</span>
+            <select value={orgType} onChange={(e) => setOrgType(e.target.value as OrgType)}>
+              <option value="club">Club</option>
+              <option value="academy">Académie</option>
+              <option value="federation">Fédération</option>
+            </select>
+          </label>
 
-          <select
-            value={orgType}
-            onChange={(e) => setOrgType(e.target.value as OrgType)}
-            style={inputStyle}
-          >
-            <option value="club">Club</option>
-            <option value="academy">Academy</option>
-            <option value="federation">Federation</option>
-          </select>
+          <label className={styles.field}>
+            <span>Identifiant URL</span>
+            <input
+              placeholder="golf-club-de-sion"
+              value={slug}
+              onChange={(e) => {
+                setSlugTouched(true);
+                setSlug(e.target.value);
+              }}
+            />
+          </label>
 
-          <button className="btn" disabled={!canCreate}>
-            Ajouter
-          </button>
+          <div className={styles.submitField}>
+            <button className={styles.primaryButton} disabled={!canCreate}>
+              <Plus size={16} strokeWidth={2.5} /> Créer l’organisation
+            </button>
+          </div>
         </form>
-      </div>
+      </section>
 
-      {/* List */}
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Liste des organisations</h2>
+      <section className={styles.listCard}>
+        <div className={styles.listHeader}>
+          <div>
+            <h2>Organisations enregistrées</h2>
+            <span>Liste</span>
+          </div>
+        </div>
+
+        <div className={styles.tableToolbar}>
+          <label className={styles.tableSearch}>
+            <Search size={16} aria-hidden="true" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setTablePage(1); }} placeholder="Rechercher une organisation" aria-label="Rechercher une organisation" />
+          </label>
+          <label className={styles.tableFilter}>
+            <Filter size={14} aria-hidden="true" />
+            <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value as "all" | OrgType); setTablePage(1); }} aria-label="Filtrer par type">
+              <option value="all">Tous les types</option>
+              <option value="club">Clubs</option>
+              <option value="academy">Académies</option>
+              <option value="federation">Fédérations</option>
+            </select>
+          </label>
+        </div>
 
         {loading ? (
-          <div>Chargement…</div>
-        ) : organizations.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>Aucune organisation.</div>
+          <div className={styles.emptyState}>Chargement des organisations…</div>
+        ) : filteredOrganizations.length === 0 ? (
+          <div className={styles.emptyState}>Aucune organisation ne correspond à votre recherche.</div>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {organizations.map((org) => {
-              const isEditing = editingId === org.id;
-
-              return (
-                <div
-                  key={org.id}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 14,
-                    padding: 12,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  {!isEditing ? (
+          <div className={styles.tableFrame}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Organisation</th>
+                  <th>Type</th>
+                  <th>Identifiant URL</th>
+                  <th>Créée le</th>
+                  <th><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+            {visibleOrganizations.map((org, index) => (
+                <tr key={org.id} className={index % 2 === 1 ? styles.alternateRow : ""}>
                     <>
-                      <div style={{ fontWeight: 800 }}>{org.name}</div>
-                      <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                        slug: {org.slug ?? "—"} • type: {org.org_type}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <td data-label="Organisation">
+                        <strong className={styles.organizationName}>{org.name}</strong>
+                      </td>
+                      <td data-label="Type"><span className={`${styles.typeTag} ${styles[`type${org.org_type}`]}`}>{orgTypeLabel(org.org_type)}</span></td>
+                      <td data-label="Identifiant URL"><code>{org.slug ?? "—"}</code></td>
+                      <td data-label="Créée le"><span className={styles.date}>{formatDate(org.created_at)}</span></td>
+                      <td className={styles.actionCell}>
+                        <div className={styles.rowActions}>
                         <Link
-                          href={`/admin/organizations/${org.id}`}
-                          className="btn"
+                          href={`/admin/organizations/${org.id}/settings`}
+                          className={styles.secondaryButton}
                         >
-                          Gérer
+                          Paramètres
                         </Link>
-                        <Link
-                          href={`/admin/organizations/${org.id}/groups`}
-                          className="btn"
-                        >
-                          Groupes
-                        </Link>
-                        <button
-                          className="btn"
-                          onClick={() => startEdit(org)}
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          className="btn"
-                          onClick={() => deleteOrganization(org)}
-                        >
-                          Supprimer
-                        </button>
-                      </div>
+                        </div>
+                      </td>
                     </>
-                  ) : (
-                    <>
-                      <input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        style={inputStyle}
-                      />
-                      <input
-                        value={editSlug}
-                        onChange={(e) => setEditSlug(e.target.value)}
-                        style={inputStyle}
-                      />
-                      <select
-                        value={editOrgType}
-                        onChange={(e) => setEditOrgType(e.target.value as OrgType)}
-                        style={inputStyle}
-                      >
-                        <option value="club">Club</option>
-                        <option value="academy">Academy</option>
-                        <option value="federation">Federation</option>
-                      </select>
-
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn" onClick={saveEdit}>
-                          Enregistrer
-                        </button>
-                        <button className="btn" onClick={cancelEdit}>
-                          Annuler
-                        </button>
-                        <button
-                          className="btn"
-                          onClick={() => deleteOrganization(org)}
-                        >
-                          Supprimer
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                </tr>
+            ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </div>
+        {!loading && filteredOrganizations.length > 0 ? (
+          <div className={styles.tableFooter}>
+            <span>{`${((tablePage - 1) * tablePageSize) + 1}-${Math.min(tablePage * tablePageSize, filteredOrganizations.length)} sur ${filteredOrganizations.length}`}</span>
+            <div className={styles.pagination}>
+              <button type="button" onClick={() => setTablePage((current) => Math.max(1, current - 1))} disabled={tablePage === 1}>Précédent</button>
+              {Array.from({ length: tableTotalPages }, (_, index) => index + 1).map((page) => <button type="button" key={page} onClick={() => setTablePage(page)} aria-current={page === tablePage ? "page" : undefined}>{page}</button>)}
+              <button type="button" onClick={() => setTablePage((current) => Math.min(tableTotalPages, current + 1))} disabled={tablePage === tableTotalPages}>Suivant</button>
+            </div>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 12,
-  padding: "10px 12px",
-  background: "white",
-};
+function orgTypeLabel(type: OrgType) {
+  return type === "academy" ? "Académie" : type === "federation" ? "Fédération" : "Club";
+}
+
+function formatDate(date: string | null) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
+}

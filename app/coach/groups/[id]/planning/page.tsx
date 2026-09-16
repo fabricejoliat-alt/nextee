@@ -6,20 +6,20 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import {
-  Calendar,
+  ArrowLeft,
   PlusCircle,
-  Repeat,
   Trash2,
   Pencil,
   AlertTriangle,
-  Users,
-  Search,
-  SlidersHorizontal,
+  MapPin,
 } from "lucide-react";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
-type ClubRow = { id: string; name: string | null };
 
 type ProfileLite = {
   id: string;
@@ -55,6 +55,7 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 type EventCoachRow = {
   event_id: string;
@@ -123,35 +124,18 @@ function memberRoleLabel(role: string | null | undefined) {
   }
 }
 
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
-function fmtDateTimeRange(startIso: string, endIso: string | null) {
-  if (!endIso) return fmtDateTime(startIso);
+function eventDateSummary(startIso: string, endIso: string | null) {
   const start = new Date(startIso);
-  const end = new Date(endIso);
-  const sameDay = start.toDateString() === end.toDateString();
-
-  if (sameDay) {
-    const datePart = new Intl.DateTimeFormat("fr-CH", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }).format(start);
-    const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
-    return `${datePart} • ${timeFmt.format(start)} → ${timeFmt.format(end)}`;
-  }
-  return `${fmtDateTime(startIso)} → ${fmtDateTime(endIso)}`;
+  const end = endIso ? new Date(endIso) : null;
+  const time = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  return {
+    day: capitalize(new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start)),
+    date: start.getDate(),
+    month: capitalize(new Intl.DateTimeFormat("fr-CH", { month: "long" }).format(start)),
+    startTime: time.format(start),
+    endTime: end ? time.format(end) : null,
+  };
 }
 
 function isoToLocalInput(iso: string) {
@@ -293,46 +277,10 @@ const fieldLabelStyle: React.CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
-const filterButtonBaseStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  borderRadius: 12,
-  border: "1px solid #ddd",
-  background: "#f2f2f2",
-  color: "#111",
-  padding: "8px 12px",
-  fontSize: 14,
-  fontWeight: 700,
-  lineHeight: 1,
-  textDecoration: "none",
-  cursor: "pointer",
-};
-
-const selectedFilterStyle: React.CSSProperties = {
-  background: "rgba(31,41,55,0.92)",
-  borderColor: "rgba(17,24,39,0.98)",
-  color: "rgba(255,255,255,0.96)",
-};
-
-const pendingFilterStyle: React.CSSProperties = {
-  background: "rgba(249,115,22,0.16)",
-  borderColor: "rgba(249,115,22,0.45)",
-  color: "rgba(124,45,18,1)",
-  fontWeight: 900,
-};
-
-const pendingFilterActiveStyle: React.CSSProperties = {
-  background: "rgba(249,115,22,0.95)",
-  borderColor: "rgba(194,65,12,1)",
-  color: "#fff",
-  fontWeight: 900,
-};
-
-type FilterMode = "upcoming" | "past" | "range";
+type FilterMode = "all" | "upcoming" | "past" | "range";
 type EventTypeFilter = "all" | "training" | "interclub" | "camp" | "session" | "event";
-type FilterCounts = { upcoming: number; past: number; range: number };
+type FilterCounts = { all: number; upcoming: number; past: number; range: number };
+type PlanningFilterTab = "all" | "upcoming" | "past" | "pending";
 
 export default function CoachGroupPlanningPage() {
   const { locale, t } = useI18n();
@@ -345,9 +293,9 @@ export default function CoachGroupPlanningPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [meId, setMeId] = useState("");
+  const [canPlan, setCanPlan] = useState(false);
 
   const [group, setGroup] = useState<GroupRow | null>(null);
-  const [clubName, setClubName] = useState("");
 
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [players, setPlayers] = useState<ProfileLite[]>([]);
@@ -401,7 +349,7 @@ export default function CoachGroupPlanningPage() {
   const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilter>("all");
   const [rangeFrom, setRangeFrom] = useState<string>(() => toYMD(addDays(new Date(), -30)));
   const [rangeTo, setRangeTo] = useState<string>(() => toYMD(addDays(new Date(), 30)));
-  const [filterCounts, setFilterCounts] = useState<FilterCounts>({ upcoming: 0, past: 0, range: 0 });
+  const [filterCounts, setFilterCounts] = useState<FilterCounts>({ all: 0, upcoming: 0, past: 0, range: 0 });
   const [pendingEvaluationsOnly, setPendingEvaluationsOnly] = useState(false);
 
   const eventTypeLabelLocalized = (v: string | null | undefined) => {
@@ -540,7 +488,6 @@ export default function CoachGroupPlanningPage() {
   }, [coaches.length, coachIdsSelected.length]);
 
   const playerIdSet = useMemo(() => new Set(players.map((p) => p.id)), [players]);
-  const coachIdSet = useMemo(() => new Set(coaches.map((c) => c.id)), [coaches]);
   const personById = useMemo(() => {
     const map = new Map<string, ProfileLite | CoachLite | ClubMemberLite>();
     players.forEach((p) => map.set(p.id, p));
@@ -557,7 +504,7 @@ export default function CoachGroupPlanningPage() {
     const nowTs = Date.now();
     const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
     const isPastOccurrence = endTs < nowTs;
-    const requiresEvaluationCheck = e.event_type === "training" || e.event_type === "interclub";
+    const requiresEvaluationCheck = e.requires_evaluation;
     if (!isPastOccurrence || !requiresEvaluationCheck) return false;
     const missingEvalCount = presentPlayerIds.filter((pid) => !evaluatedPlayerIds.has(pid)).length;
     return missingEvalCount > 0;
@@ -648,19 +595,16 @@ export default function CoachGroupPlanningPage() {
       if (!gRes.data) throw new Error("Groupe introuvable.");
       setGroup(gRes.data as GroupRow);
 
-      // club name
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
-      if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
-      else setClubName("Club");
-
       // all active club members (for guests visibility)
       const cmRes = await supabase
         .from("club_members")
-        .select("user_id, role")
+        .select("user_id, role, can_manage_assigned_group_planning")
         .eq("club_id", gRes.data.club_id)
         .eq("is_active", true);
       if (cmRes.error) throw new Error(cmRes.error.message);
-      const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
+      const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null; can_manage_assigned_group_planning?: boolean | null }>;
+      const currentMembership = cmRows.find((row) => row.user_id === uRes.user.id);
+      setCanPlan(currentMembership?.role === "manager" || Boolean(currentMembership?.can_manage_assigned_group_planning));
       const memberIds = Array.from(new Set(cmRows.map((r) => r.user_id).filter(Boolean)));
 
       const profilesById = new Map<string, { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>();
@@ -738,7 +682,7 @@ export default function CoachGroupPlanningPage() {
       } else if (filterMode === "past") {
         const to = new Date(); // now
         isoTo = to.toISOString();
-      } else {
+      } else if (filterMode === "range") {
         // range
         if (rangeFrom) isoFrom = startOfDayISO(rangeFrom);
         if (rangeTo) isoTo = nextDayStartISO(rangeTo); // inclusive end date
@@ -746,7 +690,7 @@ export default function CoachGroupPlanningPage() {
 
       let q = supabase
         .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .eq("group_id", groupId)
         .order("starts_at", { ascending: true });
 
@@ -762,6 +706,9 @@ export default function CoachGroupPlanningPage() {
       const nowIso = new Date().toISOString();
       const withType = (qq: any) => (eventTypeFilter !== "all" ? qq.eq("event_type", eventTypeFilter) : qq);
 
+      const allCountQ = withType(
+        supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId)
+      );
       const upCountQ = withType(
         supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId).gte("starts_at", nowIso)
       );
@@ -774,11 +721,13 @@ export default function CoachGroupPlanningPage() {
       if (rangeFrom) rangeCountQ = rangeCountQ.gte("starts_at", startOfDayISO(rangeFrom));
       if (rangeTo) rangeCountQ = rangeCountQ.lt("starts_at", nextDayStartISO(rangeTo));
 
-      const [upCountRes, pastCountRes, rangeCountRes] = await Promise.all([upCountQ, pastCountQ, rangeCountQ]);
+      const [allCountRes, upCountRes, pastCountRes, rangeCountRes] = await Promise.all([allCountQ, upCountQ, pastCountQ, rangeCountQ]);
+      if (allCountRes.error) throw new Error(allCountRes.error.message);
       if (upCountRes.error) throw new Error(upCountRes.error.message);
       if (pastCountRes.error) throw new Error(pastCountRes.error.message);
       if (rangeCountRes.error) throw new Error(rangeCountRes.error.message);
       setFilterCounts({
+        all: allCountRes.count ?? 0,
         upcoming: upCountRes.count ?? 0,
         past: pastCountRes.count ?? 0,
         range: rangeCountRes.count ?? 0,
@@ -787,9 +736,9 @@ export default function CoachGroupPlanningPage() {
       // Count past events requiring evaluation (independent from current visible filter)
       const pastEvalEventsRes = await supabase
         .from("club_events")
-        .select("id,event_type,starts_at,ends_at")
+        .select("id,event_type,starts_at,ends_at,requires_evaluation")
         .eq("group_id", groupId)
-        .in("event_type", ["training", "interclub"]);
+        .eq("requires_evaluation", true);
       if (pastEvalEventsRes.error) throw new Error(pastEvalEventsRes.error.message);
 
       const nowTs = Date.now();
@@ -798,6 +747,7 @@ export default function CoachGroupPlanningPage() {
         event_type: "training" | "interclub" | "camp" | "session" | "event";
         starts_at: string;
         ends_at: string | null;
+        requires_evaluation: boolean;
       }>).filter((ev) => {
         const endTs = ev.ends_at ? new Date(ev.ends_at).getTime() : new Date(ev.starts_at).getTime();
         return endTs < nowTs;
@@ -908,7 +858,6 @@ export default function CoachGroupPlanningPage() {
     } catch (e: any) {
       setError(e?.message ?? "Erreur chargement.");
       setGroup(null);
-      setClubName("");
       setCoaches([]);
       setPlayers([]);
       setClubMembers([]);
@@ -919,7 +868,7 @@ export default function CoachGroupPlanningPage() {
       setEventAbsentPlayerIds({});
       setEventEvaluatedPlayerIds({});
       setPendingEvaluationCount(0);
-      setFilterCounts({ upcoming: 0, past: 0, range: 0 });
+      setFilterCounts({ all: 0, upcoming: 0, past: 0, range: 0 });
       setSelectedPlayers({});
       setCoachIdsSelected([]);
       setLoading(false);
@@ -1209,306 +1158,197 @@ export default function CoachGroupPlanningPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {/* Header */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {tr("Planification", "Planning")} — {group?.name ?? tr("Groupe", "Group")}
-              </div>
-            </div>
+    <main className={styles.page}>
+      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/coach/groups">Mes groupes</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/coach/groups/${groupId}`}>{group?.name ?? "Groupe"}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <span>Planification</span>
+      </nav>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}`}>
-                {t("common.back")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/add`}>
-                {tr("Ajouter une activité", "Add activity")}
-              </Link>
-            </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+      <div className={styles.topline}>
+        <div>
+          <h1>Planification</h1>
+          <p className={styles.lead}>Consultez les activités du groupe {group?.name ?? ""}.</p>
         </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}`}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            Retour au groupe
+          </Link>
+          {canPlan ? (
+            <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/add`}>
+              <PlusCircle size={16} aria-hidden="true" />
+              Ajouter une activité
+            </Link>
+          ) : null}
+        </div>
+      </div>
 
-        {/* ✅ Filters for list */}
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-              <SlidersHorizontal size={16} />
-              {tr("Filtrer les activités", "Filter activities")}
-            </div>
+      {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
-              <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value as EventTypeFilter)} disabled={busy}>
-                <option value="all">{tr("Tous les types", "All types")}</option>
-                <option value="training">{tr("Entraînement", "Training")}</option>
-                <option value="interclub">{tr("Interclub", "Interclub")}</option>
-                <option value="camp">{tr("Stage/Camp", "Camp")}</option>
-                <option value="session">{tr("Séance", "Session")}</option>
-                <option value="event">{tr("Événement", "Event")}</option>
-              </select>
-            </label>
+      <ManagerStatisticsTabs<PlanningFilterTab>
+        ariaLabel={tr("Période des activités", "Activity period")}
+        value={pendingEvaluationsOnly ? "pending" : filterMode === "range" ? "all" : filterMode}
+        items={[
+          { value: "all", label: `${tr("Toutes", "All")} (${filterCounts.all})` },
+          { value: "upcoming", label: `${tr("À venir", "Upcoming")} (${filterCounts.upcoming})` },
+          { value: "past", label: `${tr("Passés", "Past")} (${filterCounts.past})` },
+          { value: "pending", label: `${tr("À évaluer", "To evaluate")} (${pendingEvaluationCount})` },
+        ]}
+        onChange={(value) => {
+          if (value === "pending") {
+            setFilterMode("past");
+            setEventTypeFilter("all");
+            setPendingEvaluationsOnly(true);
+            return;
+          }
+          setPendingEvaluationsOnly(false);
+          setFilterMode(value);
+        }}
+      />
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("upcoming");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "upcoming" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("À venir", "Upcoming")} ({filterCounts.upcoming})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("past");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "past" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("Passés", "Past")} ({filterCounts.past})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setPendingEvaluationsOnly(false);
-                  setFilterMode("range");
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(filterMode === "range" && !pendingEvaluationsOnly ? selectedFilterStyle : {}),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("Plage de dates", "Date range")} ({filterCounts.range})
-              </button>
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setFilterMode("past");
-                  setEventTypeFilter("all");
-                  setPendingEvaluationsOnly((prev) => !prev);
-                }}
-                style={{
-                  ...filterButtonBaseStyle,
-                  ...(pendingEvaluationsOnly ? pendingFilterActiveStyle : pendingFilterStyle),
-                  ...(busy ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-                }}
-              >
-                {tr("À évaluer", "To evaluate")} ({pendingEvaluationCount})
-              </button>
-            </div>
-
-            {filterMode === "range" ? (
-              <>
-                <div className="hr-soft" />
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.from")}</span>
-                    <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} disabled={busy} />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("common.to")}</span>
-                    <input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} disabled={busy} />
-                  </label>
-                </div>
-              </>
-            ) : null}
+      <section className={styles.quickPanel}>
+        <div className={styles.sectionHeading}>
+          <div>
+            <h2>Filtrer les activités</h2>
+            <p>Affinez la liste par type d’activité.</p>
           </div>
         </div>
 
-        {/* List */}
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-            ) : listedEvents.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {pendingEvaluationsOnly
-                  ? tr("Aucun événement passé à évaluer.", "No past event to evaluate.")
-                  : filterMode === "upcoming"
-                  ? tr("Aucun événement à venir.", "No upcoming event.")
-                  : filterMode === "past"
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={fieldLabelStyle}>{tr("Type d’activité", "Activity type")}</span>
+            <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value as EventTypeFilter)} disabled={busy}>
+              <option value="all">{tr("Tous les types", "All types")}</option>
+              <option value="training">{tr("Entraînement", "Training")}</option>
+              <option value="interclub">{tr("Interclub", "Interclub")}</option>
+              <option value="camp">{tr("Stage/Camp", "Camp")}</option>
+              <option value="session">{tr("Séance", "Session")}</option>
+              <option value="event">{tr("Événement", "Event")}</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className={styles.quickPanel}>
+        <div className={styles.sectionHeading}>
+          <div>
+            <h2>Activités</h2>
+            <p>{listedEvents.length} activité{listedEvents.length > 1 ? "s" : ""} affichée{listedEvents.length > 1 ? "s" : ""}.</p>
+          </div>
+        </div>
+
+        {loading ? (
+          <CompactLoadingBlock label={t("common.loading")} />
+        ) : listedEvents.length === 0 ? (
+          <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
+            {pendingEvaluationsOnly
+              ? tr("Aucun événement passé à évaluer.", "No past event to evaluate.")
+              : filterMode === "upcoming"
+                ? tr("Aucun événement à venir.", "No upcoming event.")
+                : filterMode === "past"
                   ? tr("Aucun événement passé.", "No past event.")
                   : tr("Aucun événement sur cette plage de dates.", "No event in this date range.")}
-              </div>
-            ) : (
-              <div className="marketplace-list marketplace-list-top">
-                {listedEvents.map((e) => (
-                  <div key={e.id} className="marketplace-item" style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.78)" }}>
-                    {(() => {
-                      const coachIds = Array.from(new Set(eventCoachIds[e.id] ?? []));
-                      const attendeeIds = Array.from(new Set(eventAttendeeIds[e.id] ?? []));
-                      const showEvaluationWarning = eventNeedsEvaluation(e);
-                      const playerIds = attendeeIds.filter((id) => playerIdSet.has(id));
-                      const presentIds = Array.from(new Set((eventPresentPlayerIds[e.id] ?? []).filter((id) => playerIdSet.has(id))));
-                      const absentIds = Array.from(new Set((eventAbsentPlayerIds[e.id] ?? []).filter((id) => playerIdSet.has(id))));
-                      const inviteIds = attendeeIds.filter((id) => !playerIdSet.has(id) && !coachIdSet.has(id));
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {listedEvents.map((event) => {
+              const coachIds = Array.from(new Set(eventCoachIds[event.id] ?? []));
+              const attendeeIds = Array.from(new Set(eventAttendeeIds[event.id] ?? []));
+              const playerIds = attendeeIds.filter((id) => playerIdSet.has(id));
+              const presentIds = new Set((eventPresentPlayerIds[event.id] ?? []).filter((id) => playerIdSet.has(id)));
+              const showEvaluationWarning = eventNeedsEvaluation(event);
+              const date = eventDateSummary(event.starts_at, event.ends_at);
 
-                      const renderPeopleLine = (label: string, ids: string[]) => {
-                        const people = ids
-                          .map((id) => personById.get(id))
-                          .filter(Boolean) as Array<ProfileLite | CoachLite | ClubMemberLite>;
-                        const preview = people.slice(0, 8);
-                        const hasMore = people.length > 8;
-                        return (
-                          <div style={{ display: "grid", gap: 2 }}>
-                            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.04em", color: "rgba(0,0,0,0.58)" }}>
-                              {label.toUpperCase()}
-                            </div>
-                            <div>
-                              {people.length === 0 ? (
-                                <span style={{ color: "rgba(0,0,0,0.50)" }}>{tr("Aucun", "None")}</span>
-                              ) : (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                                  {preview.map((person, idx) => (
-                                    <div
-                                      key={`${label}-${person.id}-${idx}`}
-                                      style={{
-                                        border: "1px solid rgba(0,0,0,0.10)",
-                                        borderRadius: 10,
-                                        background: "rgba(255,255,255,0.74)",
-                                        padding: "4px 8px",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: 6,
-                                        maxWidth: 180,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          width: 22,
-                                          height: 22,
-                                          borderRadius: 999,
-                                          overflow: "hidden",
-                                          background: "rgba(255,255,255,0.75)",
-                                          border: "1px solid rgba(0,0,0,0.10)",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          justifyContent: "center",
-                                          fontWeight: 950,
-                                          color: "var(--green-dark)",
-                                          flexShrink: 0,
-                                          fontSize: 10,
-                                        }}
-                                      >
-                                        {avatarNode(person as any)}
-                                      </div>
-                                      <span className="truncate" style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.78)" }}>
-                                        {fullName(person as any)}
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {hasMore ? <span style={{ color: "rgba(0,0,0,0.55)", fontSize: 12, fontWeight: 800 }}>{tr("Afficher plus...", "Show more...")}</span> : null}
-                                </div>
-                              )}
-                            </div>
+              const renderPeopleLine = (label: string, ids: string[], withAttendance = false) => {
+                const people = ids.map((id) => personById.get(id)).filter(Boolean) as Array<ProfileLite | CoachLite | ClubMemberLite>;
+                const preview = people.slice(0, 8);
+                return (
+                  <div style={{ display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.04em", color: "rgba(0,0,0,0.58)" }}>
+                      {label.toUpperCase()}
+                    </div>
+                    {people.length === 0 ? (
+                      <span style={{ color: "rgba(0,0,0,0.50)" }}>{tr("Aucun", "None")}</span>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {preview.map((person) => (
+                          <div key={`${label}-${person.id}`} style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 10, background: "rgba(255,255,255,0.74)", padding: "4px 8px", display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 180 }}>
+                            <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(person as ProfileLite)}</span>
+                            {withAttendance ? (
+                              <span
+                                aria-label={presentIds.has(person.id) ? tr("Présent", "Present") : tr("Absent", "Absent")}
+                                title={presentIds.has(person.id) ? tr("Présent", "Present") : tr("Absent", "Absent")}
+                                style={{ width: 8, height: 8, borderRadius: 999, background: presentIds.has(person.id) ? "#4f8a4b" : "#c84a40", boxShadow: "0 0 0 2px rgba(255,255,255,.86)", flex: "0 0 auto" }}
+                              />
+                            ) : null}
+                            <span className="truncate" style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.78)" }}>{fullName(person)}</span>
                           </div>
-                        );
-                      };
-
-                      return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                        <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                          {fmtDateTimeRange(e.starts_at, e.ends_at)}
-                        </div>
-
-                        <div className="marketplace-price-pill">{e.duration_minutes} min</div>
+                        ))}
+                        {people.length > 8 ? <span style={{ color: "rgba(0,0,0,0.55)", fontSize: 12, fontWeight: 800 }}>+{people.length - 8}</span> : null}
                       </div>
+                    )}
+                  </div>
+                );
+              };
 
-                      <div className="hr-soft" style={{ margin: "1px 0" }} />
-
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="pill-soft">{eventTypeLabelLocalized(e.event_type)}</span>
-                        <span className="pill-soft">{clubName || "Club"}</span>
-                        {e.series_id ? <span className="pill-soft">{tr("Récurrent", "Recurring")}</span> : <span className="pill-soft">{tr("Unique", "Single")}</span>}
-                        {showEvaluationWarning ? (
-                          <span
-                            className="pill-soft"
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              color: "rgba(127,29,29,1)",
-                              background: "rgba(239,68,68,0.16)",
-                              borderColor: "rgba(239,68,68,0.35)",
-                              fontWeight: 900,
-                            }}
-                          >
-                            <AlertTriangle size={14} />
-                            {tr("Évaluation", "Evaluation")}
-                          </span>
-                        ) : null}
-                        {e.location_text ? (
-                          <span style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>📍 {e.location_text}</span>
-                        ) : null}
-                      </div>
-
-                      <div style={{ display: "grid", gap: 6 }}>
-                        {renderPeopleLine(tr("Coachs", "Coaches"), coachIds)}
-                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Participants", "Participants"), presentIds.length > 0 ? presentIds : playerIds)}
-                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Absents", "Absent"), absentIds)}
-                        <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
-                        {renderPeopleLine(tr("Invités", "Guests"), inviteIds)}
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                        <Link className="btn" href={`/coach/groups/${groupId}/planning/${e.id}`}>
-                          {tr("Ouvrir", "Open")}
-                        </Link>
-
-                        <Link className="btn" href={`/coach/groups/${groupId}/planning/${e.id}/edit`}>
-                          <Pencil size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                          {t("common.edit")}
-                        </Link>
-
-                        <button
-                          type="button"
-                          className="btn btn-danger soft"
-                          disabled={busy}
-                          onClick={() => deleteEvent(e)}
-                          title="Supprimer"
-                        >
-                          <Trash2 size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                          {t("common.delete")}
-                        </button>
+              return (
+                <article key={event.id} className="planning-event-card">
+                  <div className="planning-event-card-inner">
+                    <div className="planning-event-date">
+                      <div className="planning-event-day">{date.day}</div>
+                      <div className="planning-event-number">{date.date}</div>
+                      <div className="planning-event-month">{date.month}</div>
+                      <div className="planning-event-time-divider" />
+                      <div className="planning-event-times">
+                        <span>{date.startTime}</span>
+                        {date.endTime ? <span>{date.endTime}</span> : null}
                       </div>
                     </div>
-                      );
-                    })()}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
-      </div>
-    </div>
+                    <div className="planning-event-content">
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div className="planning-event-title-row">
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+                            <h3 className="planning-event-title">{eventTypeLabelLocalized(event.event_type)}</h3>
+                            <span className="pill-soft">{event.series_id ? tr("Récurrent", "Recurring") : tr("Unique", "Single")}</span>
+                            {showEvaluationWarning ? (
+                              <span className="manager-calendar-warning-pill"><AlertTriangle size={14} aria-hidden="true" />{tr("Évaluation", "Evaluation")}</span>
+                            ) : null}
+                          </div>
+                          <span className="pill-soft">{event.duration_minutes} min</span>
+                        </div>
+
+                        <div style={{ display: "grid", gap: 6 }}>
+                          {renderPeopleLine(tr("Coachs", "Coaches"), coachIds)}
+                          <div style={{ height: 1, background: "rgba(0,0,0,0.08)" }} />
+                          {renderPeopleLine(tr("Juniors", "Juniors"), playerIds, true)}
+                        </div>
+
+                        <div className="planning-event-footer">
+                          <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{event.location_text?.trim() || "Lieu non disponible"}</span></span>
+                          <div className="user-mgmt-card-actions">
+                            <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${event.id}`}>{tr("Ouvrir", "Open")}</Link>
+                            {canPlan ? (
+                              <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${event.id}/edit`}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</Link>
+                            ) : null}
+                            {canPlan ? (
+                              <button type="button" className={actionStyles.dangerButton} disabled={busy} onClick={() => deleteEvent(event)} title="Supprimer"><Trash2 size={16} aria-hidden="true" />{t("common.delete")}</button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
 

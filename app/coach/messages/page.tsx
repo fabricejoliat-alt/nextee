@@ -1,14 +1,5 @@
-import MessagesCenter from "@/components/messages/MessagesCenter";
+import { redirect } from "next/navigation";
 
 export default function CoachMessagesPage() {
-  return (
-    <MessagesCenter
-      homeHref="/coach"
-      titleFr="Messages coach"
-      titleEn="Coach messages"
-      titleDe="Trainer-Nachrichten"
-      titleIt="Messaggi coach"
-      hideTeamCoachThreadInList
-    />
-  );
+  redirect("/coach");
 }

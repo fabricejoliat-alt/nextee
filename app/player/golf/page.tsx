@@ -8,26 +8,27 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
+import { buildManagementDualLineChartOption, buildManagementLineChartOption, buildManagementVolumeChartOption, MANAGEMENT_CHART_COLORS } from "@/lib/managementCharts";
+import managerStyles from "@/app/manager/camps/Camps.module.css";
+import adminCardStyles from "@/components/admin/AdminHomeStats.module.css";
+import navigationStyles from "@/app/design-system/design-system.module.css";
+import overviewStyles from "./PlayerGolfOverview.module.css";
+import documentStyles from "./PlayerGolfDocuments.module.css";
+import trainingStyles from "./PlayerGolfTraining.module.css";
+import type { EChartsOption } from "echarts";
+import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
-import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  CalendarCheck2,
   Flame,
   Mountain,
   Smile,
-  CalendarRange,
   SlidersHorizontal,
-  X,
   Upload,
   FileText,
   FileImage,
@@ -38,6 +39,20 @@ import {
   FileCode,
   FileQuestionMark,
   FileType,
+  Eye,
+  Pencil,
+  Trash2,
+  Flag,
+  ClipboardList,
+  Dumbbell,
+  Target,
+  Activity,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  MessageSquareText,
+  Repeat2,
 } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
@@ -51,6 +66,9 @@ type TrainingSessionRow = {
   satisfaction: number | null;
   session_type: SessionType;
   club_event_id: string | null;
+  location_text: string | null;
+  coach_name: string | null;
+  notes: string | null;
 };
 
 type TrainingItemRow = {
@@ -83,6 +101,14 @@ type CoachEvaluationRow = {
   attitude: number | null;
   application: number | null;
   player_note: string | null;
+};
+
+type CustomCoachEvaluation = {
+  event_id: string;
+  criterion_id: string;
+  name: string;
+  format: string;
+  value: string | number | boolean;
 };
 
 type GolfRoundRow = {
@@ -141,20 +167,18 @@ type TrainingVolumeClubConfig = {
   offseasonMonths: number[];
 };
 
-type TeamThreadMessage = {
+type ClubSeason = {
   id: string;
-  thread_id: string;
-  sender_user_id: string;
-  body: string;
-  created_at: string;
-  sender_name?: string | null;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  is_current: boolean;
 };
 
-type ProfileLite = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
+type TrainingVolumeClubResponse = TrainingVolumeClubConfig & {
+  objective: number;
+  currentSeason: ClubSeason | null;
+  previousSeason: ClubSeason | null;
 };
 
 type PlayerDashboardDocument = {
@@ -172,8 +196,23 @@ type PlayerDashboardDocument = {
   public_url: string;
 };
 
-type Preset = "week" | "month" | "last3" | "all" | "custom";
-type DashboardSection = "trainings" | "evaluations" | "rounds" | "stats" | "thread" | "documents";
+type Preset = "week" | "month" | "last3" | "season" | "lastSeason" | "all" | "custom";
+type DashboardSection = "overview" | "trainings" | "evaluations" | "rounds" | "stats" | "documents";
+type TrainingSubview = "summary" | "sessions" | "evaluations";
+type EvaluationFilter = "all" | "pending" | "completed";
+
+type OverviewEvent = {
+  id: string;
+  event_type: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  status: string;
+  requires_evaluation?: boolean | null;
+};
+
+type OverviewSession = TrainingSessionRow & {
+  location_text?: string | null;
+};
 
 const LOOKBACK_DAYS = 14;
 
@@ -564,7 +603,26 @@ export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<DashboardSection>("trainings");
+  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
+  const [trainingSubview, setTrainingSubview] = useState<TrainingSubview>("summary");
+  const [evaluationFilter, setEvaluationFilter] = useState<EvaluationFilter>("all");
+  const [trainingOriginFilter, setTrainingOriginFilter] = useState<"all" | SessionType>("all");
+  const [trainingSectorFilter, setTrainingSectorFilter] = useState("all");
+  const [trainingStatusFilter, setTrainingStatusFilter] = useState<"all" | "pending" | "completed">("all");
+  useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get("section");
+    if (section === "evaluations") {
+      setActiveSection("trainings");
+      setTrainingSubview("evaluations");
+      const url = new URL(window.location.href);
+      url.searchParams.set("section", "trainings");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      return;
+    }
+    if (["overview", "trainings", "evaluations", "rounds", "stats", "documents"].includes(String(section))) {
+      setActiveSection(section === "stats" ? "rounds" : section as DashboardSection);
+    }
+  }, []);
   const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [loadingPrevRounds, setLoadingPrevRounds] = useState(false);
@@ -580,8 +638,10 @@ export default function GolfDashboardPage() {
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
   const [trainingVolumeConfigs, setTrainingVolumeConfigs] = useState<TrainingVolumeClubConfig[]>([]);
+  const [currentClubSeason, setCurrentClubSeason] = useState<ClubSeason | null>(null);
+  const [previousClubSeason, setPreviousClubSeason] = useState<ClubSeason | null>(null);
 
-  const [preset, setPreset] = useState<Preset>("month");
+  const [preset, setPreset] = useState<Preset>("season");
   const [customOpen, setCustomOpen] = useState(false);
 
   const [fromDate, setFromDate] = useState<string>("");
@@ -591,6 +651,7 @@ export default function GolfDashboardPage() {
   const [items, setItems] = useState<TrainingItemRow[]>([]);
 
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
+  const [prevItems, setPrevItems] = useState<TrainingItemRow[]>([]);
   const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
   const [plannedClubEventsCount, setPlannedClubEventsCount] = useState<number>(0);
 
@@ -603,17 +664,9 @@ export default function GolfDashboardPage() {
   const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
   const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
+  const [customCoachEvaluations, setCustomCoachEvaluations] = useState<CustomCoachEvaluation[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
-  const [teamThreadId, setTeamThreadId] = useState<string>("");
-  const [teamMessages, setTeamMessages] = useState<TeamThreadMessage[]>([]);
-  const [teamComposer, setTeamComposer] = useState("");
-  const [teamProfilesById, setTeamProfilesById] = useState<Record<string, ProfileLite>>({});
-  const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
   const authTokenRef = useRef<string>("");
-  const [loadingTeamThread, setLoadingTeamThread] = useState(false);
-  const [loadingTeamMessages, setLoadingTeamMessages] = useState(false);
-  const [sendingTeamMessage, setSendingTeamMessage] = useState(false);
-  const [deletingTeamMessageId, setDeletingTeamMessageId] = useState("");
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
@@ -623,18 +676,17 @@ export default function GolfDashboardPage() {
   const [docName, setDocName] = useState<string>("");
   const [viewerDocument, setViewerDocument] = useState<PlayerDashboardDocument | null>(null);
   const [currentUserId, setCurrentUserId] = useState("");
-  const teamMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const docFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [overviewEvents, setOverviewEvents] = useState<OverviewEvent[]>([]);
+  const [overviewAttendance, setOverviewAttendance] = useState<Record<string, string | null>>({});
+  const [pendingEvaluationCount, setPendingEvaluationCount] = useState(0);
+  const [overviewActivitiesLoading, setOverviewActivitiesLoading] = useState(true);
 
   useEffect(() => {
     const now = new Date();
-    const { start, end } = monthRangeLocal(now);
-    const endInclusive = new Date(end);
-    endInclusive.setDate(endInclusive.getDate() - 1);
-
-    setFromDate(isoToYMD(start));
-    setToDate(isoToYMD(endInclusive));
-    setPreset("month");
+    setFromDate(`${now.getFullYear()}-01-01`);
+    setToDate(isoToYMD(now));
+    setPreset("season");
   }, []);
 
   useEffect(() => {
@@ -702,37 +754,48 @@ export default function GolfDashboardPage() {
               const json = await res.json().catch(() => ({}));
               if (!res.ok) return null;
               const rows = Array.isArray(json?.rows) ? (json.rows as TrainingVolumeTargetRow[]) : [];
+              const seasons = (Array.isArray(json?.seasons) ? json.seasons : []) as ClubSeason[];
+              const currentSeason = seasons.find((season) => season.is_current) ?? seasons[0] ?? null;
+              const previousSeason = currentSeason
+                ? seasons.find((season) => season.starts_on < currentSeason.starts_on) ?? null
+                : null;
               const seasonMonths = parseMonthArray(json?.settings?.season_months);
               const offseasonMonths = parseMonthArray(json?.settings?.offseason_months);
               const target = pickTrainingVolumeTarget(typeof handicap === "number" ? handicap : null, rows);
               const objective = objectiveForMonth(target, seasonMonths, offseasonMonths, month);
-              return { rows, seasonMonths, offseasonMonths, objective };
+              return { rows, seasonMonths, offseasonMonths, objective, currentSeason, previousSeason };
             })
           );
 
           const configs = responses
-            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
+            .filter((x): x is TrainingVolumeClubResponse => Boolean(x))
             .map((x) => ({ rows: x.rows, seasonMonths: x.seasonMonths, offseasonMonths: x.offseasonMonths }));
           setTrainingVolumeConfigs(configs);
 
           const best = responses
-            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
+            .filter((x): x is TrainingVolumeClubResponse => Boolean(x))
             .sort((a, b) => b.objective - a.objective)[0];
 
           if (best) {
             setTrainingVolumeRows(best.rows);
             setTrainingSeasonMonths(best.seasonMonths);
             setTrainingOffseasonMonths(best.offseasonMonths);
+            setCurrentClubSeason(best.currentSeason);
+            setPreviousClubSeason(best.previousSeason);
           } else {
             setTrainingVolumeRows([]);
             setTrainingSeasonMonths([]);
             setTrainingOffseasonMonths([]);
+            setCurrentClubSeason(null);
+            setPreviousClubSeason(null);
           }
         } else {
           setTrainingVolumeConfigs([]);
           setTrainingVolumeRows([]);
           setTrainingSeasonMonths([]);
           setTrainingOffseasonMonths([]);
+          setCurrentClubSeason(null);
+          setPreviousClubSeason(null);
         }
       } catch {
         setIsPerformanceEnabled(false);
@@ -742,6 +805,8 @@ export default function GolfDashboardPage() {
         setTrainingVolumeRows([]);
         setTrainingSeasonMonths([]);
         setTrainingOffseasonMonths([]);
+        setCurrentClubSeason(null);
+        setPreviousClubSeason(null);
       }
     })();
   }, []);
@@ -753,20 +818,91 @@ export default function GolfDashboardPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!effectivePlayerId) return;
+    let cancelled = false;
+    (async () => {
+      setOverviewActivitiesLoading(true);
+      try {
+        const [{ data: sessionData }, context] = await Promise.all([
+          supabase.auth.getSession(),
+          resolveEffectivePlayerContext(),
+        ]);
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) throw new Error("Missing session");
+        const params = new URLSearchParams();
+        if (context.role === "parent") params.set("child_id", effectivePlayerId);
+        const response = await fetch(`/api/player/trainings${params.size ? `?${params}` : ""}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(payload?.error ?? "Unable to load activities"));
+        const loadedSessions = (payload?.sessions ?? []) as OverviewSession[];
+        const loadedEvents = (payload?.attendeeEvents ?? []) as OverviewEvent[];
+        const sessionIds = loadedSessions.map((session) => session.id);
+        const itemResult = sessionIds.length
+          ? await supabase.from("training_session_items").select("session_id,minutes").in("session_id", sessionIds)
+          : { data: [], error: null };
+        if (itemResult.error) throw itemResult.error;
+        const sessionsWithStructure = new Set<string>();
+        ((itemResult.data ?? []) as Array<{ session_id: string; minutes: number | null }>).forEach((item) => {
+          if (Number(item.minutes ?? 0) > 0) sessionsWithStructure.add(item.session_id);
+        });
+        const completeSessionIds = new Set(
+          loadedSessions
+            .filter((session) => sessionsWithStructure.has(session.id) && [session.motivation, session.difficulty, session.satisfaction].every((value) => typeof value === "number"))
+            .map((session) => session.id)
+        );
+        const statusByEventId = (payload?.attendeeStatusByEventId ?? {}) as Record<string, string | null>;
+        const completeEventIds = new Set(
+          loadedSessions
+            .filter((session) => completeSessionIds.has(session.id) && session.club_event_id)
+            .map((session) => String(session.club_event_id))
+        );
+        const eventById = new Map(loadedEvents.map((event) => [event.id, event]));
+        const now = Date.now();
+        const pendingKeys = new Set<string>();
+        loadedEvents.forEach((event) => {
+          const status = statusByEventId[event.id] ?? null;
+          const endedAt = new Date(event.ends_at ?? event.starts_at).getTime();
+          if (event.status === "scheduled" && event.requires_evaluation && ["training", "camp"].includes(String(event.event_type)) && endedAt < now && !["absent", "excused", "not_registered"].includes(String(status)) && !completeEventIds.has(event.id)) {
+            pendingKeys.add(`event:${event.id}`);
+          }
+        });
+        loadedSessions.forEach((session) => {
+          if (completeSessionIds.has(session.id) || new Date(session.start_at).getTime() >= now) return;
+          if (!session.club_event_id) {
+            pendingKeys.add(`session:${session.id}`);
+            return;
+          }
+          const event = eventById.get(session.club_event_id);
+          const status = statusByEventId[session.club_event_id] ?? null;
+          if (event?.requires_evaluation && !["absent", "excused", "not_registered"].includes(String(status))) {
+            pendingKeys.delete(`event:${session.club_event_id}`);
+            pendingKeys.add(`session:${session.id}`);
+          }
+        });
+        if (cancelled) return;
+        setOverviewEvents(loadedEvents);
+        setOverviewAttendance(statusByEventId);
+        setPendingEvaluationCount(pendingKeys.size);
+      } catch (cause) {
+        if (!cancelled) {
+          console.warn("player golf overview activities failed:", cause);
+          setOverviewEvents([]);
+          setOverviewAttendance({});
+          setPendingEvaluationCount(0);
+        }
+      } finally {
+        if (!cancelled) setOverviewActivitiesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectivePlayerId]);
+
   function shortDate(iso: string, localeCode: string) {
     return new Intl.DateTimeFormat(localeCode, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
-  }
-
-  function teamMessageTime(iso: string) {
-    return new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-  }
-
-  function teamMessageDayLabel(iso: string) {
-    return new Intl.DateTimeFormat(dateLocale, {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-    }).format(new Date(iso));
   }
 
   async function getAuthToken(): Promise<string> {
@@ -775,95 +911,6 @@ export default function GolfDashboardPage() {
     const token = sess.session?.access_token ?? "";
     if (token) authTokenRef.current = token;
     return token;
-  }
-
-  async function loadTeamThreadMessages(threadId: string, options?: { silent?: boolean }) {
-    if (!threadId) {
-      setTeamMessages([]);
-      return;
-    }
-    if (!options?.silent) setLoadingTeamMessages(true);
-    try {
-      const token = await getAuthToken();
-      if (!token) throw new Error("Missing token");
-      const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=200`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String((json as any)?.error ?? "Load failed"));
-      const msgs = (((json as any)?.messages ?? []) as TeamThreadMessage[]).slice().reverse();
-      setTeamMessages(msgs);
-
-      const senderIds = Array.from(new Set(msgs.map((m) => String(m.sender_user_id ?? "")).filter(Boolean)));
-      const missing = senderIds.filter((id) => !teamProfilesById[id]);
-      if (missing.length > 0) {
-        const profRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", missing);
-        if (!profRes.error) {
-          setTeamProfilesById((prev) => {
-            const next = { ...prev };
-            for (const p of profRes.data ?? []) next[String((p as any).id)] = p as ProfileLite;
-            return next;
-          });
-        }
-      }
-    } catch {
-      setTeamMessages([]);
-    } finally {
-      if (!options?.silent) setLoadingTeamMessages(false);
-    }
-  }
-
-  async function loadTeamParticipants(threadId: string) {
-    if (!threadId) {
-      setTeamParticipantNames([]);
-      return;
-    }
-    try {
-      const token = await getAuthToken();
-      if (!token) return;
-      const res = await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) return;
-      const names: string[] = Array.isArray(json?.participant_full_names)
-        ? (json.participant_full_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
-        : Array.isArray(json?.participant_names)
-          ? (json.participant_names as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
-          : [];
-      setTeamParticipantNames(names);
-    } catch {
-      setTeamParticipantNames([]);
-    }
-  }
-
-  async function ensureAndLoadTeamThread() {
-    setLoadingTeamThread(true);
-    try {
-      const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
-      const token = await getAuthToken();
-      if (!token || !playerId) throw new Error("Missing context");
-      const res = await fetch(`/api/player/team-thread?player_id=${encodeURIComponent(playerId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(String(json?.error ?? "Team thread unavailable"));
-      const threadId = String(json?.thread_id ?? "");
-      if (!threadId) throw new Error("Team thread unavailable");
-
-      setTeamThreadId(threadId);
-      void loadTeamThreadMessages(threadId);
-      void loadTeamParticipants(threadId);
-    } catch {
-      setTeamThreadId("");
-      setTeamMessages([]);
-      setTeamParticipantNames([]);
-    } finally {
-      setLoadingTeamThread(false);
-    }
   }
 
   async function loadDocuments(targetPlayerId?: string) {
@@ -883,7 +930,7 @@ export default function GolfDashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const json = await res.json().catch(() => ({} as any));
+      const json = await res.json().catch(() => ({})) as { error?: unknown; documents?: PlayerDashboardDocument[] };
       if (!res.ok) throw new Error(String(json?.error ?? "Load documents error"));
       setDocuments((json?.documents ?? []) as PlayerDashboardDocument[]);
     } catch (e) {
@@ -933,7 +980,7 @@ export default function GolfDashboardPage() {
           size_bytes: uploadFile.size,
         }),
       });
-      const prepareJson = await prepareRes.json().catch(() => ({} as any));
+      const prepareJson = await prepareRes.json().catch(() => ({})) as { error?: unknown; path?: unknown; token?: unknown };
       if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
 
       const uploadPath = String(prepareJson?.path ?? "").trim();
@@ -966,7 +1013,7 @@ export default function GolfDashboardPage() {
           size_bytes: uploadFile.size,
         }),
       });
-      const json = await finalizeRes.json().catch(() => ({} as any));
+      const json = await finalizeRes.json().catch(() => ({})) as { error?: unknown; document?: PlayerDashboardDocument };
       if (!finalizeRes.ok) throw new Error(String(json?.error ?? "Upload failed"));
 
       const created = json?.document as PlayerDashboardDocument | undefined;
@@ -978,8 +1025,8 @@ export default function GolfDashboardPage() {
       setDocFile(null);
       setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
-    } catch (e: any) {
-      setError(e?.message ?? "Upload failed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploadingDocument(false);
     }
@@ -1007,7 +1054,7 @@ export default function GolfDashboardPage() {
           file_name: nextName,
         }),
       });
-      const json = await res.json().catch(() => ({} as any));
+      const json = await res.json().catch(() => ({})) as { error?: unknown; document?: PlayerDashboardDocument };
       if (!res.ok) throw new Error(String(json?.error ?? "Rename failed"));
       setDocuments((prev) =>
         prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
@@ -1015,8 +1062,8 @@ export default function GolfDashboardPage() {
       if (viewerDocument?.id === doc.id) {
         setViewerDocument((prev) => (prev ? { ...prev, file_name: String(json?.document?.file_name ?? nextName) } : prev));
       }
-    } catch (e: any) {
-      setError(e?.message ?? "Rename failed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Rename failed");
     } finally {
       setRenamingDocumentId("");
     }
@@ -1042,12 +1089,12 @@ export default function GolfDashboardPage() {
           player_id: playerId,
         }),
       });
-      const json = await res.json().catch(() => ({} as any));
+      const json = await res.json().catch(() => ({})) as { error?: unknown };
       if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
       if (viewerDocument?.id === doc.id) setViewerDocument(null);
-    } catch (e: any) {
-      setError(e?.message ?? "Delete failed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setDeletingDocumentId("");
     }
@@ -1055,7 +1102,6 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     void getAuthToken();
-    void ensureAndLoadTeamThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1068,112 +1114,6 @@ export default function GolfDashboardPage() {
     if (activeSection !== "documents" || !effectivePlayerId) return;
     void loadDocuments(effectivePlayerId);
   }, [activeSection, effectivePlayerId]);
-
-  useEffect(() => {
-    if (!teamThreadId) return;
-    const channel = supabase
-      .channel(`player-team-thread:${teamThreadId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
-        () => {
-          window.setTimeout(() => {
-            void loadTeamThreadMessages(teamThreadId, { silent: true });
-          }, 120);
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "thread_messages", filter: `thread_id=eq.${teamThreadId}` },
-        () => {
-          void loadTeamThreadMessages(teamThreadId, { silent: true });
-        }
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [teamThreadId]);
-
-  useEffect(() => {
-    if (!teamThreadId) return;
-    const timer = window.setInterval(async () => {
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token ?? authTokenRef.current ?? "";
-        if (sess.session?.access_token) authTokenRef.current = sess.session.access_token;
-        if (!token) return;
-        const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages?limit=1`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => ({} as any));
-        if (!res.ok) return;
-        const latest = (json?.messages?.[0] ?? null) as any;
-        if (!latest?.id) return;
-        const latestId = String(latest.id);
-        const currentLatestId = teamMessages.length ? String(teamMessages[teamMessages.length - 1]?.id ?? "") : "";
-        if (latestId && latestId !== currentLatestId) {
-          await loadTeamThreadMessages(teamThreadId, { silent: true });
-        }
-      } catch {
-        // keep silent polling
-      }
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [teamThreadId, teamMessages]);
-
-  useEffect(() => {
-    if (!teamMessagesEndRef.current) return;
-    teamMessagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [teamMessages.length, teamThreadId]);
-
-  async function sendTeamMessage() {
-    if (!teamThreadId || !teamComposer.trim() || sendingTeamMessage) return;
-    setSendingTeamMessage(true);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? "";
-      if (!token) throw new Error("Missing token");
-      const res = await fetch(`/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message_type: "text", body: teamComposer.trim() }),
-      });
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(String(json?.error ?? "Send failed"));
-      setTeamComposer("");
-      await loadTeamThreadMessages(teamThreadId, { silent: true });
-    } catch (e: any) {
-      setError(e?.message ?? "Send failed");
-    } finally {
-      setSendingTeamMessage(false);
-    }
-  }
-
-  async function deleteTeamMessage(messageId: string) {
-    if (!teamThreadId || !messageId || deletingTeamMessageId) return;
-    setDeletingTeamMessageId(messageId);
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token ?? "";
-      if (!token) throw new Error("Missing token");
-      const res = await fetch(
-        `/api/messages/threads/${encodeURIComponent(teamThreadId)}/messages/${encodeURIComponent(messageId)}`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
-      setTeamMessages((prev) => prev.filter((m) => m.id !== messageId));
-    } catch (e: any) {
-      setError(e?.message ?? "Delete failed");
-    } finally {
-      setDeletingTeamMessageId("");
-    }
-  }
 
   useEffect(() => {
     const now = new Date();
@@ -1205,12 +1145,32 @@ export default function GolfDashboardPage() {
       return;
     }
 
+    if (preset === "season") {
+      if (currentClubSeason) {
+        const today = isoToYMD(now);
+        setFromDate(currentClubSeason.starts_on);
+        setToDate(currentClubSeason.ends_on < today ? currentClubSeason.ends_on : today);
+      } else {
+        setFromDate(`${now.getFullYear()}-01-01`);
+        setToDate(isoToYMD(now));
+      }
+      return;
+    }
+
+    if (preset === "lastSeason") {
+      if (previousClubSeason) {
+        setFromDate(previousClubSeason.starts_on);
+        setToDate(previousClubSeason.ends_on);
+      }
+      return;
+    }
+
     if (preset === "all") {
       setFromDate("");
       setToDate("");
       return;
     }
-  }, [preset]);
+  }, [currentClubSeason, preset, previousClubSeason]);
 
   function onChangeFrom(v: string) {
     setFromDate(v);
@@ -1262,6 +1222,16 @@ export default function GolfDashboardPage() {
       return { from: isoToYMD(prevStart), to: isoToYMD(prevEndInclusive) };
     }
 
+    if (preset === "season") {
+      return previousClubSeason
+        ? { from: previousClubSeason.starts_on, to: previousClubSeason.ends_on }
+        : null;
+    }
+
+    if (preset === "lastSeason") {
+      return null;
+    }
+
     if (preset === "custom" && fromDate && toDate) {
       const days = diffDaysInclusive(fromDate, toDate);
       if (!days) return null;
@@ -1271,9 +1241,10 @@ export default function GolfDashboardPage() {
     }
 
     return null;
-  }, [preset, fromDate, toDate]);
+  }, [preset, fromDate, previousClubSeason, toDate]);
 
   const compareMonths = useMemo(() => {
+    if (preset === "season" || preset === "lastSeason") return 12;
     if (preset === "last3") return 3;
     if (preset === "month") return 1;
     if (preset === "week") return 0;
@@ -1311,7 +1282,7 @@ export default function GolfDashboardPage() {
 
         let q = supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
           .eq("user_id", effectivePlayerId)
           .order("start_at", { ascending: true });
 
@@ -1337,8 +1308,8 @@ export default function GolfDashboardPage() {
 
         setItems((iRes.data ?? []) as TrainingItemRow[]);
         setLoading(false);
-      } catch (e: any) {
-        setError(e?.message ?? "Erreur chargement.");
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Erreur chargement.");
         setSessions([]);
         setItems([]);
         setLoading(false);
@@ -1351,6 +1322,7 @@ export default function GolfDashboardPage() {
     (async () => {
       if (!prevRange) {
         setPrevSessions([]);
+        setPrevItems([]);
         return;
       }
 
@@ -1363,7 +1335,7 @@ export default function GolfDashboardPage() {
 
         let q = supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
           .eq("user_id", effectivePlayerId)
           .order("start_at", { ascending: true });
 
@@ -1372,9 +1344,22 @@ export default function GolfDashboardPage() {
         const res = await q;
         if (res.error) throw new Error(res.error.message);
 
-        setPrevSessions((res.data ?? []) as TrainingSessionRow[]);
+        const previousSessions = (res.data ?? []) as TrainingSessionRow[];
+        setPrevSessions(previousSessions);
+        const previousIds = previousSessions.map((session) => session.id);
+        if (!previousIds.length) {
+          setPrevItems([]);
+          return;
+        }
+        const itemsResult = await supabase
+          .from("training_session_items")
+          .select("session_id,category,minutes")
+          .in("session_id", previousIds);
+        if (itemsResult.error) throw new Error(itemsResult.error.message);
+        setPrevItems((itemsResult.data ?? []) as TrainingItemRow[]);
       } catch {
         setPrevSessions([]);
+        setPrevItems([]);
       } finally {
         setLoadingPrev(false);
       }
@@ -1443,8 +1428,7 @@ export default function GolfDashboardPage() {
     })();
   }, [effectivePlayerId, fromDate, toDate]);
 
-  const shouldLoadRoundStats = activeSection === "stats" || activeSection === "rounds";
-  const shouldLoadTrainingData = activeSection === "trainings" || activeSection === "evaluations";
+  const shouldLoadRoundStats = activeSection === "overview" || activeSection === "trainings" || activeSection === "stats" || activeSection === "rounds";
   const shouldLoadTrainLookback = activeSection === "stats" && isPerformanceEnabled;
 
   // ===== LOAD ROUNDS (current) =====
@@ -1620,7 +1604,7 @@ export default function GolfDashboardPage() {
 
         const sRes = await supabase
           .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
+          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
           .eq("user_id", effectivePlayerId)
           .gte("start_at", fromISO)
           .lt("start_at", toISO)
@@ -1653,7 +1637,7 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     (async () => {
-      if (activeSection !== "evaluations" || !effectivePlayerId) {
+      if (activeSection !== "trainings" || !effectivePlayerId) {
         setCoachEvaluations([]);
         setLoadingCoachEvaluations(false);
         return;
@@ -1718,11 +1702,56 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [activeSection, effectivePlayerId, fromDate, toDate]);
+
+  useEffect(() => {
+    if (activeSection !== "trainings" || !effectivePlayerId) {
+      setCustomCoachEvaluations([]);
+      return;
+    }
+    const eventIds = overviewEvents
+      .filter((event) => (!fromDate || event.starts_at >= startOfDayISO(fromDate)) && (!toDate || event.starts_at < nextDayStartISO(toDate)))
+      .map((event) => event.id);
+    if (!eventIds.length) {
+      setCustomCoachEvaluations([]);
+      return;
+    }
+    void (async () => {
+      const criteriaResult = await supabase
+        .from("club_event_evaluation_criteria")
+        .select("id,event_id,snapshot_name,snapshot_response_format")
+        .in("event_id", eventIds)
+        .eq("is_enabled", true)
+        .in("snapshot_respondent", ["coach", "both"]);
+      if (criteriaResult.error || !criteriaResult.data?.length) {
+        setCustomCoachEvaluations([]);
+        return;
+      }
+      const criteria = criteriaResult.data as Array<{ id: string; event_id: string; snapshot_name: string; snapshot_response_format: string }>;
+      const responsesResult = await supabase
+        .from("club_event_evaluation_responses")
+        .select("event_id,event_criterion_id,value_json")
+        .eq("player_id", effectivePlayerId)
+        .eq("respondent_role", "coach")
+        .in("event_criterion_id", criteria.map((criterion) => criterion.id));
+      if (responsesResult.error) {
+        setCustomCoachEvaluations([]);
+        return;
+      }
+      const criterionById = new Map(criteria.map((criterion) => [criterion.id, criterion]));
+      setCustomCoachEvaluations((responsesResult.data ?? []).flatMap((response: { event_id: string; event_criterion_id: string; value_json: unknown }) => {
+        const criterion = criterionById.get(response.event_criterion_id);
+        if (!criterion || !["string", "number", "boolean"].includes(typeof response.value_json)) return [];
+        return [{ event_id: response.event_id, criterion_id: criterion.id, name: criterion.snapshot_name, format: criterion.snapshot_response_format, value: response.value_json as string | number | boolean }];
+      }));
+    })();
+  }, [activeSection, effectivePlayerId, fromDate, overviewEvents, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
     week: t("common.thisWeek"),
     month: t("common.thisMonth"),
     last3: t("common.last3Months"),
+    season: pickLocaleText(locale, "Cette saison", "This season"),
+    lastSeason: pickLocaleText(locale, "La saison dernière", "Last season"),
     all: t("common.allActivity"),
     custom: t("common.custom"),
   };
@@ -1735,6 +1764,8 @@ function presetToSelectValue(p: Preset): Preset {
     if (preset === "week") return pickLocaleText(locale, "Volume de la semaine", "Weekly training volume");
     if (preset === "month") return pickLocaleText(locale, "Volume du mois", "Monthly training volume");
     if (preset === "last3") return pickLocaleText(locale, "Volume des 3 derniers mois", "Last 3 months volume");
+    if (preset === "season") return pickLocaleText(locale, "Volume de la saison", "Season training volume");
+    if (preset === "lastSeason") return pickLocaleText(locale, "Volume de la saison dernière", "Last season training volume");
     if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
     return pickLocaleText(locale, "Mon volume d'entraînement", "Training volume");
   }, [locale, preset]);
@@ -1946,6 +1977,16 @@ function presetToSelectValue(p: Preset): Preset {
   const avgCoachEngagement = useMemo(() => avg(coachEvaluations.map((row) => row.engagement)), [coachEvaluations]);
   const avgCoachAttitude = useMemo(() => avg(coachEvaluations.map((row) => row.attitude)), [coachEvaluations]);
   const avgCoachApplication = useMemo(() => avg(coachEvaluations.map((row) => row.application)), [coachEvaluations]);
+  const customCoachCriteriaSummary = useMemo(() => {
+    const grouped = new Map<string, { values: number[]; latest: string | number | boolean }>();
+    customCoachEvaluations.forEach((entry) => {
+      const current = grouped.get(entry.name) ?? { values: [], latest: entry.value };
+      current.latest = entry.value;
+      if (typeof entry.value === "number") current.values.push(entry.value);
+      grouped.set(entry.name, current);
+    });
+    return [...grouped.entries()].map(([name, data]) => ({ name, value: data.values.length ? avg(data.values) : data.latest }));
+  }, [customCoachEvaluations]);
 
   const coachEvalTrendSeries = useMemo(() => {
     const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
@@ -1999,6 +2040,178 @@ function presetToSelectValue(p: Preset): Preset {
       })),
     [coachEvaluations, sessionIdByClubEventId]
   );
+
+  const sessionMinutesById = useMemo(() => {
+    const map = new Map<string, number>();
+    items.forEach((item) => map.set(item.session_id, (map.get(item.session_id) ?? 0) + Number(item.minutes ?? 0)));
+    sessions.forEach((session) => {
+      if (!map.has(session.id)) map.set(session.id, Number(session.total_minutes ?? 0));
+    });
+    return map;
+  }, [items, sessions]);
+
+  const previousTrainingMinutes = useMemo(() => {
+    const structured = prevItems.reduce((sum, item) => sum + Number(item.minutes ?? 0), 0);
+    return structured > 0 ? structured : prevSessions.reduce((sum, session) => sum + Number(session.total_minutes ?? 0), 0);
+  }, [prevItems, prevSessions]);
+  const volumeDelta = previousTrainingMinutes > 0 ? Math.round(((totalMinutes - previousTrainingMinutes) / previousTrainingMinutes) * 100) : null;
+
+  const trainingWeeklyRows = useMemo(() => {
+    if (!fromDate || !toDate) return [];
+    const first = weekStartMonday(new Date(`${fromDate}T12:00:00`));
+    const last = new Date(`${toDate}T23:59:59`);
+    const rows: Array<{ week: string; label: string; club: number; private: number; individual: number; total: number; objective: number | null }> = [];
+    for (const cursor = new Date(first); cursor <= last; cursor.setDate(cursor.getDate() + 7)) {
+      const weekStart = new Date(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const row = { week: isoToYMD(weekStart), label: new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "2-digit" }).format(weekStart), club: 0, private: 0, individual: 0, total: 0, objective: null as number | null };
+      sessions.forEach((session) => {
+        const time = new Date(session.start_at).getTime();
+        if (time < weekStart.getTime() || time >= weekEnd.getTime()) return;
+        const minutes = sessionMinutesById.get(session.id) ?? 0;
+        row[session.session_type] += minutes;
+        row.total += minutes;
+      });
+      const objective = trainingVolumeConfigs.length > 0
+        ? trainingVolumeConfigs.reduce((maximum, config) => {
+            const target = pickTrainingVolumeTarget(handicapForDate(row.week), config.rows);
+            return Math.max(maximum, objectiveForMonth(target, config.seasonMonths, config.offseasonMonths, weekStart.getMonth() + 1));
+          }, 0)
+        : weeklyObjectiveMinutes;
+      row.objective = objective > 0 ? objective : null;
+      rows.push(row);
+    }
+    return rows;
+  }, [dateLocale, fromDate, handicapForDate, sessionMinutesById, sessions, toDate, trainingVolumeConfigs, weeklyObjectiveMinutes]);
+
+  const regularity = useMemo(() => {
+    const active = trainingWeeklyRows.map((row) => row.total > 0);
+    let best = 0;
+    let running = 0;
+    active.forEach((value) => { running = value ? running + 1 : 0; best = Math.max(best, running); });
+    let current = 0;
+    for (let index = active.length - 1; index >= 0 && active[index]; index -= 1) current += 1;
+    return { active: active.filter(Boolean).length, current, best, total: active.length };
+  }, [trainingWeeklyRows]);
+
+  const previousActiveWeeks = useMemo(() => {
+    const weeks = new Set(prevSessions.map((session) => isoToYMD(weekStartMonday(new Date(session.start_at)))));
+    return weeks.size;
+  }, [prevSessions]);
+
+  const evaluatedSessions = useMemo(
+    () => sessions.filter((session) => [session.motivation, session.difficulty, session.satisfaction].every((value) => typeof value === "number")),
+    [sessions]
+  );
+  const evaluationDenominator = evaluatedSessions.length + pendingEvaluationCount;
+  const evaluationRate = evaluationDenominator ? Math.round((evaluatedSessions.length / evaluationDenominator) * 100) : null;
+
+  const sectorRows = useMemo(() => {
+    const previous = new Map<string, number>();
+    prevItems.forEach((item) => previous.set(item.category, (previous.get(item.category) ?? 0) + Number(item.minutes ?? 0)));
+    const sessionCategories = new Map<string, Set<string>>();
+    items.forEach((item) => {
+      const categories = sessionCategories.get(item.session_id) ?? new Set<string>();
+      categories.add(item.category);
+      sessionCategories.set(item.session_id, categories);
+    });
+    return Object.entries(minutesByCat).map(([category, minutes]) => {
+      const sessionIds = [...sessionCategories.entries()].filter(([, categories]) => categories.has(category)).map(([id]) => id);
+      const satisfaction = avg(sessions.filter((session) => sessionIds.includes(session.id)).map((session) => session.satisfaction));
+      const previousMinutes = previous.get(category) ?? 0;
+      return {
+        category,
+        label: t(`cat.${category}`),
+        minutes,
+        percent: totalMinutes > 0 ? Math.round((minutes / totalMinutes) * 100) : 0,
+        sessions: sessionIds.length,
+        satisfaction,
+        delta: previousMinutes > 0 ? Math.round(((minutes - previousMinutes) / previousMinutes) * 100) : null,
+      };
+    }).sort((a, b) => b.minutes - a.minutes);
+  }, [items, minutesByCat, prevItems, sessions, t, totalMinutes]);
+
+  const trainingVolumeOption = useMemo<EChartsOption>(() => ({
+    animationDuration: 900,
+    color: ["#35483b", "#899d7d", "#65869a", "#d9a441"],
+    grid: { left: 12, right: 14, top: 24, bottom: 54, containLabel: true },
+    legend: { bottom: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { color: "#657168", fontSize: 10, fontWeight: 600 } },
+    tooltip: { trigger: "axis", backgroundColor: "#fff", borderColor: "#e2e7e1", borderWidth: 1, textStyle: { color: "#17211b", fontWeight: 600 } },
+    xAxis: { type: "category", data: trainingWeeklyRows.map((row) => row.label), axisTick: { show: false }, axisLine: { lineStyle: { color: "rgba(53,72,59,.12)" } }, axisLabel: { color: "#7d8780", fontSize: 10 } },
+    yAxis: { type: "value", name: "min", axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: "rgba(53,72,59,.08)" } }, axisLabel: { color: "#7d8780", fontSize: 10 } },
+    series: [
+      { type: "bar", stack: "volume", name: pickLocaleText(locale, "Club", "Club"), data: trainingWeeklyRows.map((row) => row.club), itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { type: "bar", stack: "volume", name: pickLocaleText(locale, "Cours privé", "Private lesson"), data: trainingWeeklyRows.map((row) => row.private) },
+      { type: "bar", stack: "volume", name: pickLocaleText(locale, "Individuel", "Individual"), data: trainingWeeklyRows.map((row) => row.individual) },
+      { type: "line", name: pickLocaleText(locale, "Objectif FTEM", "FTEM goal"), data: trainingWeeklyRows.map((row) => row.objective), symbol: "none", lineStyle: { width: 2, type: "dashed", color: "#d9a441" } },
+    ],
+  }), [locale, trainingWeeklyRows]);
+
+  const sectorChartOption = useMemo<EChartsOption>(() => ({
+    animationDuration: 900,
+    grid: { left: 8, right: 56, top: 8, bottom: 8, containLabel: true },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "#fff", borderColor: "#e2e7e1", borderWidth: 1 },
+    xAxis: { type: "value", axisLabel: { color: "#7d8780", fontSize: 10 }, splitLine: { lineStyle: { color: "rgba(53,72,59,.08)" } } },
+    yAxis: { type: "category", inverse: true, data: sectorRows.map((row) => row.label), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#526158", fontSize: 11, fontWeight: 700 } },
+    series: [{ type: "bar", data: sectorRows.map((row) => ({ value: row.minutes, itemStyle: { color: "#899d7d", borderRadius: [0, 7, 7, 0] }, label: { show: true, position: "right", formatter: `${row.percent}%`, color: "#526158", fontWeight: 700 } })), barMaxWidth: 22 }],
+  }), [sectorRows]);
+
+  const regularityOption = useMemo<EChartsOption>(() => {
+    const rows = trainingWeeklyRows.slice(-12);
+    const maximum = Math.max(1, ...rows.map((row) => row.total));
+    return {
+      animationDuration: 700,
+      grid: { left: 8, right: 8, top: 32, bottom: 28, containLabel: true },
+      tooltip: { formatter: (params: unknown) => { const point = params as { data?: number[] }; const index = Number(point.data?.[0] ?? 0); return `${rows[index]?.label ?? ""}<br/><b>${rows[index]?.total ?? 0} min</b>`; } },
+      visualMap: { min: 0, max: maximum, show: false, inRange: { color: ["#f0f3ef", "#cbd8c7", "#789071", "#35483b"] } },
+      xAxis: { type: "category", data: rows.map((row) => row.label), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#7d8780", fontSize: 10 } },
+      yAxis: { type: "category", data: [pickLocaleText(locale, "Volume", "Volume")], axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#657168", fontSize: 10 } },
+      series: [{ type: "heatmap", data: rows.map((row, index) => [index, 0, row.total]), label: { show: true, formatter: (params: unknown) => `${(params as { value?: number[] }).value?.[2] ?? 0}`, color: "#304438", fontSize: 10, fontWeight: 700 }, itemStyle: { borderColor: "#fff", borderWidth: 5, borderRadius: 9 } }],
+    };
+  }, [locale, trainingWeeklyRows]);
+
+  const latestEvaluatedSession = useMemo(
+    () => [...evaluatedSessions].sort((a, b) => b.start_at.localeCompare(a.start_at))[0] ?? null,
+    [evaluatedSessions]
+  );
+  const latestCoachEvaluation = coachEvaluations[0] ?? null;
+  const trainingRoundObservation = useMemo(() => {
+    if (rounds.length < 4 || sessions.length < 6) return null;
+    const samples = rounds
+      .filter((round) => typeof round.total_score === "number")
+      .map((round) => {
+        const end = new Date(round.start_at).getTime();
+        const start = end - 14 * 86400000;
+        const preceding = sessions.filter((session) => {
+          const time = new Date(session.start_at).getTime();
+          return time >= start && time < end;
+        });
+        return { score: Number(round.total_score), sessions: preceding.length, minutes: preceding.reduce((sum, session) => sum + (sessionMinutesById.get(session.id) ?? 0), 0) };
+      });
+    const regular = samples.filter((sample) => sample.sessions >= 2);
+    const lighter = samples.filter((sample) => sample.sessions < 2);
+    if (regular.length < 2 || lighter.length < 2) return null;
+    const regularScore = Math.round((regular.reduce((sum, sample) => sum + sample.score, 0) / regular.length) * 10) / 10;
+    const lighterScore = Math.round((lighter.reduce((sum, sample) => sum + sample.score, 0) / lighter.length) * 10) / 10;
+    const averageMinutes = Math.round(regular.reduce((sum, sample) => sum + sample.minutes, 0) / regular.length);
+    return { sampleSize: samples.length, regularScore, lighterScore, difference: Math.round((regularScore - lighterScore) * 10) / 10, averageMinutes };
+  }, [rounds, sessionMinutesById, sessions]);
+
+  const filteredEvaluationSessions = useMemo(() => {
+    if (evaluationFilter === "pending") return [];
+    if (evaluationFilter === "completed") return evaluatedSessions;
+    return evaluatedSessions;
+  }, [evaluatedSessions, evaluationFilter]);
+
+  const filteredHistorySessions = useMemo(() => sessions.filter((session) => {
+    if (trainingOriginFilter !== "all" && session.session_type !== trainingOriginFilter) return false;
+    if (trainingSectorFilter !== "all" && !items.some((item) => item.session_id === session.id && item.category === trainingSectorFilter)) return false;
+    const complete = evaluatedSessions.some((item) => item.id === session.id);
+    if (trainingStatusFilter === "completed" && !complete) return false;
+    if (trainingStatusFilter === "pending" && complete) return false;
+    return true;
+  }), [evaluatedSessions, items, sessions, trainingOriginFilter, trainingSectorFilter, trainingStatusFilter]);
 
   // ===== MES PARCOURS AGGREGATES (CURRENT + PREV) =====
   const holeAgg = useMemo(() => {
@@ -2509,6 +2722,115 @@ function presetToSelectValue(p: Preset): Preset {
     return tips.slice(0, 4);
   }, [corr, t]);
 
+  const overviewWeekSeries = useMemo(() => {
+    if (!fromDate || !toDate) return [];
+    const start = weekStartMonday(new Date(`${fromDate}T12:00:00`));
+    const end = new Date(`${toDate}T23:59:59`);
+    const sessionMinutes = new Map<string, number>();
+    items.forEach((item) => sessionMinutes.set(item.session_id, (sessionMinutes.get(item.session_id) ?? 0) + Number(item.minutes ?? 0)));
+    const rows: Array<{ week: string; weekLabel: string; minutes: number; objective: number | null }> = [];
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 7)) {
+      const week = isoToYMD(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const minutes = sessions.reduce((sum, session) => {
+        const time = new Date(session.start_at).getTime();
+        if (time < cursor.getTime() || time >= weekEnd.getTime()) return sum;
+        return sum + (isPerformanceEnabled ? (sessionMinutes.get(session.id) ?? Number(session.total_minutes ?? 0)) : Number(session.total_minutes ?? 0));
+      }, 0);
+      const objective = trainingVolumeConfigs.length > 0
+        ? trainingVolumeConfigs.reduce((maximum, config) => {
+            const target = pickTrainingVolumeTarget(handicapForDate(week), config.rows);
+            const month = cursor.getMonth() + 1;
+            return Math.max(maximum, objectiveForMonth(target, config.seasonMonths, config.offseasonMonths, month));
+          }, 0)
+        : weeklyObjectiveMinutes;
+      rows.push({
+        week,
+        weekLabel: new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "2-digit" }).format(cursor),
+        minutes,
+        objective: objective > 0 ? objective : null,
+      });
+    }
+    return rows;
+  }, [dateLocale, fromDate, handicapForDate, isPerformanceEnabled, items, sessions, toDate, trainingVolumeConfigs, weeklyObjectiveMinutes]);
+
+  const overviewObjective = useMemo(
+    () => overviewWeekSeries.reduce((sum, row) => sum + Number(row.objective ?? 0), 0),
+    [overviewWeekSeries]
+  );
+  const overviewFtemPercent = overviewObjective > 0 ? Math.round((totalMinutes / overviewObjective) * 100) : null;
+
+  const attendanceOverview = useMemo(() => {
+    const calculate = (from: string, to: string) => {
+      const fromTime = new Date(`${from}T00:00:00`).getTime();
+      const toTime = new Date(`${to}T23:59:59`).getTime();
+      const now = Date.now();
+      const eligible = overviewEvents.filter((event) => {
+        const eventTime = new Date(event.starts_at).getTime();
+        const status = overviewAttendance[event.id];
+        return event.status === "scheduled" && eventTime >= fromTime && eventTime <= toTime && eventTime < now && ["training", "interclub", "camp", "event", "session"].includes(String(event.event_type)) && (status === "present" || status === "absent");
+      });
+      const present = eligible.filter((event) => overviewAttendance[event.id] === "present").length;
+      return { present, total: eligible.length, rate: eligible.length ? Math.round((present / eligible.length) * 100) : null };
+    };
+    if (!fromDate || !toDate) return { present: 0, total: 0, rate: null, trend: null };
+    const current = calculate(fromDate, toDate);
+    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
+    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
+  }, [fromDate, overviewAttendance, overviewEvents, prevRange, toDate]);
+
+  const orderedRounds = useMemo(
+    () => [...rounds].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+    [rounds]
+  );
+  const lastRound = orderedRounds.at(-1) ?? null;
+  const previousRound = orderedRounds.at(-2) ?? null;
+  const lastRoundDelta = typeof lastRound?.total_score === "number" && typeof previousRound?.total_score === "number"
+    ? lastRound.total_score - previousRound.total_score
+    : null;
+  const roundProgressionOption = useMemo(() => buildManagementDualLineChartOption({
+    labels: orderedRounds.map((round) => new Intl.DateTimeFormat(dateLocale, { day: "2-digit", month: "short" }).format(new Date(round.start_at))),
+    left: {
+      name: pickLocaleText(locale, "Score brut", "Gross score"),
+      axisLabel: pickLocaleText(locale, "Score", "Score"),
+      data: orderedRounds.map((round) => round.total_score),
+      color: MANAGEMENT_CHART_COLORS[0],
+    },
+    right: {
+      name: pickLocaleText(locale, "Handicap", "Handicap"),
+      axisLabel: pickLocaleText(locale, "HCP", "HCP"),
+      data: orderedRounds.map((round) => handicapForDate(isoToYMD(new Date(round.start_at)))),
+      color: MANAGEMENT_CHART_COLORS[2],
+    },
+  }), [dateLocale, handicapForDate, locale, orderedRounds]);
+
+  const recentDocuments = useMemo(() => [...documents].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 3), [documents]);
+  const newestSharedDocument = useMemo(() => documents.find((document) => String(document.uploaded_by) !== currentUserId) ?? null, [currentUserId, documents]);
+  const incompleteRound = useMemo(() => [...rounds].reverse().find((round) => round.total_score == null) ?? null, [rounds]);
+  const strongestGameMarker = useMemo(() => {
+    const values = [
+      { label: "GIR", value: keyKpisUI.girPct },
+      { label: pickLocaleText(locale, "Fairways touchés", "Fairways hit"), value: keyKpisUI.fwPct },
+      { label: "Scrambling", value: keyKpisUI.scramblingPct },
+    ].filter((entry): entry is { label: string; value: number } => entry.value != null);
+    return values.sort((a, b) => b.value - a.value)[0] ?? null;
+  }, [keyKpisUI.fwPct, keyKpisUI.girPct, keyKpisUI.scramblingPct, locale]);
+
+  function selectSection(section: DashboardSection) {
+    if (section === "evaluations") {
+      setActiveSection("trainings");
+      setTrainingSubview("evaluations");
+      section = "trainings";
+    }
+    setActiveSection(section);
+    if (section === "overview" && !["month", "last3", "season", "lastSeason"].includes(preset)) setPreset("season");
+    const url = new URL(window.location.href);
+    if (section === "overview") url.searchParams.delete("section");
+    else url.searchParams.set("section", section);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   // ===== UI =====
   const kpiGridClass = "golf-kpi-grid";
   const kpiGridStyle: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "1fr" };
@@ -2516,238 +2838,40 @@ function presetToSelectValue(p: Preset): Preset {
   return (
     <div className="player-dashboard-bg player-golf-page">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mon golf", "My golf") }]} />
         {/* ===== Header ===== */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                MON GOLF
-              </div>
-              <div className="marketplace-filter-label" style={{ margin: 0 }}>
-                <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                  <CalendarRange size={16} />
-                  {periodLabel}
-                </span>
-              </div>
-            </div>
+        <header className={managerStyles.topline}>
+          <div>
+            <h1>{pickLocaleText(locale, "Mon Golf", "My Golf")}</h1>
+            <p className={managerStyles.lead}>{pickLocaleText(locale, "Pilotez votre progression, votre volume d’entraînement et vos repères de jeu.", "Track your progress, training volume and playing benchmarks.")}</p>
           </div>
+        </header>
 
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
+        {error && <div className="marketplace-error">{error}</div>}
 
-        <div className="glass-section coach-player-tabs-card">
-          <div
-            className="coach-player-tabs"
-            style={{
-              display: "flex",
-              gap: 8,
-            }}
-          >
+        <section className={`${adminCardStyles.overview} ${overviewStyles.navigationCard}`}>
+          <div className={`${navigationStyles.tabs} ${overviewStyles.navigationTabs}`} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon Golf", "My Golf sections")}>
             {[
-              { id: "trainings" as DashboardSection, label: "Entrainements" },
-              { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
-              { id: "rounds" as DashboardSection, label: "Parcours" },
-              { id: "stats" as DashboardSection, label: "Statistiques" },
-              { id: "thread" as DashboardSection, label: "Fil de discussion" },
-              { id: "documents" as DashboardSection, label: "Documents" },
+              { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
+              { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
+              { id: "rounds" as DashboardSection, label: pickLocaleText(locale, "Parcours & statistiques", "Rounds & statistics") },
+              { id: "documents" as DashboardSection, label: pickLocaleText(locale, "Documents", "Documents") },
             ].map((tab) => {
               const isActive = activeSection === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  className="btn"
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => setActiveSection(tab.id)}
-                  style={{
-                    flexShrink: 0,
-                    minHeight: 36,
-                    borderRadius: 10,
-                    fontWeight: 850,
-                    transition: "all 150ms ease",
-                    boxShadow: isActive ? "0 2px 8px rgba(16,94,51,0.24)" : "none",
-                    background: isActive ? "#1b5e20" : "rgba(255,255,255,0.82)",
-                    borderColor: isActive ? "#1b5e20" : "rgba(0,0,0,0.12)",
-                    color: isActive ? "white" : "rgba(0,0,0,0.78)",
-                  }}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => selectSection(tab.id)}
                 >
                   {tab.label}
                 </button>
               );
             })}
           </div>
-        </div>
-
-        {activeSection === "thread" ? (
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gap: 4 }}>
-              <div className="card-title" style={{ marginBottom: 0 }}>Fil équipe coachs + joueur + parent(s)</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                Participants: {teamParticipantNames.length ? teamParticipantNames.join(", ") : "—"}
-              </div>
-            </div>
-
-            {(loadingTeamThread && !teamThreadId) || loadingTeamMessages ? (
-              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
-              </div>
-            ) : !teamThreadId ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Fil équipe indisponible.</div>
-            ) : (
-              <>
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    borderRadius: 12,
-                    background: "linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(245,248,250,0.9) 100%)",
-                    padding: 10,
-                    maxHeight: 340,
-                    overflowY: "auto",
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  {teamMessages.length === 0 ? (
-                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun message.</div>
-                  ) : (
-                    teamMessages.map((m, idx) => {
-                      const mine = m.sender_user_id === currentUserId;
-                      const p = teamProfilesById[m.sender_user_id];
-                      const label = (
-                        String(m.sender_name ?? "").trim() ||
-                        (p ? `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() : "")
-                      ) || m.sender_user_id.slice(0, 8);
-                      const initialsLabel = (() => {
-                        const first = String(p?.first_name ?? "").trim();
-                        const last = String(p?.last_name ?? "").trim();
-                        const i = `${first ? first[0].toUpperCase() : ""}${last ? last[0].toUpperCase() : ""}`;
-                        return i || (label?.slice(0, 2) ?? "??").toUpperCase();
-                      })();
-                      const prev = idx > 0 ? teamMessages[idx - 1] : null;
-                      const dayKey = new Date(m.created_at).toDateString();
-                      const prevDayKey = prev ? new Date(prev.created_at).toDateString() : "";
-                      const showDay = idx === 0 || dayKey !== prevDayKey;
-
-                      return (
-                        <div key={m.id} style={{ display: "grid", gap: 6 }}>
-                          {showDay ? (
-                            <div style={{ display: "flex", justifyContent: "center" }}>
-                              <span
-                                className="pill-soft"
-                                style={{
-                                  background: "rgba(107,114,128,0.14)",
-                                  borderColor: "rgba(107,114,128,0.24)",
-                                  color: "rgba(55,65,81,0.9)",
-                                  fontWeight: 900,
-                                  fontSize: 11,
-                                }}
-                              >
-                                {teamMessageDayLabel(m.created_at)}
-                              </span>
-                            </div>
-                          ) : null}
-                          <div
-                            style={{
-                              justifySelf: mine ? "end" : "start",
-                              display: "grid",
-                              gridTemplateColumns: mine ? "1fr" : "26px 1fr",
-                              gap: 8,
-                              alignItems: "end",
-                              maxWidth: "88%",
-                            }}
-                          >
-                            {!mine ? (
-                              <div
-                                style={{
-                                  width: 26,
-                                  height: 26,
-                                  borderRadius: 999,
-                                  background: "rgba(53,72,59,0.14)",
-                                  border: "1px solid rgba(53,72,59,0.24)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontSize: 10,
-                                  fontWeight: 900,
-                                  color: "rgba(53,72,59,0.9)",
-                                }}
-                              >
-                                {initialsLabel}
-                              </div>
-                            ) : null}
-                            <div
-                              style={{
-                                position: "relative",
-                                borderRadius: 12,
-                                padding: "8px 10px 26px 10px",
-                                paddingRight: 26,
-                                background: mine ? "#1b5e20" : "rgba(0,0,0,0.06)",
-                                color: mine ? "white" : "#111827",
-                                boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-                              }}
-                            >
-                              {mine ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void deleteTeamMessage(m.id)}
-                                  disabled={deletingTeamMessageId === m.id}
-                                  title="Supprimer le message"
-                                  style={{
-                                    position: "absolute",
-                                    bottom: 4,
-                                    right: 4,
-                                    border: "1px solid rgba(255,255,255,0.35)",
-                                    background: "rgba(255,255,255,0.12)",
-                                    color: "white",
-                                    width: 18,
-                                    height: 18,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    borderRadius: 999,
-                                    padding: 0,
-                                    cursor: "pointer",
-                                    opacity: 0.9,
-                                  }}
-                                >
-                                  <X size={11} />
-                                </button>
-                              ) : null}
-                              <div style={{ fontSize: 10, fontWeight: 900, opacity: 0.82, marginBottom: 4 }}>
-                                {label || "—"} • {teamMessageTime(m.created_at)}
-                              </div>
-                              <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.body}</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={teamMessagesEndRef} />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-                  <input
-                    className="input"
-                    placeholder="Écrire..."
-                    value={teamComposer}
-                    onChange={(e) => setTeamComposer(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void sendTeamMessage();
-                      }
-                    }}
-                  />
-                  <button className="btn btn-primary" type="button" onClick={() => void sendTeamMessage()} disabled={sendingTeamMessage || !teamComposer.trim()}>
-                    Envoyer
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        ) : null}
+        </section>
 
         {activeSection === "documents" ? (
         <div className="glass-section">
@@ -2838,21 +2962,8 @@ function presetToSelectValue(p: Preset): Preset {
                         boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
                       }}
                     >
-                      <div style={{ display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
-                        <div
-                          aria-hidden
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 10,
-                            border: "1px solid rgba(0,0,0,0.14)",
-                            background: "rgba(255,255,255,0.9)",
-                            color: "rgba(0,0,0,0.66)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
+                      <div style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
+                        <div className={documentStyles.typeIcon} aria-hidden="true">
                           <Picto size={16} strokeWidth={2.2} />
                         </div>
                         <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
@@ -2866,27 +2977,31 @@ function presetToSelectValue(p: Preset): Preset {
                         </div>
                       </div>
 
-                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
-                          Voir
+                      <div className={documentStyles.actions}>
+                        <button className={documentStyles.iconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`Voir ${fileName}`} title="Voir">
+                          <Eye size={15} aria-hidden="true" />
                         </button>
                         {String(d.uploaded_by ?? "") === currentUserId ? (
                           <>
                             <button
-                              className="btn"
+                              className={documentStyles.iconButton}
                               type="button"
                               onClick={() => void renameDocument(d)}
                               disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
+                              aria-label={`Renommer ${fileName}`}
+                              title="Renommer"
                             >
-                              {renamingDocumentId === d.id ? "..." : "Renommer"}
+                              <Pencil size={15} aria-hidden="true" />
                             </button>
                             <button
-                              className="btn btn-danger soft"
+                              className={documentStyles.iconButton}
                               type="button"
                               onClick={() => void deleteDocument(d)}
                               disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
+                              aria-label={`Supprimer ${fileName}`}
+                              title="Supprimer"
                             >
-                              {deletingDocumentId === d.id ? "..." : "Supprimer"}
+                              <Trash2 size={15} aria-hidden="true" />
                             </button>
                           </>
                         ) : null}
@@ -2901,12 +3016,12 @@ function presetToSelectValue(p: Preset): Preset {
         ) : null}
 
        {/* ===== Filters ===== */}
-<div className="glass-section">
+{activeSection !== "rounds" ? <div className="glass-section">
   <div className="glass-card" style={{ padding: 14 }}>
     <div style={{ display: "grid", gap: 12 }}>
       {/* Label */}
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-        <SlidersHorizontal size={16} />
+      <div className={overviewStyles.periodFilterLabel}>
+        <span><SlidersHorizontal size={16} /></span>
         <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
           {t("common.period")}
         </div>
@@ -2939,7 +3054,6 @@ function presetToSelectValue(p: Preset): Preset {
           setPreset(v);
           setCustomOpen(false);
         }}
-        disabled={loading}
         style={{
           width: "100%",
           height: 44,
@@ -2956,11 +3070,22 @@ function presetToSelectValue(p: Preset): Preset {
         }}
         aria-label={t("common.filterByPeriod")}
       >
-        <option value="week">{t("common.thisWeek")}</option>
         <option value="month">{t("common.thisMonth")}</option>
         <option value="last3">{t("common.last3Months")}</option>
-        <option value="all">{t("common.allActivity")}</option>
-        <option value="custom">{t("common.custom")}</option>
+        {activeSection === "overview" || activeSection === "trainings" ? (
+          <>
+            <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
+            {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
+          </>
+        ) : (
+          <>
+            <option value="week">{t("common.thisWeek")}</option>
+            <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
+            {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
+            <option value="all">{t("common.allActivity")}</option>
+            <option value="custom">{t("common.custom")}</option>
+          </>
+        )}
       </select>
 
       {/* Custom dates */}
@@ -3043,10 +3168,233 @@ function presetToSelectValue(p: Preset): Preset {
       )}
     </div>
   </div>
-</div>
+</div> : null}
 
-        {/* ===== Trainings KPIs ===== */}
+        {activeSection === "overview" ? (
+          <div className={overviewStyles.overview}>
+            <section className={overviewStyles.kpiGrid} aria-label={pickLocaleText(locale, "Indicateurs golf", "Golf indicators")}>
+              <article className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><Target size={17} /></span><h2>{pickLocaleText(locale, "Objectif FTEM", "FTEM goal")}</h2></div>
+                {loading ? <div className={overviewStyles.kpiSkeleton} /> : overviewFtemPercent == null ? <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Objectif indisponible", "Goal unavailable")}</small></div> : <>
+                  <strong>{overviewFtemPercent}%</strong>
+                  <div className={overviewStyles.progress}><span style={{ width: `${Math.min(100, overviewFtemPercent)}%` }} /></div>
+                  <p>{totalMinutes} / {overviewObjective} min</p>
+                  <small>{trainingVolumeTarget?.ftem_code}{trainingVolumeTarget?.level_label ? ` · ${trainingVolumeTarget.level_label}` : ""}</small>
+                </>}
+              </article>
+
+              <article className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité", "Attendance")}</h2></div>
+                {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
+                  <strong>{attendanceOverview.rate == null ? "—" : `${attendanceOverview.rate}%`}</strong>
+                  <p>{attendanceOverview.present} {pickLocaleText(locale, attendanceOverview.present === 1 ? "présence" : "présences", attendanceOverview.present === 1 ? "attendance" : "attendances")} / {attendanceOverview.total}</p>
+                  {attendanceOverview.trend != null ? <small className={attendanceOverview.trend >= 0 ? overviewStyles.positive : overviewStyles.caution}>{attendanceOverview.trend > 0 ? <ArrowUp size={13} /> : attendanceOverview.trend < 0 ? <ArrowDown size={13} /> : <ArrowRight size={13} />}{attendanceOverview.trend > 0 ? "+" : ""}{attendanceOverview.trend} pts {compareLabel}</small> : <small>{pickLocaleText(locale, "Pas de période comparable", "No comparable period")}</small>}
+                </>}
+              </article>
+
+              <article className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><Flag size={17} /></span><h2>{pickLocaleText(locale, "Dernier parcours", "Latest round")}</h2></div>
+                {loadingRounds ? <div className={overviewStyles.kpiSkeleton} /> : lastRound ? <>
+                  <strong>{lastRound.total_score ?? "—"}</strong>
+                  <p>{lastRound.course_name || lastRound.location || pickLocaleText(locale, "Parcours non renseigné", "Course not specified")}</p>
+                  {lastRoundDelta != null ? <small className={lastRoundDelta <= 0 ? overviewStyles.positive : overviewStyles.caution}>{lastRoundDelta < 0 ? <ArrowDown size={13} /> : lastRoundDelta > 0 ? <ArrowUp size={13} /> : <ArrowRight size={13} />}{lastRoundDelta > 0 ? "+" : ""}{lastRoundDelta} {pickLocaleText(locale, "coup(s)", "stroke(s)")}</small> : <small>{pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available")}</small>}
+                </> : <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Aucun parcours sur la période", "No round in this period")}</small></div>}
+              </article>
+
+              <Link href="/player/golf/trainings/to-complete" className={`${overviewStyles.kpiCard} ${pendingEvaluationCount > 0 ? overviewStyles.attentionCard : ""}`}>
+                <div className={overviewStyles.cardTitle}><span><ClipboardList size={17} /></span><h2>{pickLocaleText(locale, "À compléter", "To complete")}</h2></div>
+                {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
+                  <strong>{pendingEvaluationCount}</strong>
+                  <p>{pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</p>
+                  <small>{pendingEvaluationCount > 0 ? pickLocaleText(locale, "Compléter maintenant", "Complete now") : pickLocaleText(locale, "Vous êtes à jour", "You're up to date")}<ArrowRight size={13} /></small>
+                </>}
+              </Link>
+            </section>
+
+            <div className={overviewStyles.splitWide}>
+              <section className={overviewStyles.panel}>
+                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume et régularité", "Volume and consistency")}</h2><p>{periodLabel}</p></div><button type="button" onClick={() => selectSection("trainings")}>{pickLocaleText(locale, "Voir les entraînements", "View trainings")}<ArrowRight size={14} /></button></div>
+                {loading ? <div className={overviewStyles.chartSkeleton} /> : overviewWeekSeries.length ? <ActiviteeEChart height={300} ariaLabel={pickLocaleText(locale, "Volume hebdomadaire et objectif FTEM", "Weekly volume and FTEM goal")} option={buildManagementVolumeChartOption({ labels: overviewWeekSeries.map((row) => row.weekLabel), values: overviewWeekSeries.map((row) => row.minutes), valueLabel: pickLocaleText(locale, "Volume réalisé", "Completed volume"), objective: overviewWeekSeries.map((row) => row.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} /> : <div className={overviewStyles.empty}>{pickLocaleText(locale, "Aucune donnée d’entraînement sur cette période.", "No training data for this period.")}</div>}
+              </section>
+
+              <section className={overviewStyles.panel}>
+                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les prochaines actions utiles.", "Useful next actions.")}</p></div></div>
+                <div className={overviewStyles.attentionList}>
+                  {pendingEvaluationCount > 0 ? <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div><ArrowRight size={14} /></Link> : null}
+                  {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => selectSection("trainings")}><span><Target size={16} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                  {newestSharedDocument ? <button type="button" onClick={() => selectSection("documents")}><span><FileText size={16} /></span><div><b>{pickLocaleText(locale, "Document partagé", "Shared document")}</b><small>{newestSharedDocument.file_name}</small></div><ArrowRight size={14} /></button> : null}
+                  {incompleteRound ? <Link href={`/player/golf/rounds/${incompleteRound.id}/edit`}><span><Flag size={16} /></span><div><b>{pickLocaleText(locale, "Parcours à compléter", "Round to complete")}</b><small>{incompleteRound.course_name || shortDate(incompleteRound.start_at, dateLocale)}</small></div><ArrowRight size={14} /></Link> : null}
+                  {!pendingEvaluationCount && !(overviewFtemPercent != null && overviewFtemPercent < 100) && !newestSharedDocument && !incompleteRound ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
+                </div>
+              </section>
+            </div>
+
+            <div className={overviewStyles.splitWide}>
+              <section className={overviewStyles.panel}>
+                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Progression sur le parcours", "On-course progress")}</h2><p>{pickLocaleText(locale, "Évolution du score brut et du handicap.", "Gross score and handicap evolution.")}</p></div><button type="button" onClick={() => selectSection("stats")}>{pickLocaleText(locale, "Voir les statistiques", "View statistics")}<ArrowRight size={14} /></button></div>
+                {loadingRounds || loadingHoles ? <div className={overviewStyles.chartSkeleton} /> : orderedRounds.length >= 2 ? <ActiviteeEChart height={300} ariaLabel={pickLocaleText(locale, "Progression du score et du handicap", "Score and handicap progress")} option={roundProgressionOption} /> : <div className={overviewStyles.empty}>{pickLocaleText(locale, "Deux parcours au minimum sont nécessaires pour afficher une progression.", "At least two rounds are required to display progress.")}</div>}
+              </section>
+
+              <section className={overviewStyles.panel}>
+                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Repères de jeu", "Playing benchmarks")}</h2><p>{pickLocaleText(locale, "Vos résultats sur la période.", "Your results for this period.")}</p></div></div>
+                <div className={overviewStyles.benchmarkList}>
+                  <div><span>{pickLocaleText(locale, "Score moyen", "Average score")}</span><strong>{holeAgg.avgScore18 ?? "—"}</strong>{keyKpisUI.girArrow != null ? null : <small>{rounds.length} {pickLocaleText(locale, "parcours", "rounds")}</small>}</div>
+                  <div><span>GIR</span><strong>{keyKpisUI.girPct == null ? "—" : `${keyKpisUI.girPct}%`}</strong>{keyKpisUI.girArrow != null ? <small className={keyKpisUI.girArrow >= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.girArrow > 0 ? "+" : ""}{round1(keyKpisUI.girArrow)} pts</small> : null}</div>
+                  <div><span>{pickLocaleText(locale, "Putts / 18 trous", "Putts / 18 holes")}</span><strong>{keyKpisUI.putts18 ?? "—"}</strong>{keyKpisUI.putts18Arrow != null ? <small className={keyKpisUI.putts18Arrow <= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.putts18Arrow > 0 ? "+" : ""}{round1(keyKpisUI.putts18Arrow)}</small> : null}</div>
+                  <div><span>{pickLocaleText(locale, "Secteur le plus performant", "Strongest area")}</span><strong className={overviewStyles.markerValue}>{strongestGameMarker?.label ?? "—"}</strong>{strongestGameMarker ? <small>{strongestGameMarker.value}%</small> : null}</div>
+                </div>
+              </section>
+            </div>
+
+            <section className={overviewStyles.shortcutsSection}>
+              <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Raccourcis", "Shortcuts")}</h2><p>{pickLocaleText(locale, "Accédez directement aux actions principales.", "Go directly to key actions.")}</p></div></div>
+              <div className={overviewStyles.shortcuts}>
+                <Link href="/player/golf/trainings?plan=training"><span><Dumbbell size={18} /></span><b>{pickLocaleText(locale, "Ajouter un entraînement", "Add training")}</b><ArrowRight size={15} /></Link>
+                <Link href="/player/golf/rounds/new"><span><Flag size={18} /></span><b>{pickLocaleText(locale, "Saisir un parcours", "Enter a round")}</b><ArrowRight size={15} /></Link>
+                <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={18} /></span><b>{pickLocaleText(locale, "Compléter mes évaluations", "Complete my evaluations")}</b><ArrowRight size={15} /></Link>
+                <button type="button" onClick={() => selectSection("documents")}><span><Upload size={18} /></span><b>{pickLocaleText(locale, "Ajouter un document", "Add document")}</b><ArrowRight size={15} /></button>
+              </div>
+            </section>
+
+            <section className={overviewStyles.panel}>
+              <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Documents récents", "Recent documents")}</h2><p>{pickLocaleText(locale, "Les derniers fichiers disponibles dans votre espace.", "Latest files available in your space.")}</p></div><button type="button" onClick={() => selectSection("documents")}>{pickLocaleText(locale, "Voir tous les documents", "View all documents")}<ArrowRight size={14} /></button></div>
+              {loadingDocuments ? <div className={overviewStyles.documentsSkeleton}><span /><span /><span /></div> : recentDocuments.length ? <div className={overviewStyles.documentsGrid}>{recentDocuments.map((document) => { const DocumentIcon = documentPicto(document.mime_type, document.file_name); const extension = document.file_name.includes(".") ? document.file_name.split(".").pop()?.toUpperCase() : pickLocaleText(locale, "Fichier", "File"); return <button type="button" key={document.id} onClick={() => setViewerDocument(document)}><span><DocumentIcon size={18} /></span><div><b>{document.file_name}</b><small>{extension} · {shortDate(document.created_at, dateLocale)}</small></div><ArrowRight size={14} /></button>; })}</div> : <div className={overviewStyles.empty}>{pickLocaleText(locale, "Aucun document disponible.", "No document available.")}</div>}
+            </section>
+          </div>
+        ) : null}
+
         {activeSection === "trainings" ? (
+          <div className={trainingStyles.dashboard}>
+            <nav className={trainingStyles.subnav} aria-label={pickLocaleText(locale, "Navigation des entraînements", "Training navigation")}>
+              {([
+                ["summary", pickLocaleText(locale, "Synthèse", "Overview")],
+                ["sessions", pickLocaleText(locale, "Mes séances", "My sessions")],
+                ["evaluations", pickLocaleText(locale, "Évaluations", "Evaluations")],
+              ] as Array<[TrainingSubview, string]>).map(([id, label]) => (
+                <button key={id} type="button" aria-selected={trainingSubview === id} onClick={() => setTrainingSubview(id)}>
+                  {label}{id === "evaluations" && pendingEvaluationCount ? ` (${pendingEvaluationCount})` : ""}
+                </button>
+              ))}
+            </nav>
+
+            {trainingSubview === "summary" ? <>
+              <section className={trainingStyles.kpis} aria-label={pickLocaleText(locale, "Repères d’entraînement", "Training benchmarks")}>
+                <article className={trainingStyles.kpi}>
+                  <div className={trainingStyles.kpiTitle}><span><Activity size={17} /></span><h2>{pickLocaleText(locale, "Volume réalisé", "Completed volume")}</h2></div>
+                  <strong>{totalMinutes} min</strong>
+                  <p>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</p>
+                  <small className={volumeDelta == null ? "" : volumeDelta >= 0 ? trainingStyles.positive : trainingStyles.caution}>{volumeDelta == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${volumeDelta > 0 ? "+" : ""}${volumeDelta}% · ${compareLabel}`}</small>
+                </article>
+
+                <article className={trainingStyles.kpi}>
+                  <div className={trainingStyles.kpiTitle}><span><Target size={17} /></span><h2>{pickLocaleText(locale, "Objectif FTEM", "FTEM goal")}</h2></div>
+                  {overviewFtemPercent == null ? <><strong>—</strong><p>{pickLocaleText(locale, "Aucun objectif disponible", "No goal available")}</p></> : <>
+                    <strong>{overviewFtemPercent}%</strong>
+                    <div className={trainingStyles.progress}><span style={{ width: `${Math.min(100, overviewFtemPercent)}%` }} /></div>
+                    <p>{totalMinutes} / {overviewObjective} min · {trainingVolumeTarget?.ftem_code ?? "FTEM"}</p>
+                    <small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "de volume restant à poursuivre", "of volume left to pursue")}{trainingVolumeMotivation ? ` · ${trainingVolumeMotivation}` : ""}</small>
+                  </>}
+                </article>
+
+                <article className={trainingStyles.kpi}>
+                  <div className={trainingStyles.kpiTitle}><span><Repeat2 size={17} /></span><h2>{pickLocaleText(locale, "Régularité", "Consistency")}</h2></div>
+                  <strong>{regularity.active} / {regularity.total}</strong>
+                  <p>{pickLocaleText(locale, "semaines actives", "active weeks")}</p>
+                  <div className={trainingStyles.metrics}><span>{pickLocaleText(locale, "Série actuelle", "Current streak")} · {regularity.current}</span><span>{pickLocaleText(locale, "Meilleure", "Best")} · {regularity.best}</span></div>
+                  <small>{prevRange ? `${regularity.active - previousActiveWeeks >= 0 ? "+" : ""}${regularity.active - previousActiveWeeks} ${pickLocaleText(locale, "vs période précédente", "vs previous period")}` : pickLocaleText(locale, "Pas de période comparable", "No comparable period")}</small>
+                </article>
+
+                <button type="button" className={trainingStyles.kpi} onClick={() => setTrainingSubview("evaluations")}>
+                  <div className={trainingStyles.kpiTitle}><span><ClipboardList size={17} /></span><h2>{pickLocaleText(locale, "Évaluations", "Evaluations")}</h2></div>
+                  <strong>{pendingEvaluationCount}</strong>
+                  <p>{pickLocaleText(locale, pendingEvaluationCount === 1 ? "auto-évaluation en attente" : "auto-évaluations en attente", pendingEvaluationCount === 1 ? "self-evaluation pending" : "self-evaluations pending")}</p>
+                  <div className={trainingStyles.metrics}><span>{evaluatedSessions.length} {pickLocaleText(locale, "complétées", "completed")}</span><span>{coachEvaluations.length} {pickLocaleText(locale, "retours coach", "coach reviews")}</span></div>
+                  <small>{pickLocaleText(locale, "Ouvrir le suivi", "Open evaluation tracking")} <ArrowRight size={12} /></small>
+                </button>
+              </section>
+
+              <div className={trainingStyles.split}>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume et rythme hebdomadaire", "Weekly volume and rhythm")}</h2><p>{periodLabel} · {pickLocaleText(locale, "volumes empilés par origine", "volume stacked by source")}</p></div><Link href="/player/golf/trainings">{pickLocaleText(locale, "Voir le calendrier", "View calendar")}<ArrowRight size={14} /></Link></div>
+                  {loading ? <div className={trainingStyles.empty}>{t("common.loading")}</div> : trainingWeeklyRows.length ? <ActiviteeEChart height={310} ariaLabel={pickLocaleText(locale, "Volume hebdomadaire par origine et objectif FTEM", "Weekly volume by source and FTEM goal")} option={trainingVolumeOption} /> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}
+                </section>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Actions utiles liées à vos séances.", "Useful actions related to your sessions.")}</p></div></div>
+                  <div className={trainingStyles.attentionList}>
+                    {pendingEvaluationCount ? <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Compléter mon ressenti", "Complete my feedback")}</small></div><ArrowRight size={14} /></Link> : null}
+                    {latestCoachEvaluation?.player_note ? <button type="button" onClick={() => setTrainingSubview("evaluations")}><span><MessageSquareText size={16} /></span><div><b>{pickLocaleText(locale, "Nouveau retour du coach", "New coach feedback")}</b><small>{latestCoachEvaluation.title || shortDate(latestCoachEvaluation.starts_at, dateLocale)}</small></div><ArrowRight size={14} /></button> : null}
+                    {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep pursuing the FTEM goal")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                    {!pendingEvaluationCount && !latestCoachEvaluation?.player_note && !(overviewFtemPercent != null && overviewFtemPercent < 100) ? <div className={trainingStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Tout est à jour pour le moment.", "Everything is up to date for now.")}</div> : null}
+                  </div>
+                </section>
+              </div>
+
+              <div className={trainingStyles.twoPanels}>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Répartition des secteurs travaillés", "Training area breakdown")}</h2><p>{pickLocaleText(locale, "Durée et part du volume total.", "Duration and share of total volume.")}</p></div></div>
+                  {sectorRows.length ? <ActiviteeEChart height={Math.max(250, sectorRows.length * 42)} ariaLabel={pickLocaleText(locale, "Répartition du volume par secteur", "Volume breakdown by training area")} option={sectorChartOption} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucun secteur documenté sur cette période.", "No training area documented for this period.")}</div>}
+                </section>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Régularité sur 12 semaines", "Consistency over 12 weeks")}</h2><p>{regularity.current} {pickLocaleText(locale, "semaine(s) dans la série actuelle", "week(s) in the current streak")}</p></div></div>
+                  {trainingWeeklyRows.length ? <ActiviteeEChart height={250} ariaLabel={pickLocaleText(locale, "Intensité du volume sur les douze dernières semaines", "Training volume intensity over the last twelve weeks")} option={regularityOption} /> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}
+                </section>
+              </div>
+
+              <div className={trainingStyles.twoPanels}>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Ressenti du joueur", "Player feedback")}</h2><p>{evaluationRate == null ? pickLocaleText(locale, "Données insuffisantes", "Insufficient data") : `${evaluationRate}% ${pickLocaleText(locale, "des séances auto-évaluées", "of sessions self-evaluated")}`}</p></div></div>
+                  <div className={trainingStyles.scoreGrid}><div><span>{t("common.motivation")}</span><strong>{avgMotivation ?? "—"}</strong></div><div><span>{t("common.difficulty")}</span><strong>{avgDifficulty ?? "—"}</strong></div><div><span>{t("common.satisfaction")}</span><strong>{avgSatisfaction ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Réponses", "Responses")}</span><strong>{evaluatedSessions.length}</strong></div></div>
+                  {evaluatedSessions.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={pickLocaleText(locale, "Évolution hebdomadaire du ressenti", "Weekly feedback trend")} option={buildManagementLineChartOption({ labels: weekSeries.map((row) => row.weekLabel), min: 0, max: 6, series: [{ name: t("common.motivation"), data: weekSeries.map((row) => row.motivation), color: MANAGEMENT_CHART_COLORS[0] }, { name: t("common.difficulty"), data: weekSeries.map((row) => row.difficulty), color: MANAGEMENT_CHART_COLORS[2], dashed: true }, { name: t("common.satisfaction"), data: weekSeries.map((row) => row.satisfaction), color: MANAGEMENT_CHART_COLORS[1] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Données insuffisantes pour afficher une tendance.", "Insufficient data to display a trend.")}</div>}
+                </section>
+                <section className={trainingStyles.panel}>
+                  <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Regard du coach", "Coach perspective")}</h2><p>{coachEvaluations.length} {pickLocaleText(locale, "évaluation(s) reçue(s)", "evaluation(s) received")}</p></div></div>
+                  <div className={trainingStyles.scoreGrid}><div><span>{pickLocaleText(locale, "Engagement", "Engagement")}</span><strong>{avgCoachEngagement ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Attitude", "Attitude")}</span><strong>{avgCoachAttitude ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Application", "Application")}</span><strong>{avgCoachApplication ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Retours", "Reviews")}</span><strong>{coachEvaluations.length}</strong></div></div>
+                  {customCoachCriteriaSummary.length ? <div className={trainingStyles.customCriteria}>{customCoachCriteriaSummary.map((criterion) => <div key={criterion.name}><span>{criterion.name}</span><b>{typeof criterion.value === "boolean" ? (criterion.value ? pickLocaleText(locale, "Oui", "Yes") : pickLocaleText(locale, "Non", "No")) : criterion.value ?? "—"}</b></div>)}</div> : null}
+                  {coachEvaluations.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={pickLocaleText(locale, "Tendance des évaluations du coach", "Coach evaluation trend")} option={buildManagementLineChartOption({ labels: coachEvalTrendSeries.map((row) => row.point), min: 0, max: 6, series: [{ name: "Engagement", data: coachEvalTrendSeries.map((row) => row.engagement), color: MANAGEMENT_CHART_COLORS[0] }, { name: "Attitude", data: coachEvalTrendSeries.map((row) => row.attitude), color: MANAGEMENT_CHART_COLORS[3] }, { name: "Application", data: coachEvalTrendSeries.map((row) => row.application), color: MANAGEMENT_CHART_COLORS[2] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Données insuffisantes pour afficher une tendance.", "Insufficient data to display a trend.")}</div>}
+                </section>
+              </div>
+
+              <section className={trainingStyles.panel}>
+                <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Regards croisés", "Combined perspectives")}</h2><p>{pickLocaleText(locale, "Deux perspectives présentées sans créer de score artificiel.", "Two perspectives shown without creating an artificial score.")}</p></div></div>
+                <div className={trainingStyles.crossed}>
+                  <article className={trainingStyles.perspective}><h3>{pickLocaleText(locale, "Ressenti du joueur", "Player feedback")}</h3>{latestEvaluatedSession ? <><dl><dt>{t("common.motivation")}</dt><dd>{latestEvaluatedSession.motivation}/6</dd><dt>{t("common.difficulty")}</dt><dd>{latestEvaluatedSession.difficulty}/6</dd><dt>{t("common.satisfaction")}</dt><dd>{latestEvaluatedSession.satisfaction}/6</dd></dl><p>{latestEvaluatedSession.notes || pickLocaleText(locale, "Aucun commentaire personnel.", "No personal comment.")}</p></> : <p>{pickLocaleText(locale, "Aucune auto-évaluation disponible.", "No self-evaluation available.")}</p>}</article>
+                  <article className={trainingStyles.perspective}><h3>{pickLocaleText(locale, "Regard du coach", "Coach perspective")}</h3>{latestCoachEvaluation ? <><dl><dt>{pickLocaleText(locale, "Engagement", "Engagement")}</dt><dd>{latestCoachEvaluation.engagement ?? "—"}/6</dd><dt>{pickLocaleText(locale, "Attitude", "Attitude")}</dt><dd>{latestCoachEvaluation.attitude ?? "—"}/6</dd><dt>{pickLocaleText(locale, "Application", "Application")}</dt><dd>{latestCoachEvaluation.application ?? "—"}/6</dd></dl><p>{latestCoachEvaluation.player_note || pickLocaleText(locale, "Aucun commentaire visible.", "No visible comment.")}</p></> : <p>{pickLocaleText(locale, "Aucune évaluation coach disponible.", "No coach evaluation available.")}</p>}</article>
+                </div>
+              </section>
+
+              {sectorRows.length ? <section className={trainingStyles.panel}>
+                <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Analyse par secteur", "Analysis by training area")}</h2><p>{pickLocaleText(locale, "Les tendances ne sont affichées qu’avec une période comparable.", "Trends are only shown with a comparable period.")}</p></div></div>
+                <div className={trainingStyles.tableWrap}><table className={trainingStyles.table}><thead><tr><th>{pickLocaleText(locale, "Secteur", "Area")}</th><th>{pickLocaleText(locale, "Volume", "Volume")}</th><th>{pickLocaleText(locale, "Séances", "Sessions")}</th><th>{pickLocaleText(locale, "Satisfaction", "Satisfaction")}</th><th>{pickLocaleText(locale, "Tendance volume", "Volume trend")}</th></tr></thead><tbody>{sectorRows.map((row) => <tr key={row.category}><td><b>{row.label}</b></td><td>{row.minutes} min · {row.percent}%</td><td>{row.sessions}</td><td>{row.satisfaction == null ? "—" : `${row.satisfaction}/6`}</td><td>{row.delta == null ? "—" : `${row.delta > 0 ? "+" : ""}${row.delta}%`}</td></tr>)}</tbody></table></div>
+              </section> : null}
+
+              {trainingRoundObservation ? <section className={trainingStyles.panel}><div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Relation entraînement–parcours", "Training–round relationship")}</h2><p>{pickLocaleText(locale, "Observation descriptive sur les 14 jours précédant un parcours.", "Descriptive observation over the 14 days preceding a round.")}</p></div></div><p className={trainingStyles.observation}>{pickLocaleText(locale, `Sur ${trainingRoundObservation.sampleSize} parcours, les périodes comprenant au moins deux séances (${trainingRoundObservation.averageMinutes} min en moyenne) sont associées à un score moyen de ${trainingRoundObservation.regularScore}, contre ${trainingRoundObservation.lighterScore} pour les autres périodes. Écart observé : ${trainingRoundObservation.difference > 0 ? "+" : ""}${trainingRoundObservation.difference} coup(s). Cette association ne démontre pas un lien de causalité.`, `Across ${trainingRoundObservation.sampleSize} rounds, periods with at least two sessions (${trainingRoundObservation.averageMinutes} average minutes) are associated with an average score of ${trainingRoundObservation.regularScore}, compared with ${trainingRoundObservation.lighterScore} for other periods. Observed difference: ${trainingRoundObservation.difference > 0 ? "+" : ""}${trainingRoundObservation.difference} stroke(s). This association does not establish causality.`)}</p></section> : null}
+
+              <section className={trainingStyles.panel}><div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Retours récents", "Recent feedback")}</h2><p>{pickLocaleText(locale, "Les derniers éléments utiles, sans dupliquer l’historique.", "Latest useful items without duplicating history.")}</p></div></div>{latestCoachEvaluation || latestEvaluatedSession ? <div className={trainingStyles.recent}><span className={trainingStyles.recentIcon}><MessageSquareText size={16} /></span><div><b>{latestCoachEvaluation?.player_note || latestEvaluatedSession?.notes || pickLocaleText(locale, "Évaluation complétée", "Evaluation completed")}</b><small>{shortDate(latestCoachEvaluation?.starts_at || latestEvaluatedSession?.start_at || new Date().toISOString(), dateLocale)} · {latestCoachEvaluation?.title || pickLocaleText(locale, "Séance d’entraînement", "Training session")}</small></div><button type="button" onClick={() => setTrainingSubview("evaluations")}>{pickLocaleText(locale, "Voir", "View")}<ArrowRight size={13} /></button></div> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}</section>
+            </> : null}
+
+            {trainingSubview === "sessions" ? <section className={trainingStyles.panel}>
+              <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Historique des séances", "Session history")}</h2><p>{periodLabel} · {sessions.length} {pickLocaleText(locale, "séance(s)", "session(s)")}</p></div><Link href="/player/golf/trainings?plan=training">{pickLocaleText(locale, "Ajouter un entraînement", "Add training")}<ArrowRight size={14} /></Link></div>
+              <div className={trainingStyles.historyFilters}>
+                <label><span>{pickLocaleText(locale, "Origine", "Source")}</span><select value={trainingOriginFilter} onChange={(event) => setTrainingOriginFilter(event.target.value as "all" | SessionType)}><option value="all">{pickLocaleText(locale, "Toutes", "All")}</option><option value="club">Club</option><option value="private">{pickLocaleText(locale, "Cours privé", "Private lesson")}</option><option value="individual">{pickLocaleText(locale, "Individuel", "Individual")}</option></select></label>
+                <label><span>{pickLocaleText(locale, "Secteur", "Area")}</span><select value={trainingSectorFilter} onChange={(event) => setTrainingSectorFilter(event.target.value)}><option value="all">{pickLocaleText(locale, "Tous", "All")}</option>{sectorRows.map((row) => <option key={row.category} value={row.category}>{row.label}</option>)}</select></label>
+                <label><span>{pickLocaleText(locale, "Évaluation", "Evaluation")}</span><select value={trainingStatusFilter} onChange={(event) => setTrainingStatusFilter(event.target.value as "all" | "pending" | "completed")}><option value="all">{pickLocaleText(locale, "Tous les statuts", "All statuses")}</option><option value="pending">{pickLocaleText(locale, "À évaluer", "To evaluate")}</option><option value="completed">{pickLocaleText(locale, "Terminées", "Completed")}</option></select></label>
+              </div>
+              {filteredHistorySessions.length ? <div className={trainingStyles.tableWrap}><table className={trainingStyles.table}><thead><tr><th>{pickLocaleText(locale, "Date", "Date")}</th><th>{pickLocaleText(locale, "Origine", "Source")}</th><th>{pickLocaleText(locale, "Durée", "Duration")}</th><th>{pickLocaleText(locale, "Secteurs", "Areas")}</th><th>{pickLocaleText(locale, "Coach", "Coach")}</th><th>{pickLocaleText(locale, "Ressenti", "Feedback")}</th><th>{pickLocaleText(locale, "Statut", "Status")}</th><th /></tr></thead><tbody>{[...filteredHistorySessions].sort((a, b) => b.start_at.localeCompare(a.start_at)).map((session) => { const categories = [...new Set(items.filter((item) => item.session_id === session.id).map((item) => t(`cat.${item.category}`)))]; const complete = evaluatedSessions.some((item) => item.id === session.id); const hasCoach = session.club_event_id ? coachEvaluations.some((evaluation) => evaluation.event_id === session.club_event_id) : false; return <tr key={session.id}><td><b>{shortDate(session.start_at, dateLocale)}</b></td><td>{typeLabelLong(session.session_type, t)}</td><td>{sessionMinutesById.get(session.id) ?? 0} min</td><td>{categories.join(", ") || "—"}</td><td>{session.coach_name || "—"}</td><td>{session.satisfaction == null ? "—" : `${session.satisfaction}/6`}</td><td><span className={`${trainingStyles.tag} ${complete ? "" : trainingStyles.warningTag}`}>{complete ? pickLocaleText(locale, "Auto-évaluée", "Self-evaluated") : pickLocaleText(locale, "À évaluer", "To evaluate")}</span>{hasCoach ? <span className={trainingStyles.tag}>{pickLocaleText(locale, "Coach reçu", "Coach review")}</span> : null}</td><td><Link href={`/player/golf/trainings/${session.id}`}>{pickLocaleText(locale, "Ouvrir", "Open")}</Link></td></tr>; })}</tbody></table></div> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucune séance ne correspond aux filtres.", "No session matches these filters.")}</div>}
+            </section> : null}
+
+            {trainingSubview === "evaluations" ? <section className={trainingStyles.panel}>
+              <div className={trainingStyles.evaluationToolbar}><div className={trainingStyles.panelHeader} style={{ borderBottom: 0, paddingBottom: 0 }}><div><h2>{pickLocaleText(locale, "Suivi des évaluations", "Evaluation tracking")}</h2><p>{periodLabel} · {pickLocaleText(locale, "auto-évaluations et retours du coach", "self-evaluations and coach feedback")}</p></div></div><div className={trainingStyles.filterButtons}>{(["all", "pending", "completed"] as EvaluationFilter[]).map((filter) => <button key={filter} type="button" aria-pressed={evaluationFilter === filter} onClick={() => setEvaluationFilter(filter)}>{filter === "all" ? pickLocaleText(locale, "Toutes", "All") : filter === "pending" ? pickLocaleText(locale, "À compléter", "Pending") : pickLocaleText(locale, "Terminées", "Completed")}</button>)}</div></div>
+              <div className={trainingStyles.evaluationList}>
+                {evaluationFilter !== "completed" && pendingEvaluationCount > 0 ? <div className={trainingStyles.evaluationRow}><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité attend votre auto-évaluation" : "activités attendent votre auto-évaluation", pendingEvaluationCount === 1 ? "activity awaits your self-evaluation" : "activities await your self-evaluation")}</b><small>{pickLocaleText(locale, "Motivation, difficulté, satisfaction et structure de séance", "Motivation, difficulty, satisfaction and session structure")}</small></div><Link href="/player/golf/trainings/to-complete">{pickLocaleText(locale, "Voir les activités", "View activities")}<ArrowRight size={13} /></Link></div> : null}
+                {evaluationFilter !== "pending" ? filteredEvaluationSessions.map((session) => { const coach = session.club_event_id ? coachEvaluations.find((evaluation) => evaluation.event_id === session.club_event_id) : null; return <div className={trainingStyles.evaluationRow} key={session.id}><div><b>{shortDate(session.start_at, dateLocale)} · {typeLabelLong(session.session_type, t)}</b><small>{pickLocaleText(locale, "Auto-évaluation", "Self-evaluation")} · M {session.motivation}/6 · D {session.difficulty}/6 · S {session.satisfaction}/6{coach ? ` · ${pickLocaleText(locale, "Retour coach reçu", "Coach review received")}` : ""}</small>{coach?.player_note ? <small>{coach.player_note}</small> : null}</div><Link href={`/player/golf/trainings/${session.id}`}>{pickLocaleText(locale, "Détail", "Details")}<ArrowRight size={13} /></Link></div>; }) : null}
+                {((evaluationFilter === "pending" && pendingEvaluationCount === 0) || (evaluationFilter === "completed" && !filteredEvaluationSessions.length) || (evaluationFilter === "all" && pendingEvaluationCount === 0 && !filteredEvaluationSessions.length)) ? <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucune évaluation dans ce filtre.", "No evaluation matches this filter.")}</div> : null}
+              </div>
+            </section> : null}
+          </div>
+        ) : null}
+
+        {/* ===== Ancienne présentation entraînements, conservée hors rendu pendant la transition ===== */}
+        {false ? (
         <div className="glass-section">
           <div className={kpiGridClass} style={kpiGridStyle}>
             <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
@@ -3082,7 +3430,7 @@ function presetToSelectValue(p: Preset): Preset {
                         </div>
                       ) : null}
                       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span className="pill-soft">⛳ {displayedTrainingCount} {t("golfDashboard.sessions")}</span>
+                        <span className="pill-soft player-meta-with-icon"><Flag size={14} aria-hidden="true" /> {displayedTrainingCount} {t("golfDashboard.sessions")}</span>
                         {showMonthlyObjective && trainingVolumeGoalReached ? (
                           <span className="pill-soft" style={{ background: "rgba(47,125,79,0.14)", color: "rgba(16,94,51,1)", fontWeight: 950 }}>
                             {pickLocaleText(locale, "Objectif atteint", "Goal reached")}
@@ -3125,7 +3473,7 @@ function presetToSelectValue(p: Preset): Preset {
         ) : null}
 
         {/* ===== Graphes trainings ===== */}
-        {activeSection === "trainings" ? (
+        {false ? (
         <div className="glass-section">
           <div className="glass-card">
             <div className="card-title">{t("golfDashboard.weeklyVolume")}</div>
@@ -3133,30 +3481,16 @@ function presetToSelectValue(p: Preset): Preset {
             {weekSeries.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
-              <div style={{ height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weekSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="weekLabel" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
-                      <Line
-                        type="monotone"
-                        dataKey="objective"
-                        name={pickLocaleText(locale, "Objectif", "Goal")}
-                        stroke="rgba(185,28,28,0.9)"
-                        strokeDasharray="6 4"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={false}
-                      />
-                    ) : null}
-                    <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <ActiviteeEChart
+                ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")}
+                option={buildManagementVolumeChartOption({
+                  labels: weekSeries.map((item) => item.weekLabel),
+                  values: weekSeries.map((item) => Number(item.minutes ?? 0)),
+                  valueLabel: t("golfDashboard.minutesPerWeek"),
+                  objective: weekSeries.map((item) => typeof item.objective === "number" ? item.objective : null),
+                  objectiveLabel: pickLocaleText(locale, "Objectif", "Goal"),
+                })}
+              />
             )}
             {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>
@@ -3173,7 +3507,7 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
         ) : null}
 
-        {activeSection === "trainings" && isPerformanceEnabled ? (
+        {false && isPerformanceEnabled ? (
           <div className="glass-section">
             <div className="glass-card">
               <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
@@ -3202,7 +3536,7 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "evaluations" ? (
+        {false ? (
         <>
           {isPerformanceEnabled ? (
             <div className="glass-section">
@@ -3232,20 +3566,20 @@ function presetToSelectValue(p: Preset): Preset {
                 {weekSeries.length === 0 ? (
                   <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
                 ) : (
-                  <div style={{ height: 280 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={weekSeries}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="weekLabel" />
-                        <YAxis domain={[0, 6]} />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
-                        <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
-                        <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <ActiviteeEChart
+                    height={280}
+                    ariaLabel={pickLocaleText(locale, "Évolution hebdomadaire des sensations", "Weekly feeling trend")}
+                    option={buildManagementLineChartOption({
+                      labels: weekSeries.map((item) => item.weekLabel),
+                      min: 0,
+                      max: 6,
+                      series: [
+                        { name: t("common.motivation"), data: weekSeries.map((item) => item.motivation), color: MANAGEMENT_CHART_COLORS[0] },
+                        { name: t("common.difficulty"), data: weekSeries.map((item) => item.difficulty), color: MANAGEMENT_CHART_COLORS[2], dashed: true },
+                        { name: t("common.satisfaction"), data: weekSeries.map((item) => item.satisfaction), color: MANAGEMENT_CHART_COLORS[1] },
+                      ],
+                    })}
+                  />
                 )}
               </div>
             </div>
@@ -3278,20 +3612,20 @@ function presetToSelectValue(p: Preset): Preset {
               ) : coachEvaluations.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
-                <div style={{ height: 280 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={coachEvalTrendSeries}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="point" />
-                      <YAxis domain={[0, 6]} />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot />
-                      <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} dot />
-                      <Line type="linear" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} dot />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                <ActiviteeEChart
+                  height={280}
+                  ariaLabel="Évolution des évaluations du coach"
+                  option={buildManagementLineChartOption({
+                    labels: coachEvalTrendSeries.map((item) => item.point),
+                    min: 0,
+                    max: 6,
+                    series: [
+                      { name: "Engagement", data: coachEvalTrendSeries.map((item) => item.engagement), color: MANAGEMENT_CHART_COLORS[0] },
+                      { name: "Attitude", data: coachEvalTrendSeries.map((item) => item.attitude), color: MANAGEMENT_CHART_COLORS[3] },
+                      { name: "Application", data: coachEvalTrendSeries.map((item) => item.application), color: MANAGEMENT_CHART_COLORS[2] },
+                    ],
+                  })}
+                />
               )}
             </div>
           </div>
@@ -3346,74 +3680,7 @@ function presetToSelectValue(p: Preset): Preset {
         </>
         ) : null}
 
-        {activeSection === "rounds" ? (
-          <div className="glass-section">
-            <div className="glass-card">
-              {loadingRounds ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : rounds.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("golfDashboard.noRoundsInPeriod")}</div>
-              ) : (
-                <div className="marketplace-list marketplace-list-top">
-                  {rounds.map((r) => {
-                    const date = new Intl.DateTimeFormat(dateLocale, {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    }).format(new Date(r.start_at));
-                    const roundTypeLabel =
-                      r.round_type === "competition"
-                        ? pickLocaleText(locale, "Compétition", "Competition")
-                        : pickLocaleText(locale, "Entraînement", "Training");
-                    const cfg = [String(r.course_name ?? "").trim(), String(r.tee_name ?? "").trim()].filter(Boolean).join(" • ");
-                    const fwPct =
-                      typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
-                        ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
-                        : "—";
-                    return (
-                      <Link key={r.id} href={`/player/golf/rounds/${r.id}/scorecard`} className="marketplace-link">
-                        <div className="marketplace-item">
-                          <div style={{ display: "grid", gap: 10 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                              <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                                <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                  {date}
-                                </div>
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                  <span className="pill-soft">{roundTypeLabel}</span>
-                                  {cfg ? (
-                                    <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
-                                      ⛳ {cfg}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>{t("rounds.score")}</div>
-                                <div style={{ fontWeight: 1200, fontSize: 36, lineHeight: 1 }}>{r.total_score ?? "—"}</div>
-                              </div>
-                            </div>
-                            <div className="hr-soft" style={{ margin: "2px 0" }} />
-                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                              {pickLocaleText(locale, "Putts", "Putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
-                              {" • "}
-                              GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
-                              {" • "}
-                              {t("golfDashboard.fairwaysHit")}: <span style={{ fontWeight: 900 }}>{fwPct}</span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                              <span className="btn">{t("rounds.scorecard")}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
+        {activeSection === "rounds" ? <GolfRoundsWorkspace /> : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
         {activeSection === "stats" ? (

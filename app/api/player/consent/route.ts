@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from "@supabase/supabase-js";
 
 function mustEnv(name: string) {
@@ -18,13 +19,14 @@ function computeAge(birthDate: string | null | undefined) {
   return age >= 0 ? age : null;
 }
 
-type ConsentStatus = "granted" | "pending" | "adult";
+type ConsentStatus = "granted" | "pending" | "refused" | "adult";
 
 function aggregateConsentStatus(
   statuses: Array<string | null | undefined>,
   birthDate: string | null | undefined
 ): ConsentStatus {
   if (statuses.some((v) => v === "granted")) return "granted";
+  if (statuses.some((v) => v === "refused")) return "refused";
   if (statuses.some((v) => v === "adult")) return "adult";
   if (statuses.some((v) => v === "pending")) return "pending";
   const age = computeAge(birthDate);
@@ -56,6 +58,20 @@ async function getCaller(req: NextRequest) {
     userId,
     role: String(membership?.role ?? "player"),
   };
+}
+
+async function recordConsentDetails(supabaseAdmin: any, args: { playerId: string; status: "granted" | "adult"; changedBy: string; signerId?: string | null; signerName?: string | null }) {
+  const memberships = await supabaseAdmin.from("club_members").select("club_id").eq("user_id", args.playerId).eq("role", "player").eq("is_active", true);
+  if (memberships.error) throw new Error(memberships.error.message);
+  for (const membership of memberships.data ?? []) {
+    const values = { club_id: membership.club_id, player_user_id: args.playerId, status: args.status, decided_at: new Date().toISOString(), signer_guardian_user_id: args.signerId ?? null, signer_name: args.signerName ?? null, source: "parent_portal", consent_version: "activitee-v1", internal_notes: null, updated_by: args.changedBy, updated_at: new Date().toISOString() };
+    const current = await supabaseAdmin.from("player_consents").upsert(values, { onConflict: "club_id,player_user_id" });
+    if (current.error && !/relation|schema cache/i.test(current.error.message)) throw new Error(current.error.message);
+    if (!current.error) {
+      const history = await supabaseAdmin.from("player_consent_history").insert({ club_id: membership.club_id, player_user_id: args.playerId, status: args.status, decided_at: values.decided_at, signer_guardian_user_id: values.signer_guardian_user_id, signer_name: values.signer_name, source: values.source, consent_version: values.consent_version, changed_by: args.changedBy });
+      if (history.error) throw new Error(history.error.message);
+    }
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -208,6 +224,9 @@ export async function POST(req: NextRequest) {
         .eq("is_active", true);
       if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 });
 
+      const signer = await supabaseAdmin.from("profiles").select("first_name,last_name").eq("id", userId).maybeSingle();
+      await recordConsentDetails(supabaseAdmin, { playerId, status: "granted", changedBy: userId, signerId: userId, signerName: `${signer.data?.first_name ?? ""} ${signer.data?.last_name ?? ""}`.trim() || null });
+
       return NextResponse.json({ ok: true, consentStatus: "granted" });
     }
 
@@ -237,6 +256,8 @@ export async function POST(req: NextRequest) {
 
       if (profileUpdate.error) return NextResponse.json({ error: profileUpdate.error.message }, { status: 400 });
       if (membershipUpdate.error) return NextResponse.json({ error: membershipUpdate.error.message }, { status: 400 });
+
+      await recordConsentDetails(supabaseAdmin, { playerId: userId, status: "adult", changedBy: userId });
 
       return NextResponse.json({ ok: true, consentStatus: "adult" });
     }

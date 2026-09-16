@@ -9,52 +9,6 @@ function mustEnv(name: string) {
   return v;
 }
 
-async function resolveExistingPlayerConsentStatus(supabaseAdmin: any, userId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("club_members")
-    .select("player_consent_status")
-    .eq("user_id", userId)
-    .eq("role", "player")
-    .eq("is_active", true);
-  if (error) throw new Error(error.message);
-
-  const statuses = (data ?? []).map((row: any) => String(row?.player_consent_status ?? ""));
-  if (statuses.includes("granted")) return "granted";
-  if (statuses.includes("adult")) return "adult";
-  if (statuses.includes("pending")) return "pending";
-  return null;
-}
-
-async function syncLinkedParentsToClub(supabaseAdmin: any, clubId: string, playerUserId: string) {
-  const { data: links, error: linksError } = await supabaseAdmin
-    .from("player_guardians")
-    .select("guardian_user_id")
-    .eq("player_id", playerUserId);
-  if (linksError) throw new Error(linksError.message);
-
-  const guardianIds = Array.from(
-    new Set(
-      ((links ?? []) as Array<{ guardian_user_id: string | null }>)
-        .map((row) => String(row.guardian_user_id ?? "").trim())
-        .filter(Boolean)
-    )
-  );
-
-  if (guardianIds.length === 0) return;
-
-  const rows = guardianIds.map((guardianUserId) => ({
-    club_id: clubId,
-    user_id: guardianUserId,
-    role: "parent" as const,
-    is_active: true,
-  }));
-
-  const { error } = await supabaseAdmin
-    .from("club_members")
-    .upsert(rows, { onConflict: "club_id,user_id,role" });
-  if (error) throw new Error(error.message);
-}
-
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ clubId: string }> }
@@ -100,15 +54,8 @@ export async function POST(
 
     const body = await req.json().catch(() => null);
     const userId = String(body?.user_id ?? "").trim();
-    const role = String(body?.role ?? "").trim().toLowerCase();
 
     if (!userId) return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
-    if (!["manager", "coach", "player", "parent"].includes(role)) {
-      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-    }
-
-    const inheritedConsentStatus =
-      role === "player" ? await resolveExistingPlayerConsentStatus(supabaseAdmin, userId) : null;
 
     const { data: memberRow, error: memberError } = await supabaseAdmin
       .from("club_members")
@@ -116,9 +63,9 @@ export async function POST(
         {
           club_id: clubId,
           user_id: userId,
-          role,
+          role: "manager",
           is_active: true,
-          player_consent_status: role === "player" ? inheritedConsentStatus : null,
+          player_consent_status: null,
         },
         { onConflict: "club_id,user_id,role" }
       )
@@ -127,12 +74,8 @@ export async function POST(
 
     if (memberError) return NextResponse.json({ error: memberError.message }, { status: 400 });
 
-    if (role === "player" && memberRow?.id) {
-      await syncLinkedParentsToClub(supabaseAdmin, clubId, userId);
-    }
-
     return NextResponse.json({ ok: true, member_id: memberRow?.id ?? null });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (cause: unknown) {
+    return NextResponse.json({ error: cause instanceof Error ? cause.message : "Server error" }, { status: 500 });
   }
 }

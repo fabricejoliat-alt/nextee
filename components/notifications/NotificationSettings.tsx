@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Settings } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, ChevronRight, Settings, Smartphone } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import campsStyles from "@/app/manager/camps/Camps.module.css";
+import styles from "@/components/notifications/NotificationSettings.module.css";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   NOTIFICATION_KIND_OPTIONS,
@@ -16,14 +19,20 @@ import { disablePushSubscription, ensurePushSubscription, supportsWebPush } from
 type Props = {
   homeHref: string;
   notificationsHref: string;
+  /** Lets Coach use the Manager page chrome without inheriting Manager-only data rules. */
+  designVariant?: "management" | "player";
   titleFr: string;
   titleEn: string;
   titleDe: string;
   titleIt: string;
 };
 
-export default function NotificationSettings({ homeHref, notificationsHref, titleFr, titleEn, titleDe, titleIt }: Props) {
+export default function NotificationSettings({ homeHref, notificationsHref, designVariant, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale, t } = useI18n();
+  const managerDesign = designVariant === "management" || homeHref === "/manager";
+  const managerScope = homeHref === "/manager";
+  const hideThreadNotifications = managerScope || homeHref === "/player";
+  const areaLabel = managerScope ? "Manager" : homeHref === "/coach" ? "Coach" : "Player";
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
     if (locale === "de") return de ?? en;
@@ -41,8 +50,12 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
   const [enabledKinds, setEnabledKinds] = useState<string[]>([]);
 
   const pushSupported = useMemo(() => supportsWebPush(), []);
+  const notificationKindOptions = useMemo(
+    () => hideThreadNotifications ? NOTIFICATION_KIND_OPTIONS.filter((option) => option.kind !== "thread_message") : NOTIFICATION_KIND_OPTIONS,
+    [hideThreadNotifications]
+  );
   const selectedKindsSet = useMemo(() => new Set(enabledKinds), [enabledKinds]);
-  const allKindIds = useMemo(() => NOTIFICATION_KIND_OPTIONS.map((o) => o.kind), []);
+  const allKindIds = useMemo(() => notificationKindOptions.map((option) => option.kind), [notificationKindOptions]);
 
   useEffect(() => {
     (async () => {
@@ -128,6 +141,57 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
 
     setEnabledKinds(next);
     await persist({ enabledKinds: next });
+  }
+
+  if (managerDesign) {
+    return (
+      <main className={campsStyles.page}>
+        <nav className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
+          <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><Link href={notificationsHref}>Notifications</Link><ChevronRight size={13} /><span>Paramètres</span>
+        </nav>
+
+        <div className={campsStyles.topline}>
+          <div><h1>Paramètres de notifications</h1><p className={campsStyles.lead}>Choisissez comment recevoir les notifications et les activités qui vous intéressent.</p></div>
+          <div className={`${campsStyles.actions} ${styles.headerActions}`}><Link className={campsStyles.secondary} href={notificationsHref}><ArrowLeft size={15} />Retour aux notifications</Link></div>
+        </div>
+
+        {error ? <div className={campsStyles.alertError} role="alert">{error}</div> : null}
+        {saving ? <div className={styles.savingState} role="status">Enregistrement des préférences…</div> : null}
+
+        {loading ? <section className={campsStyles.panel}><ListLoadingBlock label="Chargement des préférences…" /></section> : <>
+          <section className={campsStyles.panel}>
+            <div className={campsStyles.panelHeader}>
+              <div className={styles.panelTitle}><span className={styles.panelIcon}><BellRing size={16} /></span><div><h2>Canaux de réception</h2><p>Activez les notifications dans ActiviTee et, si votre appareil le permet, les notifications push.</p></div></div>
+            </div>
+            <div className={styles.settingsList}>
+              <div className={styles.settingRow}>
+                <span className={styles.settingIcon}><Bell size={16} /></span>
+                <div className={styles.settingText}><strong>Notifications dans ActiviTee</strong><span>Affiche les nouvelles activités dans votre centre de notifications.</span></div>
+                <Toggle checked={receiveInApp} disabled={saving} label="Notifications dans ActiviTee" onToggle={(checked) => void onToggleInApp(checked)} />
+              </div>
+              <div className={`${styles.settingRow} ${!pushSupported ? styles.settingDisabled : ""}`}>
+                <span className={styles.settingIcon}><Smartphone size={16} /></span>
+                <div className={styles.settingText}><strong>Notifications push</strong><span>{pushSupported ? "Recevez les notifications dans l’application et votre navigateur mobile ou ordinateur." : "Les notifications push ne sont pas prises en charge sur cet appareil."}</span></div>
+                <Toggle checked={receivePush} disabled={saving || !pushSupported || !receiveInApp} label="Notifications push" onToggle={(checked) => void onTogglePush(checked)} />
+              </div>
+            </div>
+          </section>
+
+          <section className={`${campsStyles.panel} ${!receiveInApp ? styles.sectionDisabled : ""}`}>
+            <div className={campsStyles.panelHeader}>
+              <div className={styles.panelTitle}><span className={styles.panelIcon}><Settings size={16} /></span><div><h2>Types de notifications</h2><p>Sélectionnez les catégories d’activité que vous souhaitez recevoir.</p></div></div>
+            </div>
+            <div className={styles.kindGrid}>
+              {notificationKindOptions.map((option) => {
+                const checked = enabledKinds.length === 0 || selectedKindsSet.has(option.kind);
+                const label = locale === "fr" ? option.labelFr : option.labelEn;
+                return <div className={styles.kindRow} key={option.kind}><span>{label}</span><Toggle checked={checked} disabled={saving || !receiveInApp} label={label} onToggle={(nextChecked) => void onToggleKind(option.kind, nextChecked)} /></div>;
+              })}
+            </div>
+          </section>
+        </>}
+      </main>
+    );
   }
 
   return (
@@ -340,4 +404,8 @@ export default function NotificationSettings({ homeHref, notificationsHref, titl
       </div>
     </div>
   );
+}
+
+function Toggle({ checked, disabled, label, onToggle }: { checked: boolean; disabled: boolean; label: string; onToggle: (checked: boolean) => void }) {
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`${styles.toggle} ${checked ? styles.toggleChecked : ""}`} onClick={() => onToggle(!checked)}><span /></button>;
 }

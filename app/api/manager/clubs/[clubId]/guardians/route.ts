@@ -109,7 +109,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
     }
 
-    const consentStatusByPlayerId = new Map<string, "granted" | "pending" | "adult" | null>();
+    const consentStatusByPlayerId = new Map<string, "granted" | "pending" | "refused" | "adult" | null>();
     if (playerIds.length > 0) {
       const consentRowsRes = await supabaseAdmin
         .from("club_members")
@@ -129,6 +129,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       }
       for (const [playerId, statuses] of rawByPlayer.entries()) {
         if (statuses.includes("granted")) consentStatusByPlayerId.set(playerId, "granted");
+        else if (statuses.includes("refused")) consentStatusByPlayerId.set(playerId, "refused");
         else if (statuses.includes("adult")) consentStatusByPlayerId.set(playerId, "adult");
         else if (statuses.includes("pending")) consentStatusByPlayerId.set(playerId, "pending");
         else {
@@ -195,6 +196,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     const relation = String(body.relation ?? "other");
     const isPrimary = Boolean(body.is_primary);
     if (!playerId || !guardianId) return NextResponse.json({ error: "Missing ids" }, { status: 400 });
+
+    if (isPrimary) {
+      const clearPrimary = await supabaseAdmin
+        .from("player_guardians")
+        .update({ is_primary: false })
+        .eq("player_id", playerId);
+      if (clearPrimary.error) return NextResponse.json({ error: clearPrimary.error.message }, { status: 400 });
+    }
 
     const { error } = await supabaseAdmin.from("player_guardians").upsert(
       {

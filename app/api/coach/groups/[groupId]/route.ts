@@ -1,0 +1,15 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { hasCoachClubPermission } from "@/lib/coachAuthorization";
+
+function env(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }
+async function authorize(req: NextRequest, groupId: string) {
+  const token = req.headers.get("authorization")?.replace("Bearer ", ""); if (!token) return { error: "Missing token", status: 401 } as const;
+  const db = createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY")); const caller = await db.auth.getUser(token); if (caller.error || !caller.data.user) return { error: "Invalid token", status: 401 } as const;
+  const group = await db.from("coach_groups").select("id,club_id").eq("id", groupId).maybeSingle(); if (group.error || !group.data) return { error: "Groupe introuvable.", status: 404 } as const;
+  if (!await hasCoachClubPermission(db, caller.data.user.id, String(group.data.club_id), "groups", groupId)) return { error: "Forbidden", status: 403 } as const;
+  return { db } as const;
+}
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ groupId: string }> }) { const { groupId } = await ctx.params; const auth = await authorize(req, groupId); if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status }); const body = await req.json().catch(() => ({})); const name = String(body.name ?? "").trim(); if (name.length < 2) return NextResponse.json({ error: "Nom invalide." }, { status: 400 }); const result = await auth.db.from("coach_groups").update({ name }).eq("id", groupId); return result.error ? NextResponse.json({ error: result.error.message }, { status: 400 }) : NextResponse.json({ ok: true }); }
+export async function POST(req: NextRequest, ctx: { params: Promise<{ groupId: string }> }) { const { groupId } = await ctx.params; const auth = await authorize(req, groupId); if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status }); const body = await req.json().catch(() => ({})); const category = String(body.category ?? "").trim(); if (!category) return NextResponse.json({ error: "Catégorie invalide." }, { status: 400 }); const result = await auth.db.from("coach_group_categories").insert({ group_id: groupId, category }); return result.error ? NextResponse.json({ error: result.error.message }, { status: 400 }) : NextResponse.json({ ok: true }); }
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ groupId: string }> }) { const { groupId } = await ctx.params; const auth = await authorize(req, groupId); if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status }); const categoryId = new URL(req.url).searchParams.get("categoryId") ?? ""; const result = await auth.db.from("coach_group_categories").delete().eq("id", categoryId).eq("group_id", groupId); return result.error ? NextResponse.json({ error: result.error.message }, { status: 400 }) : NextResponse.json({ ok: true }); }

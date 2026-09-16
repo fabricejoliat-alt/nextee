@@ -1,13 +1,5 @@
-import MessagesCenter from "@/components/messages/MessagesCenter";
+import { redirect } from "next/navigation";
 
 export default function PlayerMessagesPage() {
-  return (
-    <MessagesCenter
-      homeHref="/player"
-      titleFr="Messages"
-      titleEn="Messages"
-      titleDe="Nachrichten"
-      titleIt="Messaggi"
-    />
-  );
+  redirect("/player");
 }

@@ -8,12 +8,14 @@ export async function GET(req: NextRequest) {
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const requestedChildId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim() || null;
+    const searchParams = new URL(req.url).searchParams;
+    const requestedChildId = String(searchParams.get("child_id") ?? "").trim() || null;
 
     const payload = await fetchVisiblePlayerNews({
       supabaseAdmin,
       callerId,
       requestedChildId,
+      includeArchived: searchParams.get("include_archived") === "1",
     });
 
     return NextResponse.json(payload);

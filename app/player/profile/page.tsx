@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ArrowDown, ArrowUp, Pencil, Trash2 } from "lucide-react";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type ProfileRow = {
   id: string;
@@ -89,7 +90,7 @@ function getInitials(firstName?: string | null, lastName?: string | null) {
   const firstInitial = f ? f[0].toUpperCase() : "";
   const lastInitial = l ? l[0].toUpperCase() : "";
 
-  if (!firstInitial && !lastInitial) return "👤";
+  if (!firstInitial && !lastInitial) return "J";
   return `${firstInitial}${lastInitial}`;
 }
 
@@ -874,9 +875,14 @@ export default function PlayerProfilePage() {
 
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell">
+      <div className="app-shell player-profile-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("common.profile") }]} />
+        <header className="player-profile-heading">
+          <h1>{t("common.profile")}</h1>
+          <p>Gère tes informations personnelles et ton historique sportif.</p>
+        </header>
         {/* ===== SOMMET (comme page player) ===== */}
-        <div className="player-hero">
+        <div className="player-hero player-profile-identity">
           {/* ===== AVATAR + CTA dessous ===== */}
           <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
             <div
@@ -996,7 +1002,7 @@ export default function PlayerProfilePage() {
             <div className="hero-title">
               {loading
                 ? `${t("playerProfile.hello")}…`
-                : `${displayHello(firstName, t("playerProfile.hello"))} 👋`}
+                : displayHello(firstName, t("playerProfile.hello"))}
             </div>
 
             <div className="hero-sub">
@@ -1020,7 +1026,7 @@ export default function PlayerProfilePage() {
 
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">{t("common.profile")}</div>
+          <h2 className="section-title">Informations personnelles</h2>
 
           <div style={{ display: "grid", gap: 14 }}>
             {loading ? (

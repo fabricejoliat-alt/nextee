@@ -1,12 +1,16 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { PlusCircle, Search, Trash2, Users, Tag, User, X } from "lucide-react";
+import { CalendarDays, ChevronRight, PlusCircle, Save, Search, Trash2, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import CoachPlayerTransferDialog from "@/components/coach/CoachPlayerTransferDialog";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
 type Role = "coach" | "manager" | "player";
 
@@ -64,6 +68,12 @@ type PlannedEventLite = {
   status: "scheduled" | "cancelled";
   series_id?: string | null;
 };
+type CoachMembershipPermissions = {
+  role: Role;
+  can_manage_assigned_groups: boolean | null;
+  can_manage_assigned_group_planning: boolean | null;
+  can_transfer_players_between_club_groups: boolean | null;
+};
 
 function fullName(p?: ProfileLite | null) {
   const f = (p?.first_name ?? "").trim();
@@ -118,7 +128,7 @@ function SearchSelect({
     function onDocDown(e: MouseEvent) {
       const el = wrapRef.current;
       if (!el) return;
-      if (!el.contains(e.target as any)) setOpen(false);
+      if (!el.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDocDown);
     return () => document.removeEventListener("mousedown", onDocDown);
@@ -278,16 +288,15 @@ function SearchSelect({
 
 export default function CoachGroupEditPage() {
   const { t } = useI18n();
-  const params = useParams();
-  const router = useRouter();
-  const groupId = String((params as any)?.id ?? "");
+  const params = useParams<{ id: string }>();
+  const groupId = String(params?.id ?? "");
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const [userId, setUserId] = useState("");
   const [clubRole, setClubRole] = useState<Role | null>(null);
+  const [coachPermissions, setCoachPermissions] = useState({ manageGroups: false, managePlanning: false, transferPlayers: false });
 
   const [group, setGroup] = useState<CoachGroup | null>(null);
   const [cats, setCats] = useState<CategoryRow[]>([]);
@@ -360,7 +369,6 @@ export default function CoachGroupEditPage() {
       setLoading(false);
       return;
     }
-    setUserId(uid);
 
     // access check
     const { data: linkRow, error: linkErr } = await supabase
@@ -370,7 +378,7 @@ export default function CoachGroupEditPage() {
       .eq("coach_user_id", uid)
       .maybeSingle();
 
-    if (linkErr || !linkRow) {
+    if (linkErr) {
       setErr(t("coachGroupEdit.accessDeniedOrNotFound"));
       setLoading(false);
       return;
@@ -393,18 +401,41 @@ export default function CoachGroupEditPage() {
       return;
     }
 
-    const g = (gRes.data ?? null) as any as CoachGroup | null;
+    const g = (gRes.data ?? null) as unknown as CoachGroup | null;
+    if (!g) {
+      setErr(t("coachGroupEdit.accessDeniedOrNotFound"));
+      setLoading(false);
+      return;
+    }
+    if (!linkRow) {
+      const transferAccess = await supabase.from("club_members")
+        .select("id")
+        .eq("club_id", g.club_id).eq("user_id", uid).eq("role", "coach").eq("is_active", true)
+        .eq("can_transfer_players_between_club_groups", true).maybeSingle();
+      if (transferAccess.error || !transferAccess.data) {
+        setErr(t("coachGroupEdit.accessDeniedOrNotFound"));
+        setLoading(false);
+        return;
+      }
+    }
     setGroup(g);
     if (g?.club_id) {
       const roleRes = await supabase
         .from("club_members")
-        .select("role")
+        .select("role,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups")
         .eq("club_id", g.club_id)
         .eq("user_id", uid)
         .eq("is_active", true)
         .maybeSingle();
-      if (!roleRes.error && roleRes.data) setClubRole((roleRes.data as any).role as Role);
-      else setClubRole(null);
+      if (!roleRes.error && roleRes.data) {
+        const membership = roleRes.data as unknown as CoachMembershipPermissions;
+        setClubRole(membership.role);
+        setCoachPermissions({
+          manageGroups: Boolean(membership.can_manage_assigned_groups),
+          managePlanning: Boolean(membership.can_manage_assigned_group_planning),
+          transferPlayers: Boolean(membership.can_transfer_players_between_club_groups),
+        });
+      } else { setClubRole(null); setCoachPermissions({ manageGroups: false, managePlanning: false, transferPlayers: false }); }
     } else {
       setClubRole(null);
     }
@@ -432,7 +463,7 @@ export default function CoachGroupEditPage() {
       )
       .eq("group_id", groupId);
 
-    setPlayers((pRes.data ?? []) as any);
+    setPlayers((pRes.data ?? []) as unknown as GroupPlayerRow[]);
 
     const cRes = await supabase
       .from("coach_group_coaches")
@@ -447,7 +478,7 @@ export default function CoachGroupEditPage() {
       .eq("group_id", groupId)
       .order("is_head", { ascending: false });
 
-    setCoaches((cRes.data ?? []) as any);
+    setCoaches((cRes.data ?? []) as unknown as GroupCoachRow[]);
 
     const evRes = await supabase
       .from("club_events")
@@ -489,15 +520,14 @@ export default function CoachGroupEditPage() {
     };
   }, [plannedEvents]);
 
+  const canManagePlayers = useMemo(() => clubRole === "manager" || coachPermissions.manageGroups, [clubRole, coachPermissions.manageGroups]);
   const canSaveInfo = useMemo(() => {
     if (busy) return false;
     if (!group) return false;
+    if (!canManagePlayers) return false;
     if (groupName.trim().length < 2) return false;
     return true;
-  }, [busy, group, groupName]);
-
-  const canManagePlayers = useMemo(() => clubRole === "manager", [clubRole]);
-  const canDeleteGroup = useMemo(() => clubRole === "manager", [clubRole]);
+  }, [busy, group, groupName, canManagePlayers]);
 
   // --------- GROUP INFO ----------
   async function saveGroupInfo(e: React.FormEvent) {
@@ -507,15 +537,11 @@ export default function CoachGroupEditPage() {
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase
-      .from("coach_groups")
-      .update({
-        name: groupName.trim(),
-      })
-      .eq("id", group.id);
-
-    if (error) {
-      setErr(error.message);
+    const session = await supabase.auth.getSession();
+    const response = await fetch(`/api/coach/groups/${group.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.data.session?.access_token ?? ""}` }, body: JSON.stringify({ name: groupName.trim() }) });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setErr(json.error ?? "Enregistrement impossible.");
       setBusy(false);
       return;
     }
@@ -533,17 +559,16 @@ export default function CoachGroupEditPage() {
   }, [newCat, cats]);
 
   async function addCategory() {
+    if (!canManagePlayers) return;
     const v = newCat.trim();
     if (!v || savingCat || busy) return;
 
     setSavingCat(true);
-    const { error } = await supabase.from("coach_group_categories").insert({
-      group_id: groupId,
-      category: v,
-    });
-
-    if (error) {
-      setErr(error.message);
+    const session = await supabase.auth.getSession();
+    const response = await fetch(`/api/coach/groups/${groupId}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.data.session?.access_token ?? ""}` }, body: JSON.stringify({ category: v }) });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setErr(json.error ?? "Ajout impossible.");
       setSavingCat(false);
       return;
     }
@@ -555,17 +580,15 @@ export default function CoachGroupEditPage() {
 
   // ✅ FIX RLS: delete category via RPC (security definer)
   async function removeCategory(catId: string) {
-    if (!catId || busy) return;
+    if (!canManagePlayers || !catId || busy) return;
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.rpc("coach_group_delete_category", {
-      p_group_id: groupId,
-      p_category_id: catId,
-    });
-
-    if (error) {
-      setErr(error.message);
+    const session = await supabase.auth.getSession();
+    const response = await fetch(`/api/coach/groups/${groupId}?categoryId=${encodeURIComponent(catId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.data.session?.access_token ?? ""}` } });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setErr(json.error ?? "Suppression impossible.");
       setBusy(false);
       return;
     }
@@ -582,13 +605,11 @@ export default function CoachGroupEditPage() {
     setBusy(true);
     setErr(null);
 
-    const { error } = await supabase.rpc("coach_group_delete_player", {
-      p_group_id: groupId,
-      p_group_player_id: rowId,
-    });
-
-    if (error) {
-      setErr(error.message);
+    const session = await supabase.auth.getSession();
+    const response = await fetch(`/api/coach/groups/${groupId}/players/${rowId}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.data.session?.access_token ?? ""}` } });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setErr(json.error ?? "Impossible de retirer ce junior.");
       setBusy(false);
       return;
     }
@@ -645,371 +666,47 @@ export default function CoachGroupEditPage() {
     setBusy(false);
   }
 
-  // --------- DELETE GROUP ----------
-  async function deleteGroup() {
-    if (!group) return;
-    if (!canDeleteGroup) {
-      setErr("Seul un manager peut supprimer ce groupe.");
-      return;
-    }
-
-    const ok = window.confirm(
-      `Supprimer le groupe "${group.name}" ?\n\nLes événements futurs de ce groupe seront supprimés.\nL'historique passé sera conservé.`
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setErr(null);
-
-    const { error } = await supabase.rpc("coach_group_delete_keep_history", {
-      p_group_id: group.id,
-    });
-
-    if (error) {
-      setErr(error.message);
-      setBusy(false);
-      return;
-    }
-
-    router.push("/coach/groups");
-  }
-
+  const canPlan = clubRole === "manager" || coachPermissions.managePlanning;
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>{groupName || "Éditer un groupe"}</div>
-            </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/coach/groups">
-                Mes groupes
-              </Link>
-
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning`}>
-                Planification
-              </Link>
-            </div>
-          </div>
-
-          {err && <div className="marketplace-error">{err}</div>}
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <CompactLoadingBlock label={t("common.loading")} />
-            ) : !group ? (
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                {t("coachGroupEdit.accessDeniedOrNotFound")}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {/* INFO EDIT (save button inside) */}
-                <form onSubmit={saveGroupInfo} style={{ display: "grid", gap: 12 }}>
-                  <div className="glass-card" style={{ padding: 14 }}>
-                    <div className="card-title">Info</div>
-
-                    <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Nom du groupe</span>
-                        <input
-                          value={groupName}
-                          onChange={(e) => setGroupName(e.target.value)}
-                          disabled={busy}
-                          placeholder="Nom du groupe"
-                        />
-                      </label>
-
-                      <button
-                        className="btn"
-                        type="submit"
-                        disabled={!canSaveInfo || busy}
-                        style={{
-                          width: "100%",
-                          background: "var(--green-dark)",
-                          borderColor: "var(--green-dark)",
-                          color: "#fff",
-                          marginTop: 6,
-                        }}
-                      >
-                        {busy ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-                {/* CATEGORIES */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Tag size={18} />
-                    Catégories
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    {cats.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        Aucune catégorie.
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {cats.map((c) => (
-                          <div key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span className="pill-soft">{c.category}</span>
-                            <button
-                              type="button"
-                              className="btn btn-danger soft"
-                              onClick={() => removeCategory(c.id)}
-                              disabled={busy}
-                              style={{ padding: "8px 10px" }}
-                              aria-label={t("coachGroupNew.removeCategory")}
-                              title="Supprimer"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
-                      <input
-                        value={newCat}
-                        onChange={(e) => setNewCat(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("coachGroupEdit.addCategoryPlaceholder")}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCategory();
-                          }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        className="glass-btn"
-                        onClick={addCategory}
-                        disabled={busy || savingCat || !canAddCat}
-                        style={{
-                          width: 44,
-                          height: 42,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: "rgba(255,255,255,0.70)",
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          opacity: busy || savingCat || !canAddCat ? 0.6 : 1,
-                          pointerEvents: busy || savingCat || !canAddCat ? "none" : "auto",
-                        }}
-                        aria-label={t("coachGroupNew.addCategory")}
-                        title="Ajouter"
-                      >
-                        <PlusCircle size={18} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* PLAYERS */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={18} />
-                    Joueurs
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Dans le groupe ({players.length})</div>
-
-                      {players.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun joueur dans ce groupe.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {players
-                            .slice()
-                            .sort((a, b) => fullName(a.profiles).localeCompare(fullName(b.profiles), "fr"))
-                            .map((row) => {
-                              const p = row.profiles ?? null;
-                              return (
-                                <div
-                                  key={row.id}
-                                  style={{ ...lightRowCardStyle, cursor: "pointer" }}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() =>
-                                    router.push(
-                                      `/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`
-                                    )
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      router.push(
-                                        `/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                    <div style={avatarBoxStyle} aria-hidden="true">
-                                      {avatarNode(p)}
-                                    </div>
-                                    <div style={{ minWidth: 0 }}>
-                                      <div style={{ fontWeight: 950 }} className="truncate">
-                                        {fullName(p)}
-                                      </div>
-                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                        Handicap {typeof p?.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div style={{ display: "flex", gap: 10 }}>
-                                    {canManagePlayers ? (
-                                      <button
-                                        type="button"
-                                        className="btn btn-danger soft"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          removePlayerFromGroup(row.id);
-                                        }}
-                                        disabled={busy}
-                                        style={{ padding: "10px 12px" }}
-                                        aria-label="Retirer joueur"
-                                        title="Retirer"
-                                      >
-                                        <Trash2 size={18} />
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* COACHES */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <User size={18} />
-                    Coachs
-                  </div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                      {t("coachGroupEdit.headCoachFixed")}
-                    </div>
-
-                    <SearchSelect
-                      label="Ajouter un coach"
-                      placeholder="Tape un nom…"
-                      items={coachCandidates}
-                      disabled={busy}
-                      itemSubtitle={() => "Coach"}
-                      onSelect={addCoachToGroup}
-                    />
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Dans le groupe ({coaches.length})</div>
-
-                      {coaches.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Aucun coach associé.
-                        </div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {coaches.map((row) => {
-                            const p = row.profiles ?? null;
-                            return (
-                              <div key={row.id} style={lightRowCardStyle}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                  <div style={avatarBoxStyle} aria-hidden="true">
-                                    {avatarNode(p)}
-                                  </div>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 950 }} className="truncate">
-                                      {fullName(p)}
-                                    </div>
-                                      <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4 }}>
-                                      {row.is_head ? t("trainingNew.headCoach") : t("trainingNew.extraCoach")}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                {row.is_head ? (
-                                  <span className="pill-soft">{t("trainingNew.headCoach")}</span>
-                                ) : (
-                                    <button
-                                      type="button"
-                                      className="btn btn-danger soft"
-                                      onClick={() => removeCoachFromGroup(row)}
-                                      disabled={busy}
-                                      style={{ padding: "10px 12px" }}
-                                      aria-label="Retirer coach"
-                                      title="Retirer"
-                                    >
-                                    <Trash2 size={18} />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* PLANNING */}
-                <div className="glass-card" style={{ padding: 14 }}>
-                  <div className="card-title">{t("coachGroupEdit.trainingPlanning")}</div>
-
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      <span className="pill-soft">À venir: {planningSummary.upcomingCount}</span>
-                      <span className="pill-soft">Planifiés: {planningSummary.totalScheduled}</span>
-                      <span className="pill-soft">Récurrents: {planningSummary.recurringCount}</span>
-                    </div>
-
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                      {planningSummary.nextStartsAt
-                        ? `Prochain événement: ${new Intl.DateTimeFormat("fr-CH", {
-                            weekday: "short",
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }).format(new Date(planningSummary.nextStartsAt))}`
-                        : planningSummary.totalScheduled > 0
-                        ? `${planningSummary.totalScheduled} événement${planningSummary.totalScheduled > 1 ? "s" : ""} planifié${planningSummary.totalScheduled > 1 ? "s" : ""}.`
-                        : t("coachGroupEdit.noUpcomingTraining")}
-                    </div>
-
-                    <Link
-                      className="cta-green cta-green-inline"
-                      href={`/coach/groups/${groupId}/planning`}
-                      style={{ width: "100%" }}
-                    >
-                      Gérer la planification
-                    </Link>
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </div>
-        </div>
+    <main className={styles.page}>
+      <nav className={actionStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" /><Link href="/coach/groups">Mes groupes</Link><ChevronRight size={13} aria-hidden="true" /><span>{group?.name ?? "Groupe"}</span></nav>
+      <div className={styles.topline}>
+        <div><h1>{group?.name ?? "Groupe"}</h1><p className={styles.lead}>Consultez la composition, l’encadrement et la planification du groupe.</p></div>
+        <div className={actionStyles.topActions}><Link className={actionStyles.secondaryButton} href="/coach/groups">Retour aux groupes</Link>{group ? <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning`}><CalendarDays size={16} aria-hidden="true" />Planification</Link> : null}</div>
       </div>
-    </div>
+      {err ? <div className={actionStyles.errorAlert} role="alert">{err}</div> : null}
+      {loading ? <section className={styles.quickPanel}><CompactLoadingBlock label={t("common.loading")} /></section> : !group ? <section className={styles.quickPanel}>{t("coachGroupEdit.accessDeniedOrNotFound")}</section> : <>
+        <form className={styles.quickPanel} onSubmit={saveGroupInfo}>
+          <div className={styles.sectionHeading}><div><h2>Informations du groupe</h2><p>{canManagePlayers ? "Modifiez les informations opérationnelles autorisées." : "Informations générales du groupe."}</p></div></div>
+          <div className="user-mgmt-form-grid"><label className="user-mgmt-field"><span className="user-mgmt-field-label">Nom du groupe</span><input value={groupName} onChange={(event) => setGroupName(event.target.value)} disabled={busy || !canManagePlayers} /></label><label className="user-mgmt-field"><span className="user-mgmt-field-label">Statut</span><input value={group.is_active ? "Actif" : "Inactif"} disabled /></label></div>
+          {canManagePlayers ? <div className="user-mgmt-card-actions"><button className={actionStyles.primaryButton} type="submit" disabled={!canSaveInfo}><Save size={16} aria-hidden="true" />{busy ? "Enregistrement…" : "Enregistrer les modifications"}</button></div> : null}
+        </form>
+
+        <section className={styles.quickPanel}>
+          <div className={styles.sectionHeading}><div><h2>Catégories</h2><p>Catégories utilisées pour structurer ce groupe.</p></div></div>
+          {canManagePlayers ? <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10 }}><input value={newCat} onChange={(event) => setNewCat(event.target.value)} disabled={busy} placeholder={t("coachGroupEdit.addCategoryPlaceholder")} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addCategory(); } }} /><button type="button" className={actionStyles.secondaryButton} onClick={() => void addCategory()} disabled={busy || savingCat || !canAddCat} aria-label="Ajouter une catégorie" title="Ajouter" style={{ width: 44, padding: 0 }}><PlusCircle size={18} aria-hidden="true" /></button></div> : null}
+          {cats.length === 0 ? <p className="user-mgmt-empty-state">Aucune catégorie ajoutée.</p> : <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{cats.map((category) => <div key={category.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="pill-soft">{category.category}</span>{canManagePlayers ? <button type="button" className={`${actionStyles.dangerButton} coach-group-compact-action`} onClick={() => void removeCategory(category.id)} disabled={busy} aria-label={`Supprimer ${category.category}`} title="Supprimer"><Trash2 size={15} aria-hidden="true" /></button> : null}</div>)}</div>}
+        </section>
+
+        <section className={styles.quickPanel}>
+          <div className={styles.sectionHeading}><div><h2>Juniors</h2><p>{players.length} junior{players.length > 1 ? "s" : ""} associé{players.length > 1 ? "s" : ""} à ce groupe.</p></div></div>
+          {players.length === 0 ? <p className="user-mgmt-empty-state">Aucun junior dans ce groupe.</p> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Handicap</th><th aria-label="Actions" /></tr></thead><tbody>{players.slice().sort((a, b) => fullName(a.profiles).localeCompare(fullName(b.profiles), "fr")).map((row) => { const profile = row.profiles ?? null; return <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(profile)}</span></td><td><b>{fullName(profile)}</b></td><td>{typeof profile?.handicap === "number" ? profile.handicap.toFixed(1) : "—"}</td><td><div className="user-mgmt-card-actions"><Link className={actionStyles.secondaryButton} href={`/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`}>Consulter</Link>{coachPermissions.transferPlayers ? <CoachPlayerTransferDialog playerId={row.player_user_id} playerName={fullName(profile)} sourceGroupId={groupId} onTransferred={() => void load()} /> : null}{canManagePlayers ? <button type="button" className={actionStyles.dangerButton} onClick={() => void removePlayerFromGroup(row.id)} disabled={busy} aria-label={`Retirer ${fullName(profile)}`} title="Retirer"><Trash2 size={16} aria-hidden="true" /></button> : null}</div></td></tr>; })}</tbody></table></div>}
+        </section>
+
+        <section className={styles.quickPanel}>
+          <div className={styles.sectionHeading}><div><h2>Équipe encadrante</h2><p>Coachs associés à ce groupe et rôle dans l’encadrement.</p></div></div>
+          {clubRole === "manager" ? <SearchSelect label="Ajouter un coach" placeholder="Tapez un nom…" items={coachCandidates} disabled={busy} itemSubtitle={() => "Coach"} onSelect={addCoachToGroup} /> : null}
+          {coaches.length === 0 ? <p className="user-mgmt-empty-state">Aucun coach associé.</p> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list"><thead><tr><th aria-label="Avatar" /><th>Coach</th><th>Rôle</th><th aria-label="Actions" /></tr></thead><tbody>{coaches.map((row) => <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(row.profiles)}</span></td><td><b>{fullName(row.profiles)}</b></td><td><span className="pill-soft">{row.is_head ? t("trainingNew.headCoach") : t("trainingNew.extraCoach")}</span></td><td>{clubRole === "manager" && !row.is_head ? <button type="button" className={actionStyles.dangerButton} onClick={() => void removeCoachFromGroup(row)} disabled={busy} aria-label={`Retirer ${fullName(row.profiles)}`} title="Retirer"><Trash2 size={16} aria-hidden="true" /></button> : null}</td></tr>)}</tbody></table></div>}
+        </section>
+
+        <section className={styles.quickPanel}>
+          <div className={styles.sectionHeading}><div><h2>Planification</h2><p>Consultez les activités planifiées pour ce groupe.</p></div></div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><span className="pill-soft">À venir : {planningSummary.upcomingCount}</span><span className="pill-soft">Planifiées : {planningSummary.totalScheduled}</span><span className="pill-soft">Récurrentes : {planningSummary.recurringCount}</span></div>
+          <p className="user-mgmt-empty-state" style={{ margin: 0 }}>{planningSummary.nextStartsAt ? `Prochaine activité : ${new Intl.DateTimeFormat("fr-CH", { weekday: "short", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(planningSummary.nextStartsAt))}` : t("coachGroupEdit.noUpcomingTraining")}</p>
+          <div className="user-mgmt-card-actions"><Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning`}><CalendarDays size={16} aria-hidden="true" />{canPlan ? "Gérer la planification" : "Voir la planification"}</Link></div>
+        </section>
+      </>}
+    </main>
   );
 }
 
@@ -1032,15 +729,4 @@ const avatarBoxStyle: React.CSSProperties = {
   fontWeight: 950,
   color: "var(--green-dark)",
   flexShrink: 0,
-};
-
-const lightRowCardStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.08)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.65)",
-  padding: 12,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
 };

@@ -1,13 +1,18 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import {
   assertManagerForClub,
+  assertCampRelationsForClub,
   createAdminClient,
+  createCampSupportGroup,
   createCampDayEvent,
   getCaller,
   localDateTimeInputToIso,
   normalizeText,
   uniq,
+  syncEventEvaluationCriteria,
 } from "@/app/api/camps/_lib";
+import { syncCampOptions } from "@/app/api/camps/options";
 
 export type CampCreateDayInput = {
   event_id?: string | null;
@@ -16,6 +21,22 @@ export type CampCreateDayInput = {
   location_text?: string | null;
   practical_info?: string | null;
   coach_ids?: string[];
+  responsible_coach_id?: string | null;
+  evaluation_enabled?: boolean;
+  evaluation_criterion_ids?: string[];
+};
+
+export type CampOptionInput = {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  is_active?: boolean;
+  applies_to_all_days?: boolean;
+  day_indexes?: number[];
+  capacity?: number | null;
+  allows_quantity?: boolean;
+  internal_note?: string | null;
+  player_assignments?: Array<{ player_id?: string | null; quantity?: number | null; note?: string | null }>;
 };
 
 type CampPlayerRegistrationInput = {
@@ -32,7 +53,7 @@ type ProfileLite = {
 };
 
 const VALID_CAMP_REGISTRATION_STATUSES = new Set(["invited", "registered", "declined"]);
-const VALID_CAMP_DAY_STATUSES = new Set(["present", "absent"]);
+const VALID_CAMP_DAY_STATUSES = new Set(["expected", "present", "absent", "excused", "not_registered"]);
 
 function uniqIds(values: unknown) {
   return uniq(Array.isArray(values) ? values.map((value) => String(value ?? "").trim()) : []);
@@ -45,7 +66,7 @@ function normalizeRegistrationStatus(value: unknown) {
 
 function normalizeDayStatus(value: unknown) {
   const normalized = normalizeText(value).toLowerCase();
-  return VALID_CAMP_DAY_STATUSES.has(normalized) ? normalized : "present";
+  return VALID_CAMP_DAY_STATUSES.has(normalized) ? normalized : "expected";
 }
 
 export async function GET(req: NextRequest) {
@@ -70,7 +91,7 @@ export async function GET(req: NextRequest) {
 
     const campsRes = await supabaseAdmin
       .from("club_camps")
-      .select("id,club_id,title,notes,status,head_coach_user_id,created_at")
+      .select("id,club_id,title,notes,status,head_coach_user_id,capacity,archived_at,season_id,participants_snapshot_at,created_at,updated_at")
       .in("club_id", managedClubIds)
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
@@ -84,7 +105,7 @@ export async function GET(req: NextRequest) {
       campIds.length
         ? supabaseAdmin
             .from("club_camp_days")
-            .select("camp_id,event_id,day_index,practical_info,starts_at,ends_at,location_text,club_events:event_id(id,status,group_id)")
+            .select("id,camp_id,event_id,day_index,practical_info,starts_at,ends_at,location_text,responsible_coach_id,evaluation_enabled,club_events:event_id(id,status,group_id,requires_evaluation)")
             .in("camp_id", campIds)
             .order("day_index", { ascending: true })
         : ({ data: [], error: null } as const),
@@ -150,17 +171,22 @@ export async function GET(req: NextRequest) {
       }
       if (!daysByCampId[campId]) daysByCampId[campId] = [];
       daysByCampId[campId].push({
+        id: String(row.id ?? ""),
         event_id: eventId,
         day_index: Number(row.day_index ?? 0),
         practical_info: row.practical_info ?? null,
         starts_at: row.starts_at ?? null,
         ends_at: row.ends_at ?? null,
         location_text: row.location_text ?? null,
+        responsible_coach_id: row.responsible_coach_id ?? null,
+        evaluation_enabled: Boolean(row.evaluation_enabled ?? row.club_events?.requires_evaluation),
+        coach_ids: [] as string[],
         status: row.club_events?.status ?? "scheduled",
         group_id: String(row.club_events?.group_id ?? ""),
         counts: { present: 0, not_registered: 0, absent: 0, excused: 0 },
         participants_count: 0,
         participants: [] as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>,
+        evaluation: { required: 0, completed: 0 },
       });
     });
 
@@ -238,13 +264,16 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const campCoachRowsRes = campIds.length
-      ? await supabaseAdmin
-          .from("club_camp_coaches")
-          .select("camp_id,coach_id,is_head")
-          .in("camp_id", campIds)
-      : ({ data: [], error: null } as const);
+    const [campCoachRowsRes, campGroupRowsRes] = await Promise.all([
+      campIds.length
+        ? supabaseAdmin.from("club_camp_coaches").select("camp_id,coach_id,is_head").in("camp_id", campIds)
+        : ({ data: [], error: null } as const),
+      campIds.length
+        ? supabaseAdmin.from("club_camp_groups").select("camp_id,group_id").in("camp_id", campIds)
+        : ({ data: [], error: null } as const),
+    ]);
     if (campCoachRowsRes.error) return NextResponse.json({ error: campCoachRowsRes.error.message }, { status: 400 });
+    if (campGroupRowsRes.error) return NextResponse.json({ error: campGroupRowsRes.error.message }, { status: 400 });
 
     (campCoachRowsRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
@@ -258,9 +287,9 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    (daysRes.data ?? []).forEach((row: any) => {
+    (campGroupRowsRes.data ?? []).forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
-      const groupId = String(row.club_events?.group_id ?? "").trim();
+      const groupId = String(row.group_id ?? "").trim();
       if (!campId || !groupId) return;
       if (!groupIdsByCampId[campId]) groupIdsByCampId[campId] = [];
       groupIdsByCampId[campId].push(groupId);
@@ -273,16 +302,37 @@ export async function GET(req: NextRequest) {
 
     const eventIds = Array.from(dayByEventId.keys());
     if (eventIds.length > 0) {
-      const [attendeesRes, participantAttendanceRes] = await Promise.all([
+      const [attendeesRes, participantAttendanceRes, feedbackRes, eventCoachesRes, eventCriteriaRes] = await Promise.all([
         supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds),
         supabaseAdmin
           .from("club_event_attendees")
           .select("event_id,player_id,status")
           .in("event_id", eventIds)
           .eq("status", "present"),
+        supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id").in("event_id", eventIds),
+        supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds),
+        supabaseAdmin.from("club_event_evaluation_criteria").select("event_id,criterion_id,position").in("event_id", eventIds).eq("is_enabled", true).order("position"),
       ]);
       if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
       if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
+      if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+      if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
+      if (eventCriteriaRes.error) return NextResponse.json({ error: eventCriteriaRes.error.message }, { status: 400 });
+
+      (eventCriteriaRes.data ?? []).forEach((row: any) => {
+        const day = dayByEventId.get(String(row.event_id ?? ""));
+        if (!day) return;
+        if (!Array.isArray(day.evaluation_criterion_ids)) day.evaluation_criterion_ids = [];
+        day.evaluation_criterion_ids.push(String(row.criterion_id ?? ""));
+      });
+
+      (eventCoachesRes.data ?? []).forEach((row: any) => {
+        const day = dayByEventId.get(String(row.event_id ?? ""));
+        const coachId = String(row.coach_id ?? "").trim();
+        if (!day || !coachId) return;
+        if (!Array.isArray(day.coach_ids)) day.coach_ids = [];
+        day.coach_ids.push(coachId);
+      });
 
       const participantIds = uniq((participantAttendanceRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
       const participantProfilesRes = participantIds.length
@@ -320,9 +370,12 @@ export async function GET(req: NextRequest) {
         else if (status === "absent") day.counts.absent += 1;
         else if (status === "excused") day.counts.excused += 1;
         else day.counts.not_registered += 1;
+        if (day.evaluation_enabled && status !== "not_registered" && status !== "absent" && status !== "excused") {
+          day.evaluation.required += 1;
+        }
 
         const dayIndex = dayIndexByEventId[eventId];
-        if (dayIndex != null && (status === "present" || status === "absent")) {
+        if (dayIndex != null && VALID_CAMP_DAY_STATUSES.has(status)) {
           Object.entries(daysByCampId).forEach(([campId, campDays]) => {
             const dayExists = campDays.some((campDay) => String(campDay.event_id ?? "").trim() === eventId);
             if (!dayExists) return;
@@ -333,6 +386,17 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      const completedEvaluationKeys = new Set<string>();
+      (feedbackRes.data ?? []).forEach((feedback: any) => {
+        const eventId = String(feedback.event_id ?? "").trim();
+        const playerId = String(feedback.player_id ?? "").trim();
+        const day = dayByEventId.get(eventId);
+        const key = `${eventId}:${playerId}`;
+        if (!day?.evaluation_enabled || !playerId || completedEvaluationKeys.has(key)) return;
+        completedEvaluationKeys.add(key);
+        day.evaluation.completed += 1;
+      });
+
       Object.values(daysByCampId).forEach((days) => {
         days.forEach((day) => {
           day.participants = (participantsByEventId[String(day.event_id)] ?? []);
@@ -340,6 +404,52 @@ export async function GET(req: NextRequest) {
         });
       });
     }
+
+    const optionsRes = campIds.length
+      ? await supabaseAdmin.from("club_camp_options").select("id,camp_id,name,description,is_active,applies_to_all_days,capacity,allows_quantity,internal_note,sort_order").in("camp_id", campIds).order("sort_order", { ascending: true })
+      : ({ data: [], error: null } as const);
+    if (optionsRes.error) return NextResponse.json({ error: optionsRes.error.message }, { status: 400 });
+    const optionIds = uniq((optionsRes.data ?? []).map((option: any) => option.id));
+    const [optionDaysRes, optionAssignmentsRes] = await Promise.all([
+      optionIds.length
+        ? supabaseAdmin.from("club_camp_option_days").select("option_id,camp_day_id").in("option_id", optionIds)
+        : ({ data: [], error: null } as const),
+      optionIds.length
+        ? supabaseAdmin.from("club_camp_player_options").select("option_id,player_id,quantity,note").in("option_id", optionIds)
+        : ({ data: [], error: null } as const),
+    ]);
+    if (optionDaysRes.error) return NextResponse.json({ error: optionDaysRes.error.message }, { status: 400 });
+    if (optionAssignmentsRes.error) return NextResponse.json({ error: optionAssignmentsRes.error.message }, { status: 400 });
+
+    const dayIndexByDayId = new Map<string, number>();
+    Object.values(daysByCampId).flat().forEach((day: any) => dayIndexByDayId.set(String(day.id), Number(day.day_index ?? 0)));
+    const dayIndexesByOptionId: Record<string, number[]> = {};
+    (optionDaysRes.data ?? []).forEach((row: any) => {
+      const optionId = String(row.option_id ?? "");
+      const dayIndex = dayIndexByDayId.get(String(row.camp_day_id ?? ""));
+      if (dayIndex == null) return;
+      if (!dayIndexesByOptionId[optionId]) dayIndexesByOptionId[optionId] = [];
+      dayIndexesByOptionId[optionId].push(dayIndex);
+    });
+    const assignmentsByOptionId: Record<string, any[]> = {};
+    (optionAssignmentsRes.data ?? []).forEach((row: any) => {
+      const optionId = String(row.option_id ?? "");
+      if (!assignmentsByOptionId[optionId]) assignmentsByOptionId[optionId] = [];
+      assignmentsByOptionId[optionId].push({ player_id: row.player_id, quantity: Number(row.quantity ?? 1), note: row.note ?? null });
+    });
+    const optionsByCampId: Record<string, any[]> = {};
+    (optionsRes.data ?? []).forEach((option: any) => {
+      const campId = String(option.camp_id ?? "");
+      if (!optionsByCampId[campId]) optionsByCampId[campId] = [];
+      const assignments = assignmentsByOptionId[String(option.id)] ?? [];
+      optionsByCampId[campId].push({
+        ...option,
+        day_indexes: dayIndexesByOptionId[String(option.id)] ?? [],
+        player_assignments: assignments,
+        assigned_count: assignments.length,
+        assigned_quantity: assignments.reduce((sum, entry) => sum + Number(entry.quantity ?? 1), 0),
+      });
+    });
 
     return NextResponse.json({
       camps: camps.map((camp: any) => {
@@ -357,6 +467,11 @@ export async function GET(req: NextRequest) {
             day_status_by_day_index: registration.day_status_by_day_index ?? {},
           })),
           available_players: availablePlayersByClubId[String(camp.club_id)] ?? [],
+          options: optionsByCampId[campId] ?? [],
+          evaluation: (daysByCampId[campId] ?? []).reduce((summary, day) => ({
+            required: summary.required + Number(day.evaluation?.required ?? 0),
+            completed: summary.completed + Number(day.evaluation?.completed ?? 0),
+          }), { required: 0, completed: 0 }),
           days: (daysByCampId[campId] ?? []).sort((a, b) => Number(a.day_index ?? 0) - Number(b.day_index ?? 0)),
         };
       }),
@@ -376,18 +491,23 @@ export async function POST(req: NextRequest) {
     const title = normalizeText(body?.title);
     const notes = normalizeText(body?.notes) || null;
     const headCoachUserId = normalizeText(body?.head_coach_user_id) || null;
-    const groupIds = uniqIds(body?.group_ids);
+    let groupIds = uniqIds(body?.group_ids);
     const playerIds = uniqIds(body?.player_ids);
     const coachIds = uniqIds(body?.coach_ids);
     const days = (Array.isArray(body?.days) ? body.days : []) as CampCreateDayInput[];
     const playerRegistrations = (Array.isArray(body?.player_registrations) ? body.player_registrations : []) as CampPlayerRegistrationInput[];
+    const options = (Array.isArray(body?.options) ? body.options : []) as CampOptionInput[];
+    const status = normalizeText(body?.status) === "draft" ? "draft" : "scheduled";
+    const capacityRaw = body?.capacity == null || body.capacity === "" ? null : Number(body.capacity);
+    const capacity = capacityRaw != null && Number.isFinite(capacityRaw) ? Math.max(1, Math.trunc(capacityRaw)) : null;
+    const seasonId = normalizeText(body?.season_id) || null;
 
     if (!clubId) return NextResponse.json({ error: "club_id required" }, { status: 400 });
     if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
-    if (!headCoachUserId) return NextResponse.json({ error: "head_coach_user_id required" }, { status: 400 });
-    if (groupIds.length === 0) return NextResponse.json({ error: "At least one group is required" }, { status: 400 });
-    if (playerIds.length === 0) return NextResponse.json({ error: "At least one player is required" }, { status: 400 });
-    if (days.length === 0) return NextResponse.json({ error: "At least one day is required" }, { status: 400 });
+    if (status !== "draft" && !headCoachUserId) return NextResponse.json({ error: "Le head coach est requis pour planifier le stage." }, { status: 400 });
+    if (status !== "draft" && groupIds.length === 0 && playerIds.length === 0) return NextResponse.json({ error: "Ajoutez au moins un groupe ou un junior." }, { status: 400 });
+    if (status !== "draft" && days.length === 0) return NextResponse.json({ error: "Ajoutez au moins une journée." }, { status: 400 });
+    if (status !== "draft" && days.length > 0 && !headCoachUserId) return NextResponse.json({ error: "Un head coach est requis dès qu’une journée est définie." }, { status: 400 });
 
     const supabaseAdmin = createAdminClient();
     const caller = await getCaller(supabaseAdmin, accessToken);
@@ -396,7 +516,17 @@ export async function POST(req: NextRequest) {
     const managerCheck = await assertManagerForClub(supabaseAdmin, caller.userId, clubId);
     if ("error" in managerCheck) return NextResponse.json({ error: managerCheck.error }, { status: managerCheck.status });
 
-    const allCoachIds = uniq([headCoachUserId, ...coachIds]);
+    const dayCoachIds = uniq(days.flatMap((day) => [normalizeText(day?.responsible_coach_id), ...uniqIds(day?.coach_ids)]));
+    const relationCheck = await assertCampRelationsForClub(supabaseAdmin, clubId, groupIds, playerIds, uniq([headCoachUserId, ...coachIds, ...dayCoachIds]), seasonId);
+    if ("error" in relationCheck) return NextResponse.json({ error: relationCheck.error }, { status: relationCheck.status });
+
+    if (days.length > 0 && groupIds.length === 0) {
+      const supportGroup = await createCampSupportGroup(supabaseAdmin, clubId, headCoachUserId, playerIds, uniq([headCoachUserId, ...coachIds, ...dayCoachIds]), seasonId);
+      if ("error" in supportGroup) return NextResponse.json({ error: supportGroup.error }, { status: supportGroup.status });
+      groupIds = [supportGroup.groupId];
+    }
+
+    const allCoachIds = uniq([headCoachUserId, ...coachIds, ...dayCoachIds]);
     const campRes = await supabaseAdmin
       .from("club_camps")
       .insert({
@@ -404,6 +534,10 @@ export async function POST(req: NextRequest) {
         title,
         notes,
         head_coach_user_id: headCoachUserId,
+        capacity,
+        season_id: seasonId,
+        status,
+        participants_snapshot_at: playerIds.length > 0 ? new Date().toISOString() : null,
         created_by: caller.userId,
       })
       .select("id")
@@ -485,22 +619,29 @@ export async function POST(req: NextRequest) {
         endsAt,
         locationText,
         practicalInfo,
+        responsibleCoachId: normalizeText(day?.responsible_coach_id) || headCoachUserId,
+        evaluationEnabled: Boolean(day?.evaluation_enabled),
         headCoachUserId,
-        coachIds: uniq([...allCoachIds, ...uniqIds(day?.coach_ids)]),
+        coachIds: uniq([normalizeText(day?.responsible_coach_id) || headCoachUserId, ...uniqIds(day?.coach_ids)]),
         playerIds,
         attendeeStatusByPlayerId: Object.fromEntries(
           playerIds.map((playerId) => {
             const registration = registrationByPlayerId.get(playerId);
             if (registration?.registration_status !== "registered") return [playerId, "not_registered"];
-            return [playerId, registration.day_status_by_day_index[String(index)] ?? "present"];
+            return [playerId, registration.day_status_by_day_index[String(index)] ?? "expected"];
           })
         ),
         callerUserId: caller.userId,
         dayIndex: index,
       });
       if ("error" in createdDay) return NextResponse.json({ error: createdDay.error }, { status: createdDay.status });
+      const criteriaSync = await syncEventEvaluationCriteria(supabaseAdmin, createdDay.eventId, Boolean(day?.evaluation_enabled) ? uniqIds(day?.evaluation_criterion_ids) : []);
+      if ("error" in criteriaSync) return NextResponse.json({ error: criteriaSync.error }, { status: criteriaSync.status });
       createdDays.push({ event_id: createdDay.eventId, day_index: index });
     }
+
+    const optionsSync = await syncCampOptions(supabaseAdmin, campId, options, caller.userId);
+    if ("error" in optionsSync) return NextResponse.json({ error: optionsSync.error }, { status: optionsSync.status });
 
     return NextResponse.json({ ok: true, camp_id: campId, days: createdDays });
   } catch (error: any) {

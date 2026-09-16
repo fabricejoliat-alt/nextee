@@ -1,5 +1,5 @@
-import UserManagementWorkspace from "@/components/manager/UserManagementWorkspace";
+import PlayersManagementPage from "@/components/manager/PlayersManagementPage";
 
 export default function ManagerUserManagementPlayersPage() {
-  return <UserManagementWorkspace section="players" />;
+  return <PlayersManagementPage />;
 }

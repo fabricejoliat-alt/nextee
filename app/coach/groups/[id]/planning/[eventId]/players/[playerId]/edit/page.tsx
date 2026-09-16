@@ -5,12 +5,17 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
-import { ArrowLeft, Upload } from "lucide-react";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, Clock3, ExternalLink, FileText, MapPin, Pencil, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+import pageStyles from "./CoachEvaluationEdit.module.css";
 
 type EventRow = {
   id: string;
@@ -102,6 +107,10 @@ function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 function categoryLabel(cat: string) {
   const map: Record<string, string> = {
     warmup_mobility: "Warmup / mobilité",
@@ -143,11 +152,9 @@ function PlayerAvatar({ player }: { player: ProfileRow | null }) {
 
 const MAX_SCORE = 6;
 
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
+function RatingScale({ label, value, disabled, onChange }: { label: string; value: number | null; disabled: boolean; onChange: (value: number | null) => void }) {
+  return <div className={pageStyles.ratingField}><span>{label}</span><div className={pageStyles.ratingGrid} role="group" aria-label={label}>{Array.from({ length: MAX_SCORE }, (_, index) => index + 1).map((score) => <button key={score} type="button" className={pageStyles.ratingButton} disabled={disabled} aria-pressed={value === score} onClick={() => onChange(value === score ? null : score)}>{score}</button>)}</div></div>;
+}
 
 function feedbackFingerprint(input: {
   engagement: number | null;
@@ -187,6 +194,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
   const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
+  const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
+  const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
   const [lockedByCoach, setLockedByCoach] = useState<CoachLite | null>(null);
   const [eventStructureItems, setEventStructureItems] = useState<EventStructureItemRow[]>([]);
   const [playerPlannedStructureItems, setPlayerPlannedStructureItems] = useState<PlayerPlannedStructureItemRow[]>([]);
@@ -285,10 +294,12 @@ export default function CoachEventPlayerFeedbackEditPage() {
       }
 
       setAttendanceStatus((String(json?.attendanceStatus ?? "present") as AttendanceStatus) || "present");
+      setCustomCriteria((json?.customEvaluationCriteria ?? []) as EventEvaluationCriterion[]);
+      setCustomResponses(Object.fromEntries(((json?.customEvaluationResponses ?? []) as Array<{ event_criterion_id: string; value_json: string | number | boolean }>).map((row) => [row.event_criterion_id, row.value_json])));
 
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Erreur chargement."));
       setEvent(null);
       setPlayer(null);
       setOrderedPlayerIds([]);
@@ -418,8 +429,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setDocName("");
       setDocCoachOnly(false);
       if (docFileInputRef.current) docFileInputRef.current.value = "";
-    } catch (e: any) {
-      setError(e?.message ?? "Upload failed");
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Upload failed"));
     } finally {
       setUploadingDocument(false);
     }
@@ -451,8 +462,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
       setDocuments((prev) =>
         prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
       );
-    } catch (e: any) {
-      setError(e?.message ?? "Rename failed");
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Rename failed"));
     } finally {
       setRenamingDocumentId("");
     }
@@ -482,8 +493,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
           d.id === doc.id ? { ...d, coach_only: Boolean(json?.document?.coach_only ?? !doc.coach_only) } : d
         )
       );
-    } catch (e: any) {
-      setError(e?.message ?? "Update failed");
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Update failed"));
     }
   }
 
@@ -506,8 +517,8 @@ export default function CoachEventPlayerFeedbackEditPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "Delete failed"));
       setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
-    } catch (e: any) {
-      setError(e?.message ?? "Delete failed");
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Delete failed"));
     } finally {
       setDeletingDocumentId("");
     }
@@ -534,6 +545,11 @@ export default function CoachEventPlayerFeedbackEditPage() {
     setBusy(true);
     setError(null);
 
+    if (attendanceStatus !== "absent") {
+      const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
+      if (missing) { setError(`Le critère « ${missing.snapshot_name} » est obligatoire.`); setBusy(false); return; }
+    }
+
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token ?? "";
     if (!token) {
@@ -556,6 +572,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         visible_to_player: attendanceStatus === "absent" ? false : true,
         private_note: draft.private_note?.trim() || null,
         player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
+        custom_responses: customResponses,
       }),
     });
     const saveJson = await saveRes.json().catch(() => ({}));
@@ -664,60 +681,42 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {/* Header */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Évaluer — {player ? nameOf(player.first_name, player.last_name) : "Joueur"}
-              </div>
-            </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`}>
-                <ArrowLeft size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                Retour
-              </Link>
+    <main className={pageStyles.page}>
+      <div className={pageStyles.stack}>
+        <nav className={actionStyles.breadcrumb} aria-label="Fil d’Ariane">
+          <Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" />
+          <Link href="/coach/groups">Mes groupes</Link><ChevronRight size={13} aria-hidden="true" />
+          <Link href={`/coach/groups/${groupId}/planning`}>Planification</Link><ChevronRight size={13} aria-hidden="true" />
+          <Link href={`/coach/groups/${groupId}/planning/${eventId}`}>Activité</Link><ChevronRight size={13} aria-hidden="true" />
+          <span>Évaluation</span>
+        </nav>
+        <header className={pageStyles.headerBlock}>
+          <div className={pageStyles.headerRow}>
+            <div><h1>Évaluer {player ? nameOf(player.first_name, player.last_name) : "le junior"}</h1><p>Renseignez la présence, les observations et le retour destiné au junior.</p></div>
+            <div className={pageStyles.headerActions}>
+              <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`}><ArrowLeft size={16} aria-hidden="true" />Retour à la fiche</Link>
             </div>
           </div>
+          {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
+        </header>
 
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
-
-        {/* Content */}
-        <div className="glass-section">
+        <section className={pageStyles.content}>
           {loading ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+            <div className={pageStyles.panel}><CompactLoadingBlock label="Chargement de l’évaluation…" /></div>
           ) : !event || !player ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+            <div className={pageStyles.panel}>Aucune donnée disponible pour cette évaluation.</div>
           ) : (
-            <div style={{ display: "grid", gap: 14 }}>
-              <div className="glass-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: 1 }}>
-                  <div
-                    style={{
-                      width: 64,
-                      height: 64,
-                      borderRadius: 18,
-                      overflow: "hidden",
-                      border: "1px solid rgba(0,0,0,0.10)",
-                      background: "rgba(255,255,255,0.80)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 950,
-                      color: "var(--green-dark)",
-                      flexShrink: 0,
-                    }}
-                  >
+            <div className={pageStyles.formStack}>
+              <section className={pageStyles.panel}>
+                <div className={pageStyles.identity}>
+                  <div className={pageStyles.person}>
+                  <div className={pageStyles.avatar}>
                     <PlayerAvatar player={player} />
                   </div>
-                  <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                    <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>FICHE JOUEUR</div>
-                    <div style={{ fontSize: 20, fontWeight: 980 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
+                  <div className={pageStyles.personCopy}>
+                    <span className={pageStyles.eyebrow}>Junior à évaluer</span>
+                    <strong className={pageStyles.personName}>{nameOf(player.first_name, player.last_name)}</strong>
+                    <span className={pageStyles.fileName}>Handicap {typeof player.handicap === "number" ? player.handicap.toFixed(1) : "non renseigné"}</span>
                   </div>
                 </div>
                   <AttendanceToggle
@@ -729,33 +728,33 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     rightLabel="Présent"
                   />
                 </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
-                  <span className="pill-soft">{event.duration_minutes} min</span>
-                  {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
+                <div className={pageStyles.metadata}>
+                  <span className={pageStyles.meta}><CalendarDays size={14} aria-hidden="true" />{fmtDateTime(event.starts_at)}</span>
+                  <span className={pageStyles.meta}><Clock3 size={14} aria-hidden="true" />{event.duration_minutes} min</span>
+                  {event.location_text ? <span className={pageStyles.meta}><MapPin size={14} aria-hidden="true" />{event.location_text}</span> : null}
                 </div>
+              </section>
 
-              </div>
+              <div className={pageStyles.twoColumns}>
+                <div className={pageStyles.column}>
 
               {canShowStructure ? (
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
+                <section className={pageStyles.panel}>
+                  <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Structure de l’entraînement</h2><p>Contenu planifié et données renseignées par le junior.</p></div></div>
 
                   {displayedPlannedItems.length === 0 && sessionItems.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                    <div className={pageStyles.mutedAlert}>Aucune structure n’a été renseignée.</div>
                   ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
+                    <div className={pageStyles.column}>
                       {displayedPlannedItems.length > 0 ? (
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>{plannedLabel}</div>
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                        <div className={pageStyles.structureGroup}>
+                          <h3>{plannedLabel}</h3>
+                          <ul className={pageStyles.structureList}>
                             {displayedPlannedItems.map((it, idx) => {
                               const extra = String(it.note ?? "").trim();
                               return (
-                                <li key={`coach-struct-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                  {categoryLabel(it.category)} — {it.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                <li key={`coach-struct-${idx}`}>
+                                  <b>{categoryLabel(it.category)}</b><span>{it.minutes} min{extra ? ` · ${extra}` : ""}</span>
                                 </li>
                               );
                             })}
@@ -764,15 +763,14 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       ) : null}
 
                       {sessionItems.length > 0 ? (
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>Version joueur</div>
-                          <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                        <div className={pageStyles.structureGroup}>
+                          <h3>Version junior</h3>
+                          <ul className={pageStyles.structureList}>
                             {sessionItems.map((it) => {
                               const extra = String(it.note ?? it.other_detail ?? "").trim();
                               return (
-                                <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                                  {categoryLabel(it.category)} — {it.minutes} min
-                                  {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                                <li key={it.id}>
+                                  <b>{categoryLabel(it.category)}</b><span>{it.minutes} min{extra ? ` · ${extra}` : ""}</span>
                                 </li>
                               );
                             })}
@@ -781,11 +779,11 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       ) : null}
                     </div>
                   )}
-                </div>
+                </section>
               ) : null}
 
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+              <section className={`${pageStyles.panel} ${pageStyles.documentPanel}`}>
+                <div className={`${pageStyles.panelHeader} ${pageStyles.documentPanelHeader}`}><div><h2 className={pageStyles.panelTitle}>Documents du junior</h2><p>Ajoutez ou consultez les fichiers liés à cette activité.</p></div><span className={pageStyles.documentCount}>{documents.length}</span></div>
 
                 <input
                   ref={docFileInputRef}
@@ -794,151 +792,89 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   style={{ display: "none" }}
                 />
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <button type="button" className="btn" onClick={openDocumentPicker} disabled={uploadingDocument}>
-                      Choisir un fichier
-                    </button>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
-                      }}
-                    >
-                      {docFile ? docFile.name : "Aucun fichier sélectionné"}
-                    </span>
+                <div className={pageStyles.uploadBox}>
+                  <div className={pageStyles.uploadHeading}>
+                    <span className={pageStyles.uploadIcon}><Upload size={16} aria-hidden="true" /></span>
+                    <div><b>Ajouter un document</b><small>Choisissez un fichier puis vérifiez son nom.</small></div>
                   </div>
-
-                  <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
-                    <span style={fieldLabelStyle}>Nom du document</span>
-                    <input
-                      className="input"
-                      value={docName}
-                      onChange={(e) => setDocName(e.target.value)}
-                      placeholder="Nom du document"
-                      maxLength={180}
-                    />
-                  </label>
-
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "rgba(0,0,0,0.72)",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={docCoachOnly}
-                      onChange={(e) => setDocCoachOnly(e.target.checked)}
-                      disabled={uploadingDocument}
-                    />
-                    Document visible uniquement par les coachs
-                  </label>
-
-                  <div>
-                    <button
-                      className="btn btn-primary btn-upload-green"
-                      type="button"
-                      onClick={() => void uploadDocument()}
-                      style={{
-                        opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
-                        pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
-                      }}
-                    >
-                      <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                      Upload
-                    </button>
-                  </div>
+                  <button type="button" className={pageStyles.filePicker} onClick={openDocumentPicker} disabled={uploadingDocument}>
+                    <FileText size={16} aria-hidden="true" />
+                    <span><b>{docFile ? docFile.name : "Choisir un fichier"}</b><small>{docFile ? "Fichier prêt à être ajouté" : "Aucun fichier sélectionné"}</small></span>
+                  </button>
+                  <label className={pageStyles.field}><span>Nom du document</span><input value={docName} onChange={(e) => setDocName(e.target.value)} placeholder="Ex. Analyse vidéo du swing" maxLength={180} /></label>
+                  <label className={pageStyles.checkField}><input type="checkbox" checked={docCoachOnly} onChange={(e) => setDocCoachOnly(e.target.checked)} disabled={uploadingDocument} /><span><b>Réserver aux coachs</b><small>Le junior ne pourra pas consulter ce document.</small></span></label>
+                  <button className={actionStyles.primaryButton} type="button" disabled={!docFile || !docName.trim() || uploadingDocument} onClick={() => void uploadDocument()}><Upload size={15} aria-hidden="true" />{uploadingDocument ? "Ajout en cours…" : "Ajouter le document"}</button>
                 </div>
 
+                <div className={pageStyles.documentSectionTitle}><span>Documents liés</span><small>{documents.length ? `${documents.length} fichier${documents.length > 1 ? "s" : ""}` : "Aucun fichier"}</small></div>
                 {loadingDocuments ? (
-                  <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-                    <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
-                  </div>
+                  <CompactLoadingBlock label="Chargement des documents…" />
                 ) : documents.length === 0 ? (
-                  <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+                  <div className={pageStyles.mutedAlert}>Aucun document lié à cette activité.</div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div className={pageStyles.documentList}>
                     {documents.map((doc) => {
                       const uploader = String(doc.uploaded_by_name ?? "").trim() || String(doc.uploaded_by ?? "").slice(0, 8);
                       const canManage = meId === String(doc.uploaded_by ?? "");
                       return (
-                        <div
-                          key={doc.id}
-                          style={{
-                            border: "1px solid rgba(0,0,0,0.10)",
-                            borderRadius: 12,
-                            background: "rgba(255,255,255,0.86)",
-                            padding: "10px 12px",
-                            display: "grid",
-                            gap: 6,
-                            boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12 }}>
-                            <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                              <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.84)" }}>
-                                {doc.file_name}
+                        <div key={doc.id} className={pageStyles.documentItem}>
+                          <div className={pageStyles.documentTop}>
+                            <div className={pageStyles.documentCopy}>
+                              <b>{doc.file_name}</b>
+                              <div className={pageStyles.documentBadges}>
+                                <span className={pageStyles.badge}>Activité</span>
+                                {doc.coach_only ? <span className={pageStyles.badge}><ShieldCheck size={11} aria-hidden="true" />Coachs uniquement</span> : null}
                               </div>
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                <span className="pill-soft">Lié à cet entraînement</span>
-                                {doc.coach_only ? <span className="pill-soft">Coach only</span> : null}
-                              </div>
-                              <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.52)" }}>
+                              <small>
                                 Par {uploader} • {new Intl.DateTimeFormat("fr-CH", {
                                   day: "2-digit",
                                   month: "2-digit",
                                   year: "numeric",
                                 }).format(new Date(doc.created_at))}
-                              </div>
+                              </small>
                             </div>
                             <a
                               href={doc.public_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="btn"
-                              style={{ whiteSpace: "nowrap" }}
+                              className={pageStyles.iconButton}
+                              aria-label={`Ouvrir ${doc.file_name}`}
+                              title="Ouvrir"
                             >
-                              Ouvrir
+                              <ExternalLink size={15} aria-hidden="true" />
                             </a>
                           </div>
                           {canManage ? (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <div className={pageStyles.documentActions}>
                               <button
                                 type="button"
-                                className="btn"
+                                className={pageStyles.iconButton}
                                 onClick={() => void renameDocument(doc)}
                                 disabled={renamingDocumentId === doc.id || deletingDocumentId === doc.id}
+                                aria-label={`Renommer ${doc.file_name}`}
+                                title="Renommer"
                               >
-                                Renommer
+                                <Pencil size={15} aria-hidden="true" />
                               </button>
                               <button
                                 type="button"
-                                className="btn"
+                                className={pageStyles.iconButton}
                                 onClick={() => void toggleDocumentCoachOnly(doc)}
                                 disabled={renamingDocumentId === doc.id || deletingDocumentId === doc.id}
+                                aria-label={doc.coach_only ? `Rendre ${doc.file_name} visible au junior` : `Réserver ${doc.file_name} aux coachs`}
+                                title={doc.coach_only ? "Rendre visible au junior" : "Réserver aux coachs"}
                               >
-                                {doc.coach_only ? "Rendre visible au joueur" : "Passer en coach only"}
+                                <ShieldCheck size={15} aria-hidden="true" />
                               </button>
                               <button
                                 type="button"
-                                className="btn"
+                                className={pageStyles.dangerIconButton}
                                 onClick={() => void deleteDocument(doc)}
                                 disabled={deletingDocumentId === doc.id || renamingDocumentId === doc.id}
+                                aria-label={`Supprimer ${doc.file_name}`}
+                                title="Supprimer"
                               >
-                                Supprimer
+                                <Trash2 size={15} aria-hidden="true" />
                               </button>
                             </div>
                           ) : null}
@@ -947,195 +883,92 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     })}
                   </div>
                 )}
-              </div>
+              </section>
+                </div>
 
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
+                <div className={pageStyles.column}>
+
+              <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Évaluation coach</h2><p>Attribuez une valeur de 1 à 6 pour chaque dimension.</p></div></div>
                 {lockedByCoach ? (
-                  <div
-                    style={{
-                      border: "1px solid rgba(59,130,246,0.24)",
-                      borderRadius: 12,
-                      background: "rgba(59,130,246,0.08)",
-                      padding: "10px 12px",
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "rgba(30,64,175,1)",
-                    }}
-                  >
-                    Cette évaluation a déjà été saisie par {lockedByCoachName}. Elle est partagée: vous pouvez la compléter ou la mettre à jour.
+                  <div className={pageStyles.infoAlert}>
+                    Cette évaluation a déjà été saisie par {lockedByCoachName}. Elle est partagée : vous pouvez la compléter ou la mettre à jour.
                   </div>
                 ) : null}
-                <div
-                  style={{
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.68)",
-                    padding: 10,
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: "rgba(0,0,0,0.65)",
-                    lineHeight: 1.45,
-                  }}
-                >
-                  <div>Engagement: implication dans l’entrainement</div>
-                  <div>Attitude: Concentration, comportement et esprit</div>
-                  <div>Application: qualité de mise en pratique des exercices</div>
+                <div className={pageStyles.description}>
+                  <div><b>Engagement :</b> implication dans l’entraînement.</div>
+                  <div><b>Attitude :</b> concentration, comportement et esprit.</div>
+                  <div><b>Application :</b> qualité de mise en pratique des exercices.</div>
                 </div>
 
                 {attendanceStatus === "absent" ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Joueur absent: seule la note privée coach est disponible.
+                  <div className={pageStyles.mutedAlert}>
+                    Junior absent : seule la note privée du coach est disponible.
                   </div>
                 ) : (
-                  <>
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Engagement:</span>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
-                          const active = draft.engagement === v;
-                          return (
-                            <button
-                              key={`eng-${v}`}
-                              type="button"
-                              onClick={() => setDraft((p) => ({ ...p, engagement: p.engagement === v ? null : v }))}
-                              disabled={evaluationLocked}
-                              aria-pressed={active}
-                              style={{
-                                width: "100%",
-                                height: 34,
-                                borderRadius: 10,
-                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                                fontWeight: 900,
-                                cursor: evaluationLocked ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {v}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Attitude:</span>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
-                          const active = draft.attitude === v;
-                          return (
-                            <button
-                              key={`att-${v}`}
-                              type="button"
-                              onClick={() => setDraft((p) => ({ ...p, attitude: p.attitude === v ? null : v }))}
-                              disabled={evaluationLocked}
-                              aria-pressed={active}
-                              style={{
-                                width: "100%",
-                                height: 34,
-                                borderRadius: 10,
-                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                                fontWeight: 900,
-                                cursor: evaluationLocked ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {v}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Application:</span>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                        {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => {
-                          const active = draft.performance === v;
-                          return (
-                            <button
-                              key={`perf-${v}`}
-                              type="button"
-                              onClick={() => setDraft((p) => ({ ...p, performance: p.performance === v ? null : v }))}
-                              disabled={evaluationLocked}
-                              aria-pressed={active}
-                              style={{
-                                width: "100%",
-                                height: 34,
-                                borderRadius: 10,
-                                border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                                background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                                color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                                fontWeight: 900,
-                                cursor: evaluationLocked ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {v}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </label>
-                  </>
+                  <div className={pageStyles.column}>
+                    <RatingScale label="Engagement" value={draft.engagement} disabled={evaluationLocked} onChange={(value) => setDraft((current) => ({ ...current, engagement: value }))} />
+                    <RatingScale label="Attitude" value={draft.attitude} disabled={evaluationLocked} onChange={(value) => setDraft((current) => ({ ...current, attitude: value }))} />
+                    <RatingScale label="Application" value={draft.performance} disabled={evaluationLocked} onChange={(value) => setDraft((current) => ({ ...current, performance: value }))} />
+                  </div>
                 )}
-              </div>
+              </section>
+
+              {attendanceStatus !== "absent" && customCriteria.length ? (
+                <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                  <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Focus personnalisés</h2><p>Les champs marqués d’un astérisque sont obligatoires.</p></div></div>
+                  {customCriteria.map((criterion) => <label key={criterion.id} className={pageStyles.field}><span>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>{criterion.snapshot_description ? <small>{criterion.snapshot_description}</small> : null}<EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={evaluationLocked} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/></label>)}
+                </section>
+              ) : null}
 
               {attendanceStatus !== "absent" ? (
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Note pour le joueur</span>
+                <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                  <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Retour au junior</h2><p>Ce commentaire sera visible par le junior.</p></div></div>
+                  <label className={pageStyles.field}>
+                    <span>Note pour le junior</span>
                     <textarea
                       value={draft.player_note ?? ""}
                       onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
                       disabled={evaluationLocked}
-                      style={{ minHeight: 90 }}
-                      placeholder="Feedback pour le joueur…"
+                      placeholder="Votre retour pour le junior…"
                     />
                   </label>
-                </div>
+                </section>
               ) : null}
 
-              <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Note privée</div>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Visible uniquement par les coachs</span>
+              <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Note privée</h2><p>Visible uniquement par les coachs autorisés.</p></div></div>
+                <label className={pageStyles.field}>
+                  <span>Note interne</span>
                   <textarea
                     value={draft.private_note ?? ""}
                     onChange={(e) => setDraft((p) => ({ ...p, private_note: e.target.value }))}
                     disabled={evaluationLocked}
-                    style={{ minHeight: 90 }}
-                    placeholder="Notes privées..."
+                    placeholder="Ajouter une note privée…"
                   />
                 </label>
-              </div>
-
-              <div className="glass-card" style={{ padding: 12 }}>
-                <div style={{ display: "grid", gap: 8, width: "100%" }}>
-                  <button
-                    type="button"
-                    className="cta-green cta-green-inline"
-                    disabled={!canSave}
-                    onClick={() => save(true)}
-                    style={{
-                      width: "100%",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {busy ? "Enregistrement…" : nextPlayerId ? "Enregistrer et passer au joueur suivant" : "Enregistrer et fermer"}
-                  </button>
-                  <Link className="btn" href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`} style={{ width: "100%", textAlign: "center" }}>
-                    Annuler
-                  </Link>
+              </section>
                 </div>
               </div>
+
+              <section className={`${pageStyles.panel} ${pageStyles.footer}`}>
+                <div className={pageStyles.footerActions}>
+                  <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/players/${playerId}`}>Annuler</Link>
+                  <button
+                    type="button"
+                    className={actionStyles.primaryButton}
+                    disabled={!canSave}
+                    onClick={() => save(true)}
+                  >
+                    {nextPlayerId ? <ArrowRight size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+                    {busy ? "Enregistrement…" : nextPlayerId ? "Enregistrer et suivant" : "Enregistrer et fermer"}
+                  </button>
+                </div>
+              </section>
             </div>
           )}
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

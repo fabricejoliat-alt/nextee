@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import CountUpNumber from "@/components/ui/CountUpNumber";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -31,9 +32,9 @@ import {
   Flame,
   Mountain,
   Smile,
-  CalendarRange,
   SlidersHorizontal,
-  ChevronDown,
+  ArrowLeft,
+  ChevronRight,
   ShieldCheck,
   X,
   Upload,
@@ -46,7 +47,18 @@ import {
   FileCode,
   FileQuestionMark,
   FileType,
+  Eye,
+  ExternalLink,
+  MessageCircle,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+import managerStyles from "@/app/manager/camps/Camps.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
+import CoachPlayerActivityCard from "@/components/coach/player-detail/CoachPlayerActivityCard";
+import CoachPlayerIdentity from "@/components/coach/player-detail/CoachPlayerIdentity";
+import playerStyles from "./CoachPlayerDetail.module.css";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -173,7 +185,7 @@ type OmTournamentScoreRow = {
 type Preset = "week" | "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
-type DashboardSection = "trainings" | "competition" | "stats" | "planning" | "evaluations" | "thread" | "documents" | "validations";
+type DashboardSection = "overview" | "trainings" | "competition" | "stats" | "planning" | "followup" | "thread" | "documents" | "evaluations" | "validations";
 type Role = "coach" | "manager" | "player";
 type ClubMemberRow = { club_id: string; role: Role; is_active: boolean | null };
 type ProfileLite = {
@@ -586,15 +598,32 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
   return score - putts <= par - 2;
 }
 
-function scoreShapeKind(par: number | null, score: number | null) {
-  if (typeof par !== "number" || typeof score !== "number") return "none" as const;
-  const diff = score - par;
-  if (diff <= -2) return "double-circle" as const; // eagle+
-  if (diff === -1) return "circle" as const; // birdie
-  if (diff === 1) return "square" as const; // bogey
-  if (diff === 2) return "double-square" as const; // double bogey
-  if (diff >= 3) return "double-square-hatched" as const; // double bogey+
-  return "none" as const;
+function ScoreMark({ par, score }: { par: number | null; score: number | null }) {
+  if (typeof score !== "number") return <>—</>;
+  if (typeof par !== "number") return <>{score}</>;
+  const difference = score - par;
+  const markClass = difference <= -2
+    ? playerStyles.scoreEagle
+    : difference === -1
+      ? playerStyles.scoreBirdie
+      : difference === 1
+        ? playerStyles.scoreBogey
+        : difference >= 2
+          ? playerStyles.scoreDoublePlus
+          : playerStyles.scorePar;
+  return <span className={`${playerStyles.scoreMark} ${markClass}`}><span>{score}</span></span>;
+}
+
+function ScorecardBooleanMark({ value }: { value: boolean | null }) {
+  if (value == null) return <>—</>;
+  return (
+    <span
+      className={value ? playerStyles.scorecardSuccess : playerStyles.scorecardFailure}
+      aria-label={value ? "Oui" : "Non"}
+    >
+      {value ? "✓" : "✕"}
+    </span>
+  );
 }
 
 function formatSigned(n: number) {
@@ -659,7 +688,7 @@ export default function GolfDashboardPage() {
   const returnToParam = String(searchParams.get("returnTo") ?? "").trim();
   const returnHref = useMemo(() => {
     if (returnToParam.startsWith("/coach/")) return returnToParam;
-    return "/coach/groups";
+    return "/coach/players";
   }, [returnToParam]);
 
   const [loading, setLoading] = useState(true);
@@ -729,7 +758,13 @@ export default function GolfDashboardPage() {
   const [deletingTeamMessageId, setDeletingTeamMessageId] = useState<string>("");
   const [teamComposer, setTeamComposer] = useState("");
   const [teamParticipantNames, setTeamParticipantNames] = useState<string[]>([]);
-  const [activeSection, setActiveSection] = useState<DashboardSection>("trainings");
+  const [activeSection, setActiveSection] = useState<DashboardSection>(() => {
+    const requested = String(searchParams.get("tab") ?? "overview");
+    const allowedTabs: string[] = ["overview", "trainings", "competition", "stats", "planning", "followup", "documents", "thread"];
+    return allowedTabs.includes(requested)
+      ? requested as DashboardSection
+      : "overview";
+  });
   const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
   const [loadingValidations, setLoadingValidations] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -780,19 +815,17 @@ export default function GolfDashboardPage() {
         if (!accessRes.ok) throw new Error(String(accessJson?.error ?? "Access denied for this player."));
 
         const nextSharedClubIds = Array.isArray(accessJson?.access?.shared_club_ids)
-          ? (accessJson.access.shared_club_ids as any[]).map((id: any) => String(id ?? "")).filter(Boolean)
+          ? (accessJson.access.shared_club_ids as unknown[]).map((id) => String(id ?? "")).filter(Boolean)
           : [];
         if (nextSharedClubIds.length === 0) throw new Error("Access denied for this player.");
         setSharedClubIds(nextSharedClubIds);
 
         const sensitiveAccess = Boolean(accessJson?.access?.can_access_sensitive_sections);
         setCanAccessSensitiveSections(sensitiveAccess);
-        if (!sensitiveAccess) setActiveSection("planning");
-
         setPlayerProfile((accessJson?.profile ?? null) as ProfileLite | null);
         setSharedClubNames(
           Array.isArray(accessJson?.organizations)
-            ? (accessJson.organizations as any[]).map((x: any) => String(x ?? "").trim()).filter(Boolean)
+            ? (accessJson.organizations as unknown[]).map((organization) => String(organization ?? "").trim()).filter(Boolean)
             : []
         );
 
@@ -821,31 +854,38 @@ export default function GolfDashboardPage() {
   }, [playerId]);
 
   useEffect(() => {
+    if (!accessChecked) return;
     if (canAccessSensitiveSections) return;
-    if (activeSection === "evaluations" || activeSection === "thread" || activeSection === "documents") {
-      setActiveSection("trainings");
+    if (activeSection === "followup" || activeSection === "evaluations" || activeSection === "thread" || activeSection === "documents") {
+      setActiveSection("overview");
     }
-  }, [activeSection, canAccessSensitiveSections]);
+  }, [accessChecked, activeSection, canAccessSensitiveSections]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    query.set("tab", activeSection);
+    window.history.replaceState(null, "", `${window.location.pathname}?${query.toString()}`);
+  }, [activeSection]);
 
   const visibleSectionTabs = useMemo(
     () =>
       [
-        { id: "trainings" as DashboardSection, label: "Entrainements" },
+        { id: "overview" as DashboardSection, label: "Vue d’ensemble" },
+        { id: "trainings" as DashboardSection, label: "Entraînements" },
         { id: "competition" as DashboardSection, label: "Compétitions" },
         { id: "stats" as DashboardSection, label: "Statistiques" },
         { id: "planning" as DashboardSection, label: "Planification" },
-        { id: "validations" as DashboardSection, label: "Validations" },
-        { id: "evaluations" as DashboardSection, label: "Suivi des évaluations" },
-        { id: "thread" as DashboardSection, label: "Fil de discussion" },
+        { id: "followup" as DashboardSection, label: "Suivi" },
         { id: "documents" as DashboardSection, label: "Documents" },
+        { id: "thread" as DashboardSection, label: "Discussion" },
       ].filter(
-        (tab) => canAccessSensitiveSections || (tab.id !== "evaluations" && tab.id !== "thread" && tab.id !== "documents")
+        (tab) => canAccessSensitiveSections || (tab.id !== "followup" && tab.id !== "thread" && tab.id !== "documents")
       ),
     [canAccessSensitiveSections]
   );
 
   useEffect(() => {
-    if (!canLoadData || activeSection !== "validations" || !playerId) return;
+    if (!canLoadData || activeSection !== "followup" || !playerId) return;
     if (validationDashboard?.effective_player_id === playerId) return;
 
     let active = true;
@@ -880,8 +920,8 @@ export default function GolfDashboardPage() {
     };
   }, [activeSection, canLoadData, playerId, validationDashboard?.effective_player_id]);
 
-  const shouldLoadTrainingData = canLoadData && activeSection === "trainings";
-  const shouldLoadRoundData = canLoadData && (activeSection === "competition" || activeSection === "stats");
+  const shouldLoadTrainingData = canLoadData && (activeSection === "overview" || activeSection === "trainings");
+  const shouldLoadRoundData = canLoadData && (activeSection === "overview" || activeSection === "competition" || activeSection === "stats");
 
   const validationAttemptCount = useMemo(() => {
     if (!validationDashboard) return 0;
@@ -2560,6 +2600,19 @@ function presetToSelectValue(p: Preset): Preset {
     const f = (playerProfile?.first_name ?? "").trim();
     return f || "ce joueur";
   }, [playerProfile?.first_name]);
+  const currentGroupNames = useMemo(
+    () => Array.from(new Set(plannedEvents.map((event) => String(event.group_name ?? "").trim()).filter(Boolean))),
+    [plannedEvents]
+  );
+  const nextPlannedEvent = useMemo(
+    () => plannedEvents.filter((event) => new Date(event.starts_at).getTime() >= Date.now()).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0] ?? null,
+    [plannedEvents]
+  );
+  const trainingMinutesLabel = totalMinutes > 0 ? `${Math.floor(totalMinutes / 60)} h ${String(totalMinutes % 60).padStart(2, "0")}` : displayedTrainingCount > 0 ? "Durée indisponible" : "Aucune donnée";
+  const handicapChartData = useMemo(
+    () => [...handicapHistory].sort((a, b) => compareYmd(a.effective_date, b.effective_date)).map((entry) => ({ date: entry.effective_date, handicap: entry.value })),
+    [handicapHistory]
+  );
 
   const coachEvalCurveSeries = useMemo(() => {
     const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
@@ -3147,9 +3200,9 @@ function presetToSelectValue(p: Preset): Preset {
 
   function renderTeamThreadCard() {
     return (
-      <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+      <div className={playerStyles.panel} style={{ display: "grid", gap: 10 }}>
         <div style={{ display: "grid", gap: 4 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>Fil équipe coachs + joueur + parent(s)</div>
+          <h2 className={playerStyles.panelTitle}>Discussion liée au junior</h2>
           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
             Participants: {teamParticipantNames.length ? teamParticipantNames.join(", ") : "—"}
           </div>
@@ -3160,20 +3213,17 @@ function presetToSelectValue(p: Preset): Preset {
           <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Fil équipe indisponible.</div>
         ) : (
           <>
-            <div
-              style={{
-                border: "1px solid rgba(0,0,0,0.08)",
-                borderRadius: 12,
-                background: "linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(245,248,250,0.9) 100%)",
-                padding: 10,
-                maxHeight: 340,
-                overflowY: "auto",
-                display: "grid",
-                gap: 8,
-              }}
-            >
+            <div className={playerStyles.threadMessagesViewport}>
               {teamMessages.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun message.</div>
+                <div className={playerStyles.threadEmptyState}>
+                  <span className={playerStyles.threadEmptyIcon} aria-hidden="true">
+                    <MessageCircle size={19} strokeWidth={1.8} />
+                  </span>
+                  <div>
+                    <strong>Aucun message pour le moment</strong>
+                    <p>Commencez la discussion avec le junior et les participants associés.</p>
+                  </div>
+                </div>
               ) : (
                 teamMessages.map((m, idx) => {
                   const mine = m.sender_user_id === coachId;
@@ -3302,7 +3352,7 @@ function presetToSelectValue(p: Preset): Preset {
                   }
                 }}
               />
-              <button className="btn btn-primary" type="button" onClick={() => void sendTeamMessage()} disabled={sendingTeamMessage || !teamComposer.trim()}>
+              <button className={actionStyles.primaryButton} type="button" onClick={() => void sendTeamMessage()} disabled={sendingTeamMessage || !teamComposer.trim()}>
                 Envoyer
               </button>
             </div>
@@ -3322,8 +3372,8 @@ function presetToSelectValue(p: Preset): Preset {
 
     if (loadingValidations) {
       return (
-        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+        <div className={playerStyles.panel} style={{ display: "grid", gap: 12 }}>
+          <h2 className={playerStyles.panelTitle}>{title}</h2>
           <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
         </div>
       );
@@ -3331,24 +3381,24 @@ function presetToSelectValue(p: Preset): Preset {
 
     if (validationError) {
       return (
-        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
-          <div className="marketplace-error" style={{ marginTop: 0 }}>{validationError}</div>
+        <div className={playerStyles.panel} style={{ display: "grid", gap: 12 }}>
+          <h2 className={playerStyles.panelTitle}>{title}</h2>
+          <div className={actionStyles.errorAlert} role="alert">{validationError}</div>
         </div>
       );
     }
 
     if (!validationDashboard) {
       return (
-        <div className="glass-card" style={{ display: "grid", gap: 12 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+        <div className={playerStyles.panel} style={{ display: "grid", gap: 12 }}>
+          <h2 className={playerStyles.panelTitle}>{title}</h2>
           <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
         </div>
       );
     }
 
     return (
-      <div className="glass-card" style={{ display: "grid", gap: 14 }}>
+      <div className={playerStyles.panel} style={{ display: "grid", gap: 14 }}>
         <div
           style={{
             borderWidth: 1,
@@ -3362,13 +3412,13 @@ function presetToSelectValue(p: Preset): Preset {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+            <h2 className={playerStyles.panelTitle}>{title}</h2>
             <ValidationBadgePill locale={locale} badge={validationDashboard.overall_badge} />
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
-              <div className="card-title" style={{ marginBottom: 0 }}>{overallLabel}</div>
+              <h3 className={playerStyles.panelTitle}>{overallLabel}</h3>
               <div className="big-number" style={{ lineHeight: 1.05, marginTop: 6 }}>
                 {validationDashboard.overall_validated_count}/{validationDashboard.overall_total_count}
               </div>
@@ -3400,7 +3450,7 @@ function presetToSelectValue(p: Preset): Preset {
             gap: 10,
           }}
         >
-          <div className="card-title" style={{ marginBottom: 0 }}>{sectionsLabel}</div>
+          <h3 className={playerStyles.panelTitle}>{sectionsLabel}</h3>
           <div style={{ display: "grid", gap: 8 }}>
             {validationSectionSummaries.map((section) => (
               <div
@@ -3442,7 +3492,7 @@ function presetToSelectValue(p: Preset): Preset {
 
   function renderFilterCard() {
     return (
-      <div className="glass-card" style={{ padding: 14 }}>
+      <div className={playerStyles.panel} style={{ padding: 14 }}>
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <SlidersHorizontal size={16} />
@@ -3558,7 +3608,7 @@ function presetToSelectValue(p: Preset): Preset {
                 </label>
 
                 <button
-                  className="btn"
+                  className={actionStyles.secondaryButton}
                   type="button"
                   onClick={() => {
                     setFromDate("");
@@ -3583,225 +3633,97 @@ function presetToSelectValue(p: Preset): Preset {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        {!accessChecked ? (
-          <div className="glass-card" style={{ marginTop: 12, fontWeight: 800, opacity: 0.8 }}>{t("common.loading")}</div>
+    <main className={managerStyles.page}>
+      <nav className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" /><Link href="/coach/players">Juniors</Link><ChevronRight size={13} aria-hidden="true" /><span>{fullName(playerProfile) || "Junior"}</span></nav>
+      <header className={managerStyles.topline}><div><h1>{fullName(playerProfile) || "Junior"}</h1><p className={managerStyles.lead}>Suivi sportif, activités et progression du junior.</p></div><div className={managerStyles.actions}><Link className={actionStyles.backButton} href={returnHref}><ArrowLeft size={16} aria-hidden="true" />Retour aux juniors</Link></div></header>
+      {!accessChecked ? <section className={managerStyles.panel}><CompactLoadingBlock label={t("common.loading")} /></section> : null}
+      {error && <div className={managerStyles.alertError} role="alert">{error}</div>}
+      <section className={managerStyles.panel} aria-label="Identité sportive">
+        <CoachPlayerIdentity avatarUrl={playerAvatarUrl} avatarAlt={fullName(playerProfile)} initials={initials(playerProfile)} handicap={typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "Non renseigné"} ftemLevel={trainingLevel === "—" ? "Non défini" : trainingLevel} groups={currentGroupNames.length ? currentGroupNames.join(", ") : "Non renseigné"} clubs={sharedClubNames.length ? sharedClubNames.join(", ") : "Non renseigné"} nextActivity={nextPlannedEvent ? shortDate(nextPlannedEvent.starts_at, dateLocale) : "Aucune activité"} />
+      </section>
+      <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" />
+
+        {activeSection === "overview" ? (
+          <div className={playerStyles.stack}>
+            <section className={playerStyles.overviewGrid} aria-label="Vue d’ensemble sportive">
+              <div className={playerStyles.metric}><span>Assiduité</span><strong>—</strong><small>Données insuffisantes</small></div>
+              <div className={playerStyles.metric}><span>Volume</span><strong>{trainingMinutesLabel}</strong><small>Période sélectionnée</small></div>
+              <div className={playerStyles.metric}><span>Objectif</span><strong>{displayedTrainingVolumeObjective > 0 ? `${trainingVolumePercent} %` : "—"}</strong><small>{displayedTrainingVolumeObjective > 0 ? `${displayedTrainingVolumeObjective} min` : "Non défini"}</small></div>
+              <div className={playerStyles.metric}><span>Activités</span><strong>{displayedTrainingCount}</strong><small>Période sélectionnée</small></div>
+              <div className={playerStyles.metric}><span>Compétitions</span><strong>{loadingRounds ? "—" : competitionRounds.length}</strong><small>Période sélectionnée</small></div>
+              <div className={playerStyles.metric}><span>Évaluations</span><strong>{coachEvaluations.length || "—"}</strong><small>{coachEvaluations.length ? "Réalisées par ce coach" : "Aucune donnée"}</small></div>
+            </section>
+            <div className={playerStyles.overviewColumns}>
+              <section className={playerStyles.panel}>
+                <h2 className={playerStyles.panelTitle}>Prochaine activité</h2>
+                {loadingPlannedEvents ? <CompactLoadingBlock label={t("common.loading")} /> : nextPlannedEvent ? <CoachPlayerActivityCard startsAt={nextPlannedEvent.starts_at} endsAt={nextPlannedEvent.ends_at} dateLocale={dateLocale} typeLabel={nextPlannedEvent.event_type === "training" ? "Entraînement" : nextPlannedEvent.event_type === "camp" ? "Stage" : nextPlannedEvent.event_type === "interclub" ? "Interclub" : nextPlannedEvent.event_type === "session" ? "Séance" : "Événement"} title={nextPlannedEvent.title || undefined} groupName={nextPlannedEvent.group_name || "Groupe non renseigné"} clubName={nextPlannedEvent.organization_name || sharedClubNames[0] || "Club non renseigné"} location={nextPlannedEvent.location_text} href={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? `/coach/groups/${nextPlannedEvent.group_id}/planning/${nextPlannedEvent.id}` : undefined} /> : <div className={playerStyles.empty}>Aucune activité à venir.</div>}
+              </section>
+              <section className={playerStyles.panel}>
+                <h2 className={playerStyles.panelTitle}>Points d’attention</h2>
+                <div className={playerStyles.attention}>
+                  {displayedTrainingVolumeObjective <= 0 ? <button type="button" onClick={() => setActiveSection("trainings")}>L’objectif d’entraînement n’a pas encore été défini.</button> : null}
+                  {!nextPlannedEvent && !loadingPlannedEvents ? <button type="button" onClick={() => setActiveSection("planning")}>Aucune activité à venir n’est planifiée.</button> : null}
+                  {displayedTrainingVolumeObjective > 0 && trainingVolumePercent < 60 ? <button type="button" onClick={() => setActiveSection("trainings")}>Le volume enregistré représente {trainingVolumePercent} % de l’objectif de la période.</button> : null}
+                  {displayedTrainingVolumeObjective > 0 && trainingVolumePercent >= 60 && (nextPlannedEvent || loadingPlannedEvents) ? <div className={playerStyles.empty}>Aucun point d’attention actuellement.</div> : null}
+                </div>
+              </section>
+            </div>
+          </div>
         ) : null}
 
-        {/* ===== Header ===== */}
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                GOLF - ANALYSE
-              </div>
-              <div className="marketplace-filter-label" style={{ margin: 0 }}>
-                <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                  <CalendarRange size={16} />
-                  {periodLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
-
-        <div className="glass-section">
-          <Link className="cta-green cta-green-inline" href={returnHref}>
-            Retour
-          </Link>
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 12, alignItems: "center" }}>
-            <div
-              style={{
-                width: 62,
-                height: 62,
-                borderRadius: 16,
-                overflow: "hidden",
-                border: "1px solid rgba(0,0,0,0.10)",
-                background: "rgba(255,255,255,0.70)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 900,
-                fontSize: 18,
-                color: "var(--green-dark)",
-                flexShrink: 0,
-              }}
-            >
-              {playerAvatarUrl ? (
-                <img
-                  src={playerAvatarUrl}
-                  alt={fullName(playerProfile)}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }}
-                />
-              ) : (
-                initials(playerProfile)
-              )}
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 950, fontSize: 18, lineHeight: 1.2, whiteSpace: "normal", overflowWrap: "anywhere" }}>
-                {fullName(playerProfile) !== "—" ? fullName(playerProfile) : "Joueur"}
-              </div>
-              <div style={{ opacity: 0.72, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                Handicap {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"} • {trainingLevel}
-              </div>
-              <div style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 10, whiteSpace: "normal", overflowWrap: "anywhere" }}>
-                {sharedClubNames.length ? sharedClubNames.join(" • ") : "—"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-section" style={{ padding: 0, background: "transparent", border: "none", boxShadow: "none" }}>
-          <div
-            style={{
-              position: "relative",
-              borderRadius: 16,
-              background: "linear-gradient(135deg, rgb(233, 238, 234), rgb(221, 228, 223))",
-              border: "1px solid rgb(198, 208, 200)",
-              boxShadow: "0 10px 28px rgba(15,23,42,0.08)",
-              overflow: "hidden",
-            }}
-          >
-            <select
-              value={activeSection}
-              onChange={(event) => setActiveSection(event.target.value as DashboardSection)}
-              style={{
-                width: "100%",
-                minHeight: 52,
-                border: "none",
-                padding: "0 50px 0 16px",
-                background: "transparent",
-                fontWeight: 900,
-                fontSize: 15,
-                color: "rgba(15,23,42,0.92)",
-                outline: "none",
-                appearance: "none",
-                WebkitAppearance: "none",
-                cursor: "pointer",
-              }}
-              aria-label="Sous-menu joueur"
-            >
-              {visibleSectionTabs.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.label}
-                </option>
-              ))}
-            </select>
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                top: 0,
-                right: 0,
-                width: 48,
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--green-dark)",
-                background: "linear-gradient(135deg, rgb(215, 223, 216), rgb(198, 208, 200))",
-                pointerEvents: "none",
-              }}
-            >
-              <ChevronDown size={18} strokeWidth={2.4} />
-            </div>
-          </div>
-        </div>
-
-        {activeSection !== "validations" ? (
-          <div className="glass-section">{renderFilterCard()}</div>
-        ) : null}
-
-        {activeSection === "validations" ? (
-          <div className="glass-section">
-            {renderValidationsCard()}
-          </div>
+        {activeSection === "trainings" || activeSection === "competition" || activeSection === "stats" ? (
+          <div className={playerStyles.section}>{renderFilterCard()}</div>
         ) : null}
 
         {activeSection === "thread" ? (
-          <div className="glass-section">
+          <div className={playerStyles.section}>
             {renderTeamThreadCard()}
           </div>
         ) : null}
 
         {activeSection === "documents" ? (
-          <div className="glass-section">
-            <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
-            <div style={{ display: "grid", gap: 8 }}>
+          <div className={playerStyles.section}>
+            <div className={`${playerStyles.panel} ${playerStyles.documentsPanel}`}>
+            <div className={playerStyles.documentsHeader}><div><h2 className={playerStyles.panelTitle}>Documents du junior</h2><p>Ajoutez ou consultez les fichiers associés au suivi du junior.</p></div><span>{documents.length}</span></div>
+            <div className={playerStyles.documentUploadBox}>
               <input
                 ref={docFileInputRef}
                 type="file"
                 onChange={onPickDocument}
                 style={{ display: "none" }}
               />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={openDocumentPicker}
-                  disabled={uploadingDocument}
-                >
-                  Choisir un fichier
-                </button>
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
-                  }}
-                >
-                  {docFile ? docFile.name : "Aucun fichier sélectionné"}
-                </span>
+              <div className={playerStyles.documentUploadHeading}>
+                <span><Upload size={16} aria-hidden="true" /></span>
+                <div><b>Ajouter un document</b><small>Choisissez un fichier puis vérifiez son nom.</small></div>
               </div>
-              <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
-                <input
-                  className="input"
-                  value={docName}
-                  onChange={(e) => setDocName(e.target.value)}
-                  placeholder="Nom du document"
-                  maxLength={180}
-                />
-              </label>
-              <div>
+              <div className={playerStyles.documentUploadGrid}>
+                <button type="button" className={playerStyles.documentFilePicker} onClick={openDocumentPicker} disabled={uploadingDocument}>
+                  <FileText size={16} aria-hidden="true" />
+                  <span><b>{docFile ? docFile.name : "Choisir un fichier"}</b><small>{docFile ? "Fichier prêt à être ajouté" : "Aucun fichier sélectionné"}</small></span>
+                </button>
+                <label className={playerStyles.documentField}>
+                  <span>Nom du document</span>
+                  <input value={docName} onChange={(e) => setDocName(e.target.value)} placeholder="Ex. Analyse vidéo du swing" maxLength={180} />
+                </label>
+              </div>
                 <button
-                  className="btn btn-primary btn-upload-green"
+                  className={actionStyles.primaryButton}
                   type="button"
                   onClick={() => void uploadDocument()}
-                  style={{
-                    opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
-                    pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
-                  }}
+                  disabled={!docFile || !docName.trim() || uploadingDocument}
                 >
-                  <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  Upload
+                  <Upload size={15} aria-hidden="true" />
+                  {uploadingDocument ? "Ajout en cours…" : "Ajouter le document"}
                 </button>
-              </div>
             </div>
 
+            <div className={playerStyles.documentsListHeader}><span>Documents liés</span><small>{documents.length ? `${documents.length} fichier${documents.length > 1 ? "s" : ""}` : "Aucun fichier"}</small></div>
             {loadingDocuments ? (
-              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
-              </div>
+              <CompactLoadingBlock label="Chargement des documents…" />
             ) : documents.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+              <div className={playerStyles.empty}>Aucun document n’a encore été ajouté.</div>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className={playerStyles.documentsGrid}>
                 {documents.map((d) => {
                   const uploader = String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8);
                   const fileName = String(d.file_name ?? "").trim();
@@ -3809,80 +3731,59 @@ function presetToSelectValue(p: Preset): Preset {
                   const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
                   const Picto = documentPicto(d.mime_type, fileName);
                   return (
-                    <div
-                      key={d.id}
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.86)",
-                        padding: "10px 12px",
-                        display: "grid",
-                        gap: 8,
-                        boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
-                      }}
-                    >
-                      <div style={{ display: "grid", gridTemplateColumns: "30px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
-                        <div
-                          aria-hidden
-                          style={{
-                            width: 30,
-                            height: 30,
-                            borderRadius: 10,
-                            border: "1px solid rgba(0,0,0,0.14)",
-                            background: "rgba(255,255,255,0.9)",
-                            color: "rgba(0,0,0,0.66)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
+                    <article key={d.id} className={playerStyles.documentCard}>
+                      <div className={playerStyles.documentCardMain}>
+                        <div className={playerStyles.documentTypeIcon} aria-hidden="true">
                           <Picto size={16} strokeWidth={2.2} />
                         </div>
-                        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                          <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>
-                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.6)", lineHeight: 1.35 }}>
-                            {ext} · {shortDate(d.created_at, dateLocale)}
-                          </div>
-                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
-                            Uploadé par {uploader}
-                          </div>
+                        <div className={playerStyles.documentCardCopy}>
+                          <b title={fileName}>{fileName}</b>
+                          <span>{ext} · {shortDate(d.created_at, dateLocale)}</span>
+                          <small title={uploader}>Ajouté par {uploader}</small>
+                          <div className={playerStyles.documentBadges}>{d.coach_only ? <span><ShieldCheck size={11} aria-hidden="true" />Coachs uniquement</span> : <span>Visible par le junior</span>}{d.club_event_id ? <span>Activité liée</span> : null}</div>
                         </div>
                       </div>
 
-                      <div style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <button className="btn" type="button" onClick={() => setViewerDocument(d)}>
-                          Voir
+                      <div className={playerStyles.documentCardActions}>
+                        <button className={playerStyles.documentIconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`Voir ${fileName}`} title="Voir">
+                          <Eye size={15} aria-hidden="true" />
                         </button>
                         {d.club_event_id && d.linked_event_group_id ? (
                           <Link
-                            className="btn"
+                            className={playerStyles.documentIconButton}
                             href={`/coach/groups/${encodeURIComponent(d.linked_event_group_id)}/planning/${encodeURIComponent(d.club_event_id)}`}
+                            aria-label={`Ouvrir l’activité liée à ${fileName}`}
+                            title="Ouvrir l’activité liée"
                           >
-                            Rejoindre l'entraînement
+                            <ExternalLink size={15} aria-hidden="true" />
                           </Link>
                         ) : null}
                         {String(d.uploaded_by ?? "") === coachId ? (
                           <>
                             <button
-                              className="btn"
+                              className={playerStyles.documentIconButton}
                               type="button"
                               onClick={() => void renameDocument(d)}
                               disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
+                              aria-label={`Renommer ${fileName}`}
+                              title="Renommer"
                             >
-                              {renamingDocumentId === d.id ? "..." : "Renommer"}
+                              <Pencil size={15} aria-hidden="true" />
                             </button>
                             <button
-                              className="btn btn-danger soft"
+                              className={`${playerStyles.documentIconButton} ${playerStyles.documentDangerButton}`}
                               type="button"
                               onClick={() => void deleteDocument(d)}
                               disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
+                              aria-label={`Supprimer ${fileName}`}
+                              title="Supprimer"
                             >
-                              {deletingDocumentId === d.id ? "..." : "Supprimer"}
+                              <Trash2 size={15} aria-hidden="true" />
                             </button>
                           </>
                         ) : null}
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
@@ -3892,61 +3793,24 @@ function presetToSelectValue(p: Preset): Preset {
         ) : null}
 
         {activeSection === "planning" ? (
-          <div className="glass-section">
-            <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Planification du joueur</div>
+          <div className={playerStyles.section}>
+            <div className={playerStyles.panel} style={{ display: "grid", gap: 10 }}>
+            <h2 className={playerStyles.panelTitle}>Planification du junior</h2>
             {loadingPlannedEvents ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : plannedEvents.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun événement planifié.</div>
             ) : (
               <div style={{ display: "grid", gap: 8 }}>
-                {plannedEventsVisible.map((e) => (
-                  <div
-                    key={e.id}
-                    style={{
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      borderRadius: 10,
-                      background: "rgba(255,255,255,0.75)",
-                      padding: "8px 10px",
-                      display: "grid",
-                      gap: 4,
-                    }}
-                  >
-                    <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.7)" }}>
-                      {shortDate(e.starts_at, dateLocale)} • {new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(e.starts_at))}
-                    </div>
-                    <div style={{ fontWeight: 900 }}>
-                      {e.event_type === "training"
-                        ? "Entraînement"
-                        : e.event_type === "camp"
-                          ? "Stage/Camp"
-                          : e.event_type === "interclub"
-                            ? "Interclub"
-                            : e.event_type === "session"
-                            ? "Séance"
-                              : "Événement"}
-                      {` • ${String(e.title ?? "").trim() || String(e.group_name ?? "").trim() || "Sans titre"}`}
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.58)" }}>
-                      {pickLocaleText(locale, "Organisé par", "Organized by")}{" "}
-                      {String(e.organization_name ?? "").trim() || "—"}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                      <div />
-                      {e.can_open_detail && e.group_id ? (
-                        <Link className="btn" href={`/coach/groups/${e.group_id}/planning/${e.id}`}>
-                          Détails
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
+                {plannedEventsVisible.map((event) => {
+                  const type = event.event_type === "training" ? "Entraînement" : event.event_type === "camp" ? "Stage" : event.event_type === "interclub" ? "Interclub" : event.event_type === "session" ? "Séance" : "Événement";
+                  return <CoachPlayerActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at} dateLocale={dateLocale} typeLabel={type} title={String(event.title ?? "").trim() || undefined} groupName={String(event.group_name ?? "").trim() || "Groupe non renseigné"} clubName={String(event.organization_name ?? "").trim() || "Club non renseigné"} location={event.location_text} href={event.can_open_detail && event.group_id ? `/coach/groups/${event.group_id}/planning/${event.id}` : undefined} actionLabel="Détails" />;
+                })}
                 {plannedEvents.length > plannedEventsPageSize ? (
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
                     <button
                       type="button"
-                      className="btn"
+                      className={actionStyles.secondaryButton}
                       onClick={() => setPlannedEventsPage((prev) => Math.max(0, prev - 1))}
                       disabled={plannedEventsPage === 0}
                     >
@@ -3957,7 +3821,7 @@ function presetToSelectValue(p: Preset): Preset {
                     </div>
                     <button
                       type="button"
-                      className="btn"
+                      className={actionStyles.secondaryButton}
                       onClick={() => setPlannedEventsPage((prev) => (plannedEventsHasMore ? prev + 1 : prev))}
                       disabled={!plannedEventsHasMore}
                     >
@@ -3971,64 +3835,66 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "evaluations" ? (
-          <div className="glass-section">
-            <div className="glass-card">
-            <div className="card-title" style={{ marginBottom: 10 }}>Suivi des évaluations</div>
+        {activeSection === "followup" ? (
+          <div className={playerStyles.section}>
+            <div className={playerStyles.panel}>
+            <div className={playerStyles.evaluationChartHeader}>
+              <div><h2 className={playerStyles.panelTitle}>Évolution des évaluations</h2><p>Engagement, attitude et application, sur une échelle de 1 à 6.</p></div>
+            </div>
 
             {loadingCoachEvaluations ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
             ) : coachEvaluations.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <span className="pill-soft">{coachEvaluations.length} évaluations passées</span>
-                  <div style={{ display: "inline-flex", gap: 8 }}>
+              <div className={playerStyles.evaluationChartStack}>
+                <div className={playerStyles.evaluationChartToolbar}>
+                  <span className={playerStyles.evaluationCount}>{coachEvaluations.length} évaluation{coachEvaluations.length > 1 ? "s" : ""}</span>
+                  <div className={playerStyles.chartModeTabs} role="group" aria-label="Mode d’affichage du graphique">
                     <button
                       type="button"
-                      className="btn"
+                      className={playerStyles.chartModeButton}
                       onClick={() => setCoachEvalChartMode("curve")}
-                      style={coachEvalChartMode === "curve" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                      aria-pressed={coachEvalChartMode === "curve"}
                     >
                       Courbe
                     </button>
                     <button
                       type="button"
-                      className="btn"
+                      className={playerStyles.chartModeButton}
                       onClick={() => setCoachEvalChartMode("trend")}
-                      style={coachEvalChartMode === "trend" ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" } : {}}
+                      aria-pressed={coachEvalChartMode === "trend"}
                     >
                       Tendance
                     </button>
                   </div>
                 </div>
 
-                <div style={{ height: 280 }}>
+                <div className={playerStyles.evaluationChart} role="img" aria-label={coachEvalChartMode === "curve" ? "Évolution chronologique des évaluations du coach" : "Tendance des évaluations entre le début et la fin de la période"}>
                   {coachEvalChartMode === "curve" ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={coachEvalCurveSeries}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis domain={[0, 6]} />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="monotone" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot={false} />
-                        <Line type="monotone" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} strokeDasharray="2 6" dot={false} />
-                        <Line type="monotone" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                      <LineChart data={coachEvalCurveSeries} margin={{ top: 12, right: 14, left: -12, bottom: 4 }}>
+                        <CartesianGrid stroke="#e7ece6" vertical={false} />
+                        <XAxis dataKey="date" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} minTickGap={26} />
+                        <YAxis domain={[0, 6]} ticks={[0, 1, 2, 3, 4, 5, 6]} tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+                        <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 11, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
+                        <Legend wrapperStyle={{ color: "#617067", fontSize: 11, paddingTop: 10 }} iconType="circle" iconSize={7} />
+                        <Line type="monotone" dataKey="engagement" name="Engagement" stroke="#35483b" strokeWidth={2.5} dot={{ r: 3, fill: "#35483b", strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls />
+                        <Line type="monotone" dataKey="attitude" name="Attitude" stroke="#82977a" strokeWidth={2.5} dot={{ r: 3, fill: "#82977a", strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls />
+                        <Line type="monotone" dataKey="application" name="Application" stroke="#b19d6b" strokeWidth={2.5} dot={{ r: 3, fill: "#b19d6b", strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls />
                       </LineChart>
                     </ResponsiveContainer>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={coachEvalTrendSeries}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="point" />
-                        <YAxis domain={[0, 6]} />
-                        <Tooltip />
-                        <Legend />
-                        <Line type="linear" dataKey="engagement" name="Engagement" stroke="rgba(22,163,74,0.95)" strokeWidth={3} dot />
-                        <Line type="linear" dataKey="attitude" name="Attitude" stroke="rgba(37,99,235,0.95)" strokeWidth={3} dot />
-                        <Line type="linear" dataKey="application" name="Application" stroke="rgba(220,38,38,0.95)" strokeWidth={3} dot />
+                      <LineChart data={coachEvalTrendSeries} margin={{ top: 12, right: 14, left: -12, bottom: 4 }}>
+                        <CartesianGrid stroke="#e7ece6" vertical={false} />
+                        <XAxis dataKey="point" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} />
+                        <YAxis domain={[0, 6]} ticks={[0, 1, 2, 3, 4, 5, 6]} tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+                        <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 11, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
+                        <Legend wrapperStyle={{ color: "#617067", fontSize: 11, paddingTop: 10 }} iconType="circle" iconSize={7} />
+                        <Line type="linear" dataKey="engagement" name="Engagement" stroke="#35483b" strokeWidth={2.5} dot={{ r: 4, fill: "#35483b", strokeWidth: 0 }} />
+                        <Line type="linear" dataKey="attitude" name="Attitude" stroke="#82977a" strokeWidth={2.5} dot={{ r: 4, fill: "#82977a", strokeWidth: 0 }} />
+                        <Line type="linear" dataKey="application" name="Application" stroke="#b19d6b" strokeWidth={2.5} dot={{ r: 4, fill: "#b19d6b", strokeWidth: 0 }} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
@@ -4129,12 +3995,12 @@ function presetToSelectValue(p: Preset): Preset {
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {coachEvalHasMore ? (
-                      <button type="button" className="btn" onClick={() => setCoachEvalPage((p) => p + 1)}>
+                      <button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachEvalPage((p) => p + 1)}>
                         Afficher les suivantes
                       </button>
                     ) : null}
                     {coachEvalPage > 0 ? (
-                      <button type="button" className="btn" onClick={() => setCoachEvalPage(0)}>
+                      <button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachEvalPage(0)}>
                         Revenir au début
                       </button>
                     ) : null}
@@ -4146,13 +4012,19 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
+        {activeSection === "followup" ? (
+          <div className={playerStyles.section}>
+            {renderValidationsCard()}
+          </div>
+        ) : null}
+
         {activeSection === "trainings" ? (
           <>
         {/* ===== Trainings KPIs ===== */}
-        <div className="glass-section">
+          <div className={playerStyles.section}>
           <div className={kpiGridClass} style={kpiGridStyle}>
-            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{volumeCardTitle}</div>
+            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
+              <h2 className={playerStyles.panelTitle}>{volumeCardTitle}</h2>
 
               {loading ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4212,8 +4084,8 @@ function presetToSelectValue(p: Preset): Preset {
               )}
             </div>
 
-            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{t("golfDashboard.feelingsAverage")}</div>
+            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.feelingsAverage")}</h2>
 
               {filteredSessions.length === 0 ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
@@ -4233,34 +4105,35 @@ function presetToSelectValue(p: Preset): Preset {
         </div>
 
         {/* ===== Graphes trainings ===== */}
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.weeklyVolume")}</div>
+          <div className={playerStyles.section}>
+          <div className={playerStyles.panel}>
+            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.weeklyVolume")}</h2>
+            <p className={playerStyles.panelIntro}>Volume réellement enregistré par semaine, comparé à l’objectif lorsqu’il est défini.</p>
 
             {weekSeries.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
-              <div style={{ height: 260 }}>
+              <div className={playerStyles.chart} role="img" aria-label="Évolution du volume hebdomadaire">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weekSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="weekLabel" />
-                    <YAxis />
-                    <Tooltip />
+                  <BarChart data={weekSeries} margin={{ top: 8, right: 12, left: -14, bottom: 2 }}>
+                    <CartesianGrid stroke="#e7ece6" vertical={false} />
+                    <XAxis dataKey="weekLabel" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} />
+                    <YAxis tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 12, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
                     <Legend />
                     {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
                       <Line
                         type="monotone"
                         dataKey="objective"
                         name={pickLocaleText(locale, "Objectif", "Goal")}
-                        stroke="rgba(185,28,28,0.9)"
+                        stroke="#b08a46"
                         strokeDasharray="6 4"
                         strokeWidth={2}
                         dot={false}
                         activeDot={false}
                       />
                     ) : null}
-                    <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="rgba(53,72,59,0.65)" />
+                    <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="#607b5b" radius={[5, 5, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -4268,25 +4141,26 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.weeklyFeelingTrend")}</div>
+          <div className={playerStyles.section}>
+          <div className={playerStyles.panel}>
+            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.weeklyFeelingTrend")}</h2>
+            <p className={playerStyles.panelIntro}>Moyennes hebdomadaires des sensations renseignées par le junior.</p>
 
             {weekSeries.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
             ) : (
-              <div style={{ height: 280 }}>
+              <div className={playerStyles.chart} role="img" aria-label="Évolution hebdomadaire des sensations">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weekSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="weekLabel" />
-                    <YAxis domain={[0, 6]} />
-                    <Tooltip />
+                  <LineChart data={weekSeries} margin={{ top: 8, right: 12, left: -14, bottom: 2 }}>
+                    <CartesianGrid stroke="#e7ece6" vertical={false} />
+                    <XAxis dataKey="weekLabel" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} />
+                    <YAxis domain={[0, 6]} tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 12, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
                     <Legend />
 
-                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#1D4ED8" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#16A34A" strokeWidth={3} strokeDasharray="4 6" dot={false} />
-                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#DC2626" strokeWidth={3} strokeDasharray="10 6" dot={false} />
+                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#35483b" strokeWidth={2.5} dot={{ r: 3, fill: "#35483b" }} />
+                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#9cab95" strokeWidth={2.5} dot={{ r: 3, fill: "#9cab95" }} />
+                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#b08a46" strokeWidth={2.5} dot={{ r: 3, fill: "#b08a46" }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -4294,9 +4168,9 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card">
-            <div className="card-title">{t("golfDashboard.categoryBreakdown")}</div>
+          <div className={playerStyles.section}>
+          <div className={playerStyles.panel}>
+            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.categoryBreakdown")}</h2>
 
             {topCats.length === 0 ? (
               <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
@@ -4325,11 +4199,11 @@ function presetToSelectValue(p: Preset): Preset {
 
         {/* ===== MES PARCOURS — Cards ===== */}
         {activeSection === "competition" || activeSection === "stats" ? (
-        <div className="glass-section">
-          <div className={kpiGridClass} style={kpiGridStyle}>
+          <div className={playerStyles.section}>
+          <div className={activeSection === "stats" ? playerStyles.statisticsGrid : kpiGridClass} style={activeSection === "stats" ? undefined : kpiGridStyle}>
             {activeSection === "competition" ? (
-            <div className="glass-card" style={{ gridColumn: "1 / -1" }}>
-              <div className="card-title">{pickLocaleText(locale, "Résultats en compétition", "Competition results")}</div>
+            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
+              <h2 className={playerStyles.panelTitle}>{pickLocaleText(locale, "Résultats en compétition", "Competition results")}</h2>
 
               {loadingRounds ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4338,8 +4212,10 @@ function presetToSelectValue(p: Preset): Preset {
                   {pickLocaleText(locale, "Aucun parcours en compétition sur la période.", "No competition rounds in this period.")}
                 </div>
               ) : (
-                <div className="marketplace-list marketplace-list-top">
-                  {competitionRounds.map((r) => {
+                <div className="user-mgmt-table-wrap">
+                  <table className="user-mgmt-table">
+                    <thead><tr><th>DATE</th><th>COMPÉTITION</th><th>PARCOURS</th><th>BRUT</th><th>NET</th><th>PUTTS</th><th>GIR</th><th>FAIRWAYS</th><th className={playerStyles.competitionActions}>ACTIONS</th></tr></thead>
+                    <tbody>{competitionRounds.map((r) => {
                     const gross = omScoresByRoundId[r.id]?.gross ?? r.total_score ?? null;
                     const netFromOm = omScoresByRoundId[r.id]?.net ?? null;
                     const net = netFromOm ?? (typeof gross === "number" ? gross - Number(r.handicap_start ?? 0) : null);
@@ -4354,53 +4230,12 @@ function presetToSelectValue(p: Preset): Preset {
                       typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
                         ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
                         : "—";
-                    return (
-                      <div key={r.id} className="marketplace-item">
-                        <div style={{ display: "grid", gap: 10 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                            <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                              <div className="marketplace-item-title truncate" style={{ fontSize: 14, fontWeight: 950 }}>
-                                {name}
-                              </div>
-                              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span className="pill-soft">{date}</span>
-                                {cfg ? (
-                                  <span className="truncate" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800, fontSize: 12 }}>
-                                    ⛳ {cfg}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.60)" }}>
-                                {pickLocaleText(locale, "Score brut", "Gross score")}
-                              </div>
-                              <div style={{ fontWeight: 1200, fontSize: 36, lineHeight: 1 }}>{gross ?? "—"}</div>
-                            </div>
-                          </div>
-                          <div className="hr-soft" style={{ margin: "2px 0" }} />
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {pickLocaleText(locale, "Net", "Net")}: <span style={{ fontWeight: 900 }}>{net ?? "—"}</span>
-                            {" • "}
-                            {pickLocaleText(locale, "Putts", "Putts")}: <span style={{ fontWeight: 900 }}>{r.total_putts ?? "—"}</span>
-                            {" • "}
-                            GIR: <span style={{ fontWeight: 900 }}>{r.gir ?? "—"}</span>
-                            {" • "}
-                            {t("golfDashboard.fairwaysHit")}: <span style={{ fontWeight: 900 }}>{fwPct}</span>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => setSelectedCompetitionRoundId(r.id)}
-                            >
-                              {t("rounds.scorecard")}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                    return <tr key={r.id}>
+                      <td>{date}</td><td><strong>{name}</strong></td><td>{cfg || "—"}</td><td>{gross ?? "—"}</td><td>{net ?? "—"}</td><td>{r.total_putts ?? "—"}</td><td>{r.gir ?? "—"}</td><td>{fwPct}</td>
+                      <td className={playerStyles.competitionActions}><button type="button" className={actionStyles.secondaryButton} onClick={() => setSelectedCompetitionRoundId(r.id)}>{t("rounds.scorecard")}</button></td>
+                    </tr>;
+                  })}</tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -4408,8 +4243,25 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 1: Volume + trous + split training/competition */}
             {activeSection === "stats" ? (
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.playVolume")}</div>
+            <div className={playerStyles.statisticsOverview}>
+              <div className={playerStyles.statisticsMetric}><span>Parcours</span><b>{rounds.length || "—"}</b></div>
+              <div className={playerStyles.statisticsMetric}><span>Trous documentés</span><b>{holeAgg.holesPlayed || "—"}</b></div>
+              <div className={playerStyles.statisticsMetric}><span>GIR</span><b>{keyKpisUI.girPct == null ? "—" : `${keyKpisUI.girPct} %`}</b></div>
+              <div className={playerStyles.statisticsMetric}><span>Handicap actuel</span><b>{typeof playerHandicap === "number" ? playerHandicap.toFixed(1) : "—"}</b></div>
+            </div>
+            ) : null}
+
+            {activeSection === "stats" ? (
+            <div className={`${playerStyles.panel} ${playerStyles.statisticsWide}`}>
+              <h2 className={playerStyles.panelTitle}>Évolution du handicap</h2>
+              <p className={playerStyles.panelIntro}>Historique chronologique des valeurs enregistrées par le junior.</p>
+              {handicapChartData.length ? <div className={playerStyles.chart} role="img" aria-label="Évolution du handicap, les valeurs les plus élevées sont placées en haut"><ResponsiveContainer width="100%" height="100%"><LineChart data={handicapChartData} margin={{ top: 8, right: 12, left: -10, bottom: 2 }}><CartesianGrid stroke="#e7ece6" vertical={false} /><XAxis dataKey="date" tickFormatter={(value) => shortDate(String(value), dateLocale)} tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} minTickGap={28} /><YAxis domain={([dataMin, dataMax]) => [Number(dataMin) - 1, Number(dataMax) + 1]} tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} width={42} /><Tooltip labelFormatter={(value) => shortDate(String(value), dateLocale)} formatter={(value) => [Number(value).toFixed(1), "Handicap"]} contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 12, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} /><Line type="monotone" dataKey="handicap" stroke="#607b5b" strokeWidth={2.5} dot={{ r: 4, fill: "#607b5b", strokeWidth: 0 }} activeDot={{ r: 5 }} /></LineChart></ResponsiveContainer></div> : <div className={playerStyles.empty}>Aucun historique de handicap disponible.</div>}
+            </div>
+            ) : null}
+
+            {activeSection === "stats" ? (
+            <div className={playerStyles.panel}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.playVolume")}</h2>
 
               {loadingRounds || loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4485,8 +4337,8 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 2: Répartition des scores (n + % + trend arrow) */}
             {activeSection === "stats" ? (
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.scoreDistribution")}</div>
+            <div className={playerStyles.panel}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.scoreDistribution")}</h2>
 
               {loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4520,8 +4372,8 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 3: GIR / Putts / Fairways */}
             {activeSection === "stats" ? (
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.consistency")}</div>
+            <div className={playerStyles.panel}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.consistency")}</h2>
 
               {loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4575,8 +4427,8 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 4: Par3/Par4/Par5 averages */}
             {activeSection === "stats" ? (
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.scoresByPar")}</div>
+            <div className={playerStyles.panel}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.scoresByPar")}</h2>
 
               {loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4620,8 +4472,8 @@ function presetToSelectValue(p: Preset): Preset {
 
             {/* Card 5: 1-9 / 10-18 averages */}
             {activeSection === "stats" ? (
-            <div className="glass-card">
-              <div className="card-title">{t("golfDashboard.frontBackTitle")}</div>
+            <div className={playerStyles.panel}>
+              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.frontBackTitle")}</h2>
 
               {loadingHoles ? (
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
@@ -4659,48 +4511,21 @@ function presetToSelectValue(p: Preset): Preset {
         ) : null}
 
         <div style={{ height: 12 }} />
-      </div>
 
       {selectedCompetitionRound ? (
         <div
+          className={playerStyles.modalOverlay}
           role="dialog"
           aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1190,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
+          aria-label="Détail de la compétition"
           onClick={() => setSelectedCompetitionRoundId("")}
         >
           <div
-            style={{
-              width: "min(1200px, 100%)",
-              height: "min(94vh, 1100px)",
-              background: "#fff",
-              borderRadius: 14,
-              border: "1px solid rgba(0,0,0,0.1)",
-              boxShadow: "0 20px 48px rgba(0,0,0,0.25)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr",
-              overflow: "hidden",
-            }}
+            className={playerStyles.modal}
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "10px 12px",
-                borderBottom: "1px solid rgba(0,0,0,0.1)",
-                background: "rgba(248,250,248,0.95)",
-              }}
+              className={playerStyles.modalHeader}
             >
               <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
                 <div className="truncate" style={{ fontWeight: 900 }}>
@@ -4711,14 +4536,14 @@ function presetToSelectValue(p: Preset): Preset {
                   {shortDate(selectedCompetitionRound.start_at, dateLocale)}
                 </div>
               </div>
-              <button className="btn" type="button" onClick={() => setSelectedCompetitionRoundId("")} aria-label="Fermer">
+              <button className={actionStyles.secondaryButton} type="button" onClick={() => setSelectedCompetitionRoundId("")} aria-label="Fermer" title="Fermer">
                 <X size={14} />
               </button>
             </div>
 
-            <div style={{ background: "rgba(245,246,248,0.9)", overflow: "auto", padding: 12, display: "grid", gap: 10 }}>
-              <div className="glass-card" style={{ display: "grid", gap: 8 }}>
-                <div className="card-title">{pickLocaleText(locale, "Statistiques", "Statistics")}</div>
+            <div className={playerStyles.modalBody} style={{ display: "grid", gap: 10 }}>
+              <div className={playerStyles.panel} style={{ display: "grid", gap: 8 }}>
+                <h2 className={playerStyles.panelTitle}>{pickLocaleText(locale, "Statistiques", "Statistics")}</h2>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div style={miniRow}>
                     <div style={miniLeft}>{pickLocaleText(locale, "Score brut", "Gross score")}</div>
@@ -4754,100 +4579,29 @@ function presetToSelectValue(p: Preset): Preset {
                 </div>
               </div>
 
-              <div className="glass-card" style={{ display: "grid", gap: 8 }}>
-                <div className="card-title">{pickLocaleText(locale, "Carte des scores", "Scorecard")}</div>
+              <div className={playerStyles.panel} style={{ display: "grid", gap: 8 }}>
+                <h2 className={playerStyles.panelTitle}>{pickLocaleText(locale, "Carte des scores", "Scorecard")}</h2>
                 {selectedCompetitionHoles.length === 0 ? (
                   <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-                ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                      <thead>
-                        <tr>
-                          <th style={scoreThStyle}>#</th>
-                          <th style={scoreThStyle}>Par</th>
-                          <th style={scoreThStyle}>{pickLocaleText(locale, "Score", "Score")}</th>
-                          <th style={scoreThStyle}>{pickLocaleText(locale, "Putts", "Putts")}</th>
-                          <th style={scoreThStyle}>FW</th>
-                          <th style={scoreThStyle}>GIR</th>
-                        </tr>
-                      </thead>
+                ) : (() => {
+                  const holes = Array.from({ length: 18 }, (_, index) => selectedCompetitionHoles.find((hole) => hole.hole_no === index + 1) ?? null);
+                  const row = (label: string, render: (hole: GolfHoleRow | null) => React.ReactNode, total: React.ReactNode = "—") => <tr><th scope="row">{label}</th>{holes.map((hole, index) => <td key={`${label}-${index + 1}`}>{render(hole)}</td>)}<td className={playerStyles.scorecardTotal}>{total}</td></tr>;
+                  return <div className={playerStyles.scorecardWrap}>
+                    <table className={playerStyles.scorecard}>
                       <tbody>
-                        {selectedCompetitionHoles.map((h) => {
-                          const gir =
-                            typeof h.par === "number" && typeof h.score === "number" && typeof h.putts === "number"
-                              ? isGirOnHole(h.par, h.score, h.putts)
-                              : null;
-                          const shape = scoreShapeKind(h.par, h.score);
-                          const isNumericScore = typeof h.score === "number";
-                          return (
-                            <tr key={`${h.round_id}-${h.hole_no}`}>
-                              <td style={scoreTdStyle}>{h.hole_no}</td>
-                              <td style={scoreTdStyle}>{h.par ?? "—"}</td>
-                              <td style={scoreTdStyle}>
-                                {!isNumericScore ? (
-                                  "—"
-                                ) : (
-                                  <span
-                                    style={{
-                                      position: "relative",
-                                      width: 30,
-                                      height: 30,
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      fontWeight: 900,
-                                      color: "rgba(0,0,0,0.92)",
-                                      border:
-                                        shape === "circle" ||
-                                        shape === "double-circle" ||
-                                        shape === "square" ||
-                                        shape === "double-square" ||
-                                        shape === "double-square-hatched"
-                                          ? "2px solid rgba(17,24,39,0.92)"
-                                          : "none",
-                                      borderRadius: shape === "circle" || shape === "double-circle" ? "999px" : 4,
-                                      background:
-                                        shape === "double-square-hatched"
-                                          ? "repeating-linear-gradient(135deg, rgba(17,24,39,0.14) 0 3px, transparent 3px 6px)"
-                                          : "transparent",
-                                    }}
-                                  >
-                                    {(shape === "double-circle" || shape === "double-square" || shape === "double-square-hatched") && (
-                                      <span
-                                        style={{
-                                          position: "absolute",
-                                          inset: 4,
-                                          border: "1px solid rgba(17,24,39,0.92)",
-                                          borderRadius: shape === "double-circle" ? "999px" : 2,
-                                          background:
-                                            shape === "double-square-hatched"
-                                              ? "repeating-linear-gradient(135deg, rgba(17,24,39,0.14) 0 3px, transparent 3px 6px)"
-                                              : "transparent",
-                                        }}
-                                      />
-                                    )}
-                                    <span style={{ position: "relative", zIndex: 1 }}>{h.score}</span>
-                                  </span>
-                                )}
-                              </td>
-                              <td style={scoreTdStyle}>{h.putts ?? "—"}</td>
-                              <td style={scoreTdStyle}>{typeof h.fairway_hit === "boolean" ? (h.fairway_hit ? "✓" : "✕") : "—"}</td>
-                              <td style={scoreTdStyle}>{gir == null ? "—" : gir ? "✓" : "✕"}</td>
-                            </tr>
-                          );
+                        <tr><th scope="row">Trou</th>{holes.map((_, index) => <th key={index + 1} scope="col">{index + 1}</th>)}<th scope="col">Total</th></tr>
+                        {row("Par", (hole) => hole?.par ?? "—", selectedCompetitionTotals?.totalPar ?? "—")}
+                        {row("Score", (hole) => <ScoreMark par={hole?.par ?? null} score={hole?.score ?? null} />, selectedCompetitionTotals?.totalScore ?? "—")}
+                        {row("Putts", (hole) => hole?.putts ?? "—", selectedCompetitionTotals?.totalPutts ?? "—")}
+                        {row("Fairway", (hole) => <ScorecardBooleanMark value={typeof hole?.fairway_hit === "boolean" ? hole.fairway_hit : null} />)}
+                        {row("GIR", (hole) => {
+                          const gir = hole && typeof hole.par === "number" && typeof hole.score === "number" && typeof hole.putts === "number" ? isGirOnHole(hole.par, hole.score, hole.putts) : null;
+                          return <ScorecardBooleanMark value={gir} />;
                         })}
-                        <tr>
-                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{pickLocaleText(locale, "Total", "Total")}</td>
-                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalPar ?? "—"}</td>
-                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalScore ?? "—"}</td>
-                          <td style={{ ...scoreTdStyle, fontWeight: 900 }}>{selectedCompetitionTotals?.totalPutts ?? "—"}</td>
-                          <td style={scoreTdStyle}>—</td>
-                          <td style={scoreTdStyle}>—</td>
-                        </tr>
                       </tbody>
                     </table>
-                  </div>
-                )}
+                  </div>;
+                })()}
               </div>
             </div>
           </div>
@@ -4856,59 +4610,33 @@ function presetToSelectValue(p: Preset): Preset {
 
       {viewerDocument ? (
         <div
+          className={playerStyles.modalOverlay}
           role="dialog"
           aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1200,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
+          aria-label="Aperçu du document"
           onClick={() => setViewerDocument(null)}
         >
           <div
-            style={{
-              width: "min(980px, 100%)",
-              maxHeight: "min(86vh, 860px)",
-              background: "#fff",
-              borderRadius: 14,
-              border: "1px solid rgba(0,0,0,0.1)",
-              boxShadow: "0 20px 48px rgba(0,0,0,0.25)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr",
-              overflow: "hidden",
-            }}
+            className={playerStyles.modal}
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "10px 12px",
-                borderBottom: "1px solid rgba(0,0,0,0.1)",
-                background: "rgba(248,250,248,0.95)",
-              }}
+              className={playerStyles.modalHeader}
             >
               <div className="truncate" style={{ fontWeight: 900 }}>
                 {viewerDocument.file_name}
               </div>
               <div style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <a className="btn" href={viewerDocument.public_url} target="_blank" rel="noreferrer">
+                <a className={actionStyles.secondaryButton} href={viewerDocument.public_url} target="_blank" rel="noreferrer">
                   Ouvrir
                 </a>
-                <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
+                <button className={actionStyles.secondaryButton} type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer" title="Fermer">
                   <X size={14} />
                 </button>
               </div>
             </div>
 
-            <div style={{ background: "rgba(245,246,248,0.9)", overflow: "auto" }}>
+            <div className={playerStyles.modalBody}>
               {(viewerDocument.mime_type ?? "").startsWith("image/") ? (
                 <div style={{ display: "flex", justifyContent: "center", padding: 12 }}>
                   <img
@@ -4952,7 +4680,7 @@ function presetToSelectValue(p: Preset): Preset {
           }
         }
       `}</style>
-    </div>
+    </main>
   );
 }
 
@@ -5020,24 +4748,5 @@ const miniRight: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 950,
   color: "rgba(0,0,0,0.78)",
-  whiteSpace: "nowrap",
-};
-
-const scoreThStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 10px",
-  borderBottom: "1px solid rgba(0,0,0,0.12)",
-  color: "rgba(0,0,0,0.68)",
-  fontWeight: 900,
-  background: "rgba(0,0,0,0.03)",
-  whiteSpace: "nowrap",
-};
-
-const scoreTdStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 10px",
-  borderBottom: "1px solid rgba(0,0,0,0.08)",
-  color: "rgba(0,0,0,0.82)",
-  fontWeight: 700,
   whiteSpace: "nowrap",
 };

@@ -5,6 +5,7 @@ export default function PlayerNotificationSettingsPage() {
     <NotificationSettings
       homeHref="/player"
       notificationsHref="/player/notifications"
+      designVariant="management"
       titleFr="Paramètres notifications"
       titleEn="Notification settings"
       titleDe="Benachrichtigungseinstellungen"

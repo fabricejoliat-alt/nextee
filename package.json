@@ -6,18 +6,30 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:camps": "node --test --experimental-strip-types tests/camps-management.test.ts",
+    "test:competitions": "node --test --experimental-strip-types tests/competitions.test.ts",
+    "test:evaluation-criteria": "node --test --experimental-strip-types tests/evaluation-criteria.test.ts",
+    "test:family-access": "node --test --experimental-strip-types tests/family-access.test.ts",
+    "test:player-statistics": "node --test --experimental-strip-types tests/player-statistics.test.ts",
+    "test:manager-performance": "node --test --experimental-strip-types tests/manager-performance.test.ts",
+    "test:coach-permissions": "node --test --experimental-strip-types tests/coach-permissions.test.ts",
+    "test:golf-rounds": "node --test --experimental-strip-types tests/golf-round-metrics.test.ts"
   },
   "dependencies": {
     "@lexical/html": "^0.42.0",
     "@lexical/list": "^0.42.0",
     "@lexical/react": "^0.42.0",
+    "@nivo/bar": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@nivo/pie": "^0.99.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.97.0",
     "@tiptap/extension-underline": "^3.20.5",
     "@tiptap/pm": "^3.20.5",
     "@tiptap/react": "^3.20.5",
     "@tiptap/starter-kit": "^3.20.5",
+    "echarts": "^6.1.0",
     "lexical": "^0.42.0",
     "lucide-react": "^0.574.0",
     "next": "16.1.6",
@@ -25,7 +37,8 @@
     "react-dom": "19.2.3",
     "react-easy-crop": "^5.5.6",
     "recharts": "^3.7.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

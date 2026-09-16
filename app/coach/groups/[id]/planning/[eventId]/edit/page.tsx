@@ -644,6 +644,8 @@ export default function CoachEventEditPage() {
 
       const ev = (detailJson?.event ?? null) as EventRow | null;
       if (!ev) throw new Error("Événement introuvable.");
+      const permissionRes = await supabase.rpc("can_manage_assigned_group", { p_group_id: groupId, p_user_id: uRes.user.id, p_permission: "planning" });
+      if (permissionRes.error || permissionRes.data !== true) throw new Error("Vous n’avez pas l’autorisation de modifier cette activité.");
 
       setMeId(String(detailJson?.meId ?? uRes.user.id));
       setReadonlyParticipants(

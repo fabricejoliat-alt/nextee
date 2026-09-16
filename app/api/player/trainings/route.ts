@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
     const eventsRes = eventIds.length
       ? await supabaseAdmin
           .from("club_events")
-          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status")
+          .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status,requires_evaluation,competition_level,competition_category,external_registration_url,competition_note")
           .in("id", eventIds)
           .order("starts_at", { ascending: false })
       : ({ data: [], error: null } as any);

@@ -1,5 +1,5 @@
-import UserManagementWorkspace from "@/components/manager/UserManagementWorkspace";
+import PlayerCustomFieldsPage from "@/components/manager/PlayerCustomFieldsPage";
 
 export default function ManagerUserManagementCustomFieldsPage() {
-  return <UserManagementWorkspace section="custom-fields" />;
+  return <PlayerCustomFieldsPage />;
 }

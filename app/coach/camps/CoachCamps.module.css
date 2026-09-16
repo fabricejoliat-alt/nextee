@@ -1,0 +1,31 @@
+.searchField { position: relative; display: block; }
+.searchField svg { position: absolute; z-index: 1; top: 13px; left: 11px; color: #7a857b; pointer-events: none; }
+.searchField input { padding-left: 34px !important; }
+
+.overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: rgba(22,31,25,.52); }
+.modal { width: min(580px,100%); max-height: calc(100vh - 40px); overflow: hidden; border: 1px solid #dfe6dd; border-radius: 17px; background: #fff; box-shadow: 0 24px 70px rgba(24,36,28,.25); display: grid; grid-template-rows: auto minmax(0,1fr) auto; }
+.modalLarge { width: min(960px,100%); }
+.modalHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid #e4e9e2; }
+.modalHeader h2 { margin: 0; color: #35483b; font: 700 18px/1.2 var(--font-inter-tight),var(--font-inter),sans-serif; }
+.modalHeader p { margin: 5px 0 0; color: #778278; font: 500 12px/1.4 var(--font-inter),sans-serif; }
+.modalBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; display: grid; align-content: start; gap: 14px; background: #f8faf7; }
+.modalFooter { display: flex; justify-content: flex-end; gap: 9px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid #e4e9e2; background: #fff; }
+
+.notes { padding: 14px; border: 1px solid #e3e9e2; border-radius: 12px; background: #fff; color: #526056; font: 500 12px/1.55 var(--font-inter),sans-serif; }
+.notes > :first-child { margin-top: 0; }.notes > :last-child { margin-bottom: 0; }
+.dayGrid { display: grid; gap: 12px; }
+.location { display: flex; align-items: center; gap: 7px; color: #3f5847; font: 700 12px var(--font-inter),sans-serif; }
+.location svg { color: #c84a40; }
+.practical { margin: 0; color: #66736a; font: 500 12px/1.5 var(--font-inter),sans-serif; white-space: pre-wrap; }
+
+.addPlayer { min-height: 34px; padding: 0 11px; border: 1px solid #dce5db; border-radius: 9px; background: #fff; color: #35483b; font: 700 11px var(--font-inter),sans-serif; cursor: pointer; }
+.addPlayer:hover { background: #f2f6f0; }
+.registrationRow { display: grid; gap: 11px; padding: 14px; border: 1px solid #e3e9e2; border-radius: 12px; background: #fff; }
+.registrationRow > div:first-child { grid-template-columns: minmax(160px,1fr) 190px; align-items: center; }
+.registrationRow b { color: #2f4135; font-size: 12px; }
+.select { box-sizing: border-box; min-width: 120px; height: 38px; padding: 0 30px 0 10px; border: 1px solid #dce3dc; border-radius: 8px; background: #fff; color: #26352a; font: 600 11px var(--font-inter),sans-serif; }
+.dayPresence { display: inline-flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid #e3e9e2; border-radius: 10px; background: #f8faf7; color: #405044; font-size: 11px; }
+.participantRow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e3e9e2; border-radius: 11px; background: #fff; }
+.participantRow b { color: #2f4135; font: 650 12px var(--font-inter),sans-serif; }
+
+@media(max-width:640px){.overlay{padding:10px}.modal{max-height:calc(100vh - 20px);border-radius:14px}.modalHeader,.modalBody,.modalFooter{padding-left:14px;padding-right:14px}.registrationRow>div:first-child{grid-template-columns:1fr}.modalFooter>*{flex:1}}

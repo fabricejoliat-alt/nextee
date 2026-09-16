@@ -109,17 +109,25 @@ function toFieldPayload(body: any) {
   const profileVisibility = normalizeProfileVisibility(body?.visible_in_profile, body?.editable_in_profile);
 
   if (!label) throw new Error("Label manquant");
-  if (!["text", "boolean", "select"].includes(fieldType)) throw new Error("Type invalide");
-  if (fieldType === "select" && options.length === 0) throw new Error("Les options sont requises");
+  const scope = body?.scope === "season" ? "season" : "permanent";
+  const description = String(body?.description ?? "").trim() || null;
+  const isRequired = Boolean(body?.is_required);
+  const visibility = ["manager", "staff", "player", "restricted"].includes(String(body?.visibility)) ? String(body.visibility) : "manager";
+  const editableBy = ["manager", "staff", "player", "none"].includes(String(body?.editable_by)) ? String(body.editable_by) : "manager";
+  const isSensitive = Boolean(body?.is_sensitive);
+  if (!["text", "short_text", "long_text", "number", "date", "select", "radio", "checkbox", "boolean"].includes(fieldType)) throw new Error("Type invalide");
+  if (["select", "radio", "checkbox"].includes(fieldType) && options.length === 0) throw new Error("Les options sont requises");
+  if (isSensitive && visibility !== "restricted") throw new Error("Un champ sensible doit être restreint");
 
   return {
     label,
     field_type: fieldType,
-    options_json: fieldType === "select" ? options : [],
+    options_json: ["select", "radio", "checkbox"].includes(fieldType) ? options : [],
     is_active: isActive,
     sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
     applies_to_roles: appliesToRoles,
     ...profileVisibility,
+    scope, description, is_required: isRequired, visibility, editable_by: editableBy, is_sensitive: isSensitive,
   };
 }
 
@@ -132,7 +140,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const { data, error } = await supabaseAdmin
       .from("club_player_fields")
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
       .eq("club_id", clubId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
@@ -176,7 +184,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
         field_key: fieldKey,
         ...payload,
       })
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

@@ -9,9 +9,13 @@ type Allowed = "admin" | "player" | "coach" | "manager" | "parent";
 export default function RoleGuard({
   allow,
   children,
+  inline = false,
+  quiet = false,
 }: {
   allow: Allowed | Allowed[];
   children: React.ReactNode;
+  inline?: boolean;
+  quiet?: boolean;
 }) {
   const router = useRouter();
   const [ok, setOk] = useState(false);
@@ -28,7 +32,7 @@ export default function RoleGuard({
     (async () => {
       const allowed = Array.isArray(allow) ? allow : [allow];
 
-      let { data } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession();
       let token = data.session?.access_token;
 
       // Avoid false logout on short-lived transient states.
@@ -140,6 +144,10 @@ export default function RoleGuard({
   }, [allow, router]);
 
   if (!ok) {
+    if (quiet) return null;
+    if (inline) {
+      return <div className="role-guard-inline" aria-busy="true" aria-label="Chargement"><span /><span /><span /></div>;
+    }
     return (
       <main style={{ padding: 24 }} aria-busy="true" aria-live="polite">
         <div className="card" style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 12 }}>

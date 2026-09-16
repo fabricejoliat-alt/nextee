@@ -2,513 +2,175 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, PlusCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { PlusCircle, X } from "lucide-react";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
-type ProfileLite = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
-};
-
-type GroupLite = {
-  id: string;
-  name: string;
-  is_active: boolean;
-  head_coach_user_id: string | null;
-  club_id: string;
-};
-
+type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
+type GroupLite = { id: string; name: string; is_active: boolean; head_coach_user_id: string | null; club_id: string };
+type Season = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
 type GroupCategory = { group_id: string; category: string };
 type GroupPlayer = { group_id: string; player_user_id: string };
 type GroupCoach = { group_id: string; coach_user_id: string; is_head: boolean | null };
+type PlayerMember = { id: string; user_id: string };
+type SeasonRecord = { club_season_id: string; club_member_id: string; group_id: string | null };
+type GroupDisplayFilter = "standard" | "with-specific" | "with-archived" | "all";
 
-type DragPayload = {
-  actorType: "player" | "coach";
-  userId: string;
-  fromGroupId: string | null;
-};
-
-function fullName(p?: ProfileLite | null) {
-  const f = (p?.first_name ?? "").trim();
-  const l = (p?.last_name ?? "").trim();
-  return `${f} ${l}`.trim() || "Sans nom";
+function isArchivedGroup(group: GroupLite) {
+  return !group.is_active || group.name.trim().startsWith("__ARCHIVE_");
 }
 
-function initials(p?: ProfileLite | null) {
-  const f = (p?.first_name ?? "").trim();
-  const l = (p?.last_name ?? "").trim();
-  const fi = f ? f[0].toUpperCase() : "";
-  const li = l ? l[0].toUpperCase() : "";
-  return (fi + li) || "👤";
+function isSpecificGroup(group: GroupLite) {
+  const name = group.name.trim();
+  return name === "Groupe spécifique" || name.startsWith("__EVENT_SPECIFIQUE__");
 }
 
-function Avatar({ p }: { p?: ProfileLite | null }) {
-  return (
-    <div
-      style={{
-        width: 20,
-        height: 20,
-        borderRadius: 999,
-        overflow: "hidden",
-        display: "grid",
-        placeItems: "center",
-        fontWeight: 900,
-        fontSize: 9,
-        border: "1px solid rgba(0,0,0,0.08)",
-        background: "rgba(255,255,255,0.9)",
-      }}
-    >
-      {p?.avatar_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={p.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      ) : (
-        initials(p)
-      )}
-    </div>
-  );
+function fullName(profile?: ProfileLite | null) {
+  const name = `${profile?.first_name?.trim() ?? ""} ${profile?.last_name?.trim() ?? ""}`.trim();
+  return name || "Sans nom";
 }
 
-export default function OrganizationGroupsBoard({
-  organizationId,
-}: {
-  organizationId: string;
-}) {
+function initials(profile?: ProfileLite | null) {
+  return `${profile?.first_name?.trim()?.[0] ?? ""}${profile?.last_name?.trim()?.[0] ?? ""}`.toUpperCase() || "?";
+}
+
+function Avatar({ profile }: { profile?: ProfileLite | null }) {
+  return <span className="user-mgmt-member-avatar" aria-label={fullName(profile)}>{profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initials(profile)}</span>;
+}
+
+export default function OrganizationGroupsBoard({ organizationId }: { organizationId: string }) {
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [organizationName, setOrganizationName] = useState("Organisation");
+  const [groups, setGroups] = useState<GroupLite[]>([]);
   const [players, setPlayers] = useState<ProfileLite[]>([]);
   const [coaches, setCoaches] = useState<ProfileLite[]>([]);
-  const [groups, setGroups] = useState<GroupLite[]>([]);
   const [categories, setCategories] = useState<GroupCategory[]>([]);
   const [groupPlayers, setGroupPlayers] = useState<GroupPlayer[]>([]);
   const [groupCoaches, setGroupCoaches] = useState<GroupCoach[]>([]);
-  const [dragging, setDragging] = useState<DragPayload | null>(null);
-
-  async function authHeader() {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token ?? "";
-    return { Authorization: `Bearer ${token}` };
-  }
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [playerMembers, setPlayerMembers] = useState<PlayerMember[]>([]);
+  const [seasonRecords, setSeasonRecords] = useState<SeasonRecord[]>([]);
+  const [seasonId, setSeasonId] = useState("");
+  const [groupDisplayFilter, setGroupDisplayFilter] = useState<GroupDisplayFilter>("standard");
+  const [draggedPlayer, setDraggedPlayer] = useState<{ userId: string; fromGroupId: string | null } | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
 
   async function load() {
     if (!organizationId) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const headers = await authHeader();
-      const res = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
-        method: "GET",
-        headers,
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error ?? "Load failed");
-
-      setPlayers((json.players ?? []) as ProfileLite[]);
-      setCoaches((json.coaches ?? []) as ProfileLite[]);
-      setGroups((json.groups ?? []) as GroupLite[]);
-      setCategories((json.categories ?? []) as GroupCategory[]);
-      setGroupPlayers((json.groupPlayers ?? []) as GroupPlayer[]);
-      setGroupCoaches((json.groupCoaches ?? []) as GroupCoach[]);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur de chargement.");
-    } finally {
-      setLoading(false);
-    }
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` }, cache: "no-store" });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error ?? "Impossible de charger les groupes.");
+      const loadedSeasons = (json.seasons ?? []) as Season[];
+      setOrganizationName(String(json.organization?.name ?? "Organisation")); setGroups(json.groups ?? []); setPlayers(json.players ?? []); setCoaches(json.coaches ?? []);
+      setCategories(json.categories ?? []); setGroupPlayers(json.groupPlayers ?? []); setGroupCoaches(json.groupCoaches ?? []);
+      setSeasons(loadedSeasons); setPlayerMembers(json.playerMembers ?? []); setSeasonRecords(json.seasonRecords ?? []);
+      setSeasonId((current) => current || loadedSeasons.find((season) => season.is_current)?.id || loadedSeasons[0]?.id || "");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Erreur de chargement."); }
+    finally { setLoading(false); }
   }
 
   useEffect(() => {
     void load();
+    // The organization identifier is the sole route input for this page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
 
-  const playersById = useMemo(() => {
-    const map: Record<string, ProfileLite> = {};
-    players.forEach((p) => (map[p.id] = p));
-    return map;
-  }, [players]);
-
-  const coachesById = useMemo(() => {
-    const map: Record<string, ProfileLite> = {};
-    coaches.forEach((c) => (map[c.id] = c));
-    return map;
-  }, [coaches]);
-
-  const categoriesByGroup = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    categories.forEach((c) => {
-      if (!out[c.group_id]) out[c.group_id] = [];
-      out[c.group_id].push(c.category);
-    });
-    Object.keys(out).forEach((gid) => {
-      out[gid] = Array.from(new Set(out[gid])).sort((a, b) => a.localeCompare(b, "fr"));
-    });
-    return out;
-  }, [categories]);
-
-  const playersInGroups = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    groupPlayers.forEach((r) => {
-      if (!out[r.group_id]) out[r.group_id] = [];
-      out[r.group_id].push(r.player_user_id);
-    });
-    return out;
-  }, [groupPlayers]);
-
-  const coachesInGroups = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    groupCoaches.forEach((r) => {
-      if (!out[r.group_id]) out[r.group_id] = [];
-      out[r.group_id].push(r.coach_user_id);
-    });
-    return out;
-  }, [groupCoaches]);
-
-  const playerHasGroup = useMemo(() => {
-    const set = new Set(groupPlayers.map((r) => r.player_user_id));
-    return set;
-  }, [groupPlayers]);
-
-  const coachHasGroup = useMemo(() => {
-    const set = new Set(groupCoaches.map((r) => r.coach_user_id));
-    return set;
-  }, [groupCoaches]);
-
-  const sortedGroups = useMemo(() => {
-    return groups
-      .slice()
-      .sort((a, b) => {
-        const aHead = fullName(coachesById[a.head_coach_user_id ?? ""]).toLocaleLowerCase("fr");
-        const bHead = fullName(coachesById[b.head_coach_user_id ?? ""]).toLocaleLowerCase("fr");
-        const byHead = aHead.localeCompare(bHead, "fr");
-        if (byHead !== 0) return byHead;
-        return (a.name ?? "").localeCompare(b.name ?? "", "fr");
-      });
-  }, [groups, coachesById]);
-
-  async function moveMember(toGroupId: string, payload: DragPayload) {
-    if (!toGroupId || payload.fromGroupId === toGroupId || busy) return;
-    setBusy(true);
-    setError(null);
+  async function movePlayer(toGroupId: string) {
+    if (!draggedPlayer || draggedPlayer.fromGroupId === toGroupId || moving) return;
+    setMoving(true); setError(null);
     try {
-      const headers = await authHeader();
-      const res = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify({
-          actorType: payload.actorType,
-          userId: payload.userId,
-          toGroupId,
-          fromGroupId: payload.fromGroupId,
-          removeFromSource: Boolean(payload.fromGroupId),
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+        body: JSON.stringify({ actorType: "player", userId: draggedPlayer.userId, fromGroupId: draggedPlayer.fromGroupId, toGroupId, removeFromSource: true, seasonId: seasonId || undefined }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error ?? "Move failed");
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error ?? "Le déplacement du junior a échoué.");
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur de déplacement.");
-    } finally {
-      setBusy(false);
-      setDragging(null);
-    }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Le déplacement du junior a échoué."); }
+    finally { setMoving(false); setDraggedPlayer(null); setDropTargetId(null); }
   }
 
-  async function removeFromGroup(actorType: "player" | "coach", groupId: string, userId: string) {
-    if (!groupId || !userId || busy) return;
-    setBusy(true);
-    setError(null);
+  async function removePlayer(groupId: string, userId: string) {
+    if (moving) return;
+    setMoving(true); setError(null);
     try {
-      const headers = await authHeader();
-      const res = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify({
-          actorType,
-          groupId,
-          userId,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error ?? "Remove failed");
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` }, body: JSON.stringify({ actorType: "player", groupId, userId, seasonId: seasonId || undefined }) });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.error ?? "Le junior n’a pas pu être retiré du groupe.");
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur de suppression.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Le junior n’a pas pu être retiré du groupe."); }
+    finally { setMoving(false); }
   }
 
-  function chipStyle(active: boolean): React.CSSProperties {
-    return {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      borderRadius: 999,
-      padding: "4px 8px",
-      border: "1px solid rgba(0,0,0,0.08)",
-      background: active ? "rgba(22,163,74,0.16)" : "rgba(107,114,128,0.14)",
-      color: "rgba(17,24,39,0.95)",
-      fontSize: 11,
-      fontWeight: 800,
-      cursor: "grab",
-      userSelect: "none",
-      lineHeight: 1.1,
-    };
-  }
+  const playersById = useMemo(() => Object.fromEntries(players.map((player) => [player.id, player])), [players]);
+  const coachesById = useMemo(() => Object.fromEntries(coaches.map((coach) => [coach.id, coach])), [coaches]);
+  const categoriesByGroup = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    categories.forEach(({ group_id, category }) => {
+      const values = (result[group_id] ??= []);
+      if (!values.includes(category)) values.push(category);
+    });
+    return result;
+  }, [categories]);
+  const legacyPlayerIdsByGroup = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    groupPlayers.forEach(({ group_id, player_user_id }) => (result[group_id] ??= []).push(player_user_id));
+    return result;
+  }, [groupPlayers]);
+  const seasonPlayerIdsByGroup = useMemo(() => {
+    const memberUsers = Object.fromEntries(playerMembers.map((member) => [member.id, member.user_id]));
+    const result: Record<string, string[]> = {};
+    seasonRecords.filter((record) => record.club_season_id === seasonId && record.group_id).forEach((record) => {
+      const userId = memberUsers[record.club_member_id]; if (userId && record.group_id) (result[record.group_id] ??= []).push(userId);
+    });
+    return result;
+  }, [playerMembers, seasonId, seasonRecords]);
+  const coachesByGroup = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    groupCoaches.forEach(({ group_id, coach_user_id }) => (result[group_id] ??= []).push(coach_user_id));
+    return result;
+  }, [groupCoaches]);
+  const availablePlayers = useMemo(() => players.slice().sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")), [players]);
+  const visibleGroups = useMemo(() => groups.filter((group) => {
+    const archived = isArchivedGroup(group);
+    const specific = isSpecificGroup(group);
+    if (groupDisplayFilter === "all") return true;
+    if (groupDisplayFilter === "with-specific") return !archived;
+    if (groupDisplayFilter === "with-archived") return !specific;
+    return !archived && !specific;
+  }).sort((a, b) => a.name.localeCompare(b.name, "fr")), [groupDisplayFilter, groups]);
+  const selectedSeason = seasons.find((season) => season.id === seasonId);
+  const creationHref = `/manager/groups/new?organizationId=${encodeURIComponent(organizationId)}${seasonId ? `&season=${encodeURIComponent(seasonId)}` : ""}`;
 
-  return (
-    <div style={{ display: "grid", gap: 10 }}>
-      {error ? (
-        <div className="card">
-          <div style={{ border: "1px solid #ffd3d3", background: "#fff7f7", color: "#a00", borderRadius: 10, padding: 8, fontSize: 12 }}>
-            {error}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="card">
-        <h3 style={{ marginTop: 0, fontSize: 14 }}>Joueurs du club</h3>
-        {loading ? (
-          <div style={{ fontSize: 12 }}>Chargement…</div>
-        ) : players.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 12 }}>Aucun joueur.</div>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {players
-              .slice()
-              .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"))
-              .map((p) => (
-                <div
-                  key={p.id}
-                  draggable
-                  onDragStart={() => setDragging({ actorType: "player", userId: p.id, fromGroupId: null })}
-                  style={chipStyle(playerHasGroup.has(p.id))}
-                  title={playerHasGroup.has(p.id) ? "Déjà dans au moins un groupe" : "Aucun groupe"}
-                >
-                  <Avatar p={p} />
-                  {fullName(p)}
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h3 style={{ marginTop: 0, fontSize: 14 }}>Coachs du club</h3>
-        {loading ? (
-          <div style={{ fontSize: 12 }}>Chargement…</div>
-        ) : coaches.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 12 }}>Aucun coach.</div>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {coaches
-              .slice()
-              .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"))
-              .map((c) => (
-                <div
-                  key={c.id}
-                  draggable
-                  onDragStart={() => setDragging({ actorType: "coach", userId: c.id, fromGroupId: null })}
-                  style={chipStyle(coachHasGroup.has(c.id))}
-                  title={coachHasGroup.has(c.id) ? "Déjà dans au moins un groupe" : "Aucun groupe"}
-                >
-                  <Avatar p={c} />
-                  {fullName(c)}
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
-
-      <div style={{ marginTop: 2, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14 }}>Groupes</h3>
-        <Link
-          className="cta-green cta-green-inline"
-          href={`/manager/organizations/${organizationId}/groups/new`}
-          style={{ padding: "7px 10px", fontSize: 13, fontWeight: 800, minHeight: 34 }}
-        >
-          <PlusCircle size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-          Nouveau groupe
-        </Link>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gap: 10,
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          alignItems: "start",
-        }}
-      >
-        {sortedGroups.map((g) => {
-          const groupPlayerIds = playersInGroups[g.id] ?? [];
-          const groupCoachIds = coachesInGroups[g.id] ?? [];
-          const headCoach = coachesById[g.head_coach_user_id ?? ""] ?? null;
-          const otherCoachIds = groupCoachIds.filter((id) => id !== g.head_coach_user_id);
-
-          return (
-            <div
-              className="card"
-              key={g.id}
-              style={{
-                border: "2px solid #166534",
-                background: "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98))",
-                padding: 10,
-                boxShadow: "0 1px 0 rgba(22,101,52,0.08)",
-              }}
-            >
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: "#166534" }}>{g.name}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {(categoriesByGroup[g.id] ?? []).map((cat) => (
-                      <span
-                        key={cat}
-                        style={{
-                          borderRadius: 999,
-                          padding: "3px 8px",
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          background: "rgba(0,0,0,0.04)",
-                          fontSize: 10,
-                          fontWeight: 800,
-                          color: "#111",
-                        }}
-                      >
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div
-                    onDragOver={(e) => {
-                      if (dragging?.actorType === "player") e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (!dragging || dragging.actorType !== "player") return;
-                      void moveMember(g.id, dragging);
-                    }}
-                    style={{
-                      border: "1px dashed rgba(15,23,42,0.22)",
-                      borderRadius: 10,
-                      padding: 8,
-                      minHeight: 42,
-                      background: "rgba(16,185,129,0.04)",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6, color: "#111" }}>
-                      Joueurs ({groupPlayerIds.length}) - déposer ici
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {groupPlayerIds.map((pid) => {
-                        const p = playersById[pid];
-                        return (
-                          <div
-                            key={`${g.id}-${pid}`}
-                            draggable
-                            onDragStart={() =>
-                              setDragging({ actorType: "player", userId: pid, fromGroupId: g.id })
-                            }
-                            style={chipStyle(true)}
-                            title="Glisser vers un autre groupe pour transférer"
-                          >
-                            <Avatar p={p} />
-                            {fullName(p)}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void removeFromGroup("player", g.id, pid);
-                              }}
-                              disabled={busy}
-                              title="Retirer du groupe"
-                              style={{
-                                border: "none",
-                                background: "transparent",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                padding: 0,
-                                marginLeft: 2,
-                                cursor: busy ? "default" : "pointer",
-                                opacity: 0.72,
-                              }}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div
-                    onDragOver={(e) => {
-                      if (dragging?.actorType === "coach") e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (!dragging || dragging.actorType !== "coach") return;
-                      void moveMember(g.id, dragging);
-                    }}
-                    style={{
-                      border: "1px dashed rgba(15,23,42,0.22)",
-                      borderRadius: 10,
-                      padding: 8,
-                      minHeight: 42,
-                      background: "rgba(59,130,246,0.04)",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6, color: "#111" }}>
-                      Coachs ({groupCoachIds.length}) - déposer ici
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {otherCoachIds.map((cid) => {
-                        const c = coachesById[cid];
-                        return (
-                          <div
-                            key={`${g.id}-${cid}`}
-                            draggable
-                            onDragStart={() =>
-                              setDragging({ actorType: "coach", userId: cid, fromGroupId: g.id })
-                            }
-                            style={chipStyle(true)}
-                            title="Glisser vers un autre groupe pour transférer"
-                          >
-                            <Avatar p={c} />
-                            {fullName(c)}
-                          </div>
-                        );
-                      })}
-                      {headCoach ? (
-                        <div style={{ ...chipStyle(true), cursor: "default", opacity: 0.9 }} title="Head coach (non transférable ici)">
-                          <Avatar p={headCoach} />
-                          {fullName(headCoach)} (Head)
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <main className={styles.page}>
+    <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+      <Link href="/manager/organizations">Organisations</Link><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>{organizationName}</span><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>Groupes</span>
+    </nav>
+    <div className={styles.topline}><div><h1>Groupes</h1><p className={styles.lead}>Gérez les groupes, leurs juniors et leur encadrement pour chaque saison.</p></div><div className={actionStyles.topActions}><label className="groups-season-nav-select"><select aria-label="Groupes affichés" value={groupDisplayFilter} onChange={(event) => setGroupDisplayFilter(event.target.value as GroupDisplayFilter)}><option value="standard">Groupes standards</option><option value="with-specific">Inclure les spécifiques</option><option value="with-archived">Inclure les archivés</option><option value="all">Tous les groupes</option></select></label><label className="groups-season-nav-select"><select aria-label="Saison" value={seasonId} onChange={(event) => setSeasonId(event.target.value)} disabled={loading || seasons.length === 0}>{seasons.length === 0 ? <option value="">Aucune saison configurée</option> : null}{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? " · Saison en cours" : ""}</option>)}</select></label><Link className={actionStyles.primaryButton} href={creationHref}><PlusCircle size={17} />Ajouter un groupe</Link></div></div>
+    {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
+    {loading ? <section className={styles.quickPanel}><p style={{ margin: 0, color: "#778178", fontSize: 13 }}>Chargement des groupes…</p></section> : visibleGroups.length === 0 ? <section className={styles.quickPanel}><p style={{ margin: 0, color: "#778178", fontSize: 13 }}>Aucun groupe ne correspond à ce filtre.</p></section> : <section className={styles.quickPanel}>
+      <div className={styles.sectionHeading}><div><h2>Groupes {selectedSeason ? `· ${selectedSeason.name}` : ""}</h2><p>{visibleGroups.length} groupe{visibleGroups.length > 1 ? "s" : ""} configuré{visibleGroups.length > 1 ? "s" : ""}.</p></div></div>
+      <div className="organization-available-players"><div className="organization-group-roster-title">Juniors du club <span>{availablePlayers.length}</span></div><div className="organization-group-player-list">{availablePlayers.length === 0 ? <span className="organization-group-empty">Aucun junior dans ce club.</span> : availablePlayers.map((player) => <button key={player.id} type="button" draggable={!moving} className="organization-group-player" title={`Glisser ${fullName(player)} vers un groupe`} onDragStart={() => setDraggedPlayer({ userId: player.id, fromGroupId: null })} onDragEnd={() => { setDraggedPlayer(null); setDropTargetId(null); }}><Avatar profile={player} /><span>{fullName(player)}</span></button>)}</div></div>
+      <div className="organization-groups-grid">{visibleGroups.map((group) => {
+        const playerIds = legacyPlayerIdsByGroup[group.id] ?? [];
+        const coachIds = coachesByGroup[group.id] ?? []; const headCoach = coachesById[group.head_coach_user_id ?? ""];
+        const cardHref = `/manager/groups/${group.id}${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ""}`;
+        return <article className={`organization-group-card${dropTargetId === group.id ? " is-drop-target-card" : ""}`} key={group.id} onDragOver={(event) => { if (draggedPlayer && draggedPlayer.fromGroupId !== group.id) { event.preventDefault(); setDropTargetId(group.id); } }} onDragLeave={() => setDropTargetId((current) => current === group.id ? null : current)} onDrop={(event) => { event.preventDefault(); void movePlayer(group.id); }}>
+          <div className="organization-group-card-header"><div><h3>{group.name}</h3><div className="organization-group-tags">{(categoriesByGroup[group.id] ?? []).length ? (categoriesByGroup[group.id] ?? []).map((category) => <span key={category} className="pill-soft">{category}</span>) : <span className="pill-soft">Sans catégorie</span>}{!group.is_active ? <span className="pill-soft">Inactif</span> : null}</div></div><Link href={cardHref} className={actionStyles.secondaryButton} aria-label={`Ouvrir ${group.name}`} title="Ouvrir le groupe" style={{ width: 40, padding: 0, justifyContent: "center" }}><ChevronRight size={18} /></Link></div>
+          <div className={`organization-group-roster organization-group-dropzone${dropTargetId === group.id ? " is-drop-target" : ""}`} onDragOver={(event) => { if (draggedPlayer && draggedPlayer.fromGroupId !== group.id) { event.preventDefault(); setDropTargetId(group.id); } }} onDragLeave={() => setDropTargetId((current) => current === group.id ? null : current)} onDrop={(event) => { event.preventDefault(); void movePlayer(group.id); }}><div className="organization-group-roster-title">Juniors <span>{playerIds.length}</span></div><div className="organization-group-player-list" aria-label={`${playerIds.length} juniors`}>{playerIds.map((id) => <div key={id} draggable={!moving} className="organization-group-player" title={`Déplacer ${fullName(playersById[id])}`} onDragStart={() => setDraggedPlayer({ userId: id, fromGroupId: group.id })} onDragEnd={() => { setDraggedPlayer(null); setDropTargetId(null); }}><Avatar profile={playersById[id]} /><span>{fullName(playersById[id])}</span><button type="button" className="organization-group-player-remove" aria-label={`Retirer ${fullName(playersById[id])}`} title="Retirer du groupe" onClick={() => void removePlayer(group.id, id)} disabled={moving}>×</button></div>)}{playerIds.length === 0 ? <span className="organization-group-empty">Déposez un junior ici</span> : null}</div></div>
+          <div className="organization-group-roster"><div className="organization-group-roster-title">Coachs <span>{coachIds.length}</span></div><div className="organization-group-coach">{headCoach ? <><Avatar profile={headCoach} /><span>{fullName(headCoach)}</span></> : <span className="organization-group-empty">Aucun coach référent</span>}</div></div>
+          <div className="organization-group-card-footer"><Link href={cardHref} className={actionStyles.primaryButton}>Gérer le groupe</Link></div>
+        </article>;
+      })}</div>
+    </section>}
+  </main>;
 }

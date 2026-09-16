@@ -1,77 +1,39 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useParams } from "next/navigation";
+import { Building2, ChevronRight, Filter, Plus, Search, Settings2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import styles from "./OrganizationMembersAdmin.module.css";
 
-type Club = {
-  id: string;
-  name: string;
-  slug: string | null;
-};
+type Club = { id: string; name: string; slug: string | null };
+type Profile = { id: string; first_name: string | null; last_name: string | null };
+type ManagerMembership = { id: string; club_id: string; user_id: string; role: "manager"; is_active: boolean | null; created_at: string | null };
 
-type Profile = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-};
-
-type ClubMember = {
-  id: string;
-  club_id: string;
-  user_id: string;
-  role: "manager" | "coach" | "player" | "parent";
-  is_active: boolean | null;
-  created_at: string | null;
-};
-
-function fullName(p?: Profile | null) {
-  if (!p) return "";
-  return `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+function fullName(profile?: Profile | null) {
+  if (!profile) return "";
+  return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim();
 }
 
-function roleLabel(role: ClubMember["role"] | "manager" | "coach" | "player" | "parent") {
-  if (role === "manager") return "Manager";
-  if (role === "coach") return "Coach";
-  if (role === "parent") return "Parent";
-  return "Joueur";
-}
-
-function consentLabel(status: string | null) {
-  if (status === "granted") return "accordé";
-  if (status === "pending") return "en attente";
-  if (status === "adult") return "majeur";
-  return "non défini";
-}
-
-type MutationResult = {
-  error: { message: string } | null;
-};
-
-async function runWithTimeout(fn: () => Promise<MutationResult>, ms = 10000): Promise<MutationResult> {
-  return await Promise.race<MutationResult>([
-    fn(),
-    new Promise<MutationResult>((_, reject) =>
-      setTimeout(() => reject(new Error("Délai dépassé. Réessaie.")), ms)
-    ),
-  ]);
+function formatDate(date: string | null) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
 }
 
 export default function OrganizationMembersAdmin() {
   const params = useParams<{ organizationId: string }>();
   const organizationId = params.organizationId;
-
   const [club, setClub] = useState<Club | null>(null);
-
-  const [members, setMembers] = useState<ClubMember[]>([]);
+  const [managers, setManagers] = useState<ManagerMembership[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
-
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedRole, setSelectedRole] = useState<"manager" | "coach" | "player" | "parent">("player");
-
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [tablePage, setTablePage] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function getToken() {
@@ -80,406 +42,155 @@ export default function OrganizationMembersAdmin() {
   }
 
   async function loadAll() {
+    setLoading(true);
     setError(null);
     try {
-      const safeClubRes = await supabase
-        .from("clubs")
-        .select("id,name,slug")
-        .eq("id", organizationId)
-        .maybeSingle();
+      const [clubRes, adminsRes, membersRes, usersRes] = await Promise.all([
+        supabase.from("clubs").select("id,name,slug").eq("id", organizationId).maybeSingle(),
+        supabase.from("app_admins").select("user_id"),
+        supabase.from("club_members").select("id,club_id,user_id,role,is_active,created_at").eq("club_id", organizationId).eq("role", "manager").order("created_at", { ascending: false }),
+        supabase.from("profiles").select("id,first_name,last_name").order("created_at", { ascending: false }),
+      ]);
 
-      if (safeClubRes.error) throw new Error(safeClubRes.error.message);
-      setClub(safeClubRes.data ?? null);
-
-      const adminsRes = await supabase.from("app_admins").select("user_id");
+      if (clubRes.error) throw new Error(clubRes.error.message);
       if (adminsRes.error) throw new Error(adminsRes.error.message);
-      const adminSet = new Set(
-        ((adminsRes.data ?? []) as Array<{ user_id: string | null }>)
-          .map((a) => a.user_id)
-          .filter(Boolean) as string[]
-      );
+      if (membersRes.error) throw new Error(membersRes.error.message);
+      if (usersRes.error) throw new Error(usersRes.error.message);
 
-      const memRes = await supabase
-        .from("club_members")
-        .select("id,club_id,user_id,role,is_active,created_at")
-        .eq("club_id", organizationId)
-        .order("created_at", { ascending: false });
+      setClub(clubRes.data ?? null);
+      const adminIds = new Set(((adminsRes.data ?? []) as Array<{ user_id: string | null }>).map((row) => row.user_id).filter(Boolean) as string[]);
+      const managerRows = ((membersRes.data ?? []) as ManagerMembership[]).filter((member) => !adminIds.has(member.user_id));
+      setManagers(managerRows);
 
-      if (memRes.error) throw new Error(memRes.error.message);
-
-      const memsRaw = (memRes.data ?? []) as ClubMember[];
-      const mems = memsRaw.filter((m) => !adminSet.has(m.user_id));
-      setMembers(mems);
-
-      const memberUserIds = Array.from(new Set(mems.map((m) => m.user_id)));
-      const profMap: Record<string, Profile> = {};
-
-      if (memberUserIds.length > 0) {
-        const profRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name")
-          .in("id", memberUserIds);
-
-        if (profRes.error) throw new Error(profRes.error.message);
-        (profRes.data ?? []).forEach((p) => {
-          const row = p as Profile;
-          profMap[row.id] = row;
-        });
-      }
-      setProfilesById(profMap);
-
-      const allRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name")
-        .order("created_at", { ascending: false });
-
-      if (allRes.error) throw new Error(allRes.error.message);
-
-      const users = (allRes.data ?? []) as Profile[];
-      setAllUsers(users.filter((u) => !adminSet.has(u.id)));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur chargement");
+      const users = ((usersRes.data ?? []) as Profile[]).filter((user) => !adminIds.has(user.id));
+      setAllUsers(users);
+      setProfilesById(Object.fromEntries(users.map((user) => [user.id, user])));
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!organizationId) return;
-    loadAll();
+    if (organizationId) void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
 
-  // Hard safety net: never keep action spinner locked forever.
-  useEffect(() => {
-    if (!busy) return;
-    const timer = setTimeout(() => setBusy(false), 12000);
-    return () => clearTimeout(timer);
-  }, [busy]);
+  const managerUserIds = useMemo(() => new Set(managers.map((manager) => manager.user_id)), [managers]);
+  const addableUsers = useMemo(() => allUsers.filter((user) => !managerUserIds.has(user.id)).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")), [allUsers, managerUserIds]);
+  const filteredManagers = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("fr");
+    return managers.filter((manager) => {
+      const active = manager.is_active !== false;
+      const matchesQuery = !normalizedQuery || fullName(profilesById[manager.user_id]).toLocaleLowerCase("fr").includes(normalizedQuery);
+      const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? active : !active);
+      return matchesQuery && matchesStatus;
+    });
+  }, [managers, profilesById, query, statusFilter]);
+  const tablePageSize = 8;
+  const tableTotalPages = Math.max(1, Math.ceil(filteredManagers.length / tablePageSize));
+  const visibleManagers = filteredManagers.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize);
 
-  const memberUserIdSet = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
-
-  const addableUsers = useMemo(() => {
-    return allUsers
-      .filter((u) => !memberUserIdSet.has(u.id))
-      .sort((a, b) => {
-        const an = fullName(a).toLowerCase();
-        const bn = fullName(b).toLowerCase();
-        return an.localeCompare(bn);
-      });
-  }, [allUsers, memberUserIdSet]);
-
-  async function addMember(e: React.FormEvent) {
-    e.preventDefault();
+  async function addManager(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedUserId || busy) return;
     setError(null);
-
-    if (!selectedUserId) return;
-
-    if (memberUserIdSet.has(selectedUserId)) {
-      setError("Cet utilisateur est déjà membre de cette organisation.");
-      return;
-    }
+    const picked = allUsers.find((user) => user.id === selectedUserId);
+    const pickedName = fullName(picked) || "cet utilisateur";
+    if (!window.confirm(`Ajouter ${pickedName} comme manager de cette organisation ?`)) return;
 
     setBusy(true);
     try {
-      const picked = allUsers.find((u) => u.id === selectedUserId) ?? null;
-      const pickedName = fullName(picked) || "Sans nom";
       const token = await getToken();
-      if (!token) {
-        setError("Pas de session. Reconnecte-toi.");
-        return;
-      }
-
-      let inheritedConsentStatus: string | null = null;
-      let linkedParentsCount = 0;
-      if (selectedRole === "player") {
-        const previewResponse = await fetch(`/api/admin/clubs/${organizationId}/add-existing-member-preview`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            user_id: selectedUserId,
-            role: selectedRole,
-          }),
-        });
-        const previewJson = await previewResponse.json().catch(() => ({}));
-        if (!previewResponse.ok) {
-          setError(String(previewJson?.error ?? "Erreur préparation import"));
-          return;
-        }
-        inheritedConsentStatus = String(previewJson?.consent_status ?? "").trim() || null;
-        const countValue = Number(previewJson?.linked_parents_count);
-        linkedParentsCount = Number.isFinite(countValue) ? countValue : 0;
-      }
-
-      const confirmationMessage =
-        selectedRole === "player"
-          ? `Importer ${pickedName} comme ${roleLabel(selectedRole)} ?\nConsentement repris: ${consentLabel(inheritedConsentStatus)}\nParents liés repris: ${linkedParentsCount > 0 ? `${linkedParentsCount}` : "aucun"}`
-          : `Importer ${pickedName} comme ${roleLabel(selectedRole)} ?`;
-
-      if (!window.confirm(confirmationMessage)) {
-        setBusy(false);
-        return;
-      }
-
+      if (!token) throw new Error("Pas de session. Reconnecte-toi.");
       const response = await fetch(`/api/admin/clubs/${organizationId}/add-existing-member`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          user_id: selectedUserId,
-          role: selectedRole,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_id: selectedUserId, role: "manager" }),
       });
-
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(String(json?.error ?? "Erreur ajout membre"));
-        return;
-      }
-
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(result?.error ?? "Erreur lors de l’ajout du manager"));
       setSelectedUserId("");
-      setSelectedRole("player");
       await loadAll();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur ajout membre");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur lors de l’ajout du manager");
     } finally {
       setBusy(false);
     }
   }
 
-  async function updateMember(memberId: string, patch: Partial<ClubMember>) {
-    setError(null);
+  async function updateManagerStatus(manager: ManagerMembership) {
     setBusy(true);
-    try {
-      const { error } = await runWithTimeout(async () =>
-        await supabase.from("club_members").update(patch).eq("id", memberId)
-      );
-
-      if (error) {
-        setError(error.message);
-        return;
-      }
-
-      setMembers((prev) =>
-        prev.map((m) => (m.id === memberId ? { ...m, ...patch } : m))
-      );
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur mise à jour membre");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeMember(memberId: string) {
-    if (!confirm("Supprimer ce membre de l’organisation ?")) return;
-
     setError(null);
-    setBusy(true);
     try {
-      const { error } = await runWithTimeout(async () =>
-        await supabase.from("club_members").delete().eq("id", memberId)
-      );
-
-      if (error) {
-        setError(error.message);
-        return;
-      }
-
-      setMembers((prev) => prev.filter((m) => m.id !== memberId));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur suppression membre");
+      const { error: updateError } = await supabase.from("club_members").update({ is_active: manager.is_active === false }).eq("id", manager.id).eq("role", "manager");
+      if (updateError) throw new Error(updateError.message);
+      setManagers((current) => current.map((item) => item.id === manager.id ? { ...item, is_active: manager.is_active === false } : item));
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur de mise à jour");
     } finally {
       setBusy(false);
     }
   }
 
-  function RoleBadge({ role }: { role: ClubMember["role"] }) {
-    const label = roleLabel(role);
-
-    return (
-      <span
-        style={{
-          display: "inline-block",
-          padding: "4px 10px",
-          borderRadius: 999,
-          border: "1px solid var(--border)",
-          fontSize: 12,
-          fontWeight: 800,
-          background: "rgba(0,0,0,0.03)",
-        }}
-      >
-        {label}
-      </span>
-    );
+  async function removeManager(manager: ManagerMembership) {
+    if (!window.confirm(`Retirer ${fullName(profilesById[manager.user_id]) || "ce manager"} de l’organisation ?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: deleteError } = await supabase.from("club_members").delete().eq("id", manager.id).eq("role", "manager");
+      if (deleteError) throw new Error(deleteError.message);
+      setManagers((current) => current.filter((item) => item.id !== manager.id));
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur de suppression");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  if (!organizationId) {
-    return (
-      <div className="card">
-        <b>Erreur :</b> organizationId manquant dans l’URL.
-      </div>
-    );
-  }
+  if (!organizationId) return <div className={styles.errorAlert} role="alert">Organisation introuvable.</div>;
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900 }}>{club ? club.name : "Organisation"}</h1>
-        <p style={{ marginTop: 6, color: "var(--muted)" }}>
-          Ajoute des utilisateurs existants à cette organisation et définis leur rôle.
-        </p>
-        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href={`/admin/organizations/${organizationId}/groups`} className="btn">
-            Gestion des groupes
-          </Link>
-        </div>
+    <div className={styles.page}>
+      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+        <Link href="/admin">Administration</Link><ChevronRight size={14} aria-hidden="true" />
+        <Link href="/admin/organizations">Organisations</Link><ChevronRight size={14} aria-hidden="true" />
+        <span>{club?.name ?? "Organisation"}</span>
+      </nav>
+      <div className={styles.titleRow}>
+        <h1 className={styles.pageTitle}>{club?.name ?? "Organisation"}</h1>
+        <Link href={`/admin/organizations/${organizationId}/settings`} className={styles.settingsButton}><Settings2 size={16} /> Paramètres</Link>
       </div>
+      {error ? <div className={styles.errorAlert} role="alert">{error}</div> : null}
 
-      {error && (
-        <div
-          style={{
-            border: "1px solid #ffcccc",
-            background: "#fff5f5",
-            padding: 12,
-            borderRadius: 12,
-            color: "#a00",
-          }}
-        >
-          {error}
+      <section className={styles.formPanel}>
+        <div className={styles.panelHeader}>
+          <div className={styles.panelIcon}><Building2 size={20} /></div>
+          <div><h2>Ajouter un manager</h2></div>
         </div>
-      )}
-
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Ajouter un membre</h2>
-
-        <form onSubmit={addMember} style={{ display: "grid", gap: 10, maxWidth: 520 }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>Utilisateur</span>
-            <select
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
-              style={inputStyle}
-              disabled={false}
-            >
-              <option value="">— Sélectionner —</option>
-              {addableUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {fullName(u) || "Sans nom"}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>Rôle</span>
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value as "manager" | "coach" | "player" | "parent")}
-              style={inputStyle}
-              disabled={!selectedUserId}
-            >
-              <option value="player">Joueur</option>
-              <option value="coach">Coach</option>
-              <option value="manager">Manager</option>
-              <option value="parent">Parent</option>
-            </select>
-          </label>
-
-          <button className="btn" type="submit" disabled={!selectedUserId}>
-            Ajouter à l’organisation
-          </button>
-
-          {addableUsers.length === 0 && (
-            <div style={{ color: "var(--muted)", fontSize: 13 }}>
-              Aucun utilisateur disponible à ajouter.
-            </div>
-          )}
+        <form className={styles.formGrid} onSubmit={addManager}>
+          <label className={styles.field}><span>Utilisateur</span><select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} disabled={busy}><option value="">— Sélectionner un utilisateur —</option>{addableUsers.map((user) => <option key={user.id} value={user.id}>{fullName(user) || "Sans nom"}</option>)}</select></label>
+          <div className={styles.submitField}><button type="submit" className={styles.primaryButton} disabled={!selectedUserId || busy}><Plus size={16} /> Ajouter le manager</button></div>
         </form>
-      </div>
+        {addableUsers.length === 0 ? <p className={styles.helper}>Aucun utilisateur disponible à ajouter.</p> : null}
+      </section>
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>Membres</h2>
-
-        {members.length === 0 ? (
-          <div style={{ color: "var(--muted)" }}>Aucun membre.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {members.map((m) => {
-              const p = profilesById[m.user_id];
-              const name = fullName(p) || "Sans nom";
-              const active = m.is_active !== false;
-
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 14,
-                    padding: 12,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  <div>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <div style={{ fontWeight: 900 }}>{name}</div>
-                      <RoleBadge role={m.role} />
-                      {!active && <span style={{ color: "var(--muted)", fontSize: 12 }}>(désactivé)</span>}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <select
-                      value={m.role}
-                      onChange={(e) => updateMember(m.id, { role: e.target.value as "manager" | "coach" | "player" | "parent" })}
-                      style={smallSelectStyle}
-                      disabled={false}
-                    >
-                      <option value="player">Joueur</option>
-                      <option value="coach">Coach</option>
-                      <option value="manager">Manager</option>
-                      <option value="parent">Parent</option>
-                    </select>
-
-                    <button className="btn" onClick={() => updateMember(m.id, { is_active: !active })}>
-                      {active ? "Désactiver" : "Activer"}
-                    </button>
-
-                    <button className="btn" onClick={() => removeMember(m.id)}>
-                      Retirer
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div style={{ color: "var(--muted)", fontSize: 12 }}>
-        Note : ce composant fonctionne même sans foreign key. Si on ajoute une FK plus tard,
-        on pourra simplifier les requêtes avec des joins.
-      </div>
+      <section className={styles.tablePanel}>
+        <div className={styles.tableHeader}><div><h2>Managers de l’organisation</h2><span>Liste</span></div></div>
+        <div className={styles.tableToolbar}>
+          <label className={styles.tableSearch}><Search size={16} aria-hidden="true" /><input value={query} onChange={(event) => { setQuery(event.target.value); setTablePage(1); }} placeholder="Rechercher un manager" aria-label="Rechercher un manager" /></label>
+          <label className={styles.tableFilter}><Filter size={14} aria-hidden="true" /><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as "all" | "active" | "inactive"); setTablePage(1); }} aria-label="Filtrer par statut"><option value="all">Tous les statuts</option><option value="active">Actifs</option><option value="inactive">Désactivés</option></select></label>
+        </div>
+        {loading ? <div className={styles.emptyState}>Chargement des managers…</div> : filteredManagers.length === 0 ? <div className={styles.emptyState}>Aucun manager ne correspond à votre recherche.</div> : <>
+          <div className={styles.tableFrame}><table className={styles.table}><thead><tr><th>Nom</th><th>Prénom</th><th>Rôle</th><th>Statut</th><th>Ajouté le</th><th>Actions</th></tr></thead><tbody>{visibleManagers.map((manager, index) => {
+            const profile = profilesById[manager.user_id];
+            const active = manager.is_active !== false;
+            return <tr key={manager.id} className={index % 2 === 1 ? styles.alternateRow : undefined}><td data-label="Nom"><strong>{profile?.last_name ?? "—"}</strong></td><td data-label="Prénom">{profile?.first_name ?? "—"}</td><td data-label="Rôle"><span className={styles.roleTag}>Manager</span></td><td data-label="Statut"><span className={active ? styles.statusActive : styles.statusInactive}>{active ? "Actif" : "Désactivé"}</span></td><td data-label="Ajouté le">{formatDate(manager.created_at)}</td><td className={styles.actionCell}><div className={styles.rowActions}><button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => updateManagerStatus(manager)}>{active ? "Désactiver" : "Activer"}</button><button type="button" className={styles.deleteButton} disabled={busy} onClick={() => removeManager(manager)}>Retirer</button></div></td></tr>;
+          })}</tbody></table></div>
+          <div className={styles.tableFooter}><span>{`${((tablePage - 1) * tablePageSize) + 1}-${Math.min(tablePage * tablePageSize, filteredManagers.length)} sur ${filteredManagers.length}`}</span><div className={styles.pagination}><button type="button" disabled={tablePage === 1} onClick={() => setTablePage((current) => Math.max(1, current - 1))}>Précédent</button>{Array.from({ length: tableTotalPages }, (_, index) => index + 1).map((page) => <button type="button" key={page} aria-current={page === tablePage ? "page" : undefined} onClick={() => setTablePage(page)}>{page}</button>)}<button type="button" disabled={tablePage === tableTotalPages} onClick={() => setTablePage((current) => Math.min(tableTotalPages, current + 1))}>Suivant</button></div></div>
+        </>}
+      </section>
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 12,
-  padding: "10px 12px",
-  background: "white",
-};
-
-const smallSelectStyle: React.CSSProperties = {
-  border: "1px solid var(--border)",
-  borderRadius: 10,
-  padding: "8px 10px",
-  background: "white",
-};

@@ -17,15 +17,18 @@ type ProfileLite = {
   last_name: string | null;
   avatar_url: string | null;
 };
-type GroupRow = { id: string; name: string | null; club_id: string; is_active: boolean | null };
+type GroupRow = { id: string; name: string | null; club_id: string; club_season_id: string | null; is_active: boolean | null; head_coach_user_id: string | null };
 type EventLite = {
   id: string;
   group_id: string;
-  event_type: "training" | "interclub" | "camp" | "session" | "event";
+  event_type: "training" | "interclub" | "camp" | "session" | "event" | "competition";
+  title?: string | null;
   starts_at: string;
   ends_at: string | null;
   location_text: string | null;
   status: "scheduled" | "cancelled";
+  label?: string;
+  href?: string;
 };
 type MemberRow = {
   club_id: string | null;
@@ -83,7 +86,9 @@ export async function GET(req: NextRequest) {
           parentsCount: 0,
           juniorsWithoutParentCount: 0,
           usersWithoutUsernameCount: 0,
-          messagesCount: 0,
+          groupsWithoutHeadCoachCount: 0,
+          pendingAttendanceCount: 0,
+          activitiesAwaitingCoachEvaluationCount: 0,
           unreadNotificationsCount: 0,
           trainingsCount: 0,
           girlsCount: 0,
@@ -98,24 +103,39 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const [clubsRes, membersRes, groupsRes] = await Promise.all([
+    const [clubsRes, membersRes, groupsRes, adminsRes, seasonsRes] = await Promise.all([
       supabaseAdmin.from("clubs").select("id,name").in("id", clubIds),
       supabaseAdmin
         .from("club_members")
         .select("club_id,user_id,role,is_active,player_course_track")
         .in("club_id", clubIds),
-      supabaseAdmin.from("coach_groups").select("id,name,club_id,is_active").in("club_id", clubIds),
+      supabaseAdmin.from("coach_groups").select("id,name,club_id,club_season_id,is_active,head_coach_user_id").in("club_id", clubIds),
+      supabaseAdmin.from("app_admins").select("user_id"),
+      supabaseAdmin.from("club_seasons").select("id,club_id,is_current,starts_on").in("club_id", clubIds).order("starts_on", { ascending: false }),
     ]);
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (membersRes.error) return NextResponse.json({ error: membersRes.error.message }, { status: 400 });
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
+    if (adminsRes.error) return NextResponse.json({ error: adminsRes.error.message }, { status: 400 });
+    if (seasonsRes.error) return NextResponse.json({ error: seasonsRes.error.message }, { status: 400 });
 
     const clubs = (clubsRes.data ?? []) as ManagedClub[];
     const allMembers = (membersRes.data ?? []) as MemberRow[];
-    const groups = (groupsRes.data ?? []) as GroupRow[];
+    const allGroups = (groupsRes.data ?? []) as GroupRow[];
+    const seasons = (seasonsRes.data ?? []) as Array<{ id: string; club_id: string; is_current: boolean; starts_on: string }>;
+    const seasonByClub = new Map<string, string>();
+    for (const season of seasons) {
+      if (!seasonByClub.has(season.club_id) || season.is_current) seasonByClub.set(season.club_id, season.id);
+    }
+    const groups = allGroups.filter((group) => {
+      const selectedSeason = seasonByClub.get(group.club_id);
+      return !selectedSeason || group.club_season_id === selectedSeason;
+    });
 
-    const uniqueUsers = new Set(allMembers.map((m) => String(m.user_id ?? "").trim()).filter(Boolean));
-    const activeMembers = allMembers.filter((m) => Boolean(m.is_active));
+    const superadminIds = new Set((adminsRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim()).filter(Boolean));
+    const countedMembers = allMembers.filter((m) => !superadminIds.has(String(m.user_id ?? "").trim()));
+    const uniqueUsers = new Set(countedMembers.map((m) => String(m.user_id ?? "").trim()).filter(Boolean));
+    const activeMembers = countedMembers.filter((m) => Boolean(m.is_active));
     const activeUserIds = new Set(activeMembers.map((m) => String(m.user_id ?? "").trim()).filter(Boolean));
 
     const roleSetByUser: Record<"manager" | "coach" | "player" | "parent", Set<string>> = {
@@ -130,7 +150,7 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const profileIds = uniq(allMembers.map((m) => m.user_id));
+    const profileIds = uniq(countedMembers.map((m) => m.user_id));
     const profilesRes =
       profileIds.length > 0
         ? await supabaseAdmin
@@ -194,8 +214,8 @@ export async function GET(req: NextRequest) {
     groups.forEach((g) => {
       groupNameById[g.id] = String(g.name ?? "").trim() || "Groupe";
     });
-    const archivedGroups = groups.filter((g) => String(g.name ?? "").trim() === "__ARCHIVE_HISTORIQUE__");
-    const activeGroups = groups.filter((g) => Boolean(g.is_active) && String(g.name ?? "").trim() !== "__ARCHIVE_HISTORIQUE__");
+    const archivedGroups = groups.filter((g) => String(g.name ?? "").trim().startsWith("__ARCHIVE_"));
+    const activeGroups = groups.filter((g) => Boolean(g.is_active) && !String(g.name ?? "").trim().startsWith("__ARCHIVE_"));
     const planningGroupIds = activeGroups.map((g) => g.id);
 
     const groupPlayersRes =
@@ -231,11 +251,13 @@ export async function GET(req: NextRequest) {
     let plannedEventsCount = 0;
     let pastEventsCount = 0;
     let trainingsCount = 0;
+    let pendingAttendanceCount = 0;
+    let activitiesAwaitingCoachEvaluationCount = 0;
     let topAttendance: Array<{ player_id: string; name: string; present: number; total: number; rate: number }> = [];
     let upcomingEvents: EventLite[] = [];
     const nowIso = new Date().toISOString();
 
-    if (planningGroupIds.length > 0) {
+    if (clubIds.length > 0) {
       const sinceDate = new Date();
       if (assiduityWindow === "30d") sinceDate.setDate(sinceDate.getDate() - 30);
       else if (assiduityWindow === "90d") sinceDate.setDate(sinceDate.getDate() - 90);
@@ -243,57 +265,96 @@ export async function GET(req: NextRequest) {
       else sinceDate.setMonth(sinceDate.getMonth() - 6);
       const sinceDateIso = sinceDate.toISOString();
 
-      const [plannedCountRes, pastCountRes, trainingsCountRes, assiduityEventsRes, upcomingRes] = await Promise.all([
-        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", planningGroupIds).eq("status", "scheduled").gte("starts_at", nowIso),
-        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", planningGroupIds).eq("status", "scheduled").lt("starts_at", nowIso),
-        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", planningGroupIds).eq("status", "scheduled").eq("event_type", "training").gte("starts_at", nowIso),
+      const groupScopeIds = planningGroupIds.length > 0 ? planningGroupIds : ["00000000-0000-0000-0000-000000000000"];
+      const [plannedCountRes, competitionPlannedCountRes, pastCountRes, competitionPastCountRes, trainingsCountRes, assiduityEventsRes, upcomingRes, competitionUpcomingRes] = await Promise.all([
+        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", groupScopeIds).neq("event_type", "competition").eq("status", "scheduled").gte("starts_at", nowIso),
+        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("club_id", clubIds).eq("event_type", "competition").eq("status", "scheduled").gte("starts_at", nowIso),
+        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", groupScopeIds).neq("event_type", "competition").eq("status", "scheduled").lt("starts_at", nowIso),
+        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("club_id", clubIds).eq("event_type", "competition").eq("status", "scheduled").lt("starts_at", nowIso),
+        supabaseAdmin.from("club_events").select("id", { count: "exact", head: true }).in("group_id", groupScopeIds).eq("status", "scheduled").eq("event_type", "training").gte("starts_at", nowIso),
         supabaseAdmin
           .from("club_events")
-          .select("id")
-          .in("group_id", planningGroupIds)
+          .select("id,requires_evaluation")
+          .in("group_id", groupScopeIds)
           .eq("status", "scheduled")
+          .neq("event_type", "competition")
           .lt("starts_at", nowIso)
           .gte("starts_at", sinceDateIso)
           .order("starts_at", { ascending: false })
           .limit(2000),
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-          .in("group_id", planningGroupIds)
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
+          .in("group_id", groupScopeIds)
+          .neq("event_type", "competition")
+          .eq("status", "scheduled")
+          .gte("starts_at", nowIso)
+          .order("starts_at", { ascending: true })
+          .limit(10),
+        supabaseAdmin
+          .from("club_events")
+          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status")
+          .in("club_id", clubIds)
+          .eq("event_type", "competition")
           .eq("status", "scheduled")
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
           .limit(10),
       ]);
       if (plannedCountRes.error) return NextResponse.json({ error: plannedCountRes.error.message }, { status: 400 });
+      if (competitionPlannedCountRes.error) return NextResponse.json({ error: competitionPlannedCountRes.error.message }, { status: 400 });
       if (pastCountRes.error) return NextResponse.json({ error: pastCountRes.error.message }, { status: 400 });
+      if (competitionPastCountRes.error) return NextResponse.json({ error: competitionPastCountRes.error.message }, { status: 400 });
       if (trainingsCountRes.error) return NextResponse.json({ error: trainingsCountRes.error.message }, { status: 400 });
       if (assiduityEventsRes.error) return NextResponse.json({ error: assiduityEventsRes.error.message }, { status: 400 });
       if (upcomingRes.error) return NextResponse.json({ error: upcomingRes.error.message }, { status: 400 });
+      if (competitionUpcomingRes.error) return NextResponse.json({ error: competitionUpcomingRes.error.message }, { status: 400 });
 
-      plannedEventsCount = plannedCountRes.count ?? 0;
-      pastEventsCount = pastCountRes.count ?? 0;
+      plannedEventsCount = (plannedCountRes.count ?? 0) + (competitionPlannedCountRes.count ?? 0);
+      pastEventsCount = (pastCountRes.count ?? 0) + (competitionPastCountRes.count ?? 0);
       trainingsCount = trainingsCountRes.count ?? 0;
-      upcomingEvents = (upcomingRes.data ?? []) as EventLite[];
+      const combinedUpcomingEvents = [
+        ...((upcomingRes.data ?? []) as EventLite[]),
+        ...((competitionUpcomingRes.data ?? []) as EventLite[]),
+      ];
+      upcomingEvents = Array.from(new Map(combinedUpcomingEvents.map((event) => [event.id, event])).values()).map((event) => ({
+        ...event,
+        label: String(event.title ?? "").trim() || undefined,
+        href: event.event_type === "competition" ? `/manager/events/new?event=${event.id}` : undefined,
+      })).sort((left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime()).slice(0, 10);
 
-      const assiduityEventIds = uniq(((assiduityEventsRes.data ?? []) as Array<{ id: string | null }>).map((r) => r.id));
+      const assiduityEvents = (assiduityEventsRes.data ?? []) as Array<{ id: string | null; requires_evaluation: boolean | null }>;
+      const assiduityEventIds = uniq(assiduityEvents.map((r) => r.id));
       if (assiduityEventIds.length > 0) {
         const attendanceRes = await supabaseAdmin
           .from("club_event_attendees")
-          .select("player_id,status")
+          .select("event_id,player_id,status")
           .in("event_id", assiduityEventIds);
         if (attendanceRes.error) return NextResponse.json({ error: attendanceRes.error.message }, { status: 400 });
 
         const counters = new Map<string, { present: number; total: number }>();
-        ((attendanceRes.data ?? []) as Array<{ player_id: string; status: string | null }>).forEach((row) => {
+        const attendanceRows = (attendanceRes.data ?? []) as Array<{ event_id: string; player_id: string; status: string | null }>;
+        attendanceRows.forEach((row) => {
           const playerId = String(row.player_id ?? "").trim();
           if (!playerId) return;
+          if (row.status === "expected") pendingAttendanceCount += 1;
           if (row.status !== "present" && row.status !== "absent" && row.status !== "excused") return;
           const current = counters.get(playerId) ?? { present: 0, total: 0 };
           current.total += 1;
           if (row.status === "present") current.present += 1;
           counters.set(playerId, current);
         });
+
+        const evaluationEventIds = uniq(assiduityEvents.filter((event) => event.requires_evaluation).map((event) => event.id));
+        if (evaluationEventIds.length > 0) {
+          const feedbackRes = await supabaseAdmin
+            .from("club_event_coach_feedback")
+            .select("event_id,player_id")
+            .in("event_id", evaluationEventIds);
+          if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+          const completedPairs = new Set(((feedbackRes.data ?? []) as Array<{ event_id: string; player_id: string }>).map((row) => `${row.event_id}|${row.player_id}`));
+          activitiesAwaitingCoachEvaluationCount = evaluationEventIds.filter((eventId) => attendanceRows.some((row) => row.event_id === eventId && row.status !== "absent" && row.status !== "excused" && row.status !== "not_registered" && !completedPairs.has(`${eventId}|${row.player_id}`))).length;
+        }
 
         topAttendance = Array.from(counters.entries())
           .filter(([, c]) => c.total >= 3)
@@ -313,22 +374,63 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const [threadsRes, activeMembersAllRes, notifActorsRes] = await Promise.all([
-      supabaseAdmin.from("message_threads").select("id").in("organization_id", clubIds),
+    const scheduledCampsRes = await supabaseAdmin
+      .from("club_camps")
+      .select("id,title")
+      .in("club_id", clubIds)
+      .eq("status", "scheduled");
+    if (scheduledCampsRes.error) return NextResponse.json({ error: scheduledCampsRes.error.message }, { status: 400 });
+
+    const scheduledCamps = (scheduledCampsRes.data ?? []) as Array<{ id: string; title: string | null }>;
+    const campTitleById = new Map(scheduledCamps.map((camp) => [String(camp.id), String(camp.title ?? "").trim() || "Stage/Camp"]));
+    const campIds = Array.from(campTitleById.keys());
+    const campDaysRes = campIds.length > 0
+      ? await supabaseAdmin
+          .from("club_camp_days")
+          .select("camp_id,event_id")
+          .in("camp_id", campIds)
+          .gte("starts_at", nowIso)
+      : ({ data: [], error: null } as const);
+    if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+
+    const campIdByEventId = new Map<string, string>();
+    for (const day of (campDaysRes.data ?? []) as Array<{ camp_id: string | null; event_id: string | null }>) {
+      const campId = String(day.camp_id ?? "").trim();
+      const eventId = String(day.event_id ?? "").trim();
+      if (campId && eventId) campIdByEventId.set(eventId, campId);
+    }
+    const campEventIds = Array.from(campIdByEventId.keys());
+    const campEventsRes = campEventIds.length > 0
+      ? await supabaseAdmin
+          .from("club_events")
+          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+          .in("id", campEventIds)
+          .eq("status", "scheduled")
+          .gte("starts_at", nowIso)
+      : ({ data: [], error: null } as const);
+    if (campEventsRes.error) return NextResponse.json({ error: campEventsRes.error.message }, { status: 400 });
+
+    const upcomingById = new Map(upcomingEvents.map((event) => [event.id, event]));
+    for (const event of (campEventsRes.data ?? []) as EventLite[]) {
+      const campId = campIdByEventId.get(String(event.id));
+      if (!campId) continue;
+      upcomingById.set(String(event.id), {
+        ...event,
+        event_type: "camp",
+        label: campTitleById.get(campId) ?? "Stage/Camp",
+        href: `/manager/camps/${campId}`,
+      });
+    }
+    upcomingEvents = Array.from(upcomingById.values())
+      .sort((left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime())
+      .slice(0, 10);
+
+    const [activeMembersAllRes, notifActorsRes] = await Promise.all([
       supabaseAdmin.from("club_members").select("user_id").in("club_id", clubIds).eq("is_active", true),
       supabaseAdmin.from("notifications").select("id", { count: "exact", head: true }).in("actor_user_id", uniq(activeMembers.map((m) => m.user_id))),
     ]);
-    if (threadsRes.error) return NextResponse.json({ error: threadsRes.error.message }, { status: 400 });
     if (activeMembersAllRes.error) return NextResponse.json({ error: activeMembersAllRes.error.message }, { status: 400 });
     if (notifActorsRes.error) return NextResponse.json({ error: notifActorsRes.error.message }, { status: 400 });
-
-    const threadIds = uniq(((threadsRes.data ?? []) as Array<{ id: string | null }>).map((r) => r.id));
-    let messagesCount = 0;
-    if (threadIds.length > 0) {
-      const msgCountRes = await supabaseAdmin.from("thread_messages").select("id", { count: "exact", head: true }).in("thread_id", threadIds);
-      if (msgCountRes.error) return NextResponse.json({ error: msgCountRes.error.message }, { status: 400 });
-      messagesCount = msgCountRes.count ?? 0;
-    }
 
     return NextResponse.json({
       me,
@@ -338,7 +440,7 @@ export async function GET(req: NextRequest) {
         clubsCount: clubs.length,
         usersCount: uniqueUsers.size,
         activeUsersCount: activeUserIds.size,
-        inactiveMemberships: allMembers.filter((m) => m.is_active === false).length,
+        inactiveMemberships: countedMembers.filter((m) => m.is_active === false).length,
         groupsCount: groups.length,
         activeGroupsCount: activeGroups.length,
         archivedGroupsCount: archivedGroups.length,
@@ -346,7 +448,9 @@ export async function GET(req: NextRequest) {
         parentsCount: roleSetByUser.parent.size,
         juniorsWithoutParentCount: juniorsWithoutParent.length,
         usersWithoutUsernameCount,
-        messagesCount,
+        groupsWithoutHeadCoachCount: activeGroups.filter((group) => !group.head_coach_user_id).length,
+        pendingAttendanceCount,
+        activitiesAwaitingCoachEvaluationCount,
         unreadNotificationsCount: notifActorsRes.count ?? 0,
         trainingsCount,
         girlsCount,

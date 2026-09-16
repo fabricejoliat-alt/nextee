@@ -9,6 +9,7 @@ import {
   normalizeSchedule,
   normalizeTargets,
   resolveNewsRecipients,
+  resolveLinkedEventTargets,
   validateLinkedNewsContent,
 } from "@/app/api/manager/news/_lib";
 
@@ -58,14 +59,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
       body.linked_camp_id !== undefined
         ? normalizeLinkedItemId(body.linked_camp_id)
         : (currentRes.data.linked_camp_id == null ? null : String(currentRes.data.linked_camp_id));
-    const targets = normalizeTargets(body.targets);
+    let targets = normalizeTargets(body.targets);
 
     if (!title) return NextResponse.json({ error: "Titre obligatoire." }, { status: 400 });
-    if (targets.length === 0) return NextResponse.json({ error: "Ajoute au moins une cible." }, { status: 400 });
     if (status === "scheduled" && !scheduledFor) {
       return NextResponse.json({ error: "Date de programmation obligatoire." }, { status: 400 });
     }
     await validateLinkedNewsContent({ supabaseAdmin, clubId, linkedClubEventId, linkedCampId });
+    const linkedEventTargets = await resolveLinkedEventTargets(supabaseAdmin, linkedClubEventId);
+    if (linkedEventTargets) targets = linkedEventTargets;
+    if (targets.length === 0) {
+      return NextResponse.json(
+        { error: linkedClubEventId ? "L’activité liée ne contient aucun joueur ou coach." : "Ajoute au moins une cible." },
+        { status: 400 }
+      );
+    }
 
     const publishedAt =
       normalizedStatus === "published"

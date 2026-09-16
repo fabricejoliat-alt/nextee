@@ -137,7 +137,7 @@ export default function ManagerHeader() {
 
             <div className="header-right header-right--icon">
               <LanguageToggle />
-              <Link className="icon-btn icon-btn-notifications" href="/manager/notifications" aria-label={t("common.notificationsSoon")}>
+              <Link className="icon-btn icon-btn-notifications" href="/manager/notifications" aria-label="Notifications">
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
                 {unreadCount > 0 ? <span className="icon-btn-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
               </Link>

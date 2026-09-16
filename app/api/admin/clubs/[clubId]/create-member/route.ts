@@ -188,6 +188,7 @@ async function resolveExistingPlayerConsentStatus(supabaseAdmin: any, userId: st
 
   const statuses = (data ?? []).map((row: any) => String(row?.player_consent_status ?? ""));
   if (statuses.includes("granted")) return "granted";
+  if (statuses.includes("refused")) return "refused";
   if (statuses.includes("adult")) return "adult";
   if (statuses.includes("pending")) return "pending";
   return null;
@@ -250,6 +251,14 @@ const clubId: string | undefined = params?.clubId;
     const postalCode = (body?.postal_code ?? "").trim();
     const city = (body?.city ?? "").trim();
     const avsNo = (body?.avs_no ?? "").trim();
+    const sex = (body?.sex ?? "").trim();
+    const handedness = (body?.handedness ?? "").trim();
+    const handicapValue = Number(body?.handicap);
+    const handicap = Number.isFinite(handicapValue) ? handicapValue : null;
+    const isPerformance = Boolean(body?.is_performance);
+    const consentStatus = ["granted", "pending", "refused", "adult"].includes(String(body?.player_consent_status ?? ""))
+      ? String(body.player_consent_status)
+      : null;
     const role = (body?.role ?? "").trim(); // manager | coach | player | parent
     const playerFieldValues =
       body?.player_field_values && typeof body.player_field_values === "object"
@@ -381,6 +390,9 @@ const clubId: string | undefined = params?.clubId;
           postal_code: postalCode || null,
           city: city || null,
           avs_no: avsNo || null,
+          sex: sex || null,
+          handedness: handedness || null,
+          handicap,
           staff_function: role === "manager" || role === "coach" ? (staffFunction || null) : null,
           username,
           app_role: role || null,
@@ -404,7 +416,8 @@ const clubId: string | undefined = params?.clubId;
           user_id: userId,
           role,
           is_active: true,
-          player_consent_status: role === "player" ? inheritedConsentStatus : null,
+          is_performance: role === "player" ? isPerformance : false,
+          player_consent_status: role === "player" ? consentStatus ?? inheritedConsentStatus ?? "pending" : null,
         },
         { onConflict: "club_id,user_id,role" }
       )
@@ -501,6 +514,7 @@ const clubId: string | undefined = params?.clubId;
     return NextResponse.json(
       {
         user: { id: userId, email: emailInput || null },
+        member: { id: memberRow?.id ?? null },
         tempPassword: existingUserId ? null : tempPassword,
         username,
       },

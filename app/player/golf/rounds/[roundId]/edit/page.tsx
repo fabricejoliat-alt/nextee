@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, XCircle } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { calculateGolfRoundMetrics, scoreToParLabel, validateGolfHoles } from "@/lib/golfRoundMetrics";
+import styles from "./RoundScoreEntry.module.css";
 
 type Round = {
   id: string;
@@ -150,6 +153,8 @@ export default function EditRoundWizardPage() {
   );
 
   const [holeIdx, setHoleIdx] = useState(0);
+  const [entryView, setEntryView] = useState<"guided" | "grid">(() => searchParams.get("mode") === "grid" ? "grid" : "guided");
+  const [gridDirty, setGridDirty] = useState(false);
 
   const scorecardHref = useMemo(() => {
     const id = roundId ?? "";
@@ -448,6 +453,15 @@ export default function EditRoundWizardPage() {
     setHoleIdx(Math.min(requestedHoleIdx, maxIdx));
   }, [loading, requestedHoleIdx, holes.length]);
 
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!gridDirty) return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [gridDirty]);
+
   // Keep latest hole pointer updated whenever current hole changes
   useEffect(() => {
     const h = holes[holeIdx];
@@ -475,6 +489,39 @@ export default function EditRoundWizardPage() {
     setHoles((prev) => prev.map((x, i) => (i === holeIdx ? next : x)));
 
     scheduleSave(next);
+  }
+
+  function patchGridHole(index: number, patch: Partial<Hole>) {
+    setHoles((current) => current.map((item, itemIndex) => itemIndex === index ? applyConstraints(item, patch) : item));
+    setGridDirty(true);
+    setUxError(null);
+  }
+
+  async function saveGrid() {
+    if (!roundId) return;
+    const validation = validateGolfHoles(holes, holes.length > 9 ? 18 : 9);
+    if (Object.keys(validation).length) {
+      setUxError(`Vérifiez les trous ${Object.keys(validation).join(", ")}.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const rows = holes.map((item) => ({
+        round_id: roundId, hole_no: item.hole_no, par: item.par, stroke_index: item.stroke_index,
+        score: item.score, putts: useStats ? item.putts : null,
+        fairway_hit: useStats ? item.fairway_hit : null, note: item.note?.trim() || null,
+      }));
+      const result = await supabase.from("golf_round_holes").upsert(rows, { onConflict: "round_id,hole_no" });
+      if (result.error) throw result.error;
+      const recompute = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
+      if (recompute.error) console.warn("om_recompute_round failed:", recompute.error.message);
+      setGridDirty(false);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "La grille n’a pas pu être enregistrée.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function goPrevHole() {
@@ -701,7 +748,26 @@ export default function EditRoundWizardPage() {
     }
   }
 
-  if (loading) return <CompactLoadingBlock label={t("common.loading")} />;
+  if (loading) {
+    return (
+      <div className="player-dashboard-bg">
+        <div className="app-shell marketplace-page">
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Modifier" }]} />
+          <div className="glass-section">
+            <div className="marketplace-header">
+              <div>
+                <h1 className="section-title">{t("roundsEdit.enterHoles")}</h1>
+                <div className="section-subtitle">{t("common.loading")}</div>
+              </div>
+            </div>
+          </div>
+          <div className="glass-section">
+            <CompactLoadingBlock label={t("common.loading")} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!round) {
     return (
@@ -737,12 +803,13 @@ export default function EditRoundWizardPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Modifier" }]} />
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {t("roundsEdit.enterHoles")}
-              </div>
+              </h1>
             </div>
           </div>
 
@@ -750,19 +817,52 @@ export default function EditRoundWizardPage() {
           {uxError && <div className="marketplace-error">{uxError}</div>}
         </div>
 
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 14 }}>
+        <section className={`glass-section ${styles.sectionCard}`}>
+          <div className={styles.modeCard}>
+            <h2 className={styles.cardTitle}>Mode de saisie</h2>
+            <div className={styles.modeOptions} role="group" aria-label="Mode de saisie des scores">
+              <button type="button" className={`${styles.modeButton} ${entryView === "guided" ? styles.modeButtonActive : ""}`} aria-pressed={entryView === "guided"} onClick={() => setEntryView("guided")}>Trou par trou</button>
+              <button type="button" className={`${styles.modeButton} ${entryView === "grid" ? styles.modeButtonActive : ""}`} aria-pressed={entryView === "grid"} onClick={() => setEntryView("grid")}>Tous les trous</button>
+            </div>
+            <span style={{ color: "rgba(0,0,0,.58)", fontSize: 12, fontWeight: 700 }}>Vous pouvez changer de mode sans perdre les valeurs saisies.</span>
+          </div>
+        </section>
+
+        <section className={`glass-section ${styles.sectionCard}`}>
+          {entryView === "grid" ? (
+            <div className={styles.gridCard}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div><h2 style={{ margin: 0, fontSize: 20 }}>Saisie globale</h2><span style={{ color: "rgba(0,0,0,.58)", fontSize: 12, fontWeight: 700 }}>{holes.length} trous · sauvegarde groupée</span></div>
+                <div style={{ fontWeight: 900 }}>{gridDirty ? "Modifications non enregistrées" : "À jour"}</div>
+              </div>
+              <div style={{ overflowX: "auto", border: "1px solid rgba(0,0,0,.1)", borderRadius: 14 }} tabIndex={0} aria-label="Grille de saisie, défilement horizontal disponible">
+                <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", textAlign: "center", fontSize: 13 }}>
+                  <thead style={{ position: "sticky", top: 0, zIndex: 2, background: "#eef2ed" }}><tr>{["Trou","Par","Score","Putts","Fairway / GIR","Écart"].map(label => <th key={label} style={gridCellStyle}>{label}</th>)}</tr></thead>
+                  <tbody>{holes.map((item, index) => {
+                    const gir = item.score != null && item.par != null && item.putts != null ? item.score - item.putts <= item.par - 2 : null;
+                    const subtotal = item.hole_no === 9 || item.hole_no === holes.length;
+                    const partial = calculateGolfRoundMetrics(holes.filter(value => value.hole_no <= item.hole_no), item.hole_no <= 9 ? 9 : 18);
+                    return <Fragment key={item.hole_no}><tr>
+                      <th scope="row" style={{ ...gridCellStyle, position: "sticky", left: 0, background: "#fff" }}>{item.hole_no}</th>
+                      <td style={gridCellStyle}><input aria-label={`Par trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.par ?? ""} onChange={e=>patchGridHole(index,{par:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={!isManualCourse || saving}/></td>
+                      <td style={gridCellStyle}><input aria-label={`Score trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.score ?? ""} onChange={e=>patchGridHole(index,{score:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={saving}/></td>
+                      <td style={gridCellStyle}><input aria-label={`Putts trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.putts ?? ""} onChange={e=>patchGridHole(index,{putts:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={!useStats || saving}/></td>
+                      <td style={gridCellStyle}>{useStats ? <select aria-label={`Fairway trou ${item.hole_no}`} className="input" value={item.fairway_hit == null ? "" : item.fairway_hit ? "hit" : "miss"} onChange={e=>patchGridHole(index,{fairway_hit:e.target.value===""?null:e.target.value==="hit"})} style={{ ...gridInputStyle, minWidth: 105 }} disabled={saving}><option value="">—</option><option value="hit">{item.par===3?"GIR oui":"Touché"}</option><option value="miss">{item.par===3?"GIR non":"Manqué"}</option></select> : "—"}{item.par !== 3 && gir != null ? <small style={{ display: "block" }}>GIR {gir?"oui":"non"}</small>:null}</td>
+                      <td style={gridCellStyle}>{item.score != null && item.par != null ? scoreToParLabel(item.score-item.par) : "—"}</td>
+                    </tr>{subtotal ? <tr style={{ background: "#f3f5f2", fontWeight: 900 }}><td colSpan={2} style={gridCellStyle}>{item.hole_no===9?"TOTAL ALLER":"TOTAL"}</td><td style={gridCellStyle}>{partial.score ?? "—"}</td><td style={gridCellStyle}>{partial.putts.total ?? "—"}</td><td style={gridCellStyle}>{partial.playedHoles} trous saisis</td><td style={gridCellStyle}>{scoreToParLabel(partial.toPar)}</td></tr>:null}</Fragment>;
+                  })}</tbody>
+                </table>
+              </div>
+              <button type="button" className={`${styles.actionButton} ${styles.primaryAction} ${styles.gridSaveButton}`} onClick={saveGrid} disabled={saving || !gridDirty}>{saving ? "Enregistrement…" : "Enregistrer tous les trous"}</button>
+            </div>
+          ) : (
+          <div className={styles.holeCard}>
             <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-              }}
+              className={styles.holeHeader}
             >
-              <div style={{ fontWeight: 1000, fontSize: 32, lineHeight: 1 }}>
-                {t("roundsEdit.hole")} {hole?.hole_no ?? holeIdx + 1}
+              <div>
+                <h2 className={styles.cardTitle}>Saisie du score</h2>
+                <strong className={styles.holeNumber}>{t("roundsEdit.hole")} {hole?.hole_no ?? holeIdx + 1}</strong>
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -776,9 +876,10 @@ export default function EditRoundWizardPage() {
 
             {hole && (
               <div style={{ display: "grid", gap: 14 }}>
+                <div className={styles.scoreCore}>
                 {/* PAR (manual courses) */}
                 {isManualCourse ? (
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div className={`${styles.scoreField} ${styles.parField}`}>
                     <div style={fieldLabelStyle}>PAR *</div>
                     <div
                       style={{
@@ -838,7 +939,7 @@ export default function EditRoundWizardPage() {
                 ) : null}
 
                 {/* SCORE */}
-                <div style={{ display: "grid", gap: 8 }}>
+                <div className={`${styles.scoreField} ${styles.resultField}`}>
                   <div style={fieldLabelStyle}>{t("rounds.score")}</div>
 
                   <div
@@ -881,6 +982,7 @@ export default function EditRoundWizardPage() {
                       +
                     </button>
                   </div>
+                </div>
                 </div>
 
                 {useStats ? (
@@ -987,27 +1089,21 @@ export default function EditRoundWizardPage() {
                 ) : null}
 
                 {/* NAV / FINISH */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isLastHole && canMarkMissCut ? "1fr 1fr 1fr" : "1fr 1fr",
-                    gap: 10,
-                    marginTop: 4,
-                  }}
-                >
+                <div className={`${styles.holeNavigation} ${isLastHole && canMarkMissCut ? styles.holeNavigationThree : ""}`}>
                   <button
                     type="button"
-                    className="btn"
+                    className={`${styles.navButton} ${styles.navSecondary}`}
                     onClick={goPrevHole}
                     disabled={saving || holeIdx === 0}
-                    style={{ width: "100%" }}
                   >
+                    <ArrowLeft size={16} aria-hidden="true" />
                     {holeIdx === 0 ? t("roundsEdit.holeDash") : `${t("roundsEdit.hole")} ${holeIdx}`}
                   </button>
 
                   {!isLastHole ? (
-                    <button type="button" className="btn" onClick={goNextHole} style={{ width: "100%" }} disabled={saving}>
+                    <button type="button" className={`${styles.navButton} ${styles.navPrimary}`} onClick={goNextHole} disabled={saving}>
                       {`${t("roundsEdit.hole")} ${holeIdx + 2}`}
+                      <ArrowRight size={16} aria-hidden="true" />
                     </button>
                   ) : canMarkMissCut ? (
                     <>
@@ -1043,9 +1139,8 @@ export default function EditRoundWizardPage() {
                       {nextRoundId ? (
                         <button
                           type="button"
-                          className="cta-green cta-green-inline"
+                          className={`${styles.navButton} ${styles.navPrimary}`}
                           onClick={finishAndGoNextRound}
-                          style={{ width: "100%" }}
                           disabled={saving}
                         >
                           Partie suivante
@@ -1053,9 +1148,8 @@ export default function EditRoundWizardPage() {
                       ) : (
                         <button
                           type="button"
-                          className="cta-green cta-green-inline"
+                          className={`${styles.navButton} ${styles.navPrimary}`}
                           onClick={finishAndGoScorecard}
-                          style={{ width: "100%" }}
                           disabled={saving}
                         >
                           {t("roundsEdit.finish")}
@@ -1065,9 +1159,8 @@ export default function EditRoundWizardPage() {
                   ) : nextRoundId ? (
                     <button
                       type="button"
-                      className="cta-green cta-green-inline"
+                      className={`${styles.navButton} ${styles.navPrimary}`}
                       onClick={finishAndGoNextRound}
-                      style={{ width: "100%" }}
                       disabled={saving}
                     >
                       Partie suivante
@@ -1075,9 +1168,8 @@ export default function EditRoundWizardPage() {
                   ) : (
                     <button
                       type="button"
-                      className="cta-green cta-green-inline"
+                      className={`${styles.navButton} ${styles.navPrimary}`}
                       onClick={finishAndGoScorecard}
-                      style={{ width: "100%" }}
                       disabled={saving}
                     >
                       {t("roundsEdit.finish")}
@@ -1087,9 +1179,12 @@ export default function EditRoundWizardPage() {
               </div>
             )}
           </div>
+          )}
+        </section>
 
-          <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+        <section className={`glass-section ${styles.sectionCard}`}>
+          <div className={styles.detailsCard}>
+            <h2 className={styles.cardTitle}>Informations du parcours</h2>
             <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
                 Date du parcours
               </div>
@@ -1190,25 +1285,23 @@ export default function EditRoundWizardPage() {
               />
               <button
                 type="button"
-                className="btn"
+                className={`${styles.actionButton} ${styles.primaryAction} ${styles.saveMetaButton}`}
                 onClick={saveRoundMeta}
                 disabled={saving || !roundDate}
-                style={{ width: "fit-content" }}
               >
                 Enregistrer
               </button>
-            </div>
           </div>
+        </section>
 
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            <Link className="cta-green cta-green-inline" href={scorecardHref} style={{ width: "100%", justifyContent: "center" as any }}>
-              {t("roundsEdit.showScorecard")}
-            </Link>
+        <div className={styles.footerActions}>
+          <Link className={`${styles.actionButton} ${styles.primaryAction}`} href={scorecardHref}>
+            {t("roundsEdit.showScorecard")}
+          </Link>
 
-            <button type="button" className="btn btn-danger" onClick={deleteRound} style={{ width: "100%" }} disabled={saving}>
-              {t("roundsEdit.deleteRound")}
-            </button>
-          </div>
+          <button type="button" className={`${styles.actionButton} ${styles.dangerAction}`} onClick={deleteRound} disabled={saving}>
+            {t("roundsEdit.deleteRound")}
+          </button>
         </div>
       </div>
     </div>
@@ -1219,6 +1312,19 @@ const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 950,
   color: "rgba(0,0,0,0.70)",
+};
+
+const gridCellStyle: React.CSSProperties = {
+  padding: "8px 7px",
+  borderBottom: "1px solid rgba(0,0,0,.07)",
+};
+
+const gridInputStyle: React.CSSProperties = {
+  width: 68,
+  minHeight: 42,
+  padding: "6px",
+  textAlign: "center",
+  fontWeight: 900,
 };
 
 const pillStyle: React.CSSProperties = {

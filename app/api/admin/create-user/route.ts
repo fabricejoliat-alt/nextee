@@ -51,17 +51,13 @@ export async function POST(req: NextRequest) {
     const emailInput = String(body.email || "").trim().toLowerCase();
     const first_name = String(body.first_name || "").trim();
     const last_name = String(body.last_name || "").trim();
-    const role = String(body.role || "player").trim().toLowerCase();
-    const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);
+    const role = "manager";
 
     if (!first_name || !last_name) {
       return NextResponse.json(
         { error: "Prénom et nom requis." },
         { status: 400 }
       );
-    }
-    if (!allowedRoles.has(role)) {
-      return NextResponse.json({ error: "Rôle invalide." }, { status: 400 });
     }
 
     const supabaseAdmin = createClient(

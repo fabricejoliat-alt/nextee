@@ -279,9 +279,8 @@ async function enrichAndDispatchThreadMessageNotification(
   if (coachIds.length > 0) {
     await dispatchGroup(coachIds, `/coach/messages?thread_id=${encodeURIComponent(opts.threadId)}`);
   }
-  if (managerIds.length > 0) {
-    await dispatchGroup(managerIds, `/manager/messages?thread_id=${encodeURIComponent(opts.threadId)}`);
-  }
+  // The Manager workspace no longer exposes the conversation inbox. Keep
+  // messaging notifications for the roles that retain that workspace only.
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ threadId: string }> }) {

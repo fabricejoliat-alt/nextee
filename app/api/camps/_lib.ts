@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from "@supabase/supabase-js";
 
 export const MAX_DB_EVENT_DURATION_MINUTES = 300;
@@ -11,6 +12,8 @@ export type CampCreateDayArgs = {
   endsAt: string;
   locationText?: string | null;
   practicalInfo?: string | null;
+  responsibleCoachId?: string | null;
+  evaluationEnabled?: boolean;
   headCoachUserId: string;
   coachIds: string[];
   playerIds: string[];
@@ -31,6 +34,26 @@ export function createAdminClient() {
 
 export function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
+}
+
+export async function syncEventEvaluationCriteria(supabaseAdmin: any, eventId: string, criterionIds: string[]) {
+  const selected = uniq(criterionIds);
+  if (selected.length > 3) return { error: "Trois critères personnalisés maximum par activité.", status: 400 } as const;
+  const existing = await supabaseAdmin.from("club_event_evaluation_criteria").select("id,criterion_id").eq("event_id", eventId);
+  if (existing.error) return { error: existing.error.message, status: 400 } as const;
+  const rowIds = (existing.data ?? []).map((row: any) => row.id);
+  if (rowIds.length) {
+    const disabled = await supabaseAdmin.from("club_event_evaluation_criteria").update({ is_enabled: false }).in("id", rowIds);
+    if (disabled.error) return { error: disabled.error.message, status: 400 } as const;
+  }
+  for (const [index, criterionId] of selected.entries()) {
+    const row = (existing.data ?? []).find((item: any) => String(item.criterion_id) === criterionId);
+    const result = row
+      ? await supabaseAdmin.from("club_event_evaluation_criteria").update({ is_enabled: true, position: index + 1 }).eq("id", row.id)
+      : await supabaseAdmin.from("club_event_evaluation_criteria").insert({ event_id: eventId, criterion_id: criterionId, position: index + 1 });
+    if (result.error) return { error: result.error.message, status: 400 } as const;
+  }
+  return { ok: true } as const;
 }
 
 export function normalizeText(value: unknown) {
@@ -117,6 +140,7 @@ export async function createCampDayEvent(supabaseAdmin: ReturnType<typeof create
       location_text: args.locationText ?? null,
       coach_note: args.practicalInfo ?? null,
       status: "scheduled",
+      requires_evaluation: Boolean(args.evaluationEnabled),
       created_by: args.callerUserId,
     })
     .select("id")
@@ -134,6 +158,8 @@ export async function createCampDayEvent(supabaseAdmin: ReturnType<typeof create
     starts_at: args.startsAt,
     ends_at: args.endsAt,
     location_text: args.locationText ?? null,
+    responsible_coach_id: args.responsibleCoachId ?? args.headCoachUserId,
+    evaluation_enabled: Boolean(args.evaluationEnabled),
   });
   if (campDayRes.error) return { error: campDayRes.error.message, status: 400 as const };
 
@@ -233,6 +259,70 @@ export async function assertManagerForClub(
   if (membershipRes.error) return { error: membershipRes.error.message, status: 400 as const };
   if (!membershipRes.data?.club_id) return { error: "Forbidden", status: 403 as const };
   return { ok: true as const };
+}
+
+export async function assertCampRelationsForClub(
+  supabaseAdmin: ReturnType<typeof createAdminClient>,
+  clubId: string,
+  groupIds: string[],
+  playerIds: string[],
+  coachIds: string[],
+  seasonId?: string | null
+) {
+  const [groupsRes, playersRes, coachesRes, seasonRes] = await Promise.all([
+    groupIds.length
+      ? supabaseAdmin.from("coach_groups").select("id").eq("club_id", clubId).in("id", groupIds)
+      : Promise.resolve({ data: [], error: null }),
+    playerIds.length
+      ? supabaseAdmin.from("club_members").select("user_id").eq("club_id", clubId).eq("role", "player").eq("is_active", true).in("user_id", playerIds)
+      : Promise.resolve({ data: [], error: null }),
+    coachIds.length
+      ? supabaseAdmin.from("club_members").select("user_id").eq("club_id", clubId).eq("role", "coach").eq("is_active", true).in("user_id", coachIds)
+      : Promise.resolve({ data: [], error: null }),
+    seasonId
+      ? supabaseAdmin.from("club_seasons").select("id").eq("club_id", clubId).eq("id", seasonId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const queryError = groupsRes.error ?? playersRes.error ?? coachesRes.error ?? seasonRes.error;
+  if (queryError) return { error: queryError.message, status: 400 as const };
+  if ((groupsRes.data ?? []).length !== groupIds.length) return { error: "Un groupe ne fait pas partie du club actif.", status: 403 as const };
+  if ((playersRes.data ?? []).length !== playerIds.length) return { error: "Un junior n’est pas actif dans le club.", status: 403 as const };
+  if ((coachesRes.data ?? []).length !== coachIds.length) return { error: "Un coach n’est pas actif dans le club.", status: 403 as const };
+  if (seasonId && !seasonRes.data?.id) return { error: "La saison ne fait pas partie du club actif.", status: 403 as const };
+  return { ok: true as const };
+}
+
+export async function createCampSupportGroup(
+  supabaseAdmin: ReturnType<typeof createAdminClient>,
+  clubId: string,
+  headCoachUserId: string,
+  playerIds: string[],
+  coachIds: string[],
+  seasonId?: string | null
+) {
+  const groupRes = await supabaseAdmin.from("coach_groups").insert({
+    club_id: clubId,
+    club_season_id: seasonId ?? null,
+    name: "Groupe spécifique",
+    is_active: true,
+    head_coach_user_id: headCoachUserId || null,
+  }).select("id").maybeSingle();
+  if (groupRes.error || !groupRes.data?.id) return { error: groupRes.error?.message ?? "Impossible de créer le groupe technique du stage.", status: 400 as const };
+  const groupId = String(groupRes.data.id);
+  const [playersRes, coachesRes] = await Promise.all([
+    playerIds.length
+      ? supabaseAdmin.from("coach_group_players").insert(playerIds.map((player_user_id) => ({ group_id: groupId, player_user_id })))
+      : Promise.resolve({ error: null }),
+    coachIds.length
+      ? supabaseAdmin.from("coach_group_coaches").insert(coachIds.map((coach_user_id) => ({ group_id: groupId, coach_user_id, is_head: coach_user_id === headCoachUserId })))
+      : Promise.resolve({ error: null }),
+  ]);
+  const assignmentError = playersRes.error ?? coachesRes.error;
+  if (assignmentError) {
+    await supabaseAdmin.from("coach_groups").delete().eq("id", groupId);
+    return { error: assignmentError.message, status: 400 as const };
+  }
+  return { groupId };
 }
 
 export async function resolveCoachClubIds(

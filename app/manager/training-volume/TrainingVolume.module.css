@@ -1,0 +1,75 @@
+.unsaved {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f1f2f1;
+  color: #6d756e;
+  font: 700 10px/1.2 var(--font-inter), sans-serif;
+}
+
+.monthGrid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.month {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 9px 5px;
+  border: 1px solid #dfe6dd;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.month:hover { transform: translateY(-1px); }
+.month:focus-visible { outline: 3px solid rgba(137, 157, 125, .28); outline-offset: 2px; }
+.monthInSeason { border-color: #cbdac7; background: #edf4ea; color: #35483b; }
+.monthOffseason { background: #f5f6f5; color: #667068; }
+.monthName { font: 800 13px/1 var(--font-inter), sans-serif; }
+.monthState { font: 650 9px/1.15 var(--font-inter), sans-serif; white-space: nowrap; }
+
+.editorGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.fieldFull { grid-column: 1 / -1; }
+.editorFooter { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 16px; border-top: 1px solid #e9eee7; }
+.errorList { margin: 6px 0 0; padding-left: 18px; }
+
+.table { min-width: 1080px; }
+.table td { color: #526056; font: 500 12px/1.25 var(--font-inter), sans-serif; }
+.table th:nth-child(1), .table td:nth-child(1) { width: 70px; }
+.table th:nth-child(2), .table td:nth-child(2) { min-width: 175px; }
+.table th:nth-child(3), .table td:nth-child(3) { min-width: 120px; }
+.table th:nth-child(4), .table td:nth-child(4), .table th:nth-child(5), .table td:nth-child(5) { min-width: 112px; }
+.table th:nth-child(6), .table td:nth-child(6) { min-width: 220px; max-width: 280px; }
+.table th:nth-child(7), .table td:nth-child(7) { width: 62px; }
+.table th:last-child, .table td:last-child { min-width: 146px; }
+
+.ftemCode { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; min-height: 25px; padding: 0 7px; border-radius: 8px; background: #edf3ea; color: #42623f; font: 850 11px/1 var(--font-inter), sans-serif; }
+.compactValue { white-space: nowrap; }
+.order { color: #35483b; font-weight: 750; }
+.motivation { display: -webkit-box; overflow: hidden; color: #667168; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.emptyState { display: grid; justify-items: center; gap: 12px; }
+.emptyState > div { width: 100%; }
+
+@media (max-width: 1100px) {
+  .monthGrid { grid-template-columns: repeat(6, minmax(76px, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .monthGrid { grid-template-columns: repeat(3, minmax(76px, 1fr)); }
+  .editorGrid { grid-template-columns: 1fr; }
+  .fieldFull { grid-column: auto; }
+  .editorFooter { align-items: stretch; flex-direction: column; }
+  .editorFooter > div { width: 100%; }
+  .editorFooter button { flex: 1; }
+  .table { min-width: 0; }
+  .table td:nth-child(n) { width: auto; min-width: 0; max-width: none; }
+  .motivation { max-width: 62%; text-align: right; }
+}

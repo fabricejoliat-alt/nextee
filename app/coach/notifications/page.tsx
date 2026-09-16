@@ -5,6 +5,7 @@ export default function CoachNotificationsPage() {
     <NotificationsCenter
       homeHref="/coach"
       settingsHref="/coach/notifications/settings"
+      designVariant="management"
       titleFr="Notifications coach"
       titleEn="Coach notifications"
       titleDe="Trainer-Benachrichtigungen"

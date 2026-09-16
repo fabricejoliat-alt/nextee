@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 
 type Item = {
   id: string;
@@ -143,24 +145,27 @@ export default function MarketplaceMine() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Mes annonces" }]} />
 
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
                 {t("player.myListings")}
-              </div>
+              </h1>
               <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
                 {t("marketplace.mineSubtitle")}
               </div>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/marketplace">
+              <Link className="btn" href="/player/marketplace">
+                <List size={15} aria-hidden="true" />
                 {t("player.allListings")}
               </Link>
               <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
+                <Plus size={15} aria-hidden="true" />
                 {t("common.add")}
               </Link>
             </div>
