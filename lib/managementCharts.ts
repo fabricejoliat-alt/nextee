@@ -150,6 +150,11 @@ export function buildManagementVolumeChartOption({
 }): EChartsOption {
   const hasObjective = Boolean(objective?.some((value) => Number(value ?? 0) > 0));
   const option = baseOption(labels, hasObjective);
+  const highestValue = Math.max(0, ...values, ...(objective ?? []).map((value) => Number(value ?? 0)));
+  option.yAxis = {
+    ...(option.yAxis as object),
+    max: highestValue > 0 ? Math.ceil(highestValue * 1.12) : undefined,
+  };
   if (hasObjective && objectiveLabel) {
     const dashedLegendIcon = `image://data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="8" viewBox="0 0 18 8"><path d="M1 4h16" fill="none" stroke="${MANAGEMENT_CHART_COLORS[2]}" stroke-width="2" stroke-dasharray="4 3" stroke-linecap="round"/></svg>`)}`;
     option.legend = {
@@ -199,7 +204,10 @@ export function buildManagementVolumeChartOption({
           name: objectiveLabel,
           data: objective,
           symbol: "none",
-          lineStyle: { color: MANAGEMENT_CHART_COLORS[2], width: 2, type: "dashed" as const },
+          z: 10,
+          animation: false,
+          lineStyle: { color: MANAGEMENT_CHART_COLORS[2], width: 2.5, type: "dashed" as const },
+          emphasis: { disabled: true },
         }]
       : []),
   ];

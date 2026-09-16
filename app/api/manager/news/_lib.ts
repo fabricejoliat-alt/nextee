@@ -439,7 +439,7 @@ export async function fetchNewsTargetOptions(supabaseAdmin: any, managedClubs: M
 export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
   const newsRes = await supabaseAdmin
     .from("club_news")
-    .select("id,club_id,title,summary,body,status,visible_on_home,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by,linked_club_event_id,linked_camp_id")
+    .select("id,club_id,title,summary,body,status,visible_on_home,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,last_dispatch_result,created_at,updated_at,created_by,linked_club_event_id,linked_camp_id,image_url")
     .eq("club_id", clubId)
     .order("updated_at", { ascending: false });
   if (newsRes.error) throw new Error(newsRes.error.message);
@@ -555,6 +555,7 @@ export async function fetchClubNewsList(supabaseAdmin: any, clubId: string) {
     linked_camp_id: row.linked_camp_id == null ? null : String(row.linked_camp_id),
     linked_club_event_label: linkedEventLabelById.get(String(row.linked_club_event_id ?? "")) ?? null,
     linked_camp_label: linkedCampLabelById.get(String(row.linked_camp_id ?? "")) ?? null,
+    image_url: row.image_url == null ? null : String(row.image_url),
     targets: targetsByNewsId.get(String(row.id ?? "")) ?? [],
   })) satisfies ClubNewsRow[];
 }

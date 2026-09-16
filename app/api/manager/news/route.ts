@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
     const includeLinkedParents = Boolean(body.include_linked_parents);
     const linkedClubEventId = normalizeLinkedItemId(body.linked_club_event_id);
     const linkedCampId = normalizeLinkedItemId(body.linked_camp_id);
+    const imageUrl = normalizeLinkedItemId(body.image_url);
     let targets = normalizeTargets(body.targets);
 
     if (!clubId || !ctx.managedClubs.some((club) => club.id === clubId)) {
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest) {
         include_linked_parents: includeLinkedParents,
         linked_club_event_id: linkedClubEventId,
         linked_camp_id: linkedCampId,
+        image_url: imageUrl,
       })
       .select("id,last_notification_sent_at,last_email_sent_at")
       .single();

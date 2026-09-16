@@ -7,6 +7,7 @@ export type VisibleNewsRow = {
   club_id: string;
   club_name: string;
   title: string;
+  image_url: string | null;
   summary: string | null;
   body: string;
   status: string;
@@ -123,7 +124,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
   const newsRes = await supabaseAdmin
     .from("club_news")
     .select(
-      "id,club_id,title,summary,body,status,visible_on_home,published_at,scheduled_for,created_at,updated_at,linked_club_event_id,linked_camp_id,include_linked_parents"
+      "id,club_id,title,summary,body,status,visible_on_home,published_at,scheduled_for,created_at,updated_at,linked_club_event_id,linked_camp_id,include_linked_parents,image_url"
     )
     .in("club_id", clubIds)
     .in("status", options?.includeArchived ? ["published", "scheduled", "archived"] : ["published", "scheduled"])
@@ -194,6 +195,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
         club_id: String(row.club_id ?? ""),
         club_name: clubNameById.get(String(row.club_id ?? "")) ?? "Club",
         title: String(row.title ?? ""),
+        image_url: row.image_url == null ? null : String(row.image_url),
         summary: row.summary == null ? null : String(row.summary),
         body: String(row.body ?? ""),
         status: String(row.status ?? "draft"),

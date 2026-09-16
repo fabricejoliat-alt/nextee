@@ -50,6 +50,13 @@ export default function RouteLoadingIndicator() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const routeKey = useMemo(() => `${pathname ?? ""}?${searchParams?.toString() ?? ""}`, [pathname, searchParams]);
+  const usesLocalLoadingStates =
+    pathname === "/player" ||
+    pathname?.startsWith("/player/") ||
+    pathname === "/coach" ||
+    pathname?.startsWith("/coach/") ||
+    pathname === "/manager" ||
+    pathname?.startsWith("/manager/");
 
   const [visible, setVisible] = useState(false);
   const startedAtRef = useRef<number | null>(null);
@@ -121,7 +128,9 @@ export default function RouteLoadingIndicator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!visible) return null;
+  // These workspaces handle loading locally in their cards and tables.
+  // Never cover them with the global centered spinner.
+  if (!visible || usesLocalLoadingStates) return null;
 
   return (
     <div className="route-loading-overlay" aria-live="polite" aria-busy="true">

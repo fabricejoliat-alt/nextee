@@ -189,6 +189,7 @@ type PlayVolumeSummary = {
 type HomeNewsItem = {
   id: string;
   title: string;
+  image_url: string | null;
   summary: string | null;
   body: string;
   visible_on_home: boolean;
@@ -1939,9 +1940,13 @@ export default function PlayerHomePage() {
               <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de la section", "Section news")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles de votre section.", "Latest news from your section.")}</p></div><Link className={coachStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
               {newsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
                 <div className={coachStyles.eventList}>
-                  {latestNews.map((news) => <Link key={news.id} href={allNewsHref}>
-                    <div className={coachStyles.dateBox}><Newspaper size={16} /></div>
-                    <div><b>{news.title}</b><span>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}{news.summary ? " · " + truncate(news.summary, 72) : ""}</span></div>
+                  {latestNews.map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
+                    {news.image_url ? <span className={styles.newsThumbnail}><img src={news.image_url} alt="" /></span> : <span className={coachStyles.dateBox}><Newspaper size={16} /></span>}
+                    <div className={styles.newsHomeContent}>
+                      <b>{news.title}</b>
+                      <span className={styles.newsHomeMeta}>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}</span>
+                      {news.summary ? <p className={styles.newsHomeSummary}>{truncate(news.summary, 92)}</p> : null}
+                    </div>
                     <ArrowRight size={16} />
                   </Link>)}
                 </div>

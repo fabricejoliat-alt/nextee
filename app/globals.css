@@ -3782,21 +3782,31 @@ body:has([data-design-system]){
 
 @media (max-width: 540px){
   .player-page-root .player-home-page .player-hero{
-    gap:14px;
-    margin-bottom:30px;
+    gap:10px;
+    margin-bottom:18px;
   }
 
   .player-page-root .player-home-page .avatar{
-    width:70px;
-    height:70px;
+    width:54px;
+    height:54px;
+    border-width:2px;
   }
 
   .player-page-root .player-home-page .hero-title{
-    font-size:32px!important;
+    gap:5px;
+    font-size:26px!important;
+    line-height:1.05;
   }
 
-  .player-page-root .player-home-page .hero-sub{font-size:14px}
-  .player-page-root .player-home-page .hero-club{font-size:13px}
+  .player-page-root .player-home-page .hero-sub{
+    margin-top:5px;
+    font-size:12px;
+  }
+
+  .player-page-root .player-home-page .hero-club{
+    margin-top:3px;
+    font-size:11px;
+  }
 }
 
 .player-page-root .player-profile-page{

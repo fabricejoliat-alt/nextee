@@ -20,6 +20,7 @@ type NewsItem = {
   club_id: string;
   club_name: string;
   title: string;
+  image_url: string | null;
   summary: string | null;
   body: string;
   published_at: string | null;
@@ -235,8 +236,9 @@ export default function ClubNewsFeed({ scope, titleFr, titleEn, titleDe, titleIt
                 return (
                   <article
                     key={item.id}
-                    className={styles.newsArticle}
+                    className={`${styles.newsArticle} ${item.image_url ? styles.hasImage : ""}`}
                   >
+                      {item.image_url ? <div className={styles.coverImage}><img src={item.image_url} alt="" /></div> : null}
                       {publishedLabel ? (
                         <p className={styles.publishedAt}>{publishedLabel}</p>
                       ) : null}

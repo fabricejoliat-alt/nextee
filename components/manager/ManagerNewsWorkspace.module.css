@@ -2,11 +2,16 @@
   min-width: 620px;
 }
 
+.imageField{display:grid;gap:10px;padding:14px;border:1px solid rgba(53,72,59,.12);border-radius:14px;background:#fbfcfa}
+.imageFieldHeader{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.imageFieldHeader p{margin:4px 0 0;color:#778278;font-size:11px;font-weight:650}.fieldLabel{color:#35483b;font-size:12px;font-weight:900}.removeImage{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#8b4d46;font-size:11px;font-weight:800;cursor:pointer}.imageDrop{position:relative;display:grid;place-items:center;gap:5px;min-height:150px;border:1px dashed #b8c9b8;border-radius:12px;color:#526b50;background:#fff;cursor:pointer}.imageDrop span{font-size:13px;font-weight:850}.imageDrop small{color:#778278;font-size:11px}.imageDrop input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.imagePreview{overflow:hidden;aspect-ratio:16/9;border-radius:12px;background:#e9efe8}.imagePreview img{display:block;width:100%;height:100%;object-fit:cover}
+
 .dateCell{
   white-space: nowrap;
   color: #526056;
   font-size: 11px;
 }
+
+.tableThumbnail{display:block;width:76px;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#e9efe8}.noThumbnail{color:#a4aea5;font-size:14px}
 
 @media(max-width:640px){
   .newsTable{

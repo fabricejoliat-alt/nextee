@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
 
     const currentRes = await supabaseAdmin
       .from("club_news")
-      .select("id,club_id,title,summary,body,status,visible_on_home,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,linked_club_event_id,linked_camp_id")
+      .select("id,club_id,title,summary,body,status,visible_on_home,scheduled_for,published_at,send_notification,send_email,include_linked_parents,last_notification_sent_at,last_email_sent_at,linked_club_event_id,linked_camp_id,image_url")
       .eq("id", newsId)
       .maybeSingle();
     if (currentRes.error) return NextResponse.json({ error: currentRes.error.message }, { status: 400 });
@@ -59,6 +59,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
       body.linked_camp_id !== undefined
         ? normalizeLinkedItemId(body.linked_camp_id)
         : (currentRes.data.linked_camp_id == null ? null : String(currentRes.data.linked_camp_id));
+    const imageUrl = body.image_url !== undefined ? normalizeLinkedItemId(body.image_url) : normalizeLinkedItemId(currentRes.data.image_url);
     let targets = normalizeTargets(body.targets);
 
     if (!title) return NextResponse.json({ error: "Titre obligatoire." }, { status: 400 });
@@ -96,6 +97,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
         include_linked_parents: includeLinkedParents,
         linked_club_event_id: linkedClubEventId,
         linked_camp_id: linkedCampId,
+        image_url: imageUrl,
       })
       .eq("id", newsId);
     if (updateRes.error) return NextResponse.json({ error: updateRes.error.message }, { status: 400 });

@@ -7,7 +7,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="manager-page manager-page-root coach-page-root">
       <AppI18nProvider>
-        <CoachShell><RoleGuard allow="coach" inline>{children}</RoleGuard></CoachShell>
+        <CoachShell><RoleGuard allow="coach" inline quiet>{children}</RoleGuard></CoachShell>
       </AppI18nProvider>
     </div>
   );

@@ -65,6 +65,8 @@
   margin-bottom: 0;
 }
 
+.hasImage{grid-template-columns:minmax(220px,.82fr) minmax(0,1.18fr);column-gap:24px;align-items:start}.hasImage .coverImage{grid-column:1;grid-row:1 / -1;margin:0;align-self:start;overflow:hidden;aspect-ratio:16/9;border-radius:12px;background:#e9efe8}.hasImage> :not(.coverImage){grid-column:2}.coverImage img{display:block;width:100%;height:100%;object-fit:cover}
+
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -75,4 +77,6 @@
   .newsArticle {
     padding: 20px;
   }
+
+  .hasImage{grid-template-columns:1fr;gap:13px}.hasImage .coverImage{grid-column:1;grid-row:auto;margin:-20px -20px 4px;border-radius:18px 18px 0 0}.hasImage> :not(.coverImage){grid-column:1}
 }

@@ -17,6 +17,9 @@
     "test:golf-rounds": "node --test --experimental-strip-types tests/golf-round-metrics.test.ts"
   },
   "dependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@lexical/html": "^0.42.0",
     "@lexical/list": "^0.42.0",
     "@lexical/react": "^0.42.0",

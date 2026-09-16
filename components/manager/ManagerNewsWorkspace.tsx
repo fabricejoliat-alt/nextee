@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Pencil, PlusCircle, Search, Trash2 } from "lucide-react";
+import { ImagePlus, Pencil, PlusCircle, Search, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import listStyles from "@/app/manager/camps/Camps.module.css";
@@ -64,6 +65,7 @@ type NewsRow = {
   id: string;
   club_id: string;
   title: string;
+  image_url: string | null;
   summary: string | null;
   body: string;
   status: NewsStatus;
@@ -106,6 +108,7 @@ type BootstrapResponse = {
 
 type NewsFormState = {
   title: string;
+  image_url: string;
   summary: string;
   body: string;
   status: NewsStatus;
@@ -122,6 +125,7 @@ type NewsFormState = {
 function emptyForm(): NewsFormState {
   return {
     title: "",
+    image_url: "",
     summary: "",
     body: "",
     status: "draft",
@@ -268,6 +272,8 @@ export default function ManagerNewsWorkspace() {
   const [deletingNewsId, setDeletingNewsId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
   const [form, setForm] = useState<NewsFormState>(emptyForm);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const authHeaders = useCallback(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -396,6 +402,8 @@ export default function ManagerNewsWorkspace() {
   function openCreateForm() {
     setEditingNewsId(null);
     setForm(emptyForm());
+    setImageFile(null);
+    setImagePreview(null);
     setFormOpen(true);
     setMessage(null);
     setError(null);
@@ -405,6 +413,7 @@ export default function ManagerNewsWorkspace() {
     setEditingNewsId(row.id);
     setForm({
       title: row.title,
+      image_url: row.image_url ?? "",
       summary: row.summary ?? "",
       body: normalizeCampRichTextHtml(row.body),
       status: row.status,
@@ -417,6 +426,8 @@ export default function ManagerNewsWorkspace() {
       linked_camp_id: row.linked_camp_id ?? "",
       targets: row.targets,
     });
+    setImageFile(null);
+    setImagePreview(row.image_url ?? null);
     setFormOpen(true);
     setMessage(null);
     setError(null);
@@ -433,9 +444,20 @@ export default function ManagerNewsWorkspace() {
     setMessage(null);
     try {
       const headers = await authHeaders();
+      let imageUrl = form.image_url || null;
+      if (imageFile) {
+        const uploadData = new FormData();
+        uploadData.set("club_id", selectedClubId);
+        uploadData.set("image", imageFile);
+        const uploadRes = await fetch("/api/manager/news/image", { method: "POST", headers, body: uploadData });
+        const uploadJson = (await uploadRes.json().catch(() => ({}))) as { error?: string; image_url?: string };
+        if (!uploadRes.ok || !uploadJson.image_url) throw new Error(String(uploadJson.error ?? "Upload de l’image impossible."));
+        imageUrl = uploadJson.image_url;
+      }
       const payload = {
         club_id: selectedClubId,
         ...form,
+        image_url: imageUrl,
         body: normalizeCampRichTextHtml(form.body),
       };
       const res = await fetch(editingNewsId ? `/api/manager/news/${editingNewsId}` : "/api/manager/news", {
@@ -452,6 +474,8 @@ export default function ManagerNewsWorkspace() {
       setFormOpen(false);
       setEditingNewsId(null);
       setForm(emptyForm());
+      setImageFile(null);
+      setImagePreview(null);
       setMessage(editingNewsId ? "Actualité mise à jour." : "Actualité créée.");
       await load(selectedClubId);
     } catch (submitError) {
@@ -536,6 +560,14 @@ export default function ManagerNewsWorkspace() {
                 placeholder="Résumé visible dans la notification"
               />
             </label>
+
+            <div className={newsStyles.imageField}>
+              <div className={newsStyles.imageFieldHeader}>
+                <div><span className={newsStyles.fieldLabel}>Image de couverture</span><p>Format d’affichage 16:9 · JPG, PNG ou WebP · 8 Mo maximum</p></div>
+                {imagePreview ? <button type="button" className={newsStyles.removeImage} onClick={() => { setImageFile(null); setImagePreview(null); setForm((previous) => ({ ...previous, image_url: "" })); }}><X size={14} /> Retirer</button> : null}
+              </div>
+              {imagePreview ? <div className={newsStyles.imagePreview}><img src={imagePreview} alt="Aperçu de la couverture" /></div> : <label className={newsStyles.imageDrop}><ImagePlus size={20} /><span>Ajouter une image</span><small>Elle sera recadrée proprement en 16:9 à l’affichage.</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const optimized = await optimizeUploadFile(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.84 }); setImageFile(optimized); setImagePreview(URL.createObjectURL(optimized)); }} /></label>}
+            </div>
 
             <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Contenu (optionnel)</span>
@@ -890,6 +922,7 @@ export default function ManagerNewsWorkspace() {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Image</th>
                   <th>Titre</th>
                   <th>Statut</th>
                   <th>Actions</th>
@@ -903,6 +936,13 @@ export default function ManagerNewsWorkspace() {
                     <tr key={row.id}>
                       <td data-label="Date" className={newsStyles.dateCell}>
                         {formatDateTime(displayDate)}
+                      </td>
+                      <td data-label="Image">
+                        {row.image_url ? (
+                          <img className={newsStyles.tableThumbnail} src={row.image_url} alt="" />
+                        ) : (
+                          <span className={newsStyles.noThumbnail}>—</span>
+                        )}
                       </td>
                       <td data-label="Titre">
                         <div className={listStyles.titleCell}>

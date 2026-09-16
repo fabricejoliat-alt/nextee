@@ -7,7 +7,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="manager-page manager-page-root">
       <AppI18nProvider>
-        <RoleGuard allow="manager">
+        <RoleGuard allow="manager" quiet>
           <ManagerShell>{children}</ManagerShell>
         </RoleGuard>
       </AppI18nProvider>

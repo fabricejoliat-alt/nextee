@@ -145,7 +145,7 @@ export default function LoginPage() {
           <div className={`brand ${styles.brand}`} aria-label="ActiviTee"><span className="brand-nex">Activi</span><span className="brand-tee">Tee</span></div>
           <p className={styles.eyebrow}>La plateforme de gestion des sections juniors de golf</p>
           <h1 id="welcome-title">Faire grandir les jeunes golfeurs, ensemble.</h1>
-          <p className={styles.introText}>ActiviTee réunit clubs, coachs, juniors et familles pour organiser la section junior, accompagner la progression des jeunes et suivre leur activité sportive au quotidien.</p>
+          <p className={styles.introText}>ActiviTee réunit clubs, coachs, juniors et familles pour organiser la section junior et accompagner la progression des jeunes.</p>
         </section>
 
         <section className={styles.loginColumn} aria-labelledby="login-title">
