@@ -15,6 +15,11 @@ function nameOf(first: string | null | undefined, last: string | null | undefine
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
 }
 
+type CustomCriterionRow = { id: string; snapshot_respondent: string; [key: string]: unknown };
+type CustomResponseRow = { event_criterion_id: string; respondent_role: string; value_json: unknown };
+type CoachProfileRow = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; staff_function: string | null };
+type GroupCoachRow = { coach_user_id: string; is_head: boolean | null };
+
 export async function GET(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -118,19 +123,24 @@ export async function GET(req: NextRequest) {
     if (campRes.error) return NextResponse.json({ error: campRes.error.message }, { status: 400 });
     if (eventCoachLinksRes.error) return NextResponse.json({ error: eventCoachLinksRes.error.message }, { status: 400 });
 
-    const customCriteriaRes = await supabaseAdmin
+    const allCustomCriteriaRes = await supabaseAdmin
       .from("club_event_evaluation_criteria")
       .select("*")
       .eq("event_id", eventId)
       .eq("is_enabled", true)
-      .in("snapshot_respondent", ["player", "both"])
       .order("position");
-    if (customCriteriaRes.error) return NextResponse.json({ error: customCriteriaRes.error.message }, { status: 400 });
-    const customCriterionIds = (customCriteriaRes.data ?? []).map((row: any) => String(row.id));
-    const customResponsesRes = customCriterionIds.length
-      ? await supabaseAdmin.from("club_event_evaluation_responses").select("event_criterion_id,value_json").eq("event_id", eventId).eq("player_id", effectivePlayerId).eq("respondent_role", "player").in("event_criterion_id", customCriterionIds)
+    if (allCustomCriteriaRes.error) return NextResponse.json({ error: allCustomCriteriaRes.error.message }, { status: 400 });
+    const allCustomCriteria = (allCustomCriteriaRes.data ?? []) as CustomCriterionRow[];
+    const playerCustomCriteria = allCustomCriteria.filter((row) => ["player", "both"].includes(String(row.snapshot_respondent)));
+    const coachCustomCriteria = allCustomCriteria.filter((row) => ["coach", "both"].includes(String(row.snapshot_respondent)));
+    const customCriterionIds = allCustomCriteria.map((row) => String(row.id));
+    const allCustomResponsesRes = customCriterionIds.length
+      ? await supabaseAdmin.from("club_event_evaluation_responses").select("event_criterion_id,respondent_role,value_json").eq("event_id", eventId).eq("player_id", effectivePlayerId).in("event_criterion_id", customCriterionIds)
       : ({ data: [], error: null } as const);
-    if (customResponsesRes.error) return NextResponse.json({ error: customResponsesRes.error.message }, { status: 400 });
+    if (allCustomResponsesRes.error) return NextResponse.json({ error: allCustomResponsesRes.error.message }, { status: 400 });
+    const allCustomResponses = (allCustomResponsesRes.data ?? []) as CustomResponseRow[];
+    const playerCustomResponses = allCustomResponses.filter((row) => row.respondent_role === "player");
+    const coachCustomResponses = allCustomResponses.filter((row) => row.respondent_role === "coach");
 
     const feedbackCoachIds = ((feedbackRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
     const linkedCoachIds = ((eventCoachLinksRes.data ?? []) as Array<{ coach_id: string | null }>).map((row) => row.coach_id);
@@ -163,7 +173,7 @@ export async function GET(req: NextRequest) {
     if (commonStructureRes.error) return NextResponse.json({ error: commonStructureRes.error.message }, { status: 400 });
 
     const coachProfileById = new Map<string, { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; staff_function: string | null }>();
-    (coachProfilesRes.data ?? []).forEach((profile: any) => {
+    ((coachProfilesRes.data ?? []) as CoachProfileRow[]).forEach((profile) => {
       coachProfileById.set(String(profile.id ?? "").trim(), {
         id: String(profile.id ?? "").trim(),
         first_name: profile.first_name ?? null,
@@ -175,7 +185,7 @@ export async function GET(req: NextRequest) {
 
     const isHeadById: Record<string, boolean> = {};
     if (campHeadCoachId) isHeadById[campHeadCoachId] = true;
-    (groupRoleRowsRes.data ?? []).forEach((row: any) => {
+    ((groupRoleRowsRes.data ?? []) as GroupCoachRow[]).forEach((row) => {
       const coachUserId = String(row.coach_user_id ?? "").trim();
       if (!coachUserId) return;
       if (Boolean(row.is_head)) isHeadById[coachUserId] = true;
@@ -217,10 +227,12 @@ export async function GET(req: NextRequest) {
       coachProfiles: coachProfilesRes.data ?? [],
       plannedStructureItems:
         (playerStructureRes.data ?? []).length > 0 ? playerStructureRes.data ?? [] : commonStructureRes.data ?? [],
-      customEvaluationCriteria: customCriteriaRes.data ?? [],
-      customEvaluationResponses: customResponsesRes.data ?? [],
+      customEvaluationCriteria: playerCustomCriteria,
+      customEvaluationResponses: playerCustomResponses,
+      customCoachEvaluationCriteria: coachCustomCriteria,
+      customCoachEvaluationResponses: coachCustomResponses,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

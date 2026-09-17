@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { ArrowLeft, Flame, Mountain, Smile, Target } from "lucide-react";
+import { ArrowLeft, Mountain, Smile, Target } from "lucide-react";
+import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 
 type EventRow = {
   id: string;
@@ -509,9 +510,9 @@ export default function CoachEventPlayerDetailPage() {
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <StatBar icon={<Flame size={16} />} label="Motivation" value={effectivePlayerFeedback.motivation} />
-                      <StatBar icon={<Mountain size={16} />} label="Difficulté" value={effectivePlayerFeedback.difficulty} />
-                      <StatBar icon={<Smile size={16} />} label="Satisfaction" value={effectivePlayerFeedback.satisfaction} />
+                      <StatBar icon={<MotivationIcon size={17} />} label="Motivation" value={effectivePlayerFeedback.motivation} />
+                      <StatBar icon={<DifficultyIcon size={17} />} label="Difficulté" value={effectivePlayerFeedback.difficulty} />
+                      <StatBar icon={<SatisfactionIcon size={17} />} label="Satisfaction" value={effectivePlayerFeedback.satisfaction} />
                       {effectivePlayerFeedback.player_note ? (
                         <div
                           style={{

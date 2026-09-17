@@ -10,10 +10,17 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import {
+  DifficultyIcon,
+  MotivationIcon,
+  SatisfactionIcon,
+} from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
-import { ArrowLeft, Clock3, MapPin, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, MapPin } from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import corporateStyles from "@/app/manager/camps/Camps.module.css";
+import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
+import activityStyles from "../PlayerActivities.module.css";
 import styles from "./PlayerTrainingNew.module.css";
 
 type SessionType = "club" | "private" | "individual";
@@ -142,20 +149,6 @@ function normalizeToQuarterHour(localValue: string) {
 
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-}
-
-function fmtDateTimeRange(startIso: string, durationMinutes: number) {
-  const start = new Date(startIso);
-  if (Number.isNaN(start.getTime())) return "—";
-  const end = new Date(start.getTime() + Math.max(0, durationMinutes) * 60_000);
-  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start);
-  const datePart = new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(start);
-  const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} de ${timeFmt.format(start)} à ${timeFmt.format(end)}`;
 }
 
 function buildQuarterHourOptions() {
@@ -988,27 +981,16 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
             <form onSubmit={save} className={clubEventId ? styles.evaluationForm : undefined} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
-                    <article className={`glass-card ${styles.activitySummary}`}>
-                      <EvaluationDateTile iso={linkedEvent.starts_at} locale={locale} />
-                      <div className={styles.activitySummaryContent}>
-                        <span className={styles.activityType}>{linkedEvent.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training")}</span>
-                        <h2>
-                        {linkedEvent.event_type === "camp"
-                          ? linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")
-                          : pickLocaleText(locale, "Entraînement", "Training")}
-                        </h2>
-                      {linkedEvent.event_type === "camp" && typeof linkedCampDayIndex === "number" ? (
-                        <p>
-                          {pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}
-                        </p>
-                      ) : linkedGroupName ? (
-                        <p>
-                          {linkedGroupName}
-                        </p>
-                      ) : null}
-                        <div className={styles.activitySummaryMeta}><span><Clock3 size={14} aria-hidden="true" />{fmtDateTimeRange(linkedEvent.starts_at, linkedEvent.duration_minutes)}</span><span><Users size={14} aria-hidden="true" />{plannedClubName}</span>{linkedEvent.location_text ? <span><MapPin size={14} aria-hidden="true" />{linkedEvent.location_text}</span> : null}</div>
-                      </div>
-                    </article>
+                    <EvaluationActivitySummary
+                      startsAt={linkedEvent.starts_at}
+                      locale={locale}
+                      type={linkedEvent.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training")}
+                      detail={linkedEvent.event_type === "camp" && typeof linkedCampDayIndex === "number"
+                        ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")} · ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}`
+                        : linkedGroupName || pickLocaleText(locale, "Groupe", "Group")}
+                      organizer={plannedClubName}
+                      location={linkedEvent.location_text}
+                    />
 
                     <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
@@ -1796,7 +1778,10 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
                     <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
+                        <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                          <MotivationIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          {t("trainingNew.motivationBefore")}
+                        </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                           {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                             const val = String(v);
@@ -1827,7 +1812,10 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
+                        <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                          <DifficultyIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          {t("trainingNew.difficultyDuring")}
+                        </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                           {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                             const val = String(v);
@@ -1858,7 +1846,10 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
+                        <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                          <SatisfactionIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          {t("trainingNew.satisfactionAfter")}
+                        </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                           {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                             const val = String(v);
@@ -1939,10 +1930,23 @@ const fieldLabelStyle: CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
-function EvaluationDateTile({ iso, locale }: { iso: string; locale: string }) {
-  const date = new Date(iso);
-  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
-  return <div className={styles.dateTile}><span>{new Intl.DateTimeFormat(dateLocale, { weekday: "short" }).format(date).replace(".", "")}</span><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat(dateLocale, { month: "short" }).format(date).replace(".", "")}</span><small>{new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(date)}</small></div>;
+function EvaluationActivitySummary({ startsAt, locale, type, detail, organizer, location }: { startsAt: string; locale: string; type: string; detail: string; organizer: string; location: string | null }) {
+  const date = new Date(startsAt);
+  const intlLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  const weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(date).replace(".", "");
+  const month = new Intl.DateTimeFormat(intlLocale, { month: "short" }).format(date).replace(".", "");
+  const time = new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit" }).format(date);
+  return <article className={`glass-card ${dashboardStyles.activityItem} ${activityStyles.dashboardActivity} ${styles.activitySummary}`}>
+    <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(intlLocale, { dateStyle: "full", timeStyle: "short" }).format(date)}>
+      <span>{weekday}</span><b>{date.getDate()}</b><span>{month}</span><time dateTime={startsAt}>{time}</time>
+    </div>
+    <div className={dashboardStyles.activityBody}>
+      <span className={dashboardStyles.activityTitle}>{type}</span>
+      <span className={dashboardStyles.activityMeta}>{detail} · {organizer}</span>
+      {location ? <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{location}</span></span> : null}
+    </div>
+    <span className={`${activityStyles.activityIconAction} ${activityStyles.evaluationIconAction} ${styles.summaryStatus}`} aria-label={pickLocaleText(locale, "À évaluer", "To evaluate")}><AlertCircle size={18} aria-hidden="true"/></span>
+  </article>;
 }
 
 function TrainingFormSkeleton({ label, evaluation }: { label: string; evaluation: boolean }) {

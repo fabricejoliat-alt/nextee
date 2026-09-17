@@ -5,12 +5,13 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, MapPin, Pencil } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, MapPin } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import campsStyles from "@/app/manager/camps/Camps.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import activityStyles from "../PlayerActivities.module.css";
+import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import styles from "./PlayerTrainingsToComplete.module.css";
 
 type SessionRow = {
@@ -308,29 +309,29 @@ export default function PlayerTrainingsToCompletePage() {
 
         {error ? <div className={styles.error} role="alert">{error}</div> : null}
 
-        <section className={styles.panel} aria-labelledby="evaluation-list-title">
-          <div className={styles.panelHeading}>
-            <div>
-              <h2 id="evaluation-list-title">{pickLocaleText(locale, "À évaluer", "To evaluate")}</h2>
-              <p>{pickLocaleText(locale, "Complétez les activités qui nécessitent votre ressenti.", "Complete the activities that require your feedback.")}</p>
+        <section className={activityStyles.calendarSection} aria-labelledby="evaluation-list-title">
+          <div className={activityStyles.agendaPanel}>
+            <div className={activityStyles.agendaHeading}>
+              <h2 id="evaluation-list-title">
+                {pickLocaleText(locale, "À évaluer", "To evaluate")}
+                {!loading && performanceEnabled ? ` · ${rows.length}` : ""}
+              </h2>
             </div>
-            {!loading && performanceEnabled ? <strong>{rows.length}</strong> : null}
-          </div>
 
           {loading ? <EvaluationListSkeleton label={t("common.loading")} /> : !performanceEnabled ? (
-            <div className={styles.emptyState}>
+            <div className={activityStyles.empty}>
               <AlertCircle size={22} aria-hidden="true" />
               <strong>{pickLocaleText(locale, "Évaluations indisponibles", "Evaluations unavailable")}</strong>
-              <p>{pickLocaleText(locale, "Le mode performance doit être activé pour évaluer les activités.", "Performance mode must be enabled to evaluate activities.")}</p>
+              <span>{pickLocaleText(locale, "Le mode performance doit être activé pour évaluer les activités.", "Performance mode must be enabled to evaluate activities.")}</span>
             </div>
           ) : rows.length === 0 ? (
-            <div className={styles.emptyState}>
+            <div className={activityStyles.empty}>
               <CheckCircle2 size={24} aria-hidden="true" />
               <strong>{pickLocaleText(locale, "Vous êtes à jour", "You're up to date")}</strong>
-              <p>{pickLocaleText(locale, "Aucune activité ne nécessite une évaluation.", "No activity needs an evaluation.")}</p>
+              <span>{pickLocaleText(locale, "Aucune activité ne nécessite une évaluation.", "No activity needs an evaluation.")}</span>
             </div>
           ) : (
-            <div className={styles.activityList}>
+            <div className={activityStyles.agenda}>
               {rows.map((row) => {
                 if (row.kind === "event") {
                   const clubName = row.club_id ? clubNameById[row.club_id] ?? t("common.club") : t("common.club");
@@ -347,24 +348,36 @@ export default function PlayerTrainingsToCompletePage() {
               })}
             </div>
           )}
+          </div>
         </section>
       </div>
     </div>
   );
 }
 
-function EvaluationDateTile({ iso, locale }: { iso: string; locale: string }) {
-  const date = new Date(iso);
-  const intlLocale = dateLocale(locale);
-  return <div className={activityStyles.dateTile} aria-label={new Intl.DateTimeFormat(intlLocale, { dateStyle: "full" }).format(date)}><span>{new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(date).replace(".", "")}</span><strong>{date.getDate()}</strong><span>{new Intl.DateTimeFormat(intlLocale, { month: "short" }).format(date).replace(".", "")}</span></div>;
-}
-
 function EvaluationActivityCard({ start, type, title, organizer, location, href, locale }: { start: string; type: string; title: string; organizer: string; location: string | null; href: string; locale: string }) {
-  const time = new Intl.DateTimeFormat(dateLocale(locale), { hour: "2-digit", minute: "2-digit" }).format(new Date(start));
+  const activityDate = new Date(start);
+  const intlLocale = dateLocale(locale);
+  const dateDay = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(activityDate).replace(".", "");
+  const dateMonth = new Intl.DateTimeFormat(intlLocale, { month: "short" }).format(activityDate).replace(".", "");
+  const time = new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit" }).format(activityDate);
   const evaluateLabel = pickLocaleText(locale, "Évaluer", "Evaluate");
-  return <article className={activityStyles.dayCard}><EvaluationDateTile iso={start} locale={locale}/><div className={activityStyles.dayActivities}><div className={activityStyles.activityRow}><div className={activityStyles.time}><Clock3 size={14} aria-hidden="true"/>{time}</div><div className={activityStyles.activityMain}><span className={activityStyles.typePill}>{type}</span><h3>{title}</h3><p><span>{organizer}</span>{location ? <span><MapPin size={13} aria-hidden="true"/>{location}</span> : null}</p></div><div className={activityStyles.activityAction}><span className={`${activityStyles.status} ${activityStyles.warning}`}><AlertCircle size={13} aria-hidden="true"/>{pickLocaleText(locale, "À évaluer", "To evaluate")}</span><Link className={styles.evaluateIcon} href={href} aria-label={evaluateLabel} title={evaluateLabel}><Pencil size={16} aria-hidden="true"/></Link></div></div></div></article>;
+  const detailLabel = title.startsWith(`${type} · `) ? title.slice(type.length + 3) : title;
+  return <article className={`${dashboardStyles.activityItem} ${activityStyles.dashboardActivity}`}>
+    <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(intlLocale, { dateStyle: "full", timeStyle: "short" }).format(activityDate)}>
+      <span>{dateDay}</span><b>{activityDate.getDate()}</b><span>{dateMonth}</span><time dateTime={start}>{time}</time>
+    </div>
+    <div className={dashboardStyles.activityBody}>
+      <Link className={dashboardStyles.activityTitle} href={href}>{type}</Link>
+      <span className={dashboardStyles.activityMeta}>{detailLabel} · {organizer}</span>
+      {location ? <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{location}</span></span> : null}
+    </div>
+    <div className={activityStyles.activityAction}>
+      <Link className={`${activityStyles.activityIconAction} ${activityStyles.evaluationIconAction}`} href={href} aria-label={`${evaluateLabel} ${title}`} title={pickLocaleText(locale, "À évaluer", "To evaluate")}><AlertCircle size={18} aria-hidden="true"/></Link>
+    </div>
+  </article>;
 }
 
 function EvaluationListSkeleton({ label }: { label: string }) {
-  return <div className={styles.listSkeleton} aria-live="polite" aria-busy="true" aria-label={label}>{Array.from({ length: 2 }, (_, index) => <div className={styles.skeletonCard} key={index}><span/><div><span/><span/><span/></div><span/></div>)}</div>;
+  return <div className={activityStyles.calendarSkeleton} aria-live="polite" aria-busy="true" aria-label={label}>{Array.from({ length: 3 }, (_, index) => <div className={activityStyles.calendarSkeletonRow} key={index}><span className={activityStyles.calendarSkeletonDate}/><div><span/><span/><span/></div><span className={activityStyles.calendarSkeletonAction}/></div>)}</div>;
 }

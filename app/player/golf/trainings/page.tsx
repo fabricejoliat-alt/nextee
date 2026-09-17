@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ArrowRight, CalendarCheck, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Dumbbell, Flag, MapPin, TentTree, Trophy, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { AlertCircle, ArrowRight, CalendarCheck, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Dumbbell, Eye, Flag, MapPin, TentTree, Trophy, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
@@ -50,7 +50,7 @@ export default function PlayerActivitiesPage(){
   const [sessions,setSessions]=useState<SessionRow[]>([]); const [events,setEvents]=useState<PlannedEventRow[]>([]); const [personal,setPersonal]=useState<PersonalEventRow[]>([]);
   const [attendance,setAttendance]=useState<Record<string,AttendanceStatus>>({}); const [clubs,setClubs]=useState<Record<string,string>>({}); const [groups,setGroups]=useState<Record<string,string>>({});
   const [completeIds,setCompleteIds]=useState<Set<string>>(new Set()); const [performance,setPerformance]=useState(false); const [viewerId,setViewerId]=useState(""); const [playerId,setPlayerId]=useState(""); const [playerName,setPlayerName]=useState("");
-  const [busyId,setBusyId]=useState(""); const [view,setView]=useState<CalendarView>("month"); const [typeFilter,setTypeFilter]=useState("all"); const [statusFilter,setStatusFilter]=useState<StatusFilter>(searchParams.get("view")==="evaluations"?"evaluation":"upcoming"); const [participationFilter,setParticipationFilter]=useState<ParticipationFilter>("all"); const [anchor,setAnchor]=useState(()=>new Date()); const [expanded,setExpanded]=useState<string|null>(null);
+  const [busyId,setBusyId]=useState(""); const [view,setView]=useState<CalendarView>("month"); const [typeFilter,setTypeFilter]=useState("all"); const [statusFilter,setStatusFilter]=useState<StatusFilter>(searchParams.get("view")==="evaluations"?"evaluation":"all"); const [participationFilter,setParticipationFilter]=useState<ParticipationFilter>("all"); const [anchor,setAnchor]=useState(()=>new Date()); const [expanded,setExpanded]=useState<string|null>(null);
   const [plannerType,setPlannerType]=useState<PlannerType|null>(()=>searchParams.get("plan")==="training"?"training":null);const [plannerTitle,setPlannerTitle]=useState("");const [plannerLocation,setPlannerLocation]=useState("");const [plannerNotes,setPlannerNotes]=useState("");const [plannerStart,setPlannerStart]=useState(defaultPlannerStart);const [plannerEnd,setPlannerEnd]=useState(()=>{const date=new Date(defaultPlannerStart());date.setHours(date.getHours()+2);return localDateTimeValue(date)});const [plannerBusy,setPlannerBusy]=useState(false);const [reloadKey,setReloadKey]=useState(0);
 
   useEffect(()=>{let cancelled=false;void(async()=>{setLoading(true);setError(null);try{
@@ -134,7 +134,8 @@ function ActivityDay({items,locale,dateLocale,busyId,expanded,setExpanded,toggle
     const dateMonth=new Intl.DateTimeFormat(dateLocale,{month:"short"}).format(activityDate).replace(".","");
     const activityTime=new Intl.DateTimeFormat(dateLocale,{hour:"2-digit",minute:"2-digit"}).format(activityDate);
     const activityDetail=a.event?.event_type==="session"&&a.title.trim()?a.title.trim():a.organizer;
-    const showAttendance=a.isFuture&&a.event&&!a.isCompetition;
+    const isAbsent=participation(a.attendance)==="absent";
+    const showAttendance=a.isFuture&&a.event&&!a.isCompetition&&!isAbsent;
     return <article key={a.key} className={`${dashboardStyles.activityItem} ${styles.dashboardActivity}`}>
       <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(dateLocale,{dateStyle:"full",timeStyle:"short"}).format(activityDate)}>
         <span>{dateDay}</span><b>{activityDate.getDate()}</b><span>{dateMonth}</span><time dateTime={a.startsAt}>{activityTime}</time>
@@ -144,10 +145,10 @@ function ActivityDay({items,locale,dateLocale,busyId,expanded,setExpanded,toggle
         <span className={dashboardStyles.activityMeta}>{activityDetail}</span>
         <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{a.location}</span></span>
       </div>
-      {showAttendance?<AttendanceToggle variant="pill" checked={participation(a.attendance)!=="absent"} onToggle={()=>toggle(a)} disabled={busyId===a.id} disabledCursor="wait" ariaLabel={tr(`Présence pour ${a.title}`,`Attendance for ${a.title}`)} leftLabel={tr("Absent","Absent")} rightLabel={tr("Présent","Present")}/>:<div className={styles.activityAction}>
+      {isAbsent?<span className={`player-home-attendance player-home-attendance--pill is-absent ${styles.staticAttendance}`} role="status" aria-label={tr(`Absent pour ${a.title}`,`Absent for ${a.title}`)}><i aria-hidden="true"/><span>{tr("Absent","Absent")}</span></span>:showAttendance?<AttendanceToggle variant="pill" checked onToggle={()=>toggle(a)} disabled={busyId===a.id} disabledCursor="wait" ariaLabel={tr(`Présence pour ${a.title}`,`Attendance for ${a.title}`)} leftLabel={tr("Absent","Absent")} rightLabel={tr("Présent","Present")}/>:<div className={styles.activityAction}>
         {a.isFuture&&a.isCompetition?<><span className={`${styles.status} ${styles.upcoming}`}>{tr("À venir","Upcoming")}</span><button type="button" className={styles.textButton} onClick={()=>setExpanded(open?null:a.key)}>{tr("Détails","Details")}<ArrowRight size={14}/></button></>:null}
-        {a.needsEvaluation?<><span className={`${styles.status} ${styles.warning}`}><AlertCircle size={13}/>{tr("À évaluer","To evaluate")}</span>{evalHref?<Link className={styles.primaryButton} href={evalHref}>{tr("Évaluer","Evaluate")}</Link>:null}</>:null}
-        {a.completed?<><span className={`${styles.status} ${styles.done}`}><Check size={13}/>{tr("Terminée","Completed")}</span>{detailHref?<Link className={styles.textButton} href={detailHref}>{tr("Détails","Details")}<ArrowRight size={14}/></Link>:null}</>:null}
+        {a.needsEvaluation&&evalHref?<Link className={`${styles.activityIconAction} ${styles.evaluationIconAction}`} href={evalHref} aria-label={tr(`Évaluer ${a.title}`,`Evaluate ${a.title}`)} title={tr("À évaluer","To evaluate")}><AlertCircle size={18}/></Link>:null}
+        {a.completed&&detailHref?<Link className={styles.activityIconAction} href={detailHref} aria-label={tr(`Voir ${a.title}`,`View ${a.title}`)} title={tr("Voir l’activité","View activity")}><Eye size={15}/></Link>:null}
         {a.isFuture&&!a.event&&!a.isCompetition&&detailHref?<Link className={styles.textButton} href={detailHref}>{tr("Détails","Details")}<ArrowRight size={14}/></Link>:null}
       </div>}
       {open?<div className={styles.inlineDetail}>{a.category?<span><strong>{tr("Catégorie","Category")}</strong>{a.category}</span>:null}<span><strong>{tr("Horaire","Schedule")}</strong>{schedule(a.startsAt,a.endsAt,dateLocale)}</span><span><strong>{tr("Lieu","Location")}</strong>{a.location}</span>{a.detail?<p>{a.detail}</p>:null}</div>:null}

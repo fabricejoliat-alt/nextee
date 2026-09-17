@@ -10,6 +10,13 @@ import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import {
+  DifficultyIcon,
+  MotivationIcon,
+  SatisfactionIcon,
+} from "@/components/evaluations/StandardEvaluationIcons";
+import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -114,6 +121,9 @@ export default function PlayerTrainingEditPage() {
   const [linkedEventDurationMinutes, setLinkedEventDurationMinutes] = useState<number | null>(null);
   const [nonPerformanceDuration, setNonPerformanceDuration] = useState<string>("");
   const [attendanceStatus, setAttendanceStatus] = useState<"expected" | "present" | "absent" | "excused" | null>(null);
+  const [linkedEventId, setLinkedEventId] = useState("");
+  const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
+  const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
 
   // sensations 1..6
   const [motivation, setMotivation] = useState<string>("");
@@ -290,8 +300,23 @@ export default function PlayerTrainingEditPage() {
       setDifficulty(typeof sess.difficulty === "number" ? String(sess.difficulty) : "");
       setSatisfaction(typeof sess.satisfaction === "number" ? String(sess.satisfaction) : "");
       setIsCoachPlannedTraining(Boolean(sess.club_event_id));
+      setLinkedEventId(String(sess.club_event_id ?? ""));
       setNonPerformanceDuration(typeof sess.total_minutes === "number" && sess.total_minutes > 0 ? String(sess.total_minutes) : "");
       if (sess.club_event_id) {
+        const { data: authData } = await supabase.auth.getSession();
+        const query = new URLSearchParams({ event_id: sess.club_event_id, child_id: uid });
+        const eventResponse = await fetch(`/api/player/training-event?${query.toString()}`, {
+          headers: authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {},
+          cache: "no-store",
+        });
+        const eventJson = await eventResponse.json().catch(() => ({}));
+        if (!eventResponse.ok) {
+          setError(String(eventJson?.error ?? t("common.errorLoading")));
+          setLoading(false);
+          return;
+        }
+        setCustomCriteria((eventJson?.customEvaluationCriteria ?? []) as EventEvaluationCriterion[]);
+        setCustomResponses(Object.fromEntries(((eventJson?.customEvaluationResponses ?? []) as Array<{ event_criterion_id: string; value_json: string | number | boolean | null }>).map((row) => [row.event_criterion_id, row.value_json])));
         const attRes = await supabase
           .from("club_event_attendees")
           .select("status")
@@ -336,6 +361,8 @@ export default function PlayerTrainingEditPage() {
           }
         }
       } else {
+        setCustomCriteria([]);
+        setCustomResponses({});
         setAttendanceStatus(null);
         setLinkedEventDurationMinutes(null);
         setPlannedStructureItems([]);
@@ -438,6 +465,15 @@ export default function PlayerTrainingEditPage() {
 
     const club_id = normalizedSessionType === "club" ? clubIdForTraining : null;
 
+    if (performanceEnabled && linkedEventId) {
+      const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
+      if (missing) {
+        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`));
+        setBusy(false);
+        return;
+      }
+    }
+
     // 1) update session
     const upd = await supabase
       .from("training_sessions")
@@ -484,6 +520,27 @@ export default function PlayerTrainingEditPage() {
           setBusy(false);
           return;
         }
+      }
+    }
+
+    if (performanceEnabled && linkedEventId && customCriteria.length > 0) {
+      const clearedIds = customCriteria.filter((criterion) => customResponses[criterion.id] == null || customResponses[criterion.id] === "").map((criterion) => criterion.id);
+      if (clearedIds.length > 0) {
+        const removed = await supabase.from("club_event_evaluation_responses").delete().eq("event_id", linkedEventId).eq("player_id", userId).eq("respondent_role", "player").in("event_criterion_id", clearedIds);
+        if (removed.error) { setError(removed.error.message); setBusy(false); return; }
+      }
+      const answered = customCriteria.filter((criterion) => customResponses[criterion.id] != null && customResponses[criterion.id] !== "");
+      if (answered.length > 0) {
+        const saved = await supabase.from("club_event_evaluation_responses").upsert(answered.map((criterion) => ({
+          club_id: clubIdForTraining,
+          event_criterion_id: criterion.id,
+          event_id: linkedEventId,
+          player_id: userId,
+          respondent_user_id: userId,
+          respondent_role: "player",
+          value_json: customResponses[criterion.id],
+        })), { onConflict: "event_criterion_id,player_id,respondent_role" });
+        if (saved.error) { setError(saved.error.message); setBusy(false); return; }
       }
     }
 
@@ -846,7 +903,10 @@ export default function PlayerTrainingEditPage() {
 
                 <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.motivationBefore")}</span>
+                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                      <MotivationIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      {t("trainingNew.motivationBefore")}
+                    </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                         const val = String(v);
@@ -877,7 +937,10 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.difficultyDuring")}</span>
+                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                      <DifficultyIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      {t("trainingNew.difficultyDuring")}
+                    </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                         const val = String(v);
@@ -908,7 +971,10 @@ export default function PlayerTrainingEditPage() {
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("trainingNew.satisfactionAfter")}</span>
+                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
+                      <SatisfactionIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      {t("trainingNew.satisfactionAfter")}
+                    </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
                       {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
                         const val = String(v);
@@ -938,6 +1004,29 @@ export default function PlayerTrainingEditPage() {
                     </div>
                   </label>
                 </div>
+
+                {customCriteria.length > 0 ? (
+                  <div style={{ display: "grid", gap: 12, padding: 12, borderRadius: 12, background: "rgba(237,243,234,.72)", opacity: evaluationDisabled ? 0.65 : 1 }}>
+                    <div style={{ display: "grid", gap: 3 }}>
+                      <strong style={{ fontSize: 12, color: "#35483b" }}>{pickLocaleText(locale, "Critères du club", "Club criteria")}</strong>
+                      <small style={{ color: "rgba(0,0,0,.55)" }}>{pickLocaleText(locale, "Ces priorités ont été définies pour cette activité.", "These priorities were defined for this activity.")}</small>
+                    </div>
+                    {customCriteria.map((criterion) => (
+                      <label key={criterion.id} style={{ display: "grid", gap: 7 }}>
+                        <span style={fieldLabelStyle}>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
+                        {criterion.snapshot_description ? <small style={{ opacity: .65 }}>{criterion.snapshot_description}</small> : null}
+                        <EvaluationResponseField
+                          name={criterion.snapshot_name}
+                          format={criterion.snapshot_response_format}
+                          choices={criterion.snapshot_choices}
+                          value={customResponses[criterion.id]}
+                          disabled={evaluationDisabled}
+                          onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
 
                 {sessionType === "club" && !isClubSessionPast ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>

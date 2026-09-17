@@ -10,6 +10,7 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
   getValidationBadgeColors,
   getValidationBadgeLabel,
@@ -29,9 +30,6 @@ import {
   Legend,
 } from "recharts";
 import {
-  Flame,
-  Mountain,
-  Smile,
   SlidersHorizontal,
   ArrowLeft,
   ChevronRight,
@@ -4091,9 +4089,9 @@ function presetToSelectValue(p: Preset): Preset {
                 <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
               ) : (
                 <div style={{ display: "grid", gap: 14 }}>
-                  <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                  <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                  <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
+                  <RatingBar icon={<MotivationIcon size={17} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                  <RatingBar icon={<DifficultyIcon size={17} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                  <RatingBar icon={<SatisfactionIcon size={17} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
                   {compareLabel && (
                     <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>

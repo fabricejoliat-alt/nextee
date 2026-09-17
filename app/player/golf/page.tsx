@@ -20,6 +20,7 @@ import documentStyles from "./PlayerGolfDocuments.module.css";
 import trainingStyles from "./PlayerGolfTraining.module.css";
 import type { EChartsOption } from "echarts";
 import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
+import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
   ArrowDown,
   ArrowRight,
@@ -2834,6 +2835,31 @@ function presetToSelectValue(p: Preset): Preset {
   // ===== UI =====
   const kpiGridClass = "golf-kpi-grid";
   const kpiGridStyle: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "1fr" };
+  const golfSectionNavigation = (
+    <section className={`${adminCardStyles.overview} ${overviewStyles.navigationCard}`}>
+      <div className={`${navigationStyles.tabs} ${overviewStyles.navigationTabs}`} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon Golf", "My Golf sections")}>
+        {[
+          { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
+          { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
+          { id: "rounds" as DashboardSection, label: pickLocaleText(locale, "Parcours & statistiques", "Rounds & statistics") },
+          { id: "documents" as DashboardSection, label: pickLocaleText(locale, "Documents", "Documents") },
+        ].map((tab) => {
+          const isActive = activeSection === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => selectSection(tab.id)}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
 
   return (
     <div className="player-dashboard-bg player-golf-page">
@@ -2849,29 +2875,7 @@ function presetToSelectValue(p: Preset): Preset {
 
         {error && <div className="marketplace-error">{error}</div>}
 
-        <section className={`${adminCardStyles.overview} ${overviewStyles.navigationCard}`}>
-          <div className={`${navigationStyles.tabs} ${overviewStyles.navigationTabs}`} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon Golf", "My Golf sections")}>
-            {[
-              { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
-              { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
-              { id: "rounds" as DashboardSection, label: pickLocaleText(locale, "Parcours & statistiques", "Rounds & statistics") },
-              { id: "documents" as DashboardSection, label: pickLocaleText(locale, "Documents", "Documents") },
-            ].map((tab) => {
-              const isActive = activeSection === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => selectSection(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        {activeSection === "rounds" ? null : golfSectionNavigation}
 
         {activeSection === "documents" ? (
         <div className="glass-section">
@@ -3547,9 +3551,9 @@ function presetToSelectValue(p: Preset): Preset {
                   <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 14 }}>
-                    <RatingBar icon={<Flame size={16} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                    <RatingBar icon={<Mountain size={16} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                    <RatingBar icon={<Smile size={16} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
+                    <RatingBar icon={<MotivationIcon size={17} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                    <RatingBar icon={<DifficultyIcon size={17} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                    <RatingBar icon={<SatisfactionIcon size={17} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
                     {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
                   </div>
@@ -3680,7 +3684,7 @@ function presetToSelectValue(p: Preset): Preset {
         </>
         ) : null}
 
-        {activeSection === "rounds" ? <GolfRoundsWorkspace /> : null}
+        {activeSection === "rounds" ? <GolfRoundsWorkspace navigation={golfSectionNavigation} /> : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
         {activeSection === "stats" ? (
