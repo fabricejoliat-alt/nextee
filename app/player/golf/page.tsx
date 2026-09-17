@@ -20,7 +20,7 @@ import documentStyles from "./PlayerGolfDocuments.module.css";
 import trainingStyles from "./PlayerGolfTraining.module.css";
 import type { EChartsOption } from "echarts";
 import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
-import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
+import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
   ArrowDown,
   ArrowRight,
@@ -3551,9 +3551,9 @@ function presetToSelectValue(p: Preset): Preset {
                   <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 14 }}>
-                    <RatingBar icon={<MotivationIcon size={17} />} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                    <RatingBar icon={<DifficultyIcon size={17} />} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                    <RatingBar icon={<SatisfactionIcon size={17} />} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
+                    <RatingBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
+                    <RatingBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
+                    <RatingBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
 
                     {compareLabel && <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{compareLabel}</div>}
                   </div>

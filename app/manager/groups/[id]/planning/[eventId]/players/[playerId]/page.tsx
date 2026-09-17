@@ -7,7 +7,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Mountain, Smile, Target } from "lucide-react";
-import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
+import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 
 type EventRow = {
   id: string;
@@ -433,9 +433,9 @@ export default function CoachEventPlayerDetailPage() {
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <StatBar icon={<MotivationIcon size={17} />} label="Motivation" value={playerFb.motivation} />
-                      <StatBar icon={<DifficultyIcon size={17} />} label="Difficulté" value={playerFb.difficulty} />
-                      <StatBar icon={<SatisfactionIcon size={17} />} label="Satisfaction" value={playerFb.satisfaction} />
+                      <StatBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label="Motivation" value={playerFb.motivation} />
+                      <StatBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label="Difficulté" value={playerFb.difficulty} />
+                      <StatBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label="Satisfaction" value={playerFb.satisfaction} />
                       {playerFb.player_note ? (
                         <div
                           style={{

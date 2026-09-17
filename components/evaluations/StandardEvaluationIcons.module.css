@@ -1,0 +1,14 @@
+.badge {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf3ea;
+  color: #526d50;
+}
+
+.badge svg {
+  display: block;
+}

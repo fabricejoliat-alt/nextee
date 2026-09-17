@@ -13,6 +13,7 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
 import {
   DifficultyIcon,
+  EvaluationIconBadge,
   MotivationIcon,
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
@@ -586,7 +587,7 @@ export default function PlayerTrainingEditPage() {
           {loading ? (
             <TrainingPageSkeleton variant="form" label={t("common.loading")} />
           ) : (
-            <form onSubmit={save} className={styles.evaluationForm} style={{ display: "grid", gap: 12 }}>
+            <form onSubmit={save} className={`${styles.evaluationForm} ${styles.actionsInCard}`} style={{ display: "grid", gap: 12 }}>
               <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Date, lieu et type d'entraînement", "Date, place and training type")}
@@ -905,7 +906,7 @@ export default function PlayerTrainingEditPage() {
                 <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <MotivationIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      <EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>
                       {t("trainingNew.motivationBefore")}
                     </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
@@ -939,7 +940,7 @@ export default function PlayerTrainingEditPage() {
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <DifficultyIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      <EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>
                       {t("trainingNew.difficultyDuring")}
                     </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
@@ -973,7 +974,7 @@ export default function PlayerTrainingEditPage() {
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <SatisfactionIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                      <EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>
                       {t("trainingNew.satisfactionAfter")}
                     </span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
@@ -1048,17 +1049,24 @@ export default function PlayerTrainingEditPage() {
                   />
                 </label>
 
+                <div className={styles.cardActions}>
+                  <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>
+                    {pickLocaleText(locale, "Annuler", "Cancel")}
+                  </Link>
+                  <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
+                    {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer les modifications", "Save changes")}
+                  </button>
+                </div>
+
               </section>
               ) : null}
 
-              <div className={styles.evaluationActions}>
-                <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>
-                  {pickLocaleText(locale, "Annuler", "Cancel")}
-                </Link>
-                <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
-                  {busy ? t("trainingNew.saving") : performanceEnabled ? pickLocaleText(locale, "Enregistrer les modifications", "Save changes") : nonPerformanceSaveLabel}
-                </button>
-              </div>
+              {!performanceEnabled ? (
+                <div className={styles.cardActions}>
+                  <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>{pickLocaleText(locale, "Annuler", "Cancel")}</Link>
+                  <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>{busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}</button>
+                </div>
+              ) : null}
             </form>
           )}
         </div>

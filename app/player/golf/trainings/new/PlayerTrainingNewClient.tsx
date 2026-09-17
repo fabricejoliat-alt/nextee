@@ -12,6 +12,7 @@ import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
 import {
   DifficultyIcon,
+  EvaluationIconBadge,
   MotivationIcon,
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
@@ -1779,7 +1780,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                     <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                          <MotivationIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          <EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>
                           {t("trainingNew.motivationBefore")}
                         </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
@@ -1813,7 +1814,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                          <DifficultyIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          <EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>
                           {t("trainingNew.difficultyDuring")}
                         </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
@@ -1847,7 +1848,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                          <SatisfactionIcon size={17} style={{ color: "#526d50", flex: "0 0 auto" }} />
+                          <EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>
                           {t("trainingNew.satisfactionAfter")}
                         </span>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
