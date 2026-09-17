@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import TrainingPageSkeleton from "@/components/player/TrainingPageSkeleton";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
@@ -17,6 +17,9 @@ import {
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
+import { ArrowLeft, Trash2 } from "lucide-react";
+import managerStyles from "@/app/manager/camps/Camps.module.css";
+import styles from "../../new/PlayerTrainingNew.module.css";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -548,27 +551,26 @@ export default function PlayerTrainingEditPage() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Activités", href: "/player/golf/trainings" }, { label: "Modifier" }]} />
+    <div className={`player-dashboard-bg ${styles.evaluationPage}`}>
+      <div className={`app-shell marketplace-page ${styles.evaluationShell}`}>
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "Modifier l’activité", "Edit activity") }]} />
         {/* Header */}
-        <div className="glass-section">
-          <div className="marketplace-header">
+        <div className={styles.evaluationHero}>
+          <header className={managerStyles.topline}>
             <div style={{ display: "grid", gap: 10 }}>
-              <h1 className="section-title" style={{ marginBottom: 0 }}>
-                {t("trainingEdit.title")}
+              <h1 style={{ marginBottom: 0 }}>
+                {pickLocaleText(locale, "Modifier l’activité", "Edit activity")}
               </h1>
+              <p className={managerStyles.lead}>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
             </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                {t("common.back")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player/golf/trainings">
-                {t("trainings.title")}
+            <div className={styles.heroActions} style={{ marginTop: 2 }}>
+              <Link className={`${managerStyles.secondary} ${styles.backButton}`} href={`/player/golf/trainings/${sessionId}`}>
+                <ArrowLeft size={15} aria-hidden="true" />
+                {pickLocaleText(locale, "Retour à l’activité", "Back to activity")}
               </Link>
             </div>
-          </div>
+          </header>
 
           {error && <div className="marketplace-error">{error}</div>}
 
@@ -580,12 +582,12 @@ export default function PlayerTrainingEditPage() {
         </div>
 
         {/* Form */}
-        <div className="glass-section">
+        <div className={styles.evaluationContent}>
           {loading ? (
-            <CompactLoadingBlock label={t("common.loading")} />
+            <TrainingPageSkeleton variant="form" label={t("common.loading")} />
           ) : (
-            <form onSubmit={save} style={{ display: "grid", gap: 12 }}>
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+            <form onSubmit={save} className={styles.evaluationForm} style={{ display: "grid", gap: 12 }}>
+              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Date, lieu et type d'entraînement", "Date, place and training type")}
                 </div>
@@ -752,21 +754,18 @@ export default function PlayerTrainingEditPage() {
                     </label>
                   ) : null}
                 </div>
-              </div>
+              </section>
 
               {performanceEnabled && isCoachPlannedTraining ? (
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
                   {pickLocaleText(locale, "Structure planifiée", "Planned structure")}
                 </div>
                 <div
                   style={{
-                    border: "1px solid rgba(0,0,0,0.10)",
-                    borderRadius: 12,
-                    background: "rgba(255,255,255,0.88)",
-                    padding: 10,
                     display: "grid",
                     gap: 8,
+                    paddingTop: 2,
                   }}
                 >
                   {plannedStructureItems.length === 0 ? (
@@ -788,11 +787,11 @@ export default function PlayerTrainingEditPage() {
                     </ul>
                   )}
                 </div>
-              </div>
+              </section>
               ) : null}
 
               {performanceEnabled ? (
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
                   {plannedStructureItems.length > 0 ? (
@@ -818,14 +817,28 @@ export default function PlayerTrainingEditPage() {
                       <div
                         key={idx}
                         style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 14,
-                          background: "rgba(255,255,255,0.65)",
-                          padding: 12,
+                          borderBottom: idx === items.length - 1 ? "0" : "1px solid rgba(53,72,59,0.12)",
+                          padding: "12px 0",
                           display: "grid",
                           gap: 10,
                         }}
                       >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                          <strong style={{ color: "#35483b", fontFamily: "var(--font-inter-tight), var(--font-inter), sans-serif", fontSize: 14, fontWeight: 750 }}>
+                            {t("trainingNew.section")} {idx + 1}
+                          </strong>
+                          <button
+                            type="button"
+                            className={`${managerStyles.iconButton} ${managerStyles.dangerIcon}`}
+                            onClick={() => removeLine(idx)}
+                            disabled={busy}
+                            title={t("common.delete")}
+                            aria-label={`${t("common.delete")} — ${t("trainingNew.section")} ${idx + 1}`}
+                          >
+                            <Trash2 size={15} aria-hidden="true" />
+                          </button>
+                        </div>
+
                         <div className="grid-2">
                           <label style={{ display: "grid", gap: 6 }}>
                             <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
@@ -870,18 +883,6 @@ export default function PlayerTrainingEditPage() {
                           />
                         </label>
 
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                          <div className="pill-soft">{t("trainingNew.section")} {idx + 1}</div>
-
-                          <button
-                            type="button"
-                            className="btn btn-danger soft"
-                            onClick={() => removeLine(idx)}
-                            disabled={busy}
-                          >
-                            {t("common.delete")}
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
@@ -892,13 +893,13 @@ export default function PlayerTrainingEditPage() {
                     + {t("trainingNew.addSection")}
                   </button>
                 </div>
-              </div>
+              </section>
               ) : null}
 
               {performanceEnabled ? (
-              <div style={{ border: "1px solid rgba(0,0,0,0.10)", borderRadius: 14, background: "rgba(255,255,255,0.65)", padding: 12, display: "grid", gap: 10 }}>
+              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>
-                  {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
+                  {pickLocaleText(locale, "Auto-évaluation", "Self-assessment")}
                 </div>
 
                 <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>
@@ -1006,7 +1007,7 @@ export default function PlayerTrainingEditPage() {
                 </div>
 
                 {customCriteria.length > 0 ? (
-                  <div style={{ display: "grid", gap: 12, padding: 12, borderRadius: 12, background: "rgba(237,243,234,.72)", opacity: evaluationDisabled ? 0.65 : 1 }}>
+                  <div style={{ display: "grid", gap: 12, paddingTop: 14, borderTop: "1px solid rgba(53,72,59,.12)", opacity: evaluationDisabled ? 0.65 : 1 }}>
                     <div style={{ display: "grid", gap: 3 }}>
                       <strong style={{ fontSize: 12, color: "#35483b" }}>{pickLocaleText(locale, "Critères du club", "Club criteria")}</strong>
                       <small style={{ color: "rgba(0,0,0,.55)" }}>{pickLocaleText(locale, "Ces priorités ont été définies pour cette activité.", "These priorities were defined for this activity.")}</small>
@@ -1047,15 +1048,17 @@ export default function PlayerTrainingEditPage() {
                   />
                 </label>
 
-                <button className="cta-green" type="submit" disabled={!canSave || busy} style={{ width: "100%" }}>
-                  {busy ? t("trainingNew.saving") : t("common.save")}
+              </section>
+              ) : null}
+
+              <div className={styles.evaluationActions}>
+                <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>
+                  {pickLocaleText(locale, "Annuler", "Cancel")}
+                </Link>
+                <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
+                  {busy ? t("trainingNew.saving") : performanceEnabled ? pickLocaleText(locale, "Enregistrer les modifications", "Save changes") : nonPerformanceSaveLabel}
                 </button>
               </div>
-              ) : (
-                <button className="cta-green" type="submit" disabled={!canSave || busy} style={{ width: "100%" }}>
-                  {busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}
-                </button>
-              )}
             </form>
           )}
         </div>

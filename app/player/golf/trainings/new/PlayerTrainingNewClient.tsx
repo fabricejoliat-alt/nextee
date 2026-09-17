@@ -978,7 +978,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           {loading ? (
             <TrainingFormSkeleton label={pickLocaleText(locale, "Chargement...", "Loading...")} evaluation={Boolean(clubEventId)} />
           ) : (
-            <form onSubmit={save} className={clubEventId ? styles.evaluationForm : undefined} style={{ display: "grid", gap: 12 }}>
+            <form onSubmit={save} className={clubEventId ? `${styles.evaluationForm} ${styles.actionsInCard}` : undefined} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
                     <EvaluationActivitySummary
@@ -1773,7 +1773,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                 {showSensationsCard ? (
                   <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>
-                      {pickLocaleText(locale, "Sensations et remarques", "Feelings and notes")}
+                      {pickLocaleText(locale, "Auto-évaluation", "Self-assessment")}
                     </div>
 
                     <div style={{ display: "grid", gap: 10, opacity: inputsDisabled ? 0.65 : 1 }}>
@@ -1890,17 +1890,17 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                         {busy ? t("trainingNew.saving") : t("common.save")}
                       </button>
                     ) : null}
-                  </div>
-                ) : null}
 
-                {!embedded && linkedEvent ? (
-                  <div className={styles.evaluationActions}>
-                    <Link href="/player/golf/trainings/to-complete" className={styles.cancelEvaluation}>
-                      {pickLocaleText(locale, "Annuler", "Cancel")}
-                    </Link>
-                    <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
-                      {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation")}
-                    </button>
+                    {!embedded && linkedEvent ? (
+                      <div className={styles.cardActions}>
+                        <Link href="/player/golf/trainings/to-complete" className={styles.cancelEvaluation}>
+                          {pickLocaleText(locale, "Annuler", "Cancel")}
+                        </Link>
+                        <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
+                          {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation")}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
