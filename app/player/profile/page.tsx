@@ -1,12 +1,28 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import NextImage from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { ArrowDown, ArrowUp, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Building2,
+  Camera,
+  ContactRound,
+  Gauge,
+  History,
+  KeyRound,
+  MapPin,
+  Pencil,
+  Save,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import styles from "./PlayerProfile.module.css";
 
 type ProfileRow = {
   id: string;
@@ -213,7 +229,6 @@ function getJuniorCategory(birthDateISO: string) {
 }
 
 export default function PlayerProfilePage() {
-  const router = useRouter();
   const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
@@ -258,6 +273,7 @@ export default function PlayerProfilePage() {
   const [handicapHistory, setHandicapHistory] = useState<HandicapHistoryEntry[]>([]);
   const [handicapHistoryLoading, setHandicapHistoryLoading] = useState(false);
   const [handicapHistoryBusy, setHandicapHistoryBusy] = useState(false);
+  const [showHandicapHistory, setShowHandicapHistory] = useState(false);
   const [handicapFormMode, setHandicapFormMode] = useState<"create" | "edit">("create");
   const [editingHandicapEntryId, setEditingHandicapEntryId] = useState<string | null>(null);
   const [handicapEffectiveDate, setHandicapEffectiveDate] = useState("");
@@ -296,9 +312,6 @@ export default function PlayerProfilePage() {
     if (base.startsWith("blob:")) return base;
     return `${base}${base.includes("?") ? "&" : "?"}t=${avatarRefreshKey}`;
   }, [avatarDbUrl, avatarFallback, avatarRefreshKey]);
-
-  // delta placeholder (idem player)
-  const handicapDelta = -0.4;
 
   function resetHandicapForm() {
     setHandicapFormMode("create");
@@ -466,13 +479,13 @@ export default function PlayerProfilePage() {
       const row = (profRes.data ?? null) as unknown as ProfileRow | null;
       setFirstName(row?.first_name ?? "");
       setLastName(row?.last_name ?? "");
-      setUsername((row as any)?.username ?? "");
+      setUsername(row?.username ?? "");
       setPhone(row?.phone ?? "");
 
       setBirthDate(row?.birth_date ?? "");
       setSex(row?.sex ?? "");
 
-      setHandedness((row?.handedness as any) ?? "");
+      setHandedness(row?.handedness ?? "");
 
       setHandicap(row?.handicap == null ? "" : String(row.handicap));
 
@@ -564,7 +577,7 @@ export default function PlayerProfilePage() {
       return;
     }
 
-    const upsertPayload: Record<string, any> = {
+    const upsertPayload: Partial<ProfileRow> & { id: string } = {
       id: userId,
       first_name: firstName.trim() || null,
       last_name: lastName.trim() || null,
@@ -802,25 +815,21 @@ export default function PlayerProfilePage() {
     setAvatarBusy(true);
 
     try {
-      const objectPath = `${userId}/avatar.jpg`; // normalize to JPG
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-      const uploadRes = await supabase.storage.from("avatars").upload(objectPath, blob, {
-        upsert: true,
-        contentType: "image/jpeg",
-        cacheControl: "3600",
+      const formData = new FormData();
+      formData.append("image", new File([blob], "avatar.jpg", { type: "image/jpeg" }));
+      const response = await fetch("/api/profile/avatar", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
       });
-
-      if (uploadRes.error) throw new Error(uploadRes.error.message);
-
-      const pub = supabase.storage.from("avatars").getPublicUrl(objectPath);
-      const publicUrl = pub.data.publicUrl;
-
-      const { error: upErr } = await supabase
-        .from("profiles")
-        .update({ avatar_url: publicUrl })
-        .eq("id", userId);
-
-      if (upErr) throw new Error(upErr.message);
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json?.error ?? t("playerProfile.error.avatarUpload")));
+      const publicUrl = String(json?.avatar_url ?? "").trim();
+      if (!publicUrl) throw new Error(t("playerProfile.error.avatarUpload"));
 
       setAvatarDbUrl(publicUrl);
 
@@ -828,8 +837,8 @@ export default function PlayerProfilePage() {
       setAvatarRefreshKey(Date.now());
 
       setInfo(t("playerProfile.photoUpdated"));
-    } catch (err: any) {
-      setError(err?.message ?? t("playerProfile.error.avatarUpload"));
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, t("playerProfile.error.avatarUpload")));
     } finally {
       setAvatarBusy(false);
     }
@@ -841,29 +850,27 @@ export default function PlayerProfilePage() {
     setInfo(null);
     setAvatarBusy(true);
     try {
-      const objectPath = `${userId}/avatar.jpg`;
-      const removeRes = await supabase.storage.from("avatars").remove([objectPath]);
-      if (removeRes.error) {
-        const msg = String(removeRes.error.message ?? "");
-        if (!/not[\s_-]?found/i.test(msg) && !/does not exist/i.test(msg)) {
-          throw new Error(removeRes.error.message);
-        }
-      }
-
-      const { error: upErr } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", userId);
-      if (upErr) throw new Error(upErr.message);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
+      const response = await fetch("/api/profile/avatar", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json?.error ?? "Impossible de supprimer la photo de profil."));
 
       setAvatarDbUrl(null);
       setAvatarRefreshKey(Date.now());
       setInfo("Photo de profil supprimée.");
-    } catch (err: any) {
-      setError(err?.message ?? "Impossible de supprimer la photo de profil.");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err, "Impossible de supprimer la photo de profil."));
     } finally {
       setAvatarBusy(false);
     }
   }
 
-  const handicapNumber = useMemo(() => parseHandicap(), [handicap]);
+  const handicapNumber = parseHandicap();
   const handicapLevelLabel = useMemo(() => {
     return (value: number) => pickTrainingVolumeTarget(value, trainingVolumeRows)?.level_label ?? "—";
   }, [trainingVolumeRows]);
@@ -875,18 +882,16 @@ export default function PlayerProfilePage() {
 
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell player-profile-page">
+      <div className={`app-shell player-profile-page ${styles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("common.profile") }]} />
-        <header className="player-profile-heading">
+        <header className={styles.pageHeading}>
           <h1>{t("common.profile")}</h1>
           <p>Gère tes informations personnelles et ton historique sportif.</p>
         </header>
-        {/* ===== SOMMET (comme page player) ===== */}
-        <div className="player-hero player-profile-identity">
-          {/* ===== AVATAR + CTA dessous ===== */}
-          <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
+        <div className={styles.identityCard}>
+          <div className={styles.avatarColumn}>
             <div
-              className="avatar"
+              className={styles.avatar}
               aria-hidden="true"
               role="button"
               tabIndex={0}
@@ -894,39 +899,21 @@ export default function PlayerProfilePage() {
               onKeyDown={(ev) => {
                 if (ev.key === "Enter" || ev.key === " ") openFilePicker();
               }}
-              style={{
-                cursor: loading || avatarBusy ? "default" : "pointer",
-                position: "relative",
-                overflow: "hidden",
-              }}
+              style={{ cursor: loading || avatarBusy ? "default" : "pointer" }}
               title={loading ? "" : t("playerProfile.changePhoto")}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarDbUrl ? (
-                <img
+                <NextImage
                   src={avatarUrl}
                   alt=""
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    opacity: avatarBusy ? 0.65 : 1,
-                  }}
+                  fill
+                  sizes="82px"
+                  unoptimized
+                  style={{ opacity: avatarBusy ? 0.65 : 1 }}
                 />
               ) : (
                 <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 900,
-                    fontSize: 28,
-                    letterSpacing: 1,
-                    color: "white",
-                    background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
-                  }}
+                  className={styles.avatarFallback}
                 >
                   {getInitials(firstName, lastName)}
                 </div>
@@ -934,40 +921,19 @@ export default function PlayerProfilePage() {
             </div>
 
             <button
+              className={styles.photoButton}
               type="button"
               onClick={openFilePicker}
               disabled={loading || avatarBusy || !userId}
-              style={{
-                background: "transparent",
-                border: "none",
-                padding: 0,
-                fontWeight: 900,
-                fontSize: 12,
-                letterSpacing: 0.6,
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,0.88)",
-                cursor: loading || avatarBusy ? "default" : "pointer",
-                opacity: loading ? 0.6 : 1,
-              }}
             >
-              {avatarBusy ? t("playerProfile.uploading") : t("common.change")}
+              <Camera size={14} />{avatarBusy ? t("playerProfile.uploading") : t("common.change")}
             </button>
             {avatarDbUrl ? (
               <button
+                className={styles.removePhotoButton}
                 type="button"
                 onClick={() => void removeAvatar()}
                 disabled={loading || avatarBusy || !userId}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  padding: 0,
-                  fontWeight: 800,
-                  fontSize: 12,
-                  letterSpacing: 0.4,
-                  color: "rgba(255,255,255,0.76)",
-                  cursor: loading || avatarBusy ? "default" : "pointer",
-                  opacity: loading || avatarBusy ? 0.6 : 1,
-                }}
               >
                 Supprimer la photo
               </button>
@@ -998,44 +964,33 @@ export default function PlayerProfilePage() {
             }}
           />
 
-          <div style={{ minWidth: 0 }}>
-            <div className="hero-title">
+          <div className={styles.identityContent}>
+            <div className={styles.identityEyebrow}>{viewerRole === "player" ? "Profil joueur" : "Profil parent"}</div>
+            <div className={styles.identityTitle}>
               {loading
                 ? `${t("playerProfile.hello")}…`
                 : displayHello(firstName, t("playerProfile.hello"))}
             </div>
-
-            <div className="hero-sub">
-              {viewerRole === "player" ? (
-                <div>Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</div>
-              ) : (
-                <div>Parent</div>
-              )}
-
-              {/* ✅ pastille supprimée (delta-pill) */}
+            <div className={styles.identityMeta}>
+              {viewerRole === "player" ? <span><Gauge size={14} />Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</span> : <span><UserRound size={14} />Parent</span>}
+              <span><Building2 size={14} />{heroClubLine}</span>
             </div>
-
-            {/* ✅ ici: nom(s) du/des club(s) */}
-            <div className="hero-club truncate">{heroClubLine}</div>
           </div>
         </div>
 
-        {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
+        {error && <div className={styles.errorAlert}>{error}</div>}
 
-        {info && <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>{info}</div>}
+        {info && <div className={styles.successAlert}>{info}</div>}
 
-        {/* ===== GLASS ===== */}
-        <section className="glass-section" style={{ marginTop: 14 }}>
-          <h2 className="section-title">Informations personnelles</h2>
+        <section className={styles.profileContent}>
+          <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 
-          <div style={{ display: "grid", gap: 14 }}>
+          <div className={styles.cardGrid}>
             {loading ? (
-              <div className="glass-card">
-                <div style={{ opacity: 0.85, fontWeight: 800 }}>{t("common.loading")}</div>
-              </div>
+              <ProfileSkeleton />
             ) : (
               <>
-                <SectionCard title={t("playerProfile.identity")}>
+                <SectionCard title={t("playerProfile.identity")} icon={<UserRound size={17} />} wide>
                   <div className="grid-2">
                     <Field label={t("playerProfile.firstName")}>
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -1072,7 +1027,7 @@ export default function PlayerProfilePage() {
                         <Field label={t("playerProfile.handedness")}>
                           <select
                             value={handedness}
-                            onChange={(e) => setHandedness(e.target.value as any)}
+                            onChange={(e) => setHandedness(e.target.value as "right" | "left" | "")}
                           >
                             <option value="">—</option>
                             <option value="right">{t("playerProfile.handednessRight")}</option>
@@ -1086,15 +1041,15 @@ export default function PlayerProfilePage() {
                 </SectionCard>
 
                 {viewerRole === "player" ? (
-                  <SectionCard title="Historique du handicap">
-                    <div style={{ display: "grid", gap: 12 }}>
+                  <SectionCard title="Historique du handicap" icon={<Gauge size={17} />} wide>
+                    <div className={styles.handicapSection}>
                       <StaticField
                         label="Handicap actuel"
                         value={typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : ""}
                       />
 
-                      <div style={{ color: "rgba(0,0,0,0.62)", fontWeight: 600, lineHeight: 1.45 }}>
-                        Gère ici les évolutions de ton handicap dans le temps. La valeur actuelle du profil est calculée depuis l'entrée active la plus récente.
+                      <div className={styles.helperText}>
+                        Gère ici les évolutions de ton handicap dans le temps. La valeur actuelle du profil est calculée depuis l&apos;entrée active la plus récente.
                       </div>
 
                       <div className="grid-2">
@@ -1127,7 +1082,7 @@ export default function PlayerProfilePage() {
                         />
                       </Field>
 
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <div className={styles.inlineActions}>
                         <button
                           className="btn"
                           type="button"
@@ -1140,6 +1095,15 @@ export default function PlayerProfilePage() {
                               ? "Modifier l'entrée"
                               : "Ajouter une entrée"}
                         </button>
+                        <button
+                          className="btn"
+                          type="button"
+                          aria-expanded={showHandicapHistory}
+                          onClick={() => setShowHandicapHistory((current) => !current)}
+                        >
+                          <History size={15} />
+                          {showHandicapHistory ? "Masquer l’historique" : "Afficher l’historique"}
+                        </button>
                         {handicapFormMode === "edit" ? (
                           <button className="btn" type="button" onClick={resetHandicapForm} disabled={handicapHistoryBusy}>
                             Annuler
@@ -1147,12 +1111,12 @@ export default function PlayerProfilePage() {
                         ) : null}
                       </div>
 
-                      {handicapHistoryLoading ? (
-                        <div style={{ opacity: 0.8, fontWeight: 700 }}>Chargement de l'historique...</div>
-                      ) : handicapHistory.length === 0 ? (
-                        <div style={{ opacity: 0.8, fontWeight: 700 }}>Aucune entrée pour le moment.</div>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
+                      {showHandicapHistory && handicapHistoryLoading ? (
+                        <div className={styles.emptyState}>Chargement de l&apos;historique...</div>
+                      ) : showHandicapHistory && handicapHistory.length === 0 ? (
+                        <div className={styles.emptyState}>Aucune entrée pour le moment.</div>
+                      ) : showHandicapHistory ? (
+                        <div className={styles.handicapHistory}>
                           {handicapHistory.map((entry, index) => {
                             const nextEntry = handicapHistory[index - 1] ?? null;
                             const previousEntry = handicapHistory[index + 1] ?? null;
@@ -1168,26 +1132,19 @@ export default function PlayerProfilePage() {
                             return (
                               <div
                                 key={entry.id}
-                                style={{
-                                  borderRadius: 14,
-                                  padding: "12px 14px",
-                                  border: "1px solid rgba(15, 23, 42, 0.08)",
-                                  background: "rgba(15, 23, 42, 0.03)",
-                                  display: "grid",
-                                  gap: 8,
-                                }}
+                                className={styles.handicapEntry}
                               >
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                                  <div style={{ display: "grid", gap: 4 }}>
-                                    <div style={{ fontWeight: 500, fontSize: 12, lineHeight: 1.35, color: "rgba(15,23,42,0.72)" }}>
+                                <div className={styles.handicapEntryRow}>
+                                  <div className={styles.handicapEntryContent}>
+                                    <div className={styles.handicapDates}>
                                       {dateRange.isOpenEnded
                                         ? `du ${dateRange.fromLabel} à ${dateRange.toLabel}`
                                         : `du ${dateRange.fromLabel} au ${dateRange.toLabel}`}
                                     </div>
-                                    <div style={{ fontWeight: 700, fontSize: 12, color: "rgba(15,23,42,0.82)" }}>
+                                    <div className={styles.handicapLevel}>
                                       {handicapLevelLabel(entry.value)}
                                     </div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 15, color: "#0f172a" }}>
+                                    <div className={styles.handicapValue}>
                                       <span>{`HCP ${entry.value.toFixed(1)}`}</span>
                                       {trend === "improving" ? (
                                         <ArrowDown size={15} color="#16a34a" aria-label="Handicap en amélioration" />
@@ -1197,10 +1154,10 @@ export default function PlayerProfilePage() {
                                       ) : null}
                                     </div>
                                     {entry.note ? (
-                                      <div style={{ color: "rgba(0,0,0,0.62)", fontWeight: 600 }}>{entry.note}</div>
+                                      <div className={styles.handicapNote}>{entry.note}</div>
                                     ) : null}
                                   </div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <div className={styles.entryActions}>
                                     <button
                                       className="btn"
                                       type="button"
@@ -1227,12 +1184,12 @@ export default function PlayerProfilePage() {
                             );
                           })}
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </SectionCard>
                 ) : null}
 
-                <SectionCard title={t("playerProfile.contact")}>
+                <SectionCard title={t("playerProfile.contact")} icon={<ContactRound size={17} />} wide>
                   <div className="grid-2">
                     <Field label={t("playerProfile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -1254,20 +1211,12 @@ export default function PlayerProfilePage() {
                 </SectionCard>
 
                 {customFieldGroups.length > 0 ? (
-                  <SectionCard title="Paramètres organisationnels">
-                    <div style={{ display: "grid", gap: 16 }}>
+                  <SectionCard title="Paramètres organisationnels" icon={<Building2 size={17} />} wide>
+                    <div className={styles.organizationGroups}>
                       {customFieldGroups.map((group) => (
-                        <div key={group.member_id} style={{ display: "grid", gap: 10 }}>
+                        <div key={group.member_id} className={styles.organizationGroup}>
                           {showOrganizationLabelInCustomFields ? (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 800,
-                                letterSpacing: 0.3,
-                                color: "rgba(0,0,0,0.48)",
-                                textTransform: "uppercase",
-                              }}
-                            >
+                            <div className={styles.organizationName}>
                               {group.club_name}
                             </div>
                           ) : null}
@@ -1372,7 +1321,7 @@ export default function PlayerProfilePage() {
                   </SectionCard>
                 ) : null}
 
-                <SectionCard title={t("playerProfile.addressSection")}>
+                <SectionCard title={t("playerProfile.addressSection")} icon={<MapPin size={17} />}>
                   <Field label={t("playerProfile.address")}>
                     <input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </Field>
@@ -1389,7 +1338,7 @@ export default function PlayerProfilePage() {
                 </SectionCard>
 
                 {(viewerRole === "player" || viewerRole === "parent") ? (
-                  <SectionCard title="Mot de passe">
+                  <SectionCard title="Mot de passe" icon={<KeyRound size={17} />}>
                     <Field label="Nouveau mot de passe">
                       <input
                         type="password"
@@ -1413,24 +1362,33 @@ export default function PlayerProfilePage() {
                 ) : null}
 
                 {viewerRole === "player" ? (
-                  <SectionCard title={t("playerProfile.administrative")}>
+                  <SectionCard title={t("playerProfile.administrative")} icon={<ShieldCheck size={17} />} wide>
                     <Field label={t("playerProfile.avsNo")}>
                       <input value={avsNo} onChange={(e) => setAvsNo(e.target.value)} />
                     </Field>
+                    <div className={styles.cardActions}>
+                      <button
+                        className="cta-green"
+                        type="button"
+                        onClick={save}
+                        disabled={!canSave}
+                      >
+                        <Save size={16} />{busy ? t("playerProfile.saving") : saveFlash ? "Profil enregistré !" : "Enregistrer le profil"}
+                      </button>
+                    </div>
                   </SectionCard>
                 ) : null}
 
-                <div style={{ marginTop: 2 }}>
+                {viewerRole === "parent" ? <div className={styles.saveBar}>
                   <button
                     className="cta-green"
                     type="button"
                     onClick={save}
                     disabled={!canSave}
-                    style={{ width: "100%", justifyContent: "center" }}
                   >
-                    {busy ? t("playerProfile.saving") : saveFlash ? "Profil enregistré !" : t("common.save")}
+                    <Save size={16} />{busy ? t("playerProfile.saving") : saveFlash ? "Profil enregistré !" : "Enregistrer le profil"}
                   </button>
-                </div>
+                </div> : null}
               </>
             )}
           </div>
@@ -1446,10 +1404,8 @@ export default function PlayerProfilePage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "grid", gap: 6, minWidth: 0, width: "100%" }}>
-      <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
-        {label}
-      </label>
+    <div className={styles.field}>
+      <label>{label}</label>
       {children}
     </div>
   );
@@ -1457,38 +1413,44 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function StaticField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div style={{ display: "grid", gap: 6, minWidth: 0, width: "100%" }}>
-      <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
-        {label}
-      </label>
-      <div
-        style={{
-          minHeight: 46,
-          borderRadius: 12,
-          padding: "12px 14px",
-          background: "rgba(15, 23, 42, 0.04)",
-          border: "1px solid rgba(15, 23, 42, 0.08)",
-          color: "#0f172a",
-          fontWeight: 700,
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        {staticDisplayValue(value)}
-      </div>
+    <div className={styles.field}>
+      <label>{label}</label>
+      <div className={styles.staticValue}>{staticDisplayValue(value)}</div>
     </div>
   );
 }
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({ title, icon, wide = false, children }: { title: string; icon: React.ReactNode; wide?: boolean; children: React.ReactNode }) {
   return (
-    <div className="glass-card" style={{ display: "grid", gap: 14 }}>
-      <div className="card-title" style={{ marginBottom: 0 }}>
-        {title}
-      </div>
-      <div style={{ display: "grid", gap: 12 }}>
-        {children}
-      </div>
+    <article className={`${styles.sectionCard} ${wide ? styles.wideCard : ""}`}>
+      <header className={styles.sectionCardHeader}><span>{icon}</span><h3>{title}</h3></header>
+      <div className={styles.sectionCardBody}>{children}</div>
+    </article>
+  );
+}
+
+function ProfileSkeleton() {
+  const cards = [
+    { key: "identity", wide: true, tall: true, fields: 5 },
+    { key: "handicap", wide: true, tall: true, fields: 4 },
+    { key: "contact", wide: true, fields: 3 },
+    { key: "organization", wide: true, fields: 3 },
+    { key: "address", fields: 4 },
+    { key: "password", fields: 3 },
+    { key: "administrative", wide: true, fields: 3 },
+  ];
+
+  return (
+    <div className={styles.skeletonGrid} aria-label="Chargement du profil" aria-busy="true">
+      {cards.map((card) => (
+        <div
+          className={`${styles.skeletonCard} ${card.wide ? styles.wideCard : ""} ${card.tall ? styles.skeletonTall : ""}`}
+          key={card.key}
+          aria-hidden="true"
+        >
+          {Array.from({ length: card.fields }, (_, index) => <span key={index} />)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1516,13 +1478,12 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
     height: number;
   } | null>(null);
 
-  useEffect(() => {
-    if (!open) {
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-      setCroppedAreaPixels(null);
-    }
-  }, [open]);
+  function handleClose() {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+    onClose();
+  }
 
   if (!open || !imageSrc) return null;
 
@@ -1540,7 +1501,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
         padding: 16,
       }}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
+        if (e.target === e.currentTarget && !busy) handleClose();
       }}
     >
       <div
@@ -1592,7 +1553,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
           <div style={{ display: "flex", gap: 10 }}>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={busy}
               className="btn"
               style={{ width: "100%", opacity: busy ? 0.65 : 1 }}
@@ -1609,7 +1570,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
                 if (!croppedAreaPixels) return;
                 const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
                 await onConfirm(blob);
-                onClose();
+                handleClose();
               }}
             >
               {busy ? t("playerProfile.saving") : t("playerProfile.validate")}

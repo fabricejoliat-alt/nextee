@@ -14,7 +14,7 @@ import {
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { Bell, Check, CheckCheck, ChevronRight, ExternalLink, Settings, Trash2 } from "lucide-react";
+import { Bell, Check, CheckCheck, ChevronRight, ExternalLink, Eye, Settings, Trash2 } from "lucide-react";
 import campsStyles from "@/app/manager/camps/Camps.module.css";
 import styles from "@/components/notifications/NotificationsCenter.module.css";
 
@@ -33,11 +33,13 @@ type RowRecord = Record<string, unknown>;
 export default function NotificationsCenter({ homeHref, settingsHref, designVariant, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale, t } = useI18n();
   const managerDesign = designVariant === "management" || homeHref === "/manager";
+  const playerScope = homeHref === "/player";
   // The manager deliberately hides message notifications. Coach keeps them because
   // they lead to contextual conversations, while sharing the same page design.
   const managerScope = homeHref === "/manager";
   const hideThreadNotifications = managerScope || homeHref === "/player";
   const areaLabel = managerScope ? "Manager" : homeHref === "/coach" ? "Coach" : "Player";
+  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
     if (locale === "de") return de ?? en;
@@ -336,7 +338,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
   function fmtDate(iso?: string | null) {
     if (!iso) return "—";
     const d = new Date(iso);
-    return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-US", {
+    return new Intl.DateTimeFormat(dateLocale, {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -541,7 +543,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
             ) : visibleRows.length === 0 ? (
               <div className={managerDesign ? styles.emptyState : undefined} style={managerDesign ? undefined : { opacity: 0.8, fontWeight: 800 }}>{managerDesign ? <Bell size={21} aria-hidden="true" /> : null}{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
             ) : (
-              <div className={managerDesign ? styles.notificationList : "marketplace-list marketplace-list-top"} style={{ minWidth: 0, overflowX: "hidden" }}>
+              <div className={managerDesign ? `${styles.notificationList} ${playerScope ? styles.notificationListSeparated : ""}` : "marketplace-list marketplace-list-top"} style={{ minWidth: 0, overflowX: "hidden" }}>
                 {visibleRows.map((r) => {
                   const n = r.notification;
                   const href = resolveNotificationHref(n);
@@ -582,9 +584,14 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                       : (n?.title ?? tr("Notification", "Notification"));
                   const notificationBody =
                     isEventThread && threadUnreadCount > 1 ? "" : (n?.body ?? "");
+                  const notificationCreatedAt = n?.created_at ?? r.recipient.created_at;
+                  const notificationDate = new Date(notificationCreatedAt);
+                  const hasValidNotificationDate = !Number.isNaN(notificationDate.getTime());
+                  const shortDatePart = (options: Intl.DateTimeFormatOptions) =>
+                    new Intl.DateTimeFormat(dateLocale, options).format(notificationDate).replace(".", "");
                   const card = (
                     <div
-                      className={managerDesign ? `${styles.notificationItem} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : "marketplace-item"}
+                      className={managerDesign ? `${styles.notificationItem} ${playerScope ? styles.playerNotificationItem : ""} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : "marketplace-item"}
                       style={managerDesign ? undefined : {
                         width: "100%",
                         minWidth: 0,
@@ -595,7 +602,17 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                           : {}),
                       }}
                     >
-                      {managerDesign ? <span className={styles.notificationIcon}><Bell size={15} /></span> : null}
+                      {managerDesign && playerScope && hasValidNotificationDate ? (
+                        <div
+                          className={styles.notificationDateTile}
+                          aria-label={new Intl.DateTimeFormat(dateLocale, { dateStyle: "full", timeStyle: "short" }).format(notificationDate)}
+                        >
+                          <span>{shortDatePart({ weekday: "short" })}</span>
+                          <b>{notificationDate.getDate()}</b>
+                          <span>{shortDatePart({ month: "short" })}</span>
+                          <time dateTime={notificationCreatedAt}>{shortDatePart({ hour: "2-digit", minute: "2-digit" })}</time>
+                        </div>
+                      ) : managerDesign && !playerScope ? <span className={styles.notificationIcon}><Bell size={15} /></span> : null}
                       <div className={managerDesign ? styles.notificationContent : undefined} style={managerDesign ? undefined : { display: "grid", gap: 6, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                           <div
@@ -672,18 +689,20 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                             {notificationBody}
                           </div>
                         ) : null}
-                        <div className={managerDesign ? styles.notificationDate : undefined} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(n?.created_at ?? r.recipient.created_at)}</div>
-                        <div className={managerDesign ? campsStyles.actions : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        {!playerScope ? <div className={managerDesign ? styles.notificationDate : undefined} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(notificationCreatedAt)}</div> : null}
+                        <div className={managerDesign ? `${campsStyles.actions} ${playerScope ? styles.playerNotificationActions : ""}` : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           {href ? (
                             <Link
                               href={href}
-                              className={managerDesign ? campsStyles.secondary : "btn"}
+                              className={managerDesign ? (playerScope ? campsStyles.iconButton : campsStyles.secondary) : "btn"}
+                              title={tr("Voir", "View", "Ansehen", "Vedi")}
+                              aria-label={tr("Voir la notification", "View notification", "Benachrichtigung ansehen", "Vedi notifica")}
                               onClick={() => {
                                 applyChildContextFromNotification(n, href);
                                 if (!r.recipient.is_read) void onRead(r.recipient.id);
                               }}
                             >
-                              {managerDesign ? <ExternalLink size={14} /> : null}{tr("Ouvrir", "Open", "Öffnen", "Apri")}
+                              {playerScope ? <Eye size={16} /> : managerDesign ? <ExternalLink size={14} /> : null}{playerScope ? null : tr("Ouvrir", "Open", "Öffnen", "Apri")}
                             </Link>
                           ) : null}
                           {!r.recipient.is_read ? (
@@ -721,7 +740,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                     </div>
                   );
                   return (
-                    <div key={r.recipient.id} className={managerDesign ? styles.notificationRow : undefined} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
+                    <div key={r.recipient.id} className={managerDesign ? `${styles.notificationRow} ${playerScope ? styles.playerNotificationRow : ""}` : undefined} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
                       {card}
                     </div>
                   );

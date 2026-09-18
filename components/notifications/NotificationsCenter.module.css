@@ -54,6 +54,33 @@
   border-radius: 13px;
 }
 
+.notificationListSeparated {
+  gap: 10px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.playerNotificationRow + .playerNotificationRow {
+  border-top: 0;
+}
+
+.notificationItem.playerNotificationItem {
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid #e3e9e2;
+  border-radius: 13px;
+  box-shadow: 0 6px 18px rgba(35, 54, 41, .045);
+}
+
+.playerNotificationActions {
+  margin-top: 4px;
+  justify-content: flex-end;
+}
+
 .notificationItem {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -83,6 +110,48 @@
 .notificationIcon {
   width: 32px;
   height: 32px;
+}
+
+.notificationDateTile {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  align-self: stretch;
+  width: 72px;
+  min-height: 72px;
+  box-sizing: border-box;
+  padding: 7px 5px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #edf4ea 0%, #e6efe3 100%);
+  color: #35483b;
+  text-align: center;
+}
+
+.notificationDateTile span {
+  color: #6b776e;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.notificationDateTile b {
+  margin: 3px 0;
+  color: #35483b;
+  font: 850 23px/.9 var(--font-inter-tight), var(--font-inter), sans-serif;
+  letter-spacing: -.05em;
+}
+
+.notificationDateTile time {
+  min-width: 38px;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(53, 72, 59, .14);
+  color: #526456;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .notificationContent {
@@ -128,5 +197,16 @@
   .notificationIcon {
     width: 30px;
     height: 30px;
+  }
+
+  .notificationItem.playerNotificationItem {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 9px;
+    padding: 8px;
+  }
+
+  .notificationDateTile {
+    width: 64px;
+    min-height: 72px;
   }
 }

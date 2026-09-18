@@ -1,0 +1,205 @@
+.page {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 38px !important;
+}
+
+.pageHeading h1 {
+  margin: 0;
+  color: #fff !important;
+  font: 700 clamp(34px, 4vw, 54px) / 1 var(--font-inter-tight), var(--font-inter), sans-serif;
+  letter-spacing: -.04em;
+  text-shadow: 0 2px 12px rgba(16, 33, 22, .24);
+}
+
+.pageHeading p {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, .86) !important;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.identityCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  border: 1px solid #e0e8de;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(35, 54, 41, .05);
+}
+
+.avatarColumn {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+}
+
+.avatar {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  overflow: hidden;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #35483b;
+  box-shadow: 0 0 0 1px #dce5da, 0 8px 18px rgba(34, 54, 40, .13);
+}
+
+.avatar img,
+.avatarFallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #526d50, #304438);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.photoButton,
+.removePhotoButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #526b50;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.removePhotoButton { color: #a5534c; }
+.photoButton:disabled,
+.removePhotoButton:disabled { cursor: default; opacity: .55; }
+
+.identityContent { display: grid; gap: 8px; min-width: 0; }
+.identityEyebrow { color: #78906f; font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.identityTitle { color: #304438; font: 750 clamp(24px, 3vw, 36px) / 1.08 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.035em; }
+.identityMeta { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; color: #68776c; font-size: 11px; font-weight: 700; }
+.identityMeta span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.identityMeta svg { flex: 0 0 auto; color: #718b6b; }
+
+.errorAlert,
+.successAlert {
+  padding: 12px 14px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.errorAlert { border: 1px solid #efcbc6; background: #fff6f5; color: #a44139; }
+.successAlert { border: 1px solid #cfe0ca; background: #f3f8f1; color: #4f704b; }
+
+.profileContent { display: grid; gap: 14px; }
+.contentHeading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.contentHeading > div { display: grid; gap: 4px; }
+.contentHeading span { color: rgba(255, 255, 255, .72); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.contentHeading h2 { margin: 0; color: #fff !important; font: 750 22px/1.15 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.025em; text-shadow: 0 2px 10px rgba(16, 33, 22, .2); }
+.contentHeading p { max-width: 420px; margin: 0; color: rgba(255, 255, 255, .78); font-size: 11px; line-height: 1.45; text-align: right; }
+
+.cardGrid,
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.skeletonGrid { grid-column: 1 / -1; }
+
+.sectionCard {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e0e7de;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 7px 20px rgba(35, 54, 41, .045);
+}
+
+.wideCard { grid-column: 1 / -1; }
+
+.sectionCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e9eee7;
+}
+.sectionCardHeader > span { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 9px; background: #edf3ea; color: #526d50; }
+.sectionCardHeader h3 { margin: 0; color: #35483b; font: 750 14px/1.2 var(--font-inter-tight), var(--font-inter), sans-serif; }
+.sectionCardBody { display: grid; gap: 12px; padding: 16px; }
+
+.field { display: grid; gap: 6px; min-width: 0; width: 100%; }
+.field > label { color: #5f7063; font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.field :is(input, select) { box-sizing: border-box; width: 100%; }
+.staticValue { display: flex; min-height: 42px; box-sizing: border-box; align-items: center; padding: 10px 12px; border: 1px solid #e1e7df; border-radius: 9px; background: #f7f9f6; color: #304438; font-size: 12px; font-weight: 700; }
+
+.handicapSection { display: grid; gap: 13px; }
+.helperText { color: #718076; font-size: 11px; font-weight: 550; line-height: 1.5; }
+.inlineActions,
+.entryActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inlineActions { justify-content: flex-end; }
+.handicapHistory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.handicapEntry { padding: 12px 13px; border: 1px solid #e3e9e1; border-radius: 12px; background: #fafcf9; }
+.handicapEntryRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.handicapEntryContent { display: grid; gap: 4px; min-width: 0; }
+.handicapDates { color: #718076; font-size: 10px; font-weight: 600; line-height: 1.35; }
+.handicapLevel { color: #536357; font-size: 10px; font-weight: 750; }
+.handicapValue { display: flex; align-items: center; gap: 6px; color: #304438; font: 800 16px/1.2 var(--font-inter-tight), var(--font-inter), sans-serif; }
+.handicapNote { color: #718076; font-size: 10px; font-weight: 600; }
+.entryActions { flex: 0 0 auto; }
+.entryActions :global(.btn) { display: grid !important; width: 36px !important; min-width: 36px !important; height: 36px !important; min-height: 36px !important; padding: 0 !important; place-items: center; }
+.emptyState { padding: 24px 16px; border: 1px dashed #dfe7dd; border-radius: 11px; background: #fafcf8; color: #78847b; text-align: center; font-size: 11px; font-weight: 700; }
+
+.organizationGroups,
+.organizationGroup { display: grid; gap: 13px; }
+.organizationName { color: #6e7e72; font-size: 9px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+
+.saveBar { display: flex; grid-column: 1 / -1; justify-content: flex-end; padding-top: 2px; }
+.saveBar :global(.cta-green) { width: auto !important; min-width: 170px; justify-content: center; }
+.cardActions { display: flex; justify-content: flex-end; padding-top: 2px; }
+.cardActions :global(.cta-green) { width: auto !important; min-width: 190px; justify-content: center; }
+
+.skeletonCard { display: grid; gap: 12px; min-height: 170px; padding: 18px; border: 1px solid #e3e9e1; border-radius: 15px; background: #fff; }
+.skeletonCard span { display: block; height: 12px; border-radius: 999px; background: linear-gradient(90deg, #edf1ec 25%, #f8faf7 50%, #edf1ec 75%); background-size: 200% 100%; animation: profileShimmer 1.1s linear infinite; }
+.skeletonCard span:first-child { width: 28%; height: 28px; border-radius: 9px; }
+.skeletonCard span:nth-child(2) { width: 72%; }
+.skeletonCard span:nth-child(3) { width: 100%; height: 42px; border-radius: 9px; }
+.skeletonCard span:last-child { width: 88%; height: 42px; border-radius: 9px; }
+.skeletonTall { min-height: 245px; }
+.skeletonTall span:nth-child(n + 3) { height: 42px; border-radius: 9px; }
+.skeletonTall span:nth-child(even) { width: 88%; }
+@keyframes profileShimmer { to { background-position: -200% 0; } }
+
+@media (max-width: 760px) {
+  .identityCard { align-items: start; padding: 16px; }
+  .avatar { width: 68px; height: 68px; }
+  .identityTitle { font-size: 25px; }
+  .contentHeading { align-items: start; flex-direction: column; gap: 5px; }
+  .contentHeading p { text-align: left; }
+  .cardGrid,
+  .skeletonGrid { grid-template-columns: 1fr; }
+  .wideCard { grid-column: 1; }
+  .handicapHistory { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .identityCard { grid-template-columns: 1fr; justify-items: start; }
+  .avatarColumn { grid-template-columns: auto auto; align-items: center; justify-items: start; }
+  .avatar { grid-row: 1 / span 2; }
+  .removePhotoButton { grid-column: 2; }
+  .sectionCardBody { padding: 14px; }
+  .handicapEntryRow { align-items: flex-start; }
+  .saveBar :global(.cta-green) { width: 100% !important; }
+  .cardActions :global(.cta-green) { width: 100% !important; }
+}
