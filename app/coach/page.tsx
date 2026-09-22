@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, MapPin, Newspaper, RefreshCw, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import CoachLearningCards from "./CoachLearningCards";
 import styles from "./CoachDashboard.module.css";
 
 type EventLite = { id: string; group_id: string; event_type: string; title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null; location_text: string | null; status: string };
@@ -28,12 +28,8 @@ function eventLabel(event: EventLite, groups: Record<string, string>) {
   return `${type} · ${groups[event.group_id] ?? "Groupe"}`;
 }
 
-function formatDate(iso: string) {
-  return new Intl.DateTimeFormat("fr-CH", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-}
-
 function formatNewsDate(iso: string) {
-  return new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }
 
 function sameDay(iso: string, date: Date) {
@@ -61,7 +57,7 @@ export default function CoachHomePage() {
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error ?? "Chargement impossible.");
       const newsJson = await newsResponse.json().catch(() => ({}));
-      setActiveNews(newsResponse.ok && Array.isArray(newsJson.news) ? (newsJson.news as CoachNewsLite[]).filter((item) => item.status === "published" || item.status === "scheduled") : []);
+      setActiveNews(newsResponse.ok && Array.isArray(newsJson.news) ? (newsJson.news as CoachNewsLite[]).filter((item) => item.status === "published") : []);
       setData(json as HomeData);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Chargement impossible.");
@@ -75,6 +71,8 @@ export default function CoachHomePage() {
   const today = useMemo(() => (data?.upcomingEvents ?? []).filter((event) => sameDay(event.starts_at, new Date())), [data]);
   const weekEnd = useMemo(() => Date.now() + 7 * 24 * 60 * 60 * 1000, []);
   const thisWeek = useMemo(() => (data?.upcomingEvents ?? []).filter((event) => new Date(event.starts_at).getTime() <= weekEnd), [data, weekEnd]);
+  const upcomingPreview = (data?.upcomingEvents ?? []).slice(0, 5);
+  const newsPreview = activeNews.slice(0, 2);
   const name = String(data?.me?.first_name ?? "").trim();
   const stats = [
     { label: "Activités aujourd’hui", value: today.length, icon: CalendarDays },
@@ -92,27 +90,33 @@ export default function CoachHomePage() {
       <button className={styles.secondary} type="button" onClick={() => void load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? styles.spin : ""} />Actualiser</button>
     </header>
     {error ? <div className={styles.error}><AlertTriangle size={17} />{error}<button type="button" onClick={() => void load()}>Réessayer</button></div> : null}
-    {!loading && activeNews.length > 0 ? <section className={styles.featuredNews} aria-label="Actualités"><div className={styles.newsList}>{activeNews.map((item) => <article key={item.id} className={styles.newsItem}>{item.image_url ? <div style={{ overflow: "hidden", aspectRatio: "16 / 9", margin: "-20px -20px 2px", borderRadius: "15px 15px 0 0", background: "#e9efe8" }}><img src={item.image_url} alt="" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} /></div> : null}<div className={styles.newsMeta}><span>{formatNewsDate(item.published_at ?? item.scheduled_for ?? item.created_at)}</span>{item.club_name ? <span>{item.club_name}</span> : null}</div><h2>{item.title}</h2>{item.summary ? <p className={styles.newsSummary}>{item.summary}</p> : null}<div className={styles.newsBody} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(item.body) }}/></article>)}</div><div className={styles.newsFooter}><Link className={styles.actionButton} href="/coach/news">Voir toutes les actualités <ArrowRight size={14} /></Link></div></section> : null}
-    <section className={styles.stats} aria-label="Indicateurs principaux">
-      {stats.map(({ label, value, icon: Icon }) => <article className={styles.stat} key={label}><div className={styles.statIcon}><Icon size={17} /></div><span>{label}</span><b>{loading || value == null ? "—" : value}</b></article>)}
-    </section>
-    <div className={styles.columns}>
+    <div className={styles.homeCards}>
       <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>Aujourd’hui</h2><p>Les activités prévues aujourd’hui.</p></div><span className={styles.badge}>{today.length}</span></div>
-        <EventList loading={loading} events={today} groups={data?.groupNameById ?? {}} empty="Aucune activité prévue aujourd’hui." />
+        <div className={styles.panelHeader}><div><h2>Prochaines activités</h2><p>Vos cinq prochains rendez-vous.</p></div><Link className={styles.textLink} href="/coach/calendar" aria-label="Voir le calendrier"><ArrowRight size={16} /></Link></div>
+        <EventList loading={loading} events={upcomingPreview} groups={data?.groupNameById ?? {}} empty="Aucune activité planifiée." />
       </section>
       <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>À faire</h2><p>Les actions qui nécessitent votre attention.</p></div></div>
+        <div className={styles.panelHeader}><div><h2>Actualités de mes clubs</h2><p>Les dernières nouvelles publiées par vos clubs.</p></div><Link className={styles.textLink} href="/coach/news" aria-label="Toutes les actualités"><ArrowRight size={16} /></Link></div>
+        {loading ? <Skeleton /> : newsPreview.length ? <div className={styles.newsPreviewList}>
+          {newsPreview.map((item) => <Link key={item.id} className={styles.newsPreviewItem} href="/coach/news">
+            {item.image_url ? <span className={styles.newsThumbnail}><img src={item.image_url} alt="" /></span> : <span className={styles.dateBox}><Newspaper size={16} /></span>}
+            <span className={styles.newsPreviewContent}><small>{formatNewsDate(item.published_at ?? item.created_at)}</small><b>{item.title}</b><span>{item.club_name || "Club"}</span>{item.summary ? <p>{item.summary}</p> : null}</span>
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>)}
+        </div> : <div className={styles.empty}>Aucune actualité pour le moment.</div>}
+      </section>
+      <section className={styles.panel}>
+        <div className={styles.panelHeader}><div><h2>Points d’attention</h2><p>Les éléments à vérifier prochainement.</p></div></div>
         {loading ? <Skeleton /> : <div className={styles.taskList}>
-          {(data?.pendingAttendanceCount ?? 0) > 0 ? <Task icon={CheckCircle2} label={`${data?.pendingAttendanceCount} présence(s) à compléter`} href="/coach/calendar?view=past" /> : null}
-          {(data?.pendingEvaluationCount ?? 0) > 0 ? <Task icon={ClipboardCheck} label={`${data?.pendingEvaluationCount} évaluation(s) à terminer`} href="/coach/calendar?view=evaluations" tone="warning" /> : null}
-          {(data?.pendingAttendanceCount ?? 0) === 0 && (data?.pendingEvaluationCount ?? 0) === 0 ? <div className={styles.empty}><CheckCircle2 size={20} />Aucune action urgente.</div> : null}
+          {(data?.pendingAttendanceCount ?? 0) > 0 ? <Task icon={CheckCircle2} label={`${data?.pendingAttendanceCount} présence${data?.pendingAttendanceCount === 1 ? "" : "s"} à compléter`} href="/coach/calendar?view=past" /> : null}
+          {(data?.pendingEvaluationCount ?? 0) > 0 ? <Task icon={ClipboardCheck} label={`${data?.pendingEvaluationCount} évaluation${data?.pendingEvaluationCount === 1 ? "" : "s"} à terminer`} href="/coach/calendar?view=evaluations" tone="warning" /> : null}
+          {(data?.pendingAttendanceCount ?? 0) === 0 && (data?.pendingEvaluationCount ?? 0) === 0 ? <div className={styles.empty}><CheckCircle2 size={20} />Aucun point d’attention.</div> : null}
         </div>}
       </section>
     </div>
-    <section className={styles.panel}>
-      <div className={styles.panelHeader}><div><h2>Cette semaine</h2><p>Vos prochaines activités et leur contexte.</p></div><Link className={styles.actionButton} href="/coach/calendar">Voir le calendrier <ArrowRight size={14} /></Link></div>
-      <EventList loading={loading} events={thisWeek} groups={data?.groupNameById ?? {}} empty="Aucune activité prévue cette semaine." />
+    <CoachLearningCards />
+    <section className={styles.stats} aria-label="Indicateurs principaux">
+      {stats.map(({ label, value, icon: Icon }) => <article className={styles.stat} key={label}><div className={styles.statIcon}><Icon size={17} /></div><span>{label}</span><b>{loading || value == null ? "—" : value}</b></article>)}
     </section>
     <section className={styles.shortcuts} aria-label="Raccourcis">
       <Link href="/coach/calendar"><CalendarDays size={18} /><span><b>Ouvrir le calendrier</b><small>Consulter vos activités</small></span><ArrowRight size={16} /></Link>
@@ -125,7 +129,16 @@ export default function CoachHomePage() {
 function EventList({ loading, events, groups, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; empty: string }) {
   if (loading) return <Skeleton />;
   if (!events.length) return <div className={styles.empty}>{empty}</div>;
-  return <div className={styles.eventList}>{events.map((event) => <Link key={event.id} href={`/coach/groups/${event.group_id}/planning/${event.id}`}><div className={styles.dateBox}><CalendarDays size={16} /></div><div><b>{eventLabel(event, groups)}</b><span>{formatDate(event.starts_at)} · {event.location_text || "Lieu non renseigné"}</span></div><ArrowRight size={16} /></Link>)}</div>;
+  return <div className={styles.upcomingList}>{events.map((event) => {
+    const start = new Date(event.starts_at);
+    const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "short" }).format(start).replace(".", "");
+    const month = new Intl.DateTimeFormat("fr-CH", { month: "short" }).format(start).replace(".", "");
+    const time = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(start);
+    return <Link key={event.id} href={`/coach/groups/${event.group_id}/planning/${event.id}`} className={styles.upcomingItem}>
+      <span className={styles.upcomingDate} aria-label={new Intl.DateTimeFormat("fr-CH", { dateStyle: "full", timeStyle: "short" }).format(start)}><span>{weekday}</span><b>{start.getDate()}</b><span>{month}</span><time dateTime={event.starts_at}>{time}</time></span>
+      <span className={styles.upcomingBody}><b>{eventLabel(event, groups)}</b><span>{groups[event.group_id] || "Groupe"}</span><span className={styles.upcomingLocation}><MapPin size={13} aria-hidden="true" />{event.location_text || "Lieu non renseigné"}</span></span>
+    </Link>;
+  })}</div>;
 }
 
 function Task({ icon: Icon, label, href, tone }: { icon: typeof CheckCircle2; label: string; href: string; tone?: "warning" }) {

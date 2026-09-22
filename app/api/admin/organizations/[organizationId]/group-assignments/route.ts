@@ -217,7 +217,7 @@ export async function POST(
 
     const toGroupRes = await supabaseAdmin
       .from("coach_groups")
-      .select("id,club_id")
+      .select("id,club_id,head_coach_user_id")
       .eq("id", toGroupId)
       .maybeSingle();
     if (toGroupRes.error) return NextResponse.json({ error: toGroupRes.error.message }, { status: 400 });
@@ -306,17 +306,21 @@ export async function POST(
     } else {
       const existingCoachLink = await supabaseAdmin
         .from("coach_group_coaches")
-        .select("id")
+        .select("id,is_head")
         .eq("group_id", toGroupId)
         .eq("coach_user_id", userId)
         .maybeSingle();
       if (existingCoachLink.error) {
         return NextResponse.json({ error: existingCoachLink.error.message }, { status: 400 });
       }
-      if (!existingCoachLink.data) {
+      const isHead = toGroupRes.data.head_coach_user_id === userId;
+      if (existingCoachLink.data && isHead && !existingCoachLink.data.is_head) {
+        const updateRes = await supabaseAdmin.from("coach_group_coaches").update({ is_head: true }).eq("id", existingCoachLink.data.id);
+        if (updateRes.error) return NextResponse.json({ error: updateRes.error.message }, { status: 400 });
+      } else if (!existingCoachLink.data) {
         const insRes = await supabaseAdmin
           .from("coach_group_coaches")
-          .insert({ group_id: toGroupId, coach_user_id: userId, is_head: false });
+          .insert({ group_id: toGroupId, coach_user_id: userId, is_head: isHead });
         if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
       }
 

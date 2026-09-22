@@ -5,7 +5,6 @@ import Link from "next/link";
 import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -57,6 +56,19 @@ function priceLabel(it: Item, t: (key: string) => string) {
   return `${it.price} CHF`;
 }
 
+function MarketplaceCardsSkeleton() {
+  return <div className="marketplace-list marketplace-loading-list" aria-hidden="true">
+    {Array.from({ length: 4 }, (_, index) => <div className="marketplace-item marketplace-loading-card" key={index}>
+      <div className="marketplace-row">
+        <span className="marketplace-loading-thumb" />
+        <span className="marketplace-loading-body">
+          <i /><i /><i />
+        </span>
+      </div>
+    </div>)}
+  </div>;
+}
+
 export default function PlayerMarketplaceHome() {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -93,42 +105,38 @@ export default function PlayerMarketplaceHome() {
   async function load() {
     setLoading(true);
     setError(null);
+    try {
+      const ctx = await resolveEffectivePlayerContext();
+      setUserId(ctx.effectiveUserId);
 
-    const ctx = await resolveEffectivePlayerContext();
-    setUserId(ctx.effectiveUserId);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token ?? "";
-    if (!token) {
-      setError("Session invalide.");
+      const params = new URLSearchParams();
+      if (ctx.role === "parent") params.set("child_id", ctx.effectiveUserId);
+      const res = await fetch(`/api/player/marketplace?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? t("marketplace.noActiveClub")));
+
+      setItems((json?.items ?? []) as Item[]);
+      setProfilesById((json?.profilesById ?? {}) as Record<string, Profile>);
+      setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
+    } catch (loadError: unknown) {
+      setItems([]);
+      setProfilesById({});
+      setMainImageByItemId({});
+      setError(loadError instanceof Error ? loadError.message : t("marketplace.noActiveClub"));
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const params = new URLSearchParams();
-    if (ctx.role === "parent") params.set("child_id", ctx.effectiveUserId);
-    const res = await fetch(`/api/player/marketplace?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      setError(String(json?.error ?? t("marketplace.noActiveClub")));
-      setLoading(false);
-      return;
-    }
-
-    const list = (json?.items ?? []) as Item[];
-    setItems(list);
-    setProfilesById((json?.profilesById ?? {}) as Record<string, Profile>);
-    setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
-
-    setLoading(false);
   }
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
   // Reset page quand on change de catégorie
@@ -253,7 +261,7 @@ export default function PlayerMarketplaceHome() {
         {/* Liste */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card"><ListLoadingBlock label={t("common.loading")} /></div>
+            <MarketplaceCardsSkeleton />
           ) : pagedItems.length === 0 ? (
             <div className="glass-card marketplace-empty">
               {selectedCategory ? t("marketplace.noneInCategory") : t("marketplace.none")}

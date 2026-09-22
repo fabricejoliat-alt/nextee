@@ -13,7 +13,7 @@ import actionStyles from "@/components/admin/organizations/OrganizationSettingsA
 
 type Club = { id: string; name: string | null };
 type Profile = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
-type Group = { id: string; club_id: string; name: string; is_active: boolean; clubs?: Club | null };
+type Group = { id: string; club_id: string; name: string; is_active: boolean; head_coach_user_id: string | null; clubs?: Club | null };
 type GroupRow = Group & { categories: string[]; players: Profile[]; coaches: Profile[] };
 type Season = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
 
@@ -45,7 +45,9 @@ export default function GroupsManagementPage() {
       const nextSeasons = (seasonData ?? []) as Season[];
       const activeSeasonId = nextSeasons.some((season) => season.id === requestedSeasonId) ? requestedSeasonId : nextSeasons.find((season) => season.is_current)?.id ?? nextSeasons[0]?.id ?? "";
       setSeasons(nextSeasons); setSeasonId(activeSeasonId);
-      const { data: groupData, error: groupError } = await supabase.from("coach_groups").select("id,club_id,name,is_active,clubs:clubs(id,name)").eq("club_id", id).eq("club_season_id", activeSeasonId).order("name", { ascending: true });
+      let groupQuery = supabase.from("coach_groups").select("id,club_id,name,is_active,head_coach_user_id,clubs:clubs(id,name)").eq("club_id", id);
+      if (activeSeasonId) groupQuery = groupQuery.eq("club_season_id", activeSeasonId);
+      const { data: groupData, error: groupError } = await groupQuery.order("name", { ascending: true });
       if (groupError) throw groupError;
       const base = (groupData ?? []).map((group: any) => ({ ...group, clubs: Array.isArray(group.clubs) ? group.clubs[0] ?? null : group.clubs ?? null })) as Group[];
       const ids = base.map((group) => group.id);
@@ -60,8 +62,17 @@ export default function GroupsManagementPage() {
       (categories.data ?? []).forEach((row: any) => categoriesByGroup.set(String(row.group_id), [...(categoriesByGroup.get(String(row.group_id)) ?? []), String(row.category)]));
       (players.data ?? []).forEach((row: any) => { const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles; if (profile) playersByGroup.set(String(row.group_id), [...(playersByGroup.get(String(row.group_id)) ?? []), profile as Profile]); });
       (coaches.data ?? []).forEach((row: any) => { const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles; if (profile) coachesByGroup.set(String(row.group_id), [...(coachesByGroup.get(String(row.group_id)) ?? []), profile as Profile]); });
-      setGroups(base.map((group) => ({ ...group, categories: Array.from(new Set(categoriesByGroup.get(group.id) ?? [])).sort((a, b) => a.localeCompare(b, "fr-CH")), players: (playersByGroup.get(group.id) ?? []).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "fr-CH")), coaches: (coachesByGroup.get(group.id) ?? []).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "fr-CH")) })));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Impossible de charger les groupes."); } finally { setLoading(false); }
+      const headIds = Array.from(new Set(base.map((group) => group.head_coach_user_id).filter((coachId): coachId is string => Boolean(coachId))));
+      const headProfiles = headIds.length ? await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", headIds) : { data: [], error: null };
+      if (headProfiles.error) throw headProfiles.error;
+      const headById = new Map(((headProfiles.data ?? []) as Profile[]).map((profile) => [profile.id, profile]));
+      setGroups(base.map((group) => {
+        const coaches = [...(coachesByGroup.get(group.id) ?? [])];
+        const head = group.head_coach_user_id && headById.get(group.head_coach_user_id);
+        if (head && !coaches.some((coach) => coach.id === head.id)) coaches.push(head);
+        return { ...group, categories: Array.from(new Set(categoriesByGroup.get(group.id) ?? [])).sort((a, b) => a.localeCompare(b, "fr-CH")), players: (playersByGroup.get(group.id) ?? []).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "fr-CH")), coaches: coaches.sort((a, b) => nameOf(a).localeCompare(nameOf(b), "fr-CH")) };
+      }));
+    } catch (cause) { setError(cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "Impossible de charger les groupes."); } finally { setLoading(false); }
   }
 
   useEffect(() => { void (async () => { try { const response = await fetch("/api/manager/my-clubs", { headers: await authHeaders(), cache: "no-store" }); const json = await response.json(); if (!response.ok) throw new Error(json.error ?? "Impossible de charger les clubs."); const next = (json.clubs ?? []) as Club[]; const initial = next.some((club) => club.id === requestedClubId) ? requestedClubId : next[0]?.id ?? ""; setClubs(next); setClubId(initial); await load(initial, ""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Impossible de charger les clubs."); setLoading(false); } })(); // eslint-disable-next-line react-hooks/exhaustive-deps

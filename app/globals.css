@@ -98,9 +98,9 @@ a { color: inherit; text-decoration: none; }
   --header-h: 60px;
   --footer-h: 72px;
 
-  /* Web browser (Safari/Chrome): no extra safe-area padding by default */
-  --safe-top: 0px;
-  --safe-bottom: 0px;
+  /* Works in Safari, installed PWAs, and Capacitor's native WKWebView. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* =========================================================
@@ -2739,6 +2739,22 @@ body:has([data-design-system]){
 .player-page-root .marketplace-list{display:grid!important;gap:10px!important}
 .player-page-root .marketplace-list .marketplace-item{padding:14px!important;border-color:#e3e9e2!important;border-radius:12px!important;background:#fff!important;box-shadow:none!important}
 .player-page-root .marketplace-list .marketplace-item:hover{border-color:#cfdacb!important;background:#fbfdf9!important}
+.player-page-root .marketplace-loading-list{pointer-events:none}
+.player-page-root .marketplace-loading-card{min-height:118px!important;background:#fff!important}
+.player-page-root .marketplace-loading-card:hover{transform:none!important;border-color:#e3e9e2!important;background:#fff!important;box-shadow:none!important}
+.player-page-root .marketplace-loading-thumb{display:block;width:120px;height:90px;border-radius:10px;background:linear-gradient(90deg,#edf1ec 25%,#f8faf7 50%,#edf1ec 75%);background-size:200% 100%;animation:marketplace-card-shimmer 1.15s linear infinite}
+.player-page-root .marketplace-loading-body{display:grid;align-content:center;gap:10px;min-width:0}
+.player-page-root .marketplace-loading-body i{display:block;width:72%;height:10px;border-radius:999px;background:linear-gradient(90deg,#edf1ec 25%,#f8faf7 50%,#edf1ec 75%);background-size:200% 100%;animation:marketplace-card-shimmer 1.15s linear infinite}
+.player-page-root .marketplace-loading-body i:nth-child(2){width:48%}.player-page-root .marketplace-loading-body i:nth-child(3){width:30%}
+@keyframes marketplace-card-shimmer{to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.player-page-root .marketplace-loading-thumb,.player-page-root .marketplace-loading-body i{animation:none}}
+.player-page-root .marketplace-form-skeleton{display:grid;gap:14px;min-height:390px;align-content:start}
+.player-page-root .marketplace-form-skeleton-field,.player-page-root .marketplace-form-skeleton-area,.player-page-root .marketplace-form-skeleton-row>i{display:block;border-radius:10px;background:linear-gradient(90deg,#edf1ec 25%,#f8faf7 50%,#edf1ec 75%);background-size:200% 100%;animation:marketplace-card-shimmer 1.15s linear infinite}
+.player-page-root .marketplace-form-skeleton-field{width:48%;height:44px}.player-page-root .marketplace-form-skeleton-wide{width:100%}
+.player-page-root .marketplace-form-skeleton-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.player-page-root .marketplace-form-skeleton-row>i{height:44px}
+.player-page-root .marketplace-form-skeleton-area{width:100%;height:118px}
+@media(max-width:640px){.player-page-root .marketplace-form-skeleton-row{grid-template-columns:1fr}.player-page-root .marketplace-form-skeleton-field{width:100%}}
+@media(prefers-reduced-motion:reduce){.player-page-root .marketplace-form-skeleton-field,.player-page-root .marketplace-form-skeleton-area,.player-page-root .marketplace-form-skeleton-row>i{animation:none}}
 .player-page-root .marketplace-item-title{color:#35483b!important;font:700 14px/1.25 var(--font-inter-tight),var(--font-inter),sans-serif!important;letter-spacing:-.01em!important}
 .player-page-root .marketplace-link{color:inherit!important;text-decoration:none!important}
 .player-page-root .marketplace-link:focus-visible{outline:3px solid rgba(137,157,125,.35)!important;outline-offset:3px!important;border-radius:12px!important}

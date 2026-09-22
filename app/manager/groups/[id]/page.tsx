@@ -575,7 +575,7 @@ export default function CoachGroupEditPage() {
 
   async function removeCoachFromGroup(row: GroupCoachRow) {
     if (!row?.coach_user_id || busy) return;
-    if (row.is_head) return;
+    if (row.is_head || group?.head_coach_user_id === row.coach_user_id) return;
 
     setBusy(true);
     setErr(null);
@@ -742,7 +742,7 @@ export default function CoachGroupEditPage() {
             <div style={{ display: "grid", gap: 20 }}>
               <div style={{ display: "grid", gap: 10 }}>
                 <div className="pill-soft">Coach(s) du groupe ({coaches.length})</div>
-                {coaches.length === 0 ? <div className={actionStyles.errorAlert} role="alert">Attention : ce groupe n’a aucun coach. Ajoutez-en au moins un avant de poursuivre.</div> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Rôle</th><th aria-label="Actions" /></tr></thead><tbody>{coaches.map((row) => <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(row.profiles)}</span></td><td><b>{fullName(row.profiles)}</b></td><td>{row.is_head ? <span className="pill-soft">Head coach</span> : "Coach"}</td><td>{row.is_head ? null : <button type="button" className="btn btn-danger soft" onClick={() => void removeCoachFromGroup(row)} disabled={busy} aria-label="Retirer le coach" title="Retirer"><Trash2 size={18} /></button>}</td></tr>)}</tbody></table></div>}
+                {coaches.length === 0 ? <div className={actionStyles.errorAlert} role="alert">Attention : ce groupe n’a aucun coach. Ajoutez-en au moins un avant de poursuivre.</div> : <div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Rôle</th><th aria-label="Actions" /></tr></thead><tbody>{coaches.map((row) => { const isHead = row.is_head || group?.head_coach_user_id === row.coach_user_id; return <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(row.profiles)}</span></td><td><b>{fullName(row.profiles)}</b></td><td>{isHead ? <span className="pill-soft">Head coach</span> : "Coach"}</td><td>{isHead ? null : <button type="button" className="btn btn-danger soft" onClick={() => void removeCoachFromGroup(row)} disabled={busy} aria-label="Retirer le coach" title="Retirer"><Trash2 size={18} /></button>}</td></tr>; })}</tbody></table></div>}
               </div>
               <div style={{ display: "grid", gap: 10 }}>
                 <label className="user-mgmt-field"><span className="user-mgmt-field-label">Ajouter un coach</span><input value={queryCoaches} onChange={(e) => setQueryCoaches(e.target.value)} disabled={busy} placeholder="Rechercher par nom…" /></label>

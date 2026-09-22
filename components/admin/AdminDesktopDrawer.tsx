@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Home, Building2, Users, Bell, LogOut, X, Languages, ClipboardCheck } from "lucide-react";
+import { Home, Building2, Users, Bell, LogOut, X, Languages, ClipboardCheck, BookOpen } from "lucide-react";
 
 const ROUTES = {
   home: "/admin",
@@ -13,6 +13,7 @@ const ROUTES = {
   notifications: "/admin/notifications",
   translations: "/admin/translations",
   validations: "/admin/validations",
+  rules: "/admin/rules",
 } as const;
 
 type Props = {
@@ -72,6 +73,7 @@ export default function AdminDesktopDrawer({ open, onClose }: Props) {
       { label: "Organisations", icon: Building2, href: ROUTES.organizations },
       { label: "Traductions", icon: Languages, href: ROUTES.translations },
       { label: "Gestion des validations", icon: ClipboardCheck, href: ROUTES.validations },
+      { label: "Règles de golf", icon: BookOpen, href: ROUTES.rules },
       { label: "Notifications", icon: Bell, href: ROUTES.notifications },
     ],
     []

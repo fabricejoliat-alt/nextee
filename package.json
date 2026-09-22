@@ -14,7 +14,8 @@
     "test:player-statistics": "node --test --experimental-strip-types tests/player-statistics.test.ts",
     "test:manager-performance": "node --test --experimental-strip-types tests/manager-performance.test.ts",
     "test:coach-permissions": "node --test --experimental-strip-types tests/coach-permissions.test.ts",
-    "test:golf-rounds": "node --test --experimental-strip-types tests/golf-round-metrics.test.ts"
+    "test:golf-rounds": "node --test --experimental-strip-types tests/golf-round-metrics.test.ts",
+    "test:rules-learning": "node --test --experimental-strip-types tests/rules-learning.test.ts tests/rules-curriculum.test.ts"
   },
   "dependencies": {
     "@capacitor/cli": "^8.5.2",

@@ -1,0 +1,83 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, Check, CheckCircle2, ChevronRight, CircleAlert, Gauge, LoaderCircle, LockKeyhole, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import styles from "./AdminRulesManagement.module.css";
+
+type Season = {
+  id:string; title_i18n:Record<string,string>; status:string; reference_version:string;
+  points_per_correct:number; speed_bonus_enabled:boolean; max_speed_bonus:number;
+  free_reading_seconds:number; speed_decay_seconds:number; perfect_bonus:number;
+  retained_scores:10|15; minimum_club_participants:number;
+};
+type Validation={valid:boolean;card_count:number;invalid_card_count:number;error?:string};
+type CardSummary={series_id:string;position:number;card_version_id:string;rules_card_versions:{id:string;title:string;official_reference:string;human_review_required:boolean;approved_at:string|null;image_status:string;rules_cards:{editorial_status:string}|null}|null};
+type Series={id:string;position:number;title_i18n:Record<string,string>;discovery_starts_at:string;quiz_opens_at:string;quiz_closes_at:string;results_published_at:string|null;status:string;locked_at:string|null;validation:Validation;cards:CardSummary[]};
+type Payload={season:Season|null;series:Series[]};
+
+function localDateTime(value:string|null){if(!value)return "";const date=new Date(value);const offset=date.getTimezoneOffset()*60_000;return new Date(date.getTime()-offset).toISOString().slice(0,16);}
+function iso(value:string){return new Date(value).toISOString();}
+
+export default function AdminRulesManagement(){
+  const [data,setData]=useState<Payload|null>(null);const [selectedId,setSelectedId]=useState("");
+  const [error,setError]=useState("");const [notice,setNotice]=useState("");const [loading,setLoading]=useState(true);const [saving,setSaving]=useState("");
+  const [seasonDraft,setSeasonDraft]=useState<Season|null>(null);const [seriesDraft,setSeriesDraft]=useState<Series|null>(null);
+  const token=useCallback(async()=>{const {data:session}=await supabase.auth.getSession();return session.session?.access_token??"";},[]);
+  const load=useCallback(async()=>{const auth=await token();setError("");const response=await fetch("/api/admin/rules",{headers:{Authorization:`Bearer ${auth}`},cache:"no-store"});const json=await response.json().catch(()=>({}));if(!response.ok){setError(String(json.error??"Chargement impossible."));setLoading(false);return;}setData(json);setSeasonDraft(json.season);setSelectedId((current:string)=>current||json.series?.[0]?.id||"");setLoading(false);},[token]);
+  useEffect(()=>{void load();},[load]);
+  const selected=useMemo(()=>data?.series.find(item=>item.id===selectedId)??null,[data,selectedId]);
+  useEffect(()=>{setSeriesDraft(selected?{...selected,title_i18n:{...selected.title_i18n}}:null);},[selected]);
+
+  async function patch(body:Record<string,unknown>,key:string){setSaving(key);setError("");setNotice("");try{const auth=await token();const response=await fetch("/api/admin/rules",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:`Bearer ${auth}`},body:JSON.stringify(body)});const json=await response.json().catch(()=>({}));if(!response.ok)throw new Error(String(json.error??"Enregistrement impossible."));setNotice(key==="publish"?"La série a été publiée et verrouillée.":key==="publishSeason"?"La saison est active : les séries publiées sont maintenant accessibles selon leurs dates.":"Les modifications ont été enregistrées.");await load();}catch(cause){setError(cause instanceof Error?cause.message:"Enregistrement impossible.");}finally{setSaving("");}}
+  async function saveSeason(){if(!seasonDraft)return;await patch({entity:"season",id:seasonDraft.id,title_fr:seasonDraft.title_i18n.fr,title_en:seasonDraft.title_i18n.en,reference_version:seasonDraft.reference_version,points_per_correct:seasonDraft.points_per_correct,speed_bonus_enabled:seasonDraft.speed_bonus_enabled,max_speed_bonus:seasonDraft.max_speed_bonus,free_reading_seconds:seasonDraft.free_reading_seconds,speed_decay_seconds:seasonDraft.speed_decay_seconds,perfect_bonus:seasonDraft.perfect_bonus,retained_scores:seasonDraft.retained_scores,minimum_club_participants:seasonDraft.minimum_club_participants},"season");}
+  async function publishSeason(){if(!seasonDraft)return;await patch({entity:"season",id:seasonDraft.id,action:"publish"},"publishSeason");}
+  async function saveSeries(){if(!seriesDraft)return;await patch({entity:"series",id:seriesDraft.id,title_fr:seriesDraft.title_i18n.fr,title_en:seriesDraft.title_i18n.en,discovery_starts_at:iso(seriesDraft.discovery_starts_at),quiz_opens_at:iso(seriesDraft.quiz_opens_at),quiz_closes_at:iso(seriesDraft.quiz_closes_at),results_published_at:iso(seriesDraft.results_published_at??""),status:seriesDraft.status},"series");}
+  if(loading)return <div className={styles.page} aria-busy="true"><div className={styles.loading}><i/><i/><i/></div></div>;
+  if(!data?.season||!seasonDraft)return <div className={styles.page}><div className={styles.empty}><CircleAlert/><h1>Aucune saison configurée</h1><p>Appliquez la migration de données initiales avant d’ouvrir cette page.</p></div></div>;
+  const validCount=data.series.filter(item=>item.validation?.valid&&["draft","scheduled"].includes(item.status)).length;
+  const publishedCount=data.series.filter(item=>item.status==="published").length;
+  const seasonActive=data.season.status==="published";
+  return <div className={styles.page}>
+    <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/admin">Administration</Link><ChevronRight size={14}/><span>Règles de golf</span></nav>
+    <header className={styles.topline}><div><p className={styles.eyebrow}>Contenus pédagogiques</p><h1>Gestion des règles de golf</h1><p className={styles.lead}>Configurez la saison, contrôlez les contenus et publiez uniquement les séries éditorialement complètes.</p></div><div className={styles.summary}><ShieldCheck size={18}/><span><b>{data.series.length}</b> séries</span><i/><span><b>{validCount}</b> publiables</span></div></header>
+    {error?<div className={styles.error} role="alert"><CircleAlert size={17}/>{error}</div>:null}{notice?<div className={styles.success} role="status"><Check size={17}/>{notice}</div>:null}
+    <section className={styles.panel} aria-labelledby="season-title"><div className={styles.panelHead}><div><span className={styles.panelIcon}><Gauge size={18}/></span><div><h2 id="season-title">Paramètres de la saison</h2><p>Barème officiel et paramètres communs aux douze séries.</p></div></div><div className={styles.actions}><span className={`${styles.status} ${seasonActive?styles.published:""}`}>{seasonActive?"Saison active":"Saison en brouillon"}</span>{!seasonActive?<button className={styles.primary} onClick={()=>void saveSeason()} disabled={saving!==""}><Save size={15}/>{saving==="season"?"Enregistrement…":"Enregistrer"}</button>:null}</div></div>
+      <fieldset className={styles.formGrid} disabled={seasonActive}>
+        <label className={styles.wide}><span>Titre français</span><input value={seasonDraft.title_i18n.fr??""} onChange={event=>setSeasonDraft({...seasonDraft,title_i18n:{...seasonDraft.title_i18n,fr:event.target.value}})}/></label>
+        <label className={styles.wide}><span>Titre anglais</span><input value={seasonDraft.title_i18n.en??""} onChange={event=>setSeasonDraft({...seasonDraft,title_i18n:{...seasonDraft.title_i18n,en:event.target.value}})}/></label>
+        <label className={styles.full}><span>Version du référentiel</span><input value={seasonDraft.reference_version} onChange={event=>setSeasonDraft({...seasonDraft,reference_version:event.target.value})}/></label>
+        <NumberField label="Points par bonne réponse" value={seasonDraft.points_per_correct} onChange={value=>setSeasonDraft({...seasonDraft,points_per_correct:value})}/>
+        <NumberField label="Bonus de rapidité maximal" value={seasonDraft.max_speed_bonus} disabled={!seasonDraft.speed_bonus_enabled} onChange={value=>setSeasonDraft({...seasonDraft,max_speed_bonus:value})}/>
+        <NumberField label="Délai de lecture gratuit (s)" value={seasonDraft.free_reading_seconds} disabled={!seasonDraft.speed_bonus_enabled} onChange={value=>setSeasonDraft({...seasonDraft,free_reading_seconds:value})}/>
+        <NumberField label="Durée de décroissance (s)" value={seasonDraft.speed_decay_seconds} disabled={!seasonDraft.speed_bonus_enabled} onChange={value=>setSeasonDraft({...seasonDraft,speed_decay_seconds:value})}/>
+        <NumberField label="Bonus sans-faute" value={seasonDraft.perfect_bonus} onChange={value=>setSeasonDraft({...seasonDraft,perfect_bonus:value})}/>
+        <label><span>Scores retenus par club</span><select value={seasonDraft.retained_scores} onChange={event=>setSeasonDraft({...seasonDraft,retained_scores:Number(event.target.value) as 10|15})}><option value={10}>10 meilleurs scores</option><option value={15}>15 meilleurs scores</option></select></label>
+        <NumberField label="Minimum de participants" value={seasonDraft.minimum_club_participants} min={1} onChange={value=>setSeasonDraft({...seasonDraft,minimum_club_participants:value})}/>
+        <label className={styles.toggle}><input type="checkbox" checked={seasonDraft.speed_bonus_enabled} onChange={event=>setSeasonDraft({...seasonDraft,speed_bonus_enabled:event.target.checked})}/><i/><span><b>Bonus de rapidité</b><small>Attribué uniquement aux réponses correctes.</small></span></label>
+      </fieldset>
+      {!seasonActive?<div className={styles.seasonActivation}><p>{publishedCount?"Une série est publiée. Activez la saison pour la rendre accessible aux joueurs, selon son calendrier.":"Publiez d’abord une série validée. Les fiches approuvées seules ne sont pas encore visibles côté joueur."}</p><button className={styles.primary} disabled={saving!==""||publishedCount===0} onClick={()=>void publishSeason()}><ShieldCheck size={15}/>{saving==="publishSeason"?"Activation…":"Activer la saison"}</button></div>:<p className={styles.seasonActiveNote}>Le barème est verrouillé pour préserver l’équité des quiz.</p>}
+    </section>
+    <section className={styles.seriesLayout}>
+      <aside className={styles.seriesList}><div className={styles.listHead}><div><h2>Calendrier</h2><p>12 séries mensuelles</p></div><button onClick={()=>void load()} aria-label="Actualiser" title="Actualiser"><RefreshCw className={saving?styles.spin:""} size={16}/></button></div>{data.series.map(item=><button key={item.id} className={`${styles.seriesItem} ${item.id===selectedId?styles.active:""}`} onClick={()=>setSelectedId(item.id)}><b>{item.position}</b><span><strong>{item.title_i18n.fr}</strong><small>{item.status==="published"?"Publiée":item.status==="locked"?"Verrouillée":item.status==="archived"?"Archivée":item.validation?.valid?"Prête à publier":item.status==="scheduled"?"Programmée":"Brouillon"}</small></span>{item.validation?.valid?<CheckCircle2 className={styles.validIcon} size={17} aria-label="Contenu validé"/>:<CircleAlert className={styles.invalidIcon} size={17} aria-label="Contenu à compléter"/>}</button>)}</aside>
+      {seriesDraft?<section className={styles.panel}><div className={styles.panelHead}><div><span className={styles.panelIcon}><CalendarDays size={18}/></span><div><h2>Série {seriesDraft.position} · {seriesDraft.title_i18n.fr}</h2><p>{seriesDraft.validation?.valid?"Le contenu satisfait les contrôles automatiques.":`${seriesDraft.validation?.card_count??0}/6 fiches · ${seriesDraft.validation?.invalid_card_count??0} fiche(s) incomplète(s)`}</p></div></div><Status status={seriesDraft.status}/></div>
+        <div className={styles.formGrid}>
+          <label className={styles.wide}><span>Titre français</span><input value={seriesDraft.title_i18n.fr??""} disabled={Boolean(seriesDraft.locked_at)} onChange={event=>setSeriesDraft({...seriesDraft,title_i18n:{...seriesDraft.title_i18n,fr:event.target.value}})}/></label>
+          <label className={styles.wide}><span>Titre anglais</span><input value={seriesDraft.title_i18n.en??""} disabled={Boolean(seriesDraft.locked_at)} onChange={event=>setSeriesDraft({...seriesDraft,title_i18n:{...seriesDraft.title_i18n,en:event.target.value}})}/></label>
+          <DateField label="Début de l’apprentissage" value={seriesDraft.discovery_starts_at} disabled={Boolean(seriesDraft.locked_at)} onChange={value=>setSeriesDraft({...seriesDraft,discovery_starts_at:value})}/>
+          <DateField label="Ouverture du quiz" value={seriesDraft.quiz_opens_at} disabled={Boolean(seriesDraft.locked_at)} onChange={value=>setSeriesDraft({...seriesDraft,quiz_opens_at:value})}/>
+          <DateField label="Fermeture du quiz" value={seriesDraft.quiz_closes_at} disabled={Boolean(seriesDraft.locked_at)} onChange={value=>setSeriesDraft({...seriesDraft,quiz_closes_at:value})}/>
+          <DateField label="Publication des résultats" value={seriesDraft.results_published_at??""} disabled={Boolean(seriesDraft.locked_at)} onChange={value=>setSeriesDraft({...seriesDraft,results_published_at:value})}/>
+          <label><span>État avant publication</span><select value={seriesDraft.status} disabled={Boolean(seriesDraft.locked_at)} onChange={event=>setSeriesDraft({...seriesDraft,status:event.target.value})}><option value="draft">Brouillon</option><option value="scheduled">Programmée</option>{!["draft","scheduled"].includes(seriesDraft.status)?<option value={seriesDraft.status}>{seriesDraft.status==="published"?"Publiée":seriesDraft.status==="locked"?"Verrouillée":"Archivée"}</option>:null}</select></label>
+        </div>
+        <div className={styles.cardsSection}><div><h3>Six fiches de connaissance</h3><p>Ouvrez une fiche pour rédiger le contenu, contrôler la référence et préparer ses questions.</p></div><div className={styles.cardsGrid}>{seriesDraft.cards.map(card=>{const version=card.rules_card_versions;const approved=Boolean(version?.approved_at&&!version.human_review_required);return <Link key={card.card_version_id} href={`/admin/rules/cards/${card.card_version_id}`} className={styles.cardLink}><b>{card.position}</b><span><strong>{version?.title??"Fiche sans titre"}</strong><small>{version?.official_reference??"Référence manquante"}</small></span><em className={approved?styles.cardApproved:styles.cardReview}>{approved?"Validée":"À réviser"}</em><ChevronRight size={15}/></Link>;})}</div></div>
+        <div className={styles.readiness}><div className={seriesDraft.validation?.valid?styles.ready:styles.notReady}>{seriesDraft.validation?.valid?<CheckCircle2 size={18}/>:<CircleAlert size={18}/>}<span><b>{seriesDraft.status==="published"?"Série publiée":seriesDraft.validation?.valid?"Prête à publier":"Publication bloquée"}</b><small>{seriesDraft.status==="published"?"La série est verrouillée. Activez aussi la saison si elle est encore en brouillon.":seriesDraft.validation?.valid?"Les six fiches et leurs questions sont validées. Publier est une étape distincte.":"Complétez et faites valider les fiches et questions officielles."}</small></span></div><div className={styles.actions}>{seriesDraft.locked_at?<span className={styles.locked}><LockKeyhole size={15}/>Série verrouillée</span>:<><button className={styles.secondary} onClick={()=>void saveSeries()} disabled={saving!==""}><Save size={15}/>{saving==="series"?"Enregistrement…":"Enregistrer la série"}</button><button className={styles.primary} onClick={()=>void patch({entity:"series",id:seriesDraft.id,action:"publish"},"publish")} disabled={saving!==""||!seriesDraft.validation?.valid}>{saving==="publish"?<LoaderCircle className={styles.spin} size={15}/>:<ShieldCheck size={15}/>}Publier et verrouiller</button></>}</div></div>
+      </section>:null}
+    </section>
+  </div>;
+}
+
+function NumberField({label,value,onChange,min=0,disabled=false}:{label:string;value:number;onChange:(value:number)=>void;min?:number;disabled?:boolean}){return <label><span>{label}</span><input type="number" min={min} value={value} disabled={disabled} onChange={event=>onChange(Number(event.target.value))}/></label>;}
+function DateField({label,value,onChange,disabled}:{label:string;value:string;onChange:(value:string)=>void;disabled:boolean}){return <label><span>{label}</span><input type="datetime-local" value={localDateTime(value)} disabled={disabled} onChange={event=>onChange(event.target.value)}/></label>;}
+function Status({status}:{status:string}){return <span className={`${styles.status} ${status==="published"?styles.published:status==="scheduled"?styles.scheduled:""}`}>{status==="published"?"Publiée":status==="scheduled"?"Programmée":"Brouillon"}</span>;}

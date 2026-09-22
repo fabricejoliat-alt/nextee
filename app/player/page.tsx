@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -9,7 +10,7 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, CalendarCheck2, CalendarDays, CheckCircle2, ClipboardCheck, Flag, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BookOpen, CalendarCheck2, CheckCircle2, ClipboardCheck, Flag, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -188,6 +189,8 @@ type PlayVolumeSummary = {
 
 type HomeNewsItem = {
   id: string;
+  club_id: string;
+  club_name: string;
   title: string;
   image_url: string | null;
   summary: string | null;
@@ -456,7 +459,7 @@ function formatNewsPublishedLabel(iso: string | null, locale: string) {
       month: "long",
       year: "numeric",
     }).format(date);
-    return `News du ${datePart} à ${String(date.getHours()).padStart(2, "0")}h${String(date.getMinutes()).padStart(2, "0")}`;
+    return `News du ${datePart}`;
   }
   if (locale === "de") {
     const datePart = new Intl.DateTimeFormat("de-CH", {
@@ -465,7 +468,7 @@ function formatNewsPublishedLabel(iso: string | null, locale: string) {
       month: "long",
       year: "numeric",
     }).format(date);
-    return `News vom ${datePart} um ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    return `News vom ${datePart}`;
   }
   if (locale === "it") {
     const datePart = new Intl.DateTimeFormat("it-CH", {
@@ -474,7 +477,7 @@ function formatNewsPublishedLabel(iso: string | null, locale: string) {
       month: "long",
       year: "numeric",
     }).format(date);
-    return `News del ${datePart} alle ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    return `News del ${datePart}`;
   }
   const datePart = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -482,11 +485,7 @@ function formatNewsPublishedLabel(iso: string | null, locale: string) {
     month: "long",
     year: "numeric",
   }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-  return `News from ${datePart} at ${timePart}`;
+  return `News from ${datePart}`;
 }
 
 function hasDisplayableTime(iso: string) {
@@ -684,6 +683,64 @@ function compactHomeNewsLinkedLabel(label: string | null, contentType: HomeNewsI
   return parts.join(" • ");
 }
 
+type RulesHomeOverview = {
+  currentSeriesId: string | null;
+  series: Array<{ id: string; position: number; title_i18n: Record<string, string>; discovery_starts_at: string; quiz_opens_at: string; quiz_closes_at: string; results_published_at: string | null }>;
+  cards: Array<{ card_version_id: string }>;
+};
+
+function PlayerRulesHomeCard({ locale }: { locale: string }) {
+  const [overview, setOverview] = useState<RulesHomeOverview | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    let active = true;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      try {
+        const response = await fetch("/api/rules/overview", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json() as RulesHomeOverview;
+        if (active && Array.isArray(payload.series)) setOverview(payload);
+      } catch { /* Keep the useful static fallback when rules are unavailable. */ }
+    })();
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const current = overview?.series.find(item => item.id === overview.currentSeriesId) ?? null;
+  const cardCount = current ? overview?.cards.length ?? 0 : 6;
+  const quizStart = current ? new Date(current.quiz_opens_at) : null;
+  const quizClose = current ? new Date(current.quiz_closes_at) : null;
+  const daysUntilQuiz = quizStart ? Math.ceil((quizStart.getTime() - nowMs) / 86_400_000) : 0;
+  const date = (value: Date) => new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Zurich" }).format(value);
+  const month = current ? new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
+  return <Link href="/player/rules" className={`${coachStyles.panel} ${styles.rulesCard}`}>
+    <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
+    <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesVisualBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.rulesVisualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.rulesVisualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
+    <span className={styles.rulesBody}>
+      {current ? <>
+        <span className={styles.rulesCurrent}><small>{tr(`Série ${current.position} · ${month}`, `Series ${current.position} · ${month}`)}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></span>
+        <p className={styles.rulesDescription}>{tr("Découvre les situations de la série à ton rythme, puis teste tes connaissances lors du quiz.", "Explore the situations in this series at your own pace, then test your knowledge in the quiz.")}</p>
+      </> : <p>{tr("Six situations à découvrir dans la série en cours. Les bons réflexes, à ton rythme.", "Six situations in the current series. Learn the right reflexes at your own pace.")}</p>}
+      <span className={styles.rulesMilestones}>
+        <span className={styles.rulesMilestone}>
+          <span className={styles.rulesMilestoneTop}><span>{tr("Explorer les fiches", "Explore the cards")}</span><BookOpen size={17} aria-hidden="true" /></span>
+          <strong>{cardCount} {tr("fiches", "cards")}</strong>
+          <small>{quizStart ? tr(`Jusqu’au ${date(new Date(quizStart.getTime() - 1))}`, `Through ${date(new Date(quizStart.getTime() - 1))}`) : tr("À découvrir maintenant", "Available to explore now")}</small>
+        </span>
+        <span className={`${styles.rulesMilestone} ${styles.rulesMilestoneQuiz}`}>
+          <span className={styles.rulesMilestoneTop}><span>{quizStart && nowMs >= quizStart.getTime() ? tr("Quiz", "Quiz") : tr("Début du quiz dans", "Quiz starts in")}</span><CalendarCheck2 size={17} aria-hidden="true" /></span>
+          <strong>{quizStart ? nowMs < quizStart.getTime() ? tr(`${daysUntilQuiz} jours`, `${daysUntilQuiz} days`) : quizClose && nowMs < quizClose.getTime() ? tr("En cours", "Open now") : tr("Terminé", "Closed") : tr("À venir", "Coming soon")}</strong>
+          <small>{quizStart ? nowMs < quizStart.getTime() ? date(quizStart) : quizClose && nowMs < quizClose.getTime() ? tr(`Jusqu’au ${date(quizClose)}`, `Until ${date(quizClose)}`) : tr("Résultats à venir", "Results coming soon") : tr("Date à confirmer", "Date to be confirmed")}</small>
+        </span>
+      </span>
+    </span>
+  </Link>;
+}
+
 export default function PlayerHomePage() {
   const router = useRouter();
   const { t, locale } = useI18n();
@@ -750,6 +807,7 @@ export default function PlayerHomePage() {
   const [attendanceInsight, setAttendanceInsight] = useState<AttendanceInsight | null>(null);
   const [meritInsight, setMeritInsight] = useState<MeritInsight>(null);
   const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
+  const [validationHighlightIndex, setValidationHighlightIndex] = useState(0);
   const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
   const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
 
@@ -1786,14 +1844,29 @@ export default function PlayerHomePage() {
     .filter((item) => isClubAttendanceEventType(item.event.event_type))
     .filter((item) => attendeeStatusByEventId[item.event.id] == null || attendeeStatusByEventId[item.event.id] === "expected")
     .slice(0, 2);
-  const validationHighlight = useMemo(() => {
-    const sections = validationDashboard?.sections.filter((section) => section.is_active && section.exercises.length > 0) ?? [];
-    const active = [...sections].sort((a, b) => b.validated_count - a.validated_count || a.sort_order - b.sort_order)[0];
-    if (!active) return null;
-    const next = active.exercises.find((exercise) => exercise.is_unlocked && !exercise.is_validated) ?? active.exercises.find((exercise) => !exercise.is_validated);
-    const last = sections.flatMap((section) => section.exercises.flatMap((exercise) => exercise.attempts.filter((attempt) => attempt.result === "success").map((attempt) => ({ name: exercise.name, date: attempt.attempted_at })))).sort((a, b) => b.date.localeCompare(a.date))[0];
-    return { section: active, next, last };
+  const validationHighlights = useMemo(() => {
+    const sections = validationDashboard?.sections
+      .filter((section) => section.is_active && section.exercises.length > 0)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .slice(0, 4) ?? [];
+    return sections.map((section) => {
+      const next = section.exercises.find((exercise) => exercise.is_unlocked && !exercise.is_validated)
+        ?? section.exercises.find((exercise) => !exercise.is_validated)
+        ?? section.exercises.at(-1)
+        ?? null;
+      return { section, next };
+    });
   }, [validationDashboard]);
+  const validationHighlight = validationHighlights.length
+    ? validationHighlights[validationHighlightIndex % validationHighlights.length]
+    : null;
+  useEffect(() => {
+    if (validationHighlights.length <= 1) return;
+    const interval = window.setInterval(() => {
+      setValidationHighlightIndex((current) => (current + 1) % validationHighlights.length);
+    }, 6500);
+    return () => window.clearInterval(interval);
+  }, [validationHighlights.length]);
   const weeklyVolume = useMemo(() => {
     const now = new Date();
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1894,7 +1967,7 @@ export default function PlayerHomePage() {
                 <Link className={coachStyles.textLink} href="/player/golf/trainings?type=all" aria-label={pickLocaleText(locale, "Voir mon activité", "View my activity")}><ArrowRight size={16} /></Link>
               </div>
               {upcomingLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : upcomingPreview.length ? (
-                <div className={coachStyles.eventList}>
+                <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
                   {upcomingPreview.map((item) => {
                     const event = item.kind === "event" ? item.event : null;
                     const session = item.kind === "session" ? item.session : null;
@@ -1937,14 +2010,15 @@ export default function PlayerHomePage() {
             </section>
 
             <section className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de la section", "Section news")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles de votre section.", "Latest news from your section.")}</p></div><Link className={coachStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de mes clubs", "News from my clubs")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles publiées par mes clubs.", "The latest news published by my clubs.")}</p></div><Link className={coachStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
               {newsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
-                <div className={coachStyles.eventList}>
+                <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
                   {latestNews.map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
                     {news.image_url ? <span className={styles.newsThumbnail}><img src={news.image_url} alt="" /></span> : <span className={coachStyles.dateBox}><Newspaper size={16} /></span>}
                     <div className={styles.newsHomeContent}>
+                      <span className={styles.newsHomeDate}>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}</span>
                       <b>{news.title}</b>
-                      <span className={styles.newsHomeMeta}>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}</span>
+                      <span className={styles.newsHomeClub}>{news.club_name || clubNameById[news.club_id] || pickLocaleText(locale, "Club", "Club")}</span>
                       {news.summary ? <p className={styles.newsHomeSummary}>{truncate(news.summary, 92)}</p> : null}
                     </div>
                     <ArrowRight size={16} />
@@ -1953,7 +2027,7 @@ export default function PlayerHomePage() {
               ) : <div className={coachStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
             </section>
 
-            <section className={coachStyles.panel}>
+            <section className={`${coachStyles.panel} ${styles.attentionCard}`}>
               <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
               {upcomingLoading || insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : (
                 <div className={coachStyles.taskList}>
@@ -1975,15 +2049,46 @@ export default function PlayerHomePage() {
                 </div>
               )}
             </section>
+
           </div>
 
-          <section className={coachStyles.panel}>
-            <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Votre progression en un coup d’œil.", "Your progress at a glance.")}</p></div><Link className={coachStyles.textLink} href="/player/golf?section=stats">{pickLocaleText(locale, "Voir mes statistiques", "View my statistics")} <ArrowRight size={14} /></Link></div>
-            {insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <div className={styles.benchmarks}>
-              <div className={styles.benchmark}>
+          <section className={styles.learningSection}>
+            <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mon parcours d’apprentissage", "My learning journey")}</h2><p>{pickLocaleText(locale, "Progresser dans mon jeu et enrichir mes connaissances.", "Improve my game and grow my knowledge.")}</p></div></div>
+            <div className={styles.learningGrid}>
+              <section className={`${coachStyles.panel} ${styles.homeValidationCard}`}>
+                <Link
+                  className={styles.homeValidationContent}
+                  href={validationHighlight ? `/player/validations?section_id=${encodeURIComponent(validationHighlight.section.id)}${validationHighlight.next ? `&exercise_id=${encodeURIComponent(validationHighlight.next.id)}` : ""}` : "/player/validations"}
+                >
+                  <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{pickLocaleText(locale, "Mes validations", "My validations")}</h2><p>{pickLocaleText(locale, "Avance à ton rythme dans ton parcours.", "Progress through your journey at your own pace.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
+                  <span className={styles.homeValidationImage}>
+                    {validationHighlight?.next?.illustration_url ? <Image src={validationHighlight.next.illustration_url} alt={validationHighlight.next.name} fill sizes="(max-width: 760px) 100vw, 50vw" unoptimized /> : <ShieldCheck size={38} aria-hidden="true" />}
+                  </span>
+                  {insightsLoading ? <span className={`${coachStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /></span> : validationHighlight ? (
+                    <span className={styles.homeValidationBody}>
+                      <small>{validationHighlight.section.name}</small>
+                      <strong>{validationHighlight.next?.name ?? pickLocaleText(locale, "Parcours terminé", "Journey completed")}</strong>
+                      {validationHighlight.next?.detailed_description || validationHighlight.next?.short_description ? <span className={styles.homeValidationInstruction}>{validationHighlight.next.detailed_description || validationHighlight.next.short_description}</span> : null}
+                      <span>{validationHighlight.section.validated_count} {pickLocaleText(locale, "sur", "out of")} {validationHighlight.section.total_count} {pickLocaleText(locale, "validations réussies", "validations completed")}</span>
+                      <span className={styles.homeValidationDots} aria-label={pickLocaleText(locale, "Secteur de validation affiché", "Displayed validation section")}>
+                        {validationHighlights.map((item, index) => <i key={item.section.id} className={index === validationHighlightIndex % validationHighlights.length ? styles.homeValidationDotActive : ""} />)}
+                      </span>
+                    </span>
+                  ) : <span className={styles.homeValidationBody}><strong>{pickLocaleText(locale, "Découvrir mon parcours de validations", "Discover my validation journey")}</strong></span>}
+                </Link>
+              </section>
+
+              <PlayerRulesHomeCard locale={locale} />
+            </div>
+          </section>
+
+          <section className={styles.benchmarksSection}>
+            <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Votre progression en un coup d’œil.", "Your progress at a glance.")}</p></div></div>
+            {insightsLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
+              <article className={styles.benchmark}>
                 <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
-                  <div className={styles.attendanceProgress}><strong>{attendanceInsight.rate} %</strong><div className="bar" role="progressbar" aria-valuenow={attendanceInsight.rate} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${attendanceInsight.rate}%` }} /></div></div>
+                  <strong className={styles.attendanceValue}>{attendanceInsight.rate} %</strong>
                   <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
                   <div className={styles.benchmarkSignals}>
                     {attendanceInsight.change != null ? attendanceInsight.change > 0
@@ -1995,9 +2100,9 @@ export default function PlayerHomePage() {
                     {attendanceInsight.rate === 100 ? <BenchmarkBadge icon={CheckCircle2} tone="positive">{pickLocaleText(locale, "Objectif atteint", "Goal reached")}</BenchmarkBadge> : null}
                   </div>
                 </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
-              </div>
-              <div className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Classement OM net", "Net OM ranking")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir le classement OM", "View OM ranking")}><ArrowRight size={15} /></Link></div>
+              </article>
+              <article className={styles.benchmark}>
+                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
                 {meritInsight ? <>
                   <div className={styles.rankLine}>
                     <strong className={styles.rankValue}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
@@ -2010,15 +2115,7 @@ export default function PlayerHomePage() {
                         : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Classement stable", "Ranking stable")}</BenchmarkBadge>}
                   </div> : null}
                 </> : <p>{pickLocaleText(locale, "Aucun classement net disponible pour le moment.", "No net ranking available yet.")}</p>}
-              </div>
-              <div className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><ShieldCheck size={17} /></span><h3>{pickLocaleText(locale, "Parcours de validation", "Validation journey")}</h3><Link className={styles.benchmarkLink} href="/player/validations" aria-label={pickLocaleText(locale, "Voir les validations", "View validations")}><ArrowRight size={15} /></Link></div>
-                {validationHighlight ? <>
-                  <strong className={styles.validationName}><span>{validationHighlight.section.name}</span><em>•</em><span>{pickLocaleText(locale, "Validation", "Validation")} #{validationHighlight.next?.sequence_no ?? Math.max(1, validationHighlight.section.validated_count + 1)}</span></strong>
-                  <span>{pickLocaleText(locale, "sur", "out of")} {validationHighlight.section.total_count} {pickLocaleText(locale, "validations", "validations")}</span>
-                  <BenchmarkBadge icon={ClipboardCheck} tone="neutral">{validationHighlight.next?.attempts.length ?? 0} {pickLocaleText(locale, (validationHighlight.next?.attempts.length ?? 0) === 1 ? "tentative" : "tentatives", (validationHighlight.next?.attempts.length ?? 0) === 1 ? "attempt" : "attempts")}</BenchmarkBadge>
-                </> : <p>{pickLocaleText(locale, "Votre parcours sera bientôt disponible.", "Your journey will be available soon.")}</p>}
-              </div>
+              </article>
             </div>}
           </section>
 
@@ -2038,29 +2135,22 @@ export default function PlayerHomePage() {
             </section>
           </div>
 
-          <section className={coachStyles.panel}>
-            <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Raccourcis", "Shortcuts")}</h2></div></div>
-            <div className={styles.shortcuts}>
-              <Link href="/player/golf/trainings?type=training"><span className={coachStyles.dateBox}><CalendarDays size={18} /></span><span><b>{pickLocaleText(locale, "Mes entraînements", "My trainings")}</b></span><ArrowRight size={16} /></Link>
-              <Link href="/player/golf/rounds"><span className={coachStyles.dateBox}><Flag size={18} /></span><span><b>{pickLocaleText(locale, "Mes parcours", "My rounds")}</b></span><ArrowRight size={16} /></Link>
-              <Link href="/player/golf"><span className={coachStyles.dateBox}><Target size={18} /></span><span><b>{pickLocaleText(locale, "Mes objectifs", "My goals")}</b></span><ArrowRight size={16} /></Link>
-              <Link href="/player/golf?section=stats"><span className={coachStyles.dateBox}><BarChart3 size={18} /></span><span><b>{pickLocaleText(locale, "Mes statistiques", "My statistics")}</b></span><ArrowRight size={16} /></Link>
-            </div>
-          </section>
-
-          <section className={coachStyles.panel}>
-            <div className={coachStyles.panelHeader}><div><h2>{t("nav.marketplace")}</h2><p>{pickLocaleText(locale, "Les dernières annonces de vos clubs.", "Latest listings from your clubs.")}</p></div><Link className={coachStyles.textLink} href="/player/marketplace">{pickLocaleText(locale, "Toutes les annonces", "All listings")} <ArrowRight size={14} /></Link></div>
-            {marketplaceLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestItems.length ? (
-              <div className={"marketplace-list " + styles.marketplaceGrid}>
-                {latestItems.map((item) => <Link key={item.id} href={"/player/marketplace/" + item.id} className="marketplace-link"><div className="marketplace-item"><div className="marketplace-row">
-                  <div className="marketplace-thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={thumbByItemId[item.id] || placeholderThumb} alt={item.title} loading="lazy" />
-                  </div>
-                  <div className="marketplace-body"><div className="marketplace-item-title">{truncate(item.title, 80)}</div>{compactMeta(item, locale) ? <div className="marketplace-meta">{compactMeta(item, locale)}</div> : null}<div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(item, t)}</div></div></div>
-                </div></div></Link>)}
-              </div>
-            ) : <div className={coachStyles.empty}>{t("marketplace.none")}</div>}
+          <section className={styles.marketplaceSection}>
+            <div className={styles.benchmarksHeader}><div><h2>{t("nav.marketplace")}</h2><p>{pickLocaleText(locale, "Acheter, vendre et échanger au sein de vos clubs.", "Buy, sell and exchange within your clubs.")}</p></div></div>
+            <section className={coachStyles.panel}>
+              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Dernières annonces", "Latest listings")}</h2><p>{pickLocaleText(locale, "Les dernières annonces de vos clubs.", "Latest listings from your clubs.")}</p></div><Link className={coachStyles.textLink} href="/player/marketplace">{pickLocaleText(locale, "Toutes les annonces", "All listings")} <ArrowRight size={14} /></Link></div>
+              {marketplaceLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestItems.length ? (
+                <div className={"marketplace-list " + styles.marketplaceGrid}>
+                  {latestItems.map((item) => <Link key={item.id} href={"/player/marketplace/" + item.id} className="marketplace-link"><div className="marketplace-item"><div className="marketplace-row">
+                    <div className="marketplace-thumb">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={thumbByItemId[item.id] || placeholderThumb} alt={item.title} loading="lazy" />
+                    </div>
+                    <div className="marketplace-body"><div className="marketplace-item-title">{truncate(item.title, 80)}</div>{compactMeta(item, locale) ? <div className="marketplace-meta">{compactMeta(item, locale)}</div> : null}<div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(item, t)}</div></div></div>
+                  </div></div></Link>)}
+                </div>
+              ) : <div className={coachStyles.empty}>{t("marketplace.none")}</div>}
+            </section>
           </section>
         </div>
       </div>

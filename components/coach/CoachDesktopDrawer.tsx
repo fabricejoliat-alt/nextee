@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bell, CalendarCheck, CalendarDays, ChevronRight, ClipboardCheck, Home, LogOut, Medal, Newspaper, Tent, User, UserRound, Users, X } from "lucide-react";
+import { Bell, BookOpen, CalendarCheck, CalendarDays, ChevronRight, ClipboardCheck, Home, LogOut, Medal, Newspaper, Tent, User, UserRound, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const ROUTES = {
   home: "/coach", calendar: "/coach/calendar", groups: "/coach/groups", players: "/coach/players",
   camps: "/coach/camps", evaluations: "/coach/calendar?view=evaluations", validations: "/coach/validations",
-  merit: "/coach/om", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
+  merit: "/coach/om", rules: "/coach/rules", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
 } as const;
 
 type Props = { open: boolean; onClose: () => void };
@@ -65,6 +65,7 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
       { label: locale === "fr" ? "Évaluations à faire" : "Evaluations to do", icon: ClipboardCheck, href: ROUTES.evaluations },
       { label: "Validations", icon: CalendarCheck, href: ROUTES.validations },
       { label: locale === "fr" ? "Ordre du mérite" : "Order of Merit", icon: Medal, href: ROUTES.merit },
+      { label: locale === "fr" ? "Règles de golf" : "Rules of golf", icon: BookOpen, href: ROUTES.rules },
     ] },
     { label: "Information", items: [
       { label: locale === "fr" ? "Actualités" : "News", icon: Newspaper, href: ROUTES.news },

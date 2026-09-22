@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline } from "lucide-react";
+import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline, BookOpen } from "lucide-react";
 
 const ROUTES = {
   home: "/manager",
@@ -29,6 +29,7 @@ const ROUTES = {
   performanceCoaches: "/manager/performance/coaches",
   trainingVolume: "/manager/training-volume",
   evaluationCriteria: "/manager/evaluation-criteria",
+  rules: "/manager/rules",
   profileEdit: "/manager/profile",
 } as const;
 
@@ -158,6 +159,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: locale === "fr" ? "Statistiques coachs" : "Coach statistics", icon: ChartSpline, href: ROUTES.performanceCoaches },
           { label: locale === "fr" ? "Ordre du mérite" : "Order of Merit", icon: Medal, href: ROUTES.om },
           { label: locale === "fr" ? "Concours internes" : "Internal contests", icon: ListChecks, href: ROUTES.omContests },
+          { label: locale === "fr" ? "Règles de golf" : "Rules of golf", icon: BookOpen, href: ROUTES.rules },
         ],
       },
       {

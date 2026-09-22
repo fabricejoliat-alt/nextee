@@ -6,7 +6,6 @@ import { ArrowLeft, List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
@@ -32,6 +31,16 @@ const CATEGORIES = [
 ] as const;
 
 const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
+
+function MarketplaceFormSkeleton() {
+  return <div className="marketplace-form-skeleton" aria-hidden="true">
+    <span className="marketplace-form-skeleton-field marketplace-form-skeleton-wide" />
+    <span className="marketplace-form-skeleton-row"><i /><i /></span>
+    <span className="marketplace-form-skeleton-row"><i /><i /></span>
+    <span className="marketplace-form-skeleton-area" />
+    <span className="marketplace-form-skeleton-field" />
+  </div>;
+}
 
 export default function MarketplaceNew() {
   const { t, locale } = useI18n();
@@ -113,55 +122,41 @@ export default function MarketplaceNew() {
   }, [previews]);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       setLoading(true);
       setError(null);
+      try {
+        const { data: authRes, error: authErr } = await supabase.auth.getUser();
+        if (authErr || !authRes.user) throw new Error("Session invalide. Reconnecte-toi.");
 
-      const { data: authRes, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !authRes.user) {
-        setError("Session invalide. Reconnecte-toi.");
+        const ctx = await resolveEffectivePlayerContext();
+        const uid = ctx.effectiveUserId;
+        setUserId(uid);
+        setContactEmail(authRes.user.email ?? "");
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token ?? "";
+        if (!token) throw new Error("Session invalide.");
+
+        const params = new URLSearchParams();
+        if (ctx.role === "parent") params.set("child_id", uid);
+        const res = await fetch(`/api/player/marketplace/context?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? t("marketplace.noActiveClub")));
+        if (!json?.preferredClubId) throw new Error(t("marketplace.noActiveClub"));
+
+        setClubId(String(json.preferredClubId));
+        setContactPhone(String(json?.phone ?? ""));
+      } catch (loadError: unknown) {
+        setError(loadError instanceof Error ? loadError.message : t("marketplace.noActiveClub"));
+      } finally {
         setLoading(false);
-        return;
       }
-      const ctx = await resolveEffectivePlayerContext();
-      const uid = ctx.effectiveUserId;
-      const email = authRes.user.email ?? "";
-      setUserId(uid);
-      setContactEmail(email);
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (!token) {
-        setError("Session invalide.");
-        setLoading(false);
-        return;
-      }
-
-      const params = new URLSearchParams();
-      if (ctx.role === "parent") params.set("child_id", uid);
-      const res = await fetch(`/api/player/marketplace/context?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(String(json?.error ?? t("marketplace.noActiveClub")));
-        setLoading(false);
-        return;
-      }
-
-      if (!json?.preferredClubId) {
-        setError(t("marketplace.noActiveClub"));
-        setLoading(false);
-        return;
-      }
-
-      setClubId(String(json.preferredClubId));
-      setContactPhone(String(json?.phone ?? ""));
-
-      setLoading(false);
     })();
-  }, []);
+  }, [t]);
 
   function addPickedFiles(picked: File[]) {
     const images = picked.filter((f) => f.type.startsWith("image/"));
@@ -395,7 +390,7 @@ export default function MarketplaceNew() {
         <div className="glass-section">
           <div className="glass-card">
             {loading ? (
-              <CompactLoadingBlock label={t("common.loading")} />
+              <MarketplaceFormSkeleton />
             ) : (
               <form onSubmit={publish} style={{ display: "grid", gap: 12 }}>
                 <label style={{ display: "grid", gap: 6 }}>

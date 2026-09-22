@@ -134,6 +134,25 @@ export default function PlayerValidationsPage() {
     [dashboard, selectedSectionId]
   );
 
+  useEffect(() => {
+    if (!dashboard || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const requestedSectionId = params.get("section_id") ?? "";
+    const requestedExerciseId = params.get("exercise_id") ?? "";
+    const section = dashboard.sections.find((item) => item.id === requestedSectionId)
+      ?? dashboard.sections.find((item) => item.exercises.some((exercise) => exercise.id === requestedExerciseId));
+    if (!section) return;
+    setSelectedSectionId(section.id);
+    const exercise = section.exercises.find((item) => item.id === requestedExerciseId);
+    if (exercise?.is_unlocked) {
+      setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: true }));
+      setAttemptDateDrafts((current) => current[exercise.id] ? current : { ...current, [exercise.id]: toDateLocalValue(new Date()) });
+    }
+    window.requestAnimationFrame(() => {
+      document.getElementById(`validation-exercise-${requestedExerciseId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [dashboard]);
+
   function toggleExercise(exercise: ValidationExerciseItem) {
     if (!exercise.is_unlocked) return;
     setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: !current[exercise.id] }));
@@ -254,7 +273,7 @@ export default function PlayerValidationsPage() {
               const status = exercise.is_validated ? txt.validated : !exercise.is_unlocked ? txt.locked : exercise.attempts.length ? txt.inProgress : txt.toDo;
               const StatusIcon = exercise.is_validated ? CheckCircle2 : !exercise.is_unlocked ? Lock : exercise.attempts.length ? Clock3 : Target;
               const action = exercise.is_validated ? txt.view : exercise.attempts.length ? txt.continue : txt.start;
-              return <article key={exercise.id} className={`${styles.exerciseCard} ${expanded ? styles.exerciseCardExpanded : ""}`}>
+              return <article id={`validation-exercise-${exercise.id}`} key={exercise.id} className={`${styles.exerciseCard} ${expanded ? styles.exerciseCardExpanded : ""}`}>
                 <div className={styles.imageFrame}>
                   {exercise.illustration_url ? <Image src={exercise.illustration_url} alt={exercise.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 33vw" unoptimized />
                     : <span className={styles.imageFallback}><ClipboardList size={24} strokeWidth={1.6} aria-hidden="true" /><span>{txt.imageMissing}</span></span>}
