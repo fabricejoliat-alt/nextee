@@ -692,10 +692,8 @@ type RulesHomeOverview = {
 
 function PlayerRulesHomeCard({ locale }: { locale: string }) {
   const [overview, setOverview] = useState<RulesHomeOverview | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     let active = true;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
     void (async () => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
@@ -707,24 +705,13 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
         if (active && Array.isArray(payload.series)) setOverview(payload);
       } catch { /* Keep the useful static fallback when rules are unavailable. */ }
     })();
-    return () => { active = false; window.clearInterval(timer); };
+    return () => { active = false; };
   }, []);
 
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const current = overview?.series.find(item => item.id === overview.currentSeriesId) ?? null;
   const cardCount = current ? overview?.cards.length ?? 0 : 6;
-  const quizStart = current ? new Date(current.quiz_opens_at) : null;
-  const quizClose = current ? new Date(current.quiz_closes_at) : null;
-  const daysUntilQuiz = quizStart ? Math.ceil((quizStart.getTime() - nowMs) / 86_400_000) : 0;
-  const date = (value: Date) => new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Zurich" }).format(value);
   const month = current ? new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
-  const submittedQuiz = overview?.quizAttempt?.status === "submitted" ? overview.quizAttempt : null;
-  const quizScore = submittedQuiz?.total_score != null
-    ? `${new Intl.NumberFormat(locale === "fr" ? "fr-CH" : "en-GB").format(submittedQuiz.total_score)} ${tr("points", "points")}`
-    : null;
-  const quizAnswerDate = submittedQuiz?.submitted_at
-    ? tr(`Répondu le ${date(new Date(submittedQuiz.submitted_at))}`, `Answered on ${date(new Date(submittedQuiz.submitted_at))}`)
-    : null;
   return <Link href="/player/rules" className={`${coachStyles.panel} ${styles.rulesCard}`}>
     <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
     <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesVisualBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.rulesVisualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.rulesVisualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
@@ -733,18 +720,6 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
         <span className={styles.rulesCurrent}><small>{tr(`Série ${current.position} · ${month}`, `Series ${current.position} · ${month}`)}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></span>
         <p className={styles.rulesDescription}>{tr("Découvre les situations de la série à ton rythme, puis teste tes connaissances lors du quiz.", "Explore the situations in this series at your own pace, then test your knowledge in the quiz.")}</p>
       </> : <p>{tr("Six situations à découvrir dans la série en cours. Les bons réflexes, à ton rythme.", "Six situations in the current series. Learn the right reflexes at your own pace.")}</p>}
-      <span className={styles.rulesMilestones}>
-        <span className={styles.rulesMilestone}>
-          <span className={styles.rulesMilestoneTop}><span>{tr("Explorer les fiches", "Explore the cards")}</span><BookOpen size={17} aria-hidden="true" /></span>
-          <strong>{cardCount} {tr("fiches", "cards")}</strong>
-          <small>{quizStart ? tr(`Jusqu’au ${date(new Date(quizStart.getTime() - 1))}`, `Through ${date(new Date(quizStart.getTime() - 1))}`) : tr("À découvrir maintenant", "Available to explore now")}</small>
-        </span>
-        <span className={`${styles.rulesMilestone} ${styles.rulesMilestoneQuiz}`}>
-          <span className={styles.rulesMilestoneTop}><span>{quizStart && nowMs >= quizStart.getTime() ? tr("Quiz", "Quiz") : tr("Début du quiz dans", "Quiz starts in")}</span><CalendarCheck2 size={17} aria-hidden="true" /></span>
-          <strong>{quizScore ?? (quizStart ? nowMs < quizStart.getTime() ? tr(`${daysUntilQuiz} jours`, `${daysUntilQuiz} days`) : quizClose && nowMs < quizClose.getTime() ? tr("En cours", "Open now") : tr("Terminé", "Closed") : tr("À venir", "Coming soon"))}</strong>
-          <small>{quizAnswerDate ?? (quizStart ? nowMs < quizStart.getTime() ? date(quizStart) : quizClose && nowMs < quizClose.getTime() ? tr(`Jusqu’au ${date(quizClose)}`, `Until ${date(quizClose)}`) : tr("Résultats à venir", "Results coming soon") : tr("Date à confirmer", "Date to be confirmed"))}</small>
-        </span>
-      </span>
     </span>
   </Link>;
 }

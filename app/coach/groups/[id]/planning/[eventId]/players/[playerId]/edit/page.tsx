@@ -761,14 +761,17 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <span className={pageStyles.fileName}>Handicap {typeof player.handicap === "number" ? player.handicap.toFixed(1) : "non renseigné"}</span>
                   </div>
                 </div>
-                  <AttendanceToggle
-                    checked={attendanceStatus === "present"}
-                    onToggle={handlePresenceToggle}
-                    disabled={attendanceBusy || evaluationLocked}
-                    ariaLabel="Basculer présence"
-                    leftLabel="Absent"
-                    rightLabel="Présent"
-                  />
+                  <div className={pageStyles.attendance}>
+                    <AttendanceToggle
+                      variant="pill"
+                      checked={attendanceStatus === "present"}
+                      onToggle={handlePresenceToggle}
+                      disabled={attendanceBusy || evaluationLocked}
+                      ariaLabel="Basculer présence"
+                      leftLabel="Absent"
+                      rightLabel="Présent"
+                    />
+                  </div>
                 </div>
                 <div className={pageStyles.metadata}>
                   <span className={pageStyles.meta}><CalendarDays size={14} aria-hidden="true" />{fmtDateTime(event.starts_at)}</span>
@@ -778,10 +781,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
               </section>
 
               <div className={pageStyles.twoColumns}>
-                <div className={pageStyles.column}>
+                <div className={`${pageStyles.column} ${pageStyles.contextColumn}`}>
 
               {canShowStructure ? (
-                <section className={pageStyles.panel}>
+                <section className={`${pageStyles.panel} ${pageStyles.structurePanel}`}>
                   <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Structure de l’entraînement</h2><p>Contenu planifié et données renseignées par le junior.</p></div></div>
 
                   {displayedPlannedItems.length === 0 && sessionItems.length === 0 ? (
@@ -928,9 +931,9 @@ export default function CoachEventPlayerFeedbackEditPage() {
               </section>
                 </div>
 
-                <div className={pageStyles.column}>
+                <div className={`${pageStyles.column} ${pageStyles.evaluationColumn}`}>
 
-              <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+              <section className={`${pageStyles.panel} ${pageStyles.column} ${pageStyles.coachEvaluationPanel}`}>
                 <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Évaluation coach</h2><p>Attribuez une valeur de 1 à 6 pour chaque dimension.</p></div></div>
                 {lockedByCoach ? (
                   <div className={pageStyles.infoAlert}>
@@ -957,14 +960,14 @@ export default function CoachEventPlayerFeedbackEditPage() {
               </section>
 
               {attendanceStatus !== "absent" && customCriteria.length ? (
-                <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                <section className={`${pageStyles.panel} ${pageStyles.column} ${pageStyles.customCriteriaPanel}`}>
                   <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Focus personnalisés</h2><p>Les champs marqués d’un astérisque sont obligatoires.</p></div></div>
                   {customCriteria.map((criterion) => <label key={criterion.id} className={pageStyles.field}><span>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>{criterion.snapshot_description ? <small>{criterion.snapshot_description}</small> : null}<EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={evaluationLocked} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/></label>)}
                 </section>
               ) : null}
 
               {attendanceStatus !== "absent" ? (
-                <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+                <section className={`${pageStyles.panel} ${pageStyles.column} ${pageStyles.playerReturnPanel}`}>
                   <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Retour au junior</h2><p>Ce commentaire sera visible par le junior.</p></div></div>
                   <label className={pageStyles.field}>
                     <span>Note pour le junior</span>
@@ -1009,7 +1012,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                 </section>
               ) : null}
 
-              <section className={`${pageStyles.panel} ${pageStyles.column}`}>
+              <section className={`${pageStyles.panel} ${pageStyles.column} ${pageStyles.privateNotePanel}`}>
                 <div className={pageStyles.panelHeader}><div><h2 className={pageStyles.panelTitle}>Note privée</h2><p>Visible uniquement par les coachs autorisés.</p></div></div>
                 <label className={pageStyles.field}>
                   <span>Note interne</span>
