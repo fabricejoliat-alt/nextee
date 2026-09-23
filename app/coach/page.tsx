@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, MapPin, Newspaper, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, MapPin, Newspaper, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import CoachLearningCards from "./CoachLearningCards";
 import styles from "./CoachDashboard.module.css";
+import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
+import activityStyles from "./CoachActivityList.module.css";
 
 type EventLite = { id: string; group_id: string; event_type: string; title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null; location_text: string | null; status: string };
 type CoachNewsLite = { id: string; title: string; image_url: string | null; summary: string | null; body: string; status: "published" | "scheduled" | "archived"; published_at: string | null; scheduled_for: string | null; created_at: string; club_name: string | null };
@@ -13,6 +15,7 @@ type HomeData = {
   me: { first_name: string | null; last_name: string | null; avatar_url: string | null } | null;
   organizationNames: string[];
   groupNameById: Record<string, string>;
+  clubNameByGroupId: Record<string, string>;
   upcomingEvents: EventLite[];
   pendingEvalEvents: EventLite[];
   groupCount: number;
@@ -21,11 +24,8 @@ type HomeData = {
   pendingEvaluationCount: number;
 };
 
-function eventLabel(event: EventLite, groups: Record<string, string>) {
-  const explicit = String(event.title ?? "").trim();
-  if (explicit) return explicit;
-  const type = event.event_type === "training" ? "Entraînement" : event.event_type === "camp" ? "Stage / camp" : event.event_type === "session" ? "Séance" : "Activité";
-  return `${type} · ${groups[event.group_id] ?? "Groupe"}`;
+function eventTypeLabel(event: EventLite) {
+  return event.event_type === "training" ? "Entraînement" : event.event_type === "interclub" ? "Interclub" : event.event_type === "camp" ? "Stage / camp" : event.event_type === "session" ? "Séance" : "Activité";
 }
 
 function formatNewsDate(iso: string) {
@@ -40,12 +40,11 @@ function sameDay(iso: string, date: Date) {
 export default function CoachHomePage() {
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [activeNews, setActiveNews] = useState<CoachNewsLite[]>([]);
 
-  async function load(background = false) {
-    background ? setRefreshing(true) : setLoading(true);
+  async function load() {
+    setLoading(true);
     setError("");
     try {
       const session = await supabase.auth.getSession();
@@ -62,7 +61,7 @@ export default function CoachHomePage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Chargement impossible.");
     } finally {
-      setLoading(false); setRefreshing(false);
+      setLoading(false);
     }
   }
 
@@ -87,13 +86,12 @@ export default function CoachHomePage() {
     <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><span>Coach</span><span aria-hidden="true">/</span><strong>Tableau de bord</strong></nav>
     <header className={styles.topline}>
       <div><h1>{name ? `Bonjour ${name}` : "Bonjour"}</h1><p>Votre centre d’action pour les activités, présences et évaluations.</p><div className={styles.context}>{data?.organizationNames?.join(" · ") || (loading ? "Chargement du contexte…" : "Aucun club actif")}</div></div>
-      <button className={styles.secondary} type="button" onClick={() => void load(true)} disabled={refreshing}><RefreshCw size={16} className={refreshing ? styles.spin : ""} />Actualiser</button>
     </header>
     {error ? <div className={styles.error}><AlertTriangle size={17} />{error}<button type="button" onClick={() => void load()}>Réessayer</button></div> : null}
     <div className={styles.homeCards}>
       <section className={styles.panel}>
         <div className={styles.panelHeader}><div><h2>Prochaines activités</h2><p>Vos cinq prochains rendez-vous.</p></div><Link className={styles.textLink} href="/coach/calendar" aria-label="Voir le calendrier"><ArrowRight size={16} /></Link></div>
-        <EventList loading={loading} events={upcomingPreview} groups={data?.groupNameById ?? {}} empty="Aucune activité planifiée." />
+        <EventList loading={loading} events={upcomingPreview} groups={data?.groupNameById ?? {}} clubs={data?.clubNameByGroupId ?? {}} empty="Aucune activité planifiée." />
       </section>
       <section className={styles.panel}>
         <div className={styles.panelHeader}><div><h2>Actualités de mes clubs</h2><p>Les dernières nouvelles publiées par vos clubs.</p></div><Link className={styles.textLink} href="/coach/news" aria-label="Toutes les actualités"><ArrowRight size={16} /></Link></div>
@@ -126,18 +124,28 @@ export default function CoachHomePage() {
   </div>;
 }
 
-function EventList({ loading, events, groups, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; empty: string }) {
+function EventList({ loading, events, groups, clubs, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string }) {
   if (loading) return <Skeleton />;
   if (!events.length) return <div className={styles.empty}>{empty}</div>;
-  return <div className={styles.upcomingList}>{events.map((event) => {
+  return <div className={`${styles.upcomingList} ${activityStyles.list}`}>{events.map((event) => {
     const start = new Date(event.starts_at);
+    const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
     const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "short" }).format(start).replace(".", "");
     const month = new Intl.DateTimeFormat("fr-CH", { month: "short" }).format(start).replace(".", "");
     const time = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(start);
-    return <Link key={event.id} href={`/coach/groups/${event.group_id}/planning/${event.id}`} className={styles.upcomingItem}>
-      <span className={styles.upcomingDate} aria-label={new Intl.DateTimeFormat("fr-CH", { dateStyle: "full", timeStyle: "short" }).format(start)}><span>{weekday}</span><b>{start.getDate()}</b><span>{month}</span><time dateTime={event.starts_at}>{time}</time></span>
-      <span className={styles.upcomingBody}><b>{eventLabel(event, groups)}</b><span>{groups[event.group_id] || "Groupe"}</span><span className={styles.upcomingLocation}><MapPin size={13} aria-hidden="true" />{event.location_text || "Lieu non renseigné"}</span></span>
-    </Link>;
+    const explicitTitle = String(event.title ?? "").trim();
+    const title = explicitTitle ? `${eventTypeLabel(event)} · ${explicitTitle}` : eventTypeLabel(event);
+    return <article key={event.id} className={`${dashboardStyles.activityItem} ${activityStyles.item}`}>
+      <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat("fr-CH", { dateStyle: "full", timeStyle: "short" }).format(start)}>
+        <span>{weekday}</span><b>{start.getDate()}</b><span>{month}</span><time dateTime={event.starts_at}>{time}</time>
+      </div>
+      <div className={dashboardStyles.activityBody}>
+        <Link className={dashboardStyles.activityTitle} href={href}>{title}</Link>
+        <span className={dashboardStyles.activityMeta}>{groups[event.group_id] || "Groupe non renseigné"} · {clubs[event.group_id] || "Club non renseigné"}</span>
+        <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{event.location_text?.trim() || "Lieu non renseigné"}</span></span>
+      </div>
+      <Link className={activityStyles.action} href={href} aria-label={`Ouvrir ${title}`} title="Ouvrir"><ArrowRight size={15} aria-hidden="true"/></Link>
+    </article>;
   })}</div>;
 }
 

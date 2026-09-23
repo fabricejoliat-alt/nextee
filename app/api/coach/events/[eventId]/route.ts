@@ -185,6 +185,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const clubId = String(event.club_id ?? "").trim();
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const canManageActivity = clubId
+      ? await hasCoachClubPermission(supabaseAdmin, callerId, clubId, "planning", groupId)
+      : false;
 
     const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
       clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
@@ -336,6 +339,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       evaluatedPlayerIds: Array.from(new Set(feedbackRows.filter((row) => row.coach_id === callerId).map((row) => row.player_id))),
       evaluatedPlayers,
       meId: callerId,
+      canManageActivity,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

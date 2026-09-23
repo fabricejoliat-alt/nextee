@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, Clock3, ExternalLink, FileText, MapPin, Pencil, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, Clock3, ExternalLink, FileText, MapPin, Pencil, Save, ShieldCheck, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -151,6 +151,8 @@ function PlayerAvatar({ player }: { player: ProfileRow | null }) {
 }
 
 const MAX_SCORE = 6;
+type AiCommentField = "player_note" | "private_note";
+type AiCommentState = { busy: boolean; error: string; suggestion: string };
 
 function RatingScale({ label, value, disabled, onChange }: { label: string; value: number | null; disabled: boolean; onChange: (value: number | null) => void }) {
   return <div className={pageStyles.ratingField}><span>{label}</span><div className={pageStyles.ratingGrid} role="group" aria-label={label}>{Array.from({ length: MAX_SCORE }, (_, index) => index + 1).map((score) => <button key={score} type="button" className={pageStyles.ratingButton} disabled={disabled} aria-pressed={value === score} onClick={() => onChange(value === score ? null : score)}>{score}</button>)}</div></div>;
@@ -185,6 +187,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiComments, setAiComments] = useState<Record<AiCommentField, AiCommentState>>({
+    player_note: { busy: false, error: "", suggestion: "" },
+    private_note: { busy: false, error: "", suggestion: "" },
+  });
 
   const [meId, setMeId] = useState("");
 
@@ -221,6 +227,42 @@ export default function CoachEventPlayerFeedbackEditPage() {
     private_note: null,
     player_note: null,
   });
+
+  function updateAiComment(field: AiCommentField, update: Partial<AiCommentState>) {
+    setAiComments((current) => ({ ...current, [field]: { ...current[field], ...update } }));
+  }
+
+  async function improveComment(field: AiCommentField) {
+    const text = String(draft[field] ?? "").trim();
+    if (!text || aiComments[field].busy) return;
+    updateAiComment(field, { busy: true, error: "", suggestion: "" });
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token ?? "";
+      if (!token) throw new Error("Votre session a expiré.");
+      const response = await fetch("/api/coach/ai/improve-comment", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, locale, audience: field === "private_note" ? "coach" : "junior" }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json?.error ?? "Impossible d’améliorer le commentaire."));
+      const suggestion = String(json?.suggestion ?? "").trim();
+      if (!suggestion) throw new Error("Aucune suggestion n’a été générée.");
+      updateAiComment(field, { suggestion });
+    } catch (cause) {
+      updateAiComment(field, { error: errorMessage(cause, "Impossible d’améliorer le commentaire.") });
+    } finally {
+      updateAiComment(field, { busy: false });
+    }
+  }
+
+  function applyAiSuggestion(field: AiCommentField) {
+    const suggestion = aiComments[field].suggestion;
+    if (!suggestion) return;
+    setDraft((current) => ({ ...current, [field]: suggestion }));
+    updateAiComment(field, { suggestion: "", error: "" });
+  }
 
   async function load() {
     setLoading(true);
@@ -928,10 +970,41 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <span>Note pour le junior</span>
                     <textarea
                       value={draft.player_note ?? ""}
-                      onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
+                      onChange={(e) => {
+                        setDraft((p) => ({ ...p, player_note: e.target.value }));
+                        updateAiComment("player_note", { suggestion: "", error: "" });
+                      }}
                       disabled={evaluationLocked}
                       placeholder="Votre retour pour le junior…"
+                      maxLength={1500}
                     />
+                    <span className={pageStyles.aiToolbar}>
+                      <button
+                        type="button"
+                        className={pageStyles.aiButton}
+                        onClick={() => void improveComment("player_note")}
+                        disabled={evaluationLocked || aiComments.player_note.busy || !(draft.player_note ?? "").trim()}
+                      >
+                        <Sparkles size={15} aria-hidden="true" />
+                        {aiComments.player_note.busy ? "Amélioration…" : "Améliorer avec l’IA"}
+                      </button>
+                      <small>La proposition ne sera utilisée qu’après votre validation.</small>
+                    </span>
+                    {aiComments.player_note.error ? <div className={pageStyles.aiError} role="alert">{aiComments.player_note.error}</div> : null}
+                    {aiComments.player_note.suggestion ? (
+                      <div className={pageStyles.aiSuggestion} aria-live="polite">
+                        <span><Sparkles size={14} aria-hidden="true" />Suggestion</span>
+                        <p>{aiComments.player_note.suggestion}</p>
+                        <div>
+                          <button type="button" className={pageStyles.aiAccept} onClick={() => applyAiSuggestion("player_note")}>
+                            <Check size={14} aria-hidden="true" />Utiliser cette version
+                          </button>
+                          <button type="button" className={pageStyles.aiDismiss} onClick={() => updateAiComment("player_note", { suggestion: "" })}>
+                            <X size={14} aria-hidden="true" />Conserver mon texte
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </label>
                 </section>
               ) : null}
@@ -942,10 +1015,41 @@ export default function CoachEventPlayerFeedbackEditPage() {
                   <span>Note interne</span>
                   <textarea
                     value={draft.private_note ?? ""}
-                    onChange={(e) => setDraft((p) => ({ ...p, private_note: e.target.value }))}
+                    onChange={(e) => {
+                      setDraft((p) => ({ ...p, private_note: e.target.value }));
+                      updateAiComment("private_note", { suggestion: "", error: "" });
+                    }}
                     disabled={evaluationLocked}
                     placeholder="Ajouter une note privée…"
+                    maxLength={1500}
                   />
+                  <span className={pageStyles.aiToolbar}>
+                    <button
+                      type="button"
+                      className={pageStyles.aiButton}
+                      onClick={() => void improveComment("private_note")}
+                      disabled={evaluationLocked || aiComments.private_note.busy || !(draft.private_note ?? "").trim()}
+                    >
+                      <Sparkles size={15} aria-hidden="true" />
+                      {aiComments.private_note.busy ? "Amélioration…" : "Améliorer avec l’IA"}
+                    </button>
+                    <small>La proposition reste privée et ne sera utilisée qu’après votre validation.</small>
+                  </span>
+                  {aiComments.private_note.error ? <div className={pageStyles.aiError} role="alert">{aiComments.private_note.error}</div> : null}
+                  {aiComments.private_note.suggestion ? (
+                    <div className={pageStyles.aiSuggestion} aria-live="polite">
+                      <span><Sparkles size={14} aria-hidden="true" />Suggestion</span>
+                      <p>{aiComments.private_note.suggestion}</p>
+                      <div>
+                        <button type="button" className={pageStyles.aiAccept} onClick={() => applyAiSuggestion("private_note")}>
+                          <Check size={14} aria-hidden="true" />Utiliser cette version
+                        </button>
+                        <button type="button" className={pageStyles.aiDismiss} onClick={() => updateAiComment("private_note", { suggestion: "" })}>
+                          <X size={14} aria-hidden="true" />Conserver mon texte
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </label>
               </section>
                 </div>

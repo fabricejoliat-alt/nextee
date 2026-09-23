@@ -1,0 +1,23 @@
+.card {
+  padding: 7px 10px;
+  border: 1px solid #dfe7dd;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(35, 54, 41, 0.045);
+}
+
+.activity {
+  padding-inline: 0;
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding-inline: 8px;
+  }
+
+  .activity {
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+  }
+
+}

@@ -45,6 +45,21 @@
 .field textarea { min-height: 96px !important; padding: 11px; resize: vertical; }
 .field input:focus, .field textarea:focus { border-color: #899d7d; box-shadow: 0 0 0 3px rgba(137,157,125,.17); }
 .field small { color: #89938b; font-size: 10px; font-weight: 500; line-height: 1.4; }
+.aiToolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.aiToolbar small { flex:1; min-width:180px; }
+.aiButton, .aiAccept, .aiDismiss { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:0 12px; border-radius:9px; font:750 11px/1 var(--font-inter),sans-serif; cursor:pointer; }
+.aiButton { border:1px solid #cddbc9; background:#edf3ea; color:#405b42; }
+.aiButton:hover:not(:disabled) { background:#e2ecde; }
+.aiButton:disabled { cursor:not-allowed; opacity:.5; }
+.aiError { padding:10px 12px; border:1px solid #f0d3cf; border-radius:9px; background:#fff6f4; color:#a23f35; font-size:11px; line-height:1.4; }
+.aiSuggestion { display:grid; gap:10px; padding:13px; border:1px solid #d6e2d2; border-radius:11px; background:linear-gradient(145deg,#f5f9f3,#fff); }
+.aiSuggestion>span { display:inline-flex; align-items:center; gap:6px; color:#587057; font-size:10px; font-weight:850; letter-spacing:.05em; text-transform:uppercase; }
+.aiSuggestion p { margin:0; color:#35483b; font:550 12px/1.55 var(--font-inter),sans-serif; }
+.aiSuggestion>div { display:flex; gap:8px; flex-wrap:wrap; }
+.aiAccept { border:0; background:#35483b; color:#fff; }
+.aiDismiss { border:1px solid #dce4da; background:#fff; color:#526053; }
+.aiAccept:hover { background:#2b3d31; }
+.aiDismiss:hover { background:#f3f6f2; }
 
 .structureList, .documentList { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .structureGroup { display: grid; gap: 8px; }
@@ -91,7 +106,7 @@
 .dangerIconButton { background: #fff0ef; color: #b44b44; }
 .iconButton:disabled, .dangerIconButton:disabled { cursor: not-allowed; opacity: .45; }
 
-.footer { position: sticky; bottom: 12px; z-index: 4; padding: 8px !important; background: rgba(255,255,255,.94) !important; backdrop-filter: blur(10px); }
+.footer { position: static; padding: 8px !important; background: rgba(255,255,255,.94) !important; }
 .footerActions { justify-content: flex-end; }
 .footerActions > * { min-width: 150px; }
 

@@ -35,3 +35,29 @@
   outline: 2px solid #607b5b;
   outline-offset: 2px;
 }
+
+@media (max-width: 760px) {
+  .mobileGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .mobileGrid button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding: 6px 4px;
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .mobileGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

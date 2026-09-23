@@ -78,6 +78,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         me,
         groupNameById: {},
+        clubNameByGroupId: {},
         organizationNames: [],
         upcomingEvents: [],
         pendingEvalEvents: [],
@@ -89,6 +90,8 @@ export async function GET(req: NextRequest) {
     }
 
     const groupNameById: Record<string, string> = {};
+    const groupClubIdById: Record<string, string> = {};
+    const clubNameByGroupId: Record<string, string> = {};
     let organizationNames: string[] = [];
     const clubIds = new Set<string>();
 
@@ -125,7 +128,7 @@ export async function GET(req: NextRequest) {
           groupNameById[g.id] = g.name ?? "Groupe";
         }
         const cid = String(g.club_id ?? "").trim();
-        if (cid) clubIds.add(cid);
+        if (cid) { clubIds.add(cid); groupClubIdById[g.id] = cid; }
       });
 
       [...((groupUpcomingRes.data ?? []) as EventLite[]), ...((groupPastRes.data ?? []) as EventLite[])].forEach((event) => {
@@ -156,7 +159,7 @@ export async function GET(req: NextRequest) {
             groupNameById[g.id] = g.name ?? "Groupe";
           }
           const cid = String(g.club_id ?? "").trim();
-          if (cid) clubIds.add(cid);
+          if (cid) { clubIds.add(cid); groupClubIdById[g.id] = cid; }
         });
       }
 
@@ -171,6 +174,8 @@ export async function GET(req: NextRequest) {
       organizationNames = Array.from(
         new Set((clubsRes.data ?? []).map((c: { name: string | null }) => String(c.name ?? "").trim()).filter(Boolean))
       );
+      const clubNameById = new Map((clubsRes.data ?? []).map((club: { id: string; name: string | null }) => [club.id, String(club.name ?? "Club")]));
+      Object.entries(groupClubIdById).forEach(([groupId, clubId]) => { clubNameByGroupId[groupId] = clubNameById.get(clubId) ?? "Club"; });
     }
 
     const allEvents = Object.values(rowsById);
@@ -217,6 +222,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         me,
         groupNameById,
+        clubNameByGroupId,
         organizationNames,
         upcomingEvents,
         pendingEvalEvents: [],
@@ -270,6 +276,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       me,
       groupNameById,
+      clubNameByGroupId,
       organizationNames,
       upcomingEvents,
       pendingEvalEvents,

@@ -122,6 +122,26 @@ export async function PATCH(req: NextRequest) {
     if (entity === "series") {
       const current = await db.from("rules_series").select("*").eq("id", id).single();
       if (current.error) throw current.error;
+      if (action === "unlock") {
+        if (process.env.NODE_ENV === "production") {
+          return NextResponse.json({ error: "Le déverrouillage d’une série publiée est désactivé en production." }, { status: 403 });
+        }
+        if (!current.data.locked_at && current.data.status === "draft") return NextResponse.json({ series: current.data });
+        const unlocked = await db.from("rules_series").update({
+          status: "draft",
+          published_at: null,
+          locked_at: null,
+        }).eq("id", id).select("*").single();
+        if (unlocked.error) throw unlocked.error;
+        await db.from("rules_admin_events").insert({
+          actor_user_id: userId,
+          entity_type: "series",
+          entity_id: id,
+          action: "unlocked_for_development",
+          details: { previous_status: current.data.status, previous_locked_at: current.data.locked_at },
+        });
+        return NextResponse.json({ series: unlocked.data });
+      }
       if (action === "publish") {
         if (current.data.status === "published") return NextResponse.json({ series: current.data });
         if (current.data.locked_at || !["draft", "scheduled"].includes(current.data.status)) {

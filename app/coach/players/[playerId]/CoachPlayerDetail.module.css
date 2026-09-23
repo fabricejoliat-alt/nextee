@@ -86,6 +86,18 @@
 .competitionActions { width: 1%; white-space: nowrap; text-align: right !important; }
 .competitionActions button { margin-left: auto; }
 
+.competitionList { display: grid; gap: 10px; }
+.competitionCard { padding: 15px; border: 1px solid #e1e8df; border-radius: 14px; background: #fbfcfa; display: grid; gap: 14px; }
+.competitionCardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.competitionCardHeader > div { min-width: 0; display: grid; gap: 4px; }
+.competitionCardHeader span { color: #718078; font: 700 10px var(--font-inter), sans-serif; letter-spacing: .055em; text-transform: uppercase; }
+.competitionCardHeader strong { color: #243328; font: 700 15px/1.3 var(--font-inter), sans-serif; overflow-wrap: anywhere; }
+.competitionCardHeader small { color: #778278; font: 500 11px/1.35 var(--font-inter), sans-serif; }
+.competitionMetrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.competitionMetrics > div { min-width: 0; padding: 10px; border: 1px solid #e4eae2; border-radius: 10px; background: #fff; display: grid; gap: 5px; }
+.competitionMetrics span { color: #78857c; font: 700 9px var(--font-inter), sans-serif; letter-spacing: .05em; text-transform: uppercase; }
+.competitionMetrics b { color: #35483b; font: 700 18px/1 var(--font-inter-tight), var(--font-inter), sans-serif; }
+
 .documentsPanel { display: grid; gap: 18px; }
 .documentsHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .documentsHeader .panelTitle { margin-bottom: 0; }
@@ -203,11 +215,41 @@
 }
 
 @media (max-width: 760px) {
-  .identity { align-items: start; }
+  .stack { gap: 12px; }
+  .panel { padding: 15px; border-radius: 15px; box-shadow: 0 8px 22px rgba(43, 61, 49, .045); }
+  .identity { grid-template-columns: 76px minmax(0, 1fr); align-items: start; gap: 14px; }
+  .avatar { width: 76px; height: 76px; }
   .identityGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .overviewGrid, .overviewColumns { grid-template-columns: 1fr 1fr; }
-  .evaluationChart { height: 250px; padding-inline: 2px; }
+  .identityItem { padding-bottom: 8px; border-bottom: 1px solid #edf1eb; }
+  .identityItem:last-child { grid-column: 1 / -1; }
+  .overviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .overviewColumns { grid-template-columns: 1fr; gap: 12px; }
+  .metric { min-height: 96px; padding: 13px; border-radius: 13px; }
+  .metric strong { font-size: 22px; }
+  .statisticsGrid { grid-template-columns: 1fr; gap: 11px; }
+  .statisticsOverview { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .statisticsMetric { padding: 12px; }
+  .statisticsWide { grid-column: auto; }
+  .chart, .evaluationChart { height: 240px; min-height: 240px; padding-inline: 0; }
+  .competitionCard { padding: 13px; }
+  .competitionCardHeader { display: grid; }
+  .competitionCardHeader button { width: 100%; }
+  .competitionMetrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .documentUploadGrid { grid-template-columns: 1fr; }
   .documentUploadBox > button:last-child { width: 100%; }
   .documentCard { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 480px) {
+  .identity { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
+  .avatar { width: 64px; height: 64px; }
+  .identityGrid { gap: 10px 12px; }
+  .identityItem span { font-size: 9px; }
+  .identityItem strong { font-size: 12px; }
+  .overviewGrid { gap: 8px; }
+  .metric { min-height: 90px; padding: 12px; }
+  .metric span { font-size: 9px; }
+  .metric strong { font-size: 20px; }
+  .metric small { font-size: 10px; }
+  .competitionMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

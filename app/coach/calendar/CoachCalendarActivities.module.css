@@ -1,0 +1,77 @@
+.panel {
+  padding: 10px;
+}
+
+.list {
+  display: grid;
+}
+
+.activity {
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.iconAction {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: #edf3ea;
+  color: #35483b;
+  text-decoration: none;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.iconAction:hover {
+  background: #e3ece0;
+  transform: translateY(-1px);
+}
+
+.iconAction:focus-visible {
+  outline: 3px solid rgba(137, 157, 125, .3);
+  outline-offset: 2px;
+}
+
+.evaluationAction {
+  background: #fff2c8;
+  color: #7b5e0b;
+}
+
+.evaluationAction:hover {
+  background: #ffeaa5;
+}
+
+@media (max-width: 520px) {
+  .panel {
+    padding-inline: 7px;
+  }
+
+  .activity {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .activity > :first-child {
+    width: 64px;
+  }
+
+  .actions {
+    gap: 5px;
+  }
+
+  .iconAction {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+}

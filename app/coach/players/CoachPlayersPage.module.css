@@ -1,0 +1,52 @@
+@media (max-width: 640px) {
+  .mobileTableWrap {
+    overflow: visible;
+  }
+
+  .mobileTable tbody {
+    display: grid;
+  }
+
+  .mobileTable tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 68px;
+    padding: 12px 0;
+  }
+
+  .mobileTable td {
+    display: none;
+  }
+
+  .mobileTable td:first-child,
+  .mobileTable td:last-child {
+    display: flex;
+    width: auto;
+    padding: 0;
+  }
+
+  .mobileTable td:first-child {
+    min-width: 0;
+  }
+
+  .mobileTable td:last-child {
+    justify-content: flex-end;
+  }
+
+  .mobileTable td::before {
+    display: none;
+  }
+
+  .mobileTable td:first-child > div {
+    min-width: 0;
+  }
+
+  .mobileTable td:first-child b {
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

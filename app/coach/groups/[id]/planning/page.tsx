@@ -8,6 +8,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
+import ManagementActivityDate from "@/components/ui/ManagementActivityDate";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import {
@@ -122,20 +123,6 @@ function memberRoleLabel(role: string | null | undefined) {
     default:
       return "Membre";
   }
-}
-
-function eventDateSummary(startIso: string, endIso: string | null) {
-  const start = new Date(startIso);
-  const end = endIso ? new Date(endIso) : null;
-  const time = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
-  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
-  return {
-    day: capitalize(new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start)),
-    date: start.getDate(),
-    month: capitalize(new Intl.DateTimeFormat("fr-CH", { month: "long" }).format(start)),
-    startTime: time.format(start),
-    endTime: end ? time.format(end) : null,
-  };
 }
 
 function isoToLocalInput(iso: string) {
@@ -296,6 +283,7 @@ export default function CoachGroupPlanningPage() {
   const [canPlan, setCanPlan] = useState(false);
 
   const [group, setGroup] = useState<GroupRow | null>(null);
+  const [clubName, setClubName] = useState("Club non renseigné");
 
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [players, setPlayers] = useState<ProfileLite[]>([]);
@@ -594,6 +582,8 @@ export default function CoachGroupPlanningPage() {
       if (gRes.error) throw new Error(gRes.error.message);
       if (!gRes.data) throw new Error("Groupe introuvable.");
       setGroup(gRes.data as GroupRow);
+      const clubRes = await supabase.from("clubs").select("name").eq("id", gRes.data.club_id).maybeSingle();
+      if (!clubRes.error) setClubName(String(clubRes.data?.name ?? "").trim() || "Club non renseigné");
 
       // all active club members (for guests visibility)
       const cmRes = await supabase
@@ -1260,7 +1250,6 @@ export default function CoachGroupPlanningPage() {
               const playerIds = attendeeIds.filter((id) => playerIdSet.has(id));
               const presentIds = new Set((eventPresentPlayerIds[event.id] ?? []).filter((id) => playerIdSet.has(id)));
               const showEvaluationWarning = eventNeedsEvaluation(event);
-              const date = eventDateSummary(event.starts_at, event.ends_at);
 
               const renderPeopleLine = (label: string, ids: string[], withAttendance = false) => {
                 const people = ids.map((id) => personById.get(id)).filter(Boolean) as Array<ProfileLite | CoachLite | ClubMemberLite>;
@@ -1297,16 +1286,7 @@ export default function CoachGroupPlanningPage() {
               return (
                 <article key={event.id} className="planning-event-card">
                   <div className="planning-event-card-inner">
-                    <div className="planning-event-date">
-                      <div className="planning-event-day">{date.day}</div>
-                      <div className="planning-event-number">{date.date}</div>
-                      <div className="planning-event-month">{date.month}</div>
-                      <div className="planning-event-time-divider" />
-                      <div className="planning-event-times">
-                        <span>{date.startTime}</span>
-                        {date.endTime ? <span>{date.endTime}</span> : null}
-                      </div>
-                    </div>
+                    <ManagementActivityDate startsAt={event.starts_at} endsAt={event.ends_at} locale={locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US"} />
 
                     <div className="planning-event-content">
                       <div style={{ display: "grid", gap: 10 }}>
@@ -1319,6 +1299,12 @@ export default function CoachGroupPlanningPage() {
                             ) : null}
                           </div>
                           <span className="pill-soft">{event.duration_minutes} min</span>
+                        </div>
+
+                        <div className="manager-calendar-detail-grid">
+                          <div><span>{tr("Groupe", "Group")}</span><b>{group?.name ?? tr("Groupe", "Group")}</b></div>
+                          <div><span>{tr("Club", "Club")}</span><b>{clubName}</b></div>
+                          <div><span>{tr("Type", "Type")}</span><b>{eventTypeLabelLocalized(event.event_type)}</b></div>
                         </div>
 
                         <div style={{ display: "grid", gap: 6 }}>

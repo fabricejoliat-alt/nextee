@@ -103,6 +103,10 @@ export async function GET(req: NextRequest) {
   const { data: progress } = role === "player"
     ? await admin.from("rules_card_progress").select("card_version_id,first_read_at,last_read_at,review_count").eq("player_user_id", userId)
     : { data: [] };
+  const { data: quizAttempt, error: quizAttemptError } = role === "player" && current
+    ? await admin.from("rules_quiz_attempts").select("id,status,submitted_at,total_score,correct_count").eq("series_id", current.id).eq("player_user_id", userId).maybeSingle()
+    : { data: null, error: null };
+  if (quizAttemptError) console.error("Rules quiz attempt unavailable", quizAttemptError);
   let leaderboard = null;
   if (role === "player" && current) {
     const publishesAt = current.results_published_at ?? null;
@@ -117,5 +121,5 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  return NextResponse.json({ role, clubId: memberships?.[0]?.club_id ?? null, season, series: series ?? [], currentSeriesId: current?.id ?? null, cards, progress: progress ?? [], leaderboard }, { headers: { "Cache-Control": "private, max-age=30" } });
+  return NextResponse.json({ role, clubId: memberships?.[0]?.club_id ?? null, season, series: series ?? [], currentSeriesId: current?.id ?? null, cards, progress: progress ?? [], quizAttempt, leaderboard }, { headers: { "Cache-Control": "private, max-age=30" } });
 }

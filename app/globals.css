@@ -851,6 +851,29 @@ input[type="radio"]{
   gap: 10px;
 }
 
+.drawer-item-right{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+
+.drawer-count-badge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .drawer-chevron{
   flex: none;
   color: rgba(255,255,255,0.48);
@@ -893,6 +916,10 @@ input[type="radio"]{
   font-size: 12px;
 
   cursor: pointer;
+}
+
+.drawer-panel--coach .drawer-subitem{
+  min-height: 36px;
 }
 
 .drawer-subitem:hover{ background: rgba(255,255,255,0.07); }
@@ -951,8 +978,16 @@ input[type="radio"]{
 }
 
 .drawer-panel--player-compact .drawer-nav{
-  padding: 10px;
-  gap: 8px;
+  padding: 18px 10px 10px;
+  gap: 18px;
+}
+
+.drawer-panel--player-compact .drawer-section{
+  gap: 0;
+}
+
+.drawer-panel--player-compact .drawer-section-label{
+  padding-bottom: 3px;
 }
 
 .drawer-panel--player-compact .drawer-item{
@@ -966,13 +1001,14 @@ input[type="radio"]{
 }
 
 .drawer-panel--player-compact .drawer-sub{
-  margin-top: 6px;
+  margin-top: 2px;
   gap: 6px;
   padding-left: 8px;
   margin-left: 8px;
 }
 
 .drawer-panel--player-compact .drawer-subitem{
+  min-height: 36px;
   padding: 8px 10px;
   border-radius: 11px;
   font-size: 12px;

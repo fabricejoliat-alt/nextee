@@ -10,8 +10,6 @@ import {
   Home,
   Flag,
   ClipboardList,
-  PlusCircle,
-  Map,
   Store,
   User,
   CircleHelp,
@@ -22,6 +20,8 @@ import {
   Tent,
   Newspaper,
   ShieldCheck,
+  BookOpen,
+  ChevronRight,
 } from "lucide-react";
 
 /**
@@ -42,6 +42,7 @@ const ROUTES = {
   camps: "/player/camps",
   om: "/player/om",
   validations: "/player/validations",
+  rules: "/player/rules",
 
   marketplaceAll: "/player/marketplace",
   marketplaceMine: "/player/marketplace/mine",
@@ -271,21 +272,43 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   }, [searchParams, parentChildren, selectedChildId]);
 
   useEffect(() => {
-    if (!open) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      let uid = auth.user?.id ?? "";
+      const cached = readDrawerFooterCache();
+      const effectiveViewerRole = viewerRole === "parent" ? viewerRole : cached?.viewerRole ?? viewerRole;
+      const effectiveChildId = selectedChildId || cached?.selectedChildId || "";
+      if (effectiveViewerRole === "parent" && effectiveChildId) uid = effectiveChildId;
+      if (!uid) {
+        if (!cancelled) {
+          setPerformanceEnabled(false);
+          setPendingEvalCount(0);
+        }
+        return;
+      }
+
+      const enabled = await isEffectivePlayerPerformanceEnabled(uid);
+      if (!cancelled) {
+        setPerformanceEnabled(enabled);
+        if (!enabled) setPendingEvalCount(0);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerRole, selectedChildId]);
+
+  useEffect(() => {
+    if (!open || !performanceEnabled) return;
 
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
       let uid = auth.user?.id ?? "";
       if (viewerRole === "parent" && selectedChildId) uid = selectedChildId;
       if (!uid) {
-        setPendingEvalCount(0);
-        setPerformanceEnabled(false);
-        return;
-      }
-
-      const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
-      setPerformanceEnabled(perfEnabled);
-      if (!perfEnabled) {
         setPendingEvalCount(0);
         return;
       }
@@ -390,87 +413,72 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
       setPendingEvalCount(incompletePastSessionsCount + incompleteEventsCount);
     })();
-  }, [open, viewerRole, selectedChildId]);
+  }, [open, viewerRole, selectedChildId, performanceEnabled]);
 
-  const nav = useMemo(
+  const navSections = useMemo(
     () => [
       {
-        label: t("nav.home"),
-        icon: Home,
-        href: ROUTES.home,
-      },
-      {
-        label: "Actualités",
-        icon: Newspaper,
-        href: ROUTES.news,
-      },
-      {
-        label: locale === "fr" ? "Activités" : "Activity",
-        icon: ClipboardList,
-        href: ROUTES.trainingsList,
-      },
-      ...(performanceEnabled
-        ? [
-            {
-              label:
-                locale === "fr"
-                  ? "Activités à évaluer"
-                  : "Activities to evaluate",
-              icon: ListChecks,
-              href: ROUTES.trainingsToComplete,
-              badgeCount: pendingEvalCount > 0 ? pendingEvalCount : 0,
-            },
-          ]
-        : []),
-      {
-        label: t("player.myGolf"),
-        icon: Flag,
-        children: [
-          { label: "Dashboard", icon: Home, href: ROUTES.golfDashboard },
-          {
-            label: locale === "fr" ? "Mes entrainements" : "My trainings",
-            icon: ClipboardList,
-            href: ROUTES.trainingsListTraining,
-          },
-          {
-            label: locale === "fr" ? "Ajouter un entrainement" : "Add training",
-            icon: PlusCircle,
-            href: ROUTES.trainingsNew,
-          },
-          { label: locale === "fr" ? "Mes parcours" : t("player.rounds"), icon: Map, href: ROUTES.roundsList },
-          { label: locale === "fr" ? "Ajouter un parcours" : t("player.newRound"), icon: PlusCircle, href: ROUTES.roundsNew },
+        label: locale === "fr" ? "Accueil" : "Home",
+        items: [
+          { label: locale === "fr" ? "Tableau de bord" : "Dashboard", icon: Home, href: ROUTES.home },
+          { label: locale === "fr" ? "Actualités" : "News", icon: Newspaper, href: ROUTES.news },
         ],
       },
       {
-        label: locale === "fr" ? "Stages/camps" : "Camps",
-        icon: Tent,
-        href: ROUTES.camps,
+        label: locale === "fr" ? "Activités" : "Activities",
+        items: [
+          { label: locale === "fr" ? "Mes activités" : "My activities", icon: ClipboardList, href: ROUTES.trainingsList },
+          ...(performanceEnabled
+            ? [
+                {
+                  label: locale === "fr" ? "Activités à évaluer" : "Activities to evaluate",
+                  icon: ListChecks,
+                  href: ROUTES.trainingsToComplete,
+                  badgeCount: pendingEvalCount > 0 ? pendingEvalCount : 0,
+                },
+              ]
+            : []),
+          { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
+          { label: t("player.myGolf"), icon: Flag, href: ROUTES.golfDashboard },
+        ],
       },
       {
-        label: locale === "fr" ? "Validations" : "Validations",
-        icon: ShieldCheck,
-        href: ROUTES.validations,
+        label: locale === "fr" ? "Progression" : "Progress",
+        items: [
+          { label: "Validations", icon: ShieldCheck, href: ROUTES.validations },
+          {
+            label:
+              locale === "fr"
+                ? "Règles de golf"
+                : locale === "de"
+                ? "Golfregeln"
+                : locale === "it"
+                ? "Regole del golf"
+                : "Golf rules",
+            icon: BookOpen,
+            href: ROUTES.rules,
+          },
+          ...(performanceEnabled
+            ? [
+                {
+                  label:
+                    locale === "fr"
+                      ? "Ordre du mérite"
+                      : locale === "de"
+                      ? "Order of Merit"
+                      : locale === "it"
+                      ? "Ordine di merito"
+                      : "Order of Merit",
+                  icon: Trophy,
+                  href: ROUTES.om,
+                },
+              ]
+            : []),
+        ],
       },
-      ...(performanceEnabled
-        ? [
-            {
-              label:
-                locale === "fr"
-                  ? "Ordre du mérite"
-                  : locale === "de"
-                  ? "Order of Merit"
-                  : locale === "it"
-                  ? "Ordine di merito"
-                  : "Order of Merit",
-              icon: Trophy,
-              href: ROUTES.om,
-            },
-          ]
-        : []),
       {
-        label: t("nav.marketplace"),
-        icon: Store,
-        href: ROUTES.marketplaceAll,
+        label: "Services",
+        items: [{ label: t("nav.marketplace"), icon: Store, href: ROUTES.marketplaceAll }],
       },
     ],
     [t, locale, pendingEvalCount, performanceEnabled]
@@ -509,85 +517,56 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
         {/* Navigation */}
         <nav className="drawer-nav">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            const badgeCount = "badgeCount" in item ? Number(item.badgeCount ?? 0) : 0;
-            const activeTop = item.href
-              ? isTrainingChildActive(pathname, searchParams, item.href)
-              : item.children?.some((c) => isTrainingChildActive(pathname, searchParams, c.href));
-
-            if (item.href) {
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className={`drawer-item ${activeTop ? "active" : ""}`}
-                  onClick={onClose}
-                >
-                  <span className="drawer-item-left">
-                    <Icon size={18} strokeWidth={2} />
-                    <span>
-                      {item.label}
-                      {badgeCount > 0 ? (
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: 18,
-                            height: 18,
-                            marginLeft: 8,
-                            padding: "0 6px",
-                            borderRadius: 999,
-                            background: "#ef4444",
-                            color: "#fff",
-                            fontSize: 11,
-                            fontWeight: 900,
-                            lineHeight: 1,
-                            verticalAlign: "middle",
-                          }}
-                        >
-                          {badgeCount > 99 ? "99+" : badgeCount}
+          {navSections.map((section) => (
+            <section key={section.label} className="drawer-section">
+              <div className="drawer-section-label">{section.label}</div>
+              <div className="drawer-sub">
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const badgeCount = "badgeCount" in item ? Number(item.badgeCount ?? 0) : 0;
+                  const active = isTrainingChildActive(pathname, searchParams, item.href);
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className={`drawer-subitem ${active ? "active" : ""}`}
+                      onClick={onClose}
+                    >
+                      <span className="drawer-item-left">
+                        <Icon size={16} strokeWidth={1.8} />
+                        <span>
+                          {item.label}
+                          {badgeCount > 0 ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minWidth: 18,
+                                height: 18,
+                                marginLeft: 8,
+                                padding: "0 6px",
+                                borderRadius: 999,
+                                background: "#ef4444",
+                                color: "#fff",
+                                fontSize: 11,
+                                fontWeight: 900,
+                                lineHeight: 1,
+                                verticalAlign: "middle",
+                              }}
+                            >
+                              {badgeCount > 99 ? "99+" : badgeCount}
+                            </span>
+                          ) : null}
                         </span>
-                      ) : null}
-                    </span>
-                  </span>
-                </Link>
-              );
-            }
-
-            // Section with children
-            return (
-              <div key={item.label} className="drawer-group">
-                <div className={`drawer-item drawer-item--group ${activeTop ? "active" : ""}`}>
-                  <span className="drawer-item-left">
-                    <Icon size={18} strokeWidth={2} />
-                    <span>{item.label}</span>
-                  </span>
-                </div>
-
-                <div className="drawer-sub">
-                  {item.children?.map((c) => {
-                    const CIcon = c.icon;
-                    const active = isTrainingChildActive(pathname, searchParams, c.href);
-                    return (
-                      <Link
-                        key={c.label}
-                        href={c.href}
-                        className={`drawer-subitem ${active ? "active" : ""}`}
-                        onClick={onClose}
-                      >
-                        <span className="drawer-item-left">
-                          <CIcon size={16} strokeWidth={2} />
-                          <span>{c.label}</span>
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </div>
+                      </span>
+                      <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
+                    </Link>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </nav>
 
         {/* Account section bottom */}

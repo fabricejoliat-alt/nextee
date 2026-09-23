@@ -13,7 +13,7 @@ const ROUTES = {
   merit: "/coach/om", rules: "/coach/rules", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
 } as const;
 
-type Props = { open: boolean; onClose: () => void };
+type Props = { open: boolean; onClose: () => void; pendingEvaluationCount: number };
 
 function isActive(pathname: string, href: string) {
   const cleanHref = href.split("?")[0];
@@ -21,7 +21,7 @@ function isActive(pathname: string, href: string) {
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
-export default function CoachDesktopDrawer({ open, onClose }: Props) {
+export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCount }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -57,12 +57,12 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
     ] },
     { label: locale === "fr" ? "Mon activité" : "My activity", items: [
       { label: locale === "fr" ? "Activités" : "Activities", icon: CalendarDays, href: ROUTES.calendar },
+      { label: locale === "fr" ? "Activités à évaluer" : "Activities to evaluate", icon: ClipboardCheck, href: ROUTES.evaluations, badgeCount: pendingEvaluationCount },
       { label: locale === "fr" ? "Mes groupes" : "My groups", icon: Users, href: ROUTES.groups },
       { label: locale === "fr" ? "Juniors" : "Players", icon: UserRound, href: ROUTES.players },
       { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
     ] },
     { label: locale === "fr" ? "Suivi" : "Tracking", items: [
-      { label: locale === "fr" ? "Évaluations à faire" : "Evaluations to do", icon: ClipboardCheck, href: ROUTES.evaluations },
       { label: "Validations", icon: CalendarCheck, href: ROUTES.validations },
       { label: locale === "fr" ? "Ordre du mérite" : "Order of Merit", icon: Medal, href: ROUTES.merit },
       { label: locale === "fr" ? "Règles de golf" : "Rules of golf", icon: BookOpen, href: ROUTES.rules },
@@ -71,7 +71,7 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
       { label: locale === "fr" ? "Actualités" : "News", icon: Newspaper, href: ROUTES.news },
       { label: "Notifications", icon: Bell, href: ROUTES.notifications },
     ] },
-  ], [locale]);
+  ], [locale, pendingEvaluationCount]);
 
   async function logout() {
     await supabase.auth.signOut(); onClose(); router.push("/"); router.refresh();
@@ -80,7 +80,7 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
   if (!open) return null;
   return <>
     <button type="button" className="drawer-overlay" aria-label={t("common.close")} onClick={onClose} />
-    <aside className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
+    <aside className="drawer-panel drawer-panel--left drawer-panel--coach" aria-label={t("common.navigation")}>
       <div className="drawer-top">
         <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee"><span className="drawer-brand-nex">Activi</span><span className="drawer-brand-tee">Tee</span></Link>
         <button className="icon-btn drawer-close" type="button" onClick={onClose} aria-label={t("common.close")}><X size={20} /></button>
@@ -88,7 +88,7 @@ export default function CoachDesktopDrawer({ open, onClose }: Props) {
       <nav className="drawer-nav">
         {sections.map((section) => <section key={section.label} className="drawer-section">
           <div className="drawer-section-label">{section.label}</div>
-          <div className="drawer-sub">{section.items.map((item) => { const Icon = item.icon; const active = item.href.includes("view=evaluations") ? pathname === "/coach/calendar" && searchParams.get("view") === "evaluations" : item.href === ROUTES.calendar ? isActive(pathname, item.href) && searchParams.get("view") !== "evaluations" : isActive(pathname, item.href); return <Link key={item.label} href={item.href} className={`drawer-subitem ${active ? "active" : ""}`} onClick={onClose}><span className="drawer-item-left"><Icon size={16} strokeWidth={1.8} /><span>{item.label}</span></span><ChevronRight className="drawer-chevron" size={14} aria-hidden="true" /></Link>; })}</div>
+          <div className="drawer-sub">{section.items.map((item) => { const Icon = item.icon; const badgeCount = "badgeCount" in item ? Number(item.badgeCount ?? 0) : 0; const active = item.href.includes("view=evaluations") ? pathname === "/coach/calendar" && searchParams.get("view") === "evaluations" : item.href === ROUTES.calendar ? isActive(pathname, item.href) && searchParams.get("view") !== "evaluations" : isActive(pathname, item.href); return <Link key={item.label} href={item.href} className={`drawer-subitem ${active ? "active" : ""}`} onClick={onClose}><span className="drawer-item-left"><Icon size={16} strokeWidth={1.8} /><span>{item.label}</span></span><span className="drawer-item-right">{badgeCount > 0 ? <span className="drawer-count-badge">{badgeCount > 99 ? "99+" : badgeCount}</span> : null}<ChevronRight className="drawer-chevron" size={14} aria-hidden="true" /></span></Link>; })}</div>
         </section>)}
       </nav>
       <div className="drawer-account">

@@ -687,6 +687,7 @@ type RulesHomeOverview = {
   currentSeriesId: string | null;
   series: Array<{ id: string; position: number; title_i18n: Record<string, string>; discovery_starts_at: string; quiz_opens_at: string; quiz_closes_at: string; results_published_at: string | null }>;
   cards: Array<{ card_version_id: string }>;
+  quizAttempt: { status: "in_progress" | "submitted" | "expired" | "void"; submitted_at: string | null; total_score: number | null } | null;
 };
 
 function PlayerRulesHomeCard({ locale }: { locale: string }) {
@@ -717,6 +718,13 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
   const daysUntilQuiz = quizStart ? Math.ceil((quizStart.getTime() - nowMs) / 86_400_000) : 0;
   const date = (value: Date) => new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Zurich" }).format(value);
   const month = current ? new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
+  const submittedQuiz = overview?.quizAttempt?.status === "submitted" ? overview.quizAttempt : null;
+  const quizScore = submittedQuiz?.total_score != null
+    ? `${new Intl.NumberFormat(locale === "fr" ? "fr-CH" : "en-GB").format(submittedQuiz.total_score)} ${tr("points", "points")}`
+    : null;
+  const quizAnswerDate = submittedQuiz?.submitted_at
+    ? tr(`Répondu le ${date(new Date(submittedQuiz.submitted_at))}`, `Answered on ${date(new Date(submittedQuiz.submitted_at))}`)
+    : null;
   return <Link href="/player/rules" className={`${coachStyles.panel} ${styles.rulesCard}`}>
     <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
     <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesVisualBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.rulesVisualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.rulesVisualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
@@ -733,8 +741,8 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
         </span>
         <span className={`${styles.rulesMilestone} ${styles.rulesMilestoneQuiz}`}>
           <span className={styles.rulesMilestoneTop}><span>{quizStart && nowMs >= quizStart.getTime() ? tr("Quiz", "Quiz") : tr("Début du quiz dans", "Quiz starts in")}</span><CalendarCheck2 size={17} aria-hidden="true" /></span>
-          <strong>{quizStart ? nowMs < quizStart.getTime() ? tr(`${daysUntilQuiz} jours`, `${daysUntilQuiz} days`) : quizClose && nowMs < quizClose.getTime() ? tr("En cours", "Open now") : tr("Terminé", "Closed") : tr("À venir", "Coming soon")}</strong>
-          <small>{quizStart ? nowMs < quizStart.getTime() ? date(quizStart) : quizClose && nowMs < quizClose.getTime() ? tr(`Jusqu’au ${date(quizClose)}`, `Until ${date(quizClose)}`) : tr("Résultats à venir", "Results coming soon") : tr("Date à confirmer", "Date to be confirmed")}</small>
+          <strong>{quizScore ?? (quizStart ? nowMs < quizStart.getTime() ? tr(`${daysUntilQuiz} jours`, `${daysUntilQuiz} days`) : quizClose && nowMs < quizClose.getTime() ? tr("En cours", "Open now") : tr("Terminé", "Closed") : tr("À venir", "Coming soon"))}</strong>
+          <small>{quizAnswerDate ?? (quizStart ? nowMs < quizStart.getTime() ? date(quizStart) : quizClose && nowMs < quizClose.getTime() ? tr(`Jusqu’au ${date(quizClose)}`, `Until ${date(quizClose)}`) : tr("Résultats à venir", "Results coming soon") : tr("Date à confirmer", "Date to be confirmed"))}</small>
         </span>
       </span>
     </span>
@@ -807,7 +815,6 @@ export default function PlayerHomePage() {
   const [attendanceInsight, setAttendanceInsight] = useState<AttendanceInsight | null>(null);
   const [meritInsight, setMeritInsight] = useState<MeritInsight>(null);
   const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
-  const [validationHighlightIndex, setValidationHighlightIndex] = useState(0);
   const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
   const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
 
@@ -1857,16 +1864,6 @@ export default function PlayerHomePage() {
       return { section, next };
     });
   }, [validationDashboard]);
-  const validationHighlight = validationHighlights.length
-    ? validationHighlights[validationHighlightIndex % validationHighlights.length]
-    : null;
-  useEffect(() => {
-    if (validationHighlights.length <= 1) return;
-    const interval = window.setInterval(() => {
-      setValidationHighlightIndex((current) => (current + 1) % validationHighlights.length);
-    }, 6500);
-    return () => window.clearInterval(interval);
-  }, [validationHighlights.length]);
   const weeklyVolume = useMemo(() => {
     const now = new Date();
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2056,26 +2053,26 @@ export default function PlayerHomePage() {
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mon parcours d’apprentissage", "My learning journey")}</h2><p>{pickLocaleText(locale, "Progresser dans mon jeu et enrichir mes connaissances.", "Improve my game and grow my knowledge.")}</p></div></div>
             <div className={styles.learningGrid}>
               <section className={`${coachStyles.panel} ${styles.homeValidationCard}`}>
-                <Link
-                  className={styles.homeValidationContent}
-                  href={validationHighlight ? `/player/validations?section_id=${encodeURIComponent(validationHighlight.section.id)}${validationHighlight.next ? `&exercise_id=${encodeURIComponent(validationHighlight.next.id)}` : ""}` : "/player/validations"}
-                >
-                  <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{pickLocaleText(locale, "Mes validations", "My validations")}</h2><p>{pickLocaleText(locale, "Avance à ton rythme dans ton parcours.", "Progress through your journey at your own pace.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
-                  <span className={styles.homeValidationImage}>
-                    {validationHighlight?.next?.illustration_url ? <Image src={validationHighlight.next.illustration_url} alt={validationHighlight.next.name} fill sizes="(max-width: 760px) 100vw, 50vw" unoptimized /> : <ShieldCheck size={38} aria-hidden="true" />}
-                  </span>
-                  {insightsLoading ? <span className={`${coachStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /></span> : validationHighlight ? (
-                    <span className={styles.homeValidationBody}>
-                      <small>{validationHighlight.section.name}</small>
-                      <strong>{validationHighlight.next?.name ?? pickLocaleText(locale, "Parcours terminé", "Journey completed")}</strong>
-                      {validationHighlight.next?.detailed_description || validationHighlight.next?.short_description ? <span className={styles.homeValidationInstruction}>{validationHighlight.next.detailed_description || validationHighlight.next.short_description}</span> : null}
-                      <span>{validationHighlight.section.validated_count} {pickLocaleText(locale, "sur", "out of")} {validationHighlight.section.total_count} {pickLocaleText(locale, "validations réussies", "validations completed")}</span>
-                      <span className={styles.homeValidationDots} aria-label={pickLocaleText(locale, "Secteur de validation affiché", "Displayed validation section")}>
-                        {validationHighlights.map((item, index) => <i key={item.section.id} className={index === validationHighlightIndex % validationHighlights.length ? styles.homeValidationDotActive : ""} />)}
-                      </span>
-                    </span>
-                  ) : <span className={styles.homeValidationBody}><strong>{pickLocaleText(locale, "Découvrir mon parcours de validations", "Discover my validation journey")}</strong></span>}
-                </Link>
+                <div className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><div><h2>{pickLocaleText(locale, "Mes prochaines validations", "My next validations")}</h2><p>{pickLocaleText(locale, "Les prochains objectifs de chaque section.", "The next goal in each section.")}</p></div><Link className={coachStyles.textLink} href="/player/validations" aria-label={pickLocaleText(locale, "Toutes mes validations", "All my validations")}><ArrowRight size={16} /></Link></div>
+                {insightsLoading ? <div className={`${coachStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /><span /><span /></div> : validationHighlights.length ? (
+                  <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
+                    {validationHighlights.map(({ section, next }) => {
+                      const attempts = next?.attempts.length ?? 0;
+                      const href = `/player/validations?section_id=${encodeURIComponent(section.id)}${next ? `&exercise_id=${encodeURIComponent(next.id)}` : ""}`;
+                      return <Link key={section.id} href={href} className={styles.validationHomeItem}>
+                        <span className={styles.validationThumbnail}>
+                          {next?.illustration_url ? <Image src={next.illustration_url} alt="" fill sizes="92px" unoptimized /> : <ShieldCheck size={22} aria-hidden="true" />}
+                        </span>
+                        <span className={styles.validationHomeContent}>
+                          <small>{section.name}</small>
+                          <b>{next?.name ?? pickLocaleText(locale, "Parcours terminé", "Journey completed")}</b>
+                          <span>{attempts} {pickLocaleText(locale, attempts > 1 ? "tentatives" : "tentative", attempts > 1 ? "attempts" : "attempt")}</span>
+                        </span>
+                        <ArrowRight size={16} aria-hidden="true" />
+                      </Link>;
+                    })}
+                  </div>
+                ) : <Link className={styles.homeValidationEmpty} href="/player/validations"><ShieldCheck size={22} /><span>{pickLocaleText(locale, "Découvrir mon parcours de validations", "Discover my validation journey")}</span><ArrowRight size={16} /></Link>}
               </section>
 
               <PlayerRulesHomeCard locale={locale} />

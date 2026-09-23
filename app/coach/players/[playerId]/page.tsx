@@ -3639,7 +3639,7 @@ function presetToSelectValue(p: Preset): Preset {
       <section className={managerStyles.panel} aria-label="Identité sportive">
         <CoachPlayerIdentity avatarUrl={playerAvatarUrl} avatarAlt={fullName(playerProfile)} initials={initials(playerProfile)} handicap={typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "Non renseigné"} ftemLevel={trainingLevel === "—" ? "Non défini" : trainingLevel} groups={currentGroupNames.length ? currentGroupNames.join(", ") : "Non renseigné"} clubs={sharedClubNames.length ? sharedClubNames.join(", ") : "Non renseigné"} nextActivity={nextPlannedEvent ? shortDate(nextPlannedEvent.starts_at, dateLocale) : "Aucune activité"} />
       </section>
-      <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" />
+      <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" mobileGrid />
 
         {activeSection === "overview" ? (
           <div className={playerStyles.stack}>
@@ -3654,7 +3654,7 @@ function presetToSelectValue(p: Preset): Preset {
             <div className={playerStyles.overviewColumns}>
               <section className={playerStyles.panel}>
                 <h2 className={playerStyles.panelTitle}>Prochaine activité</h2>
-                {loadingPlannedEvents ? <CompactLoadingBlock label={t("common.loading")} /> : nextPlannedEvent ? <CoachPlayerActivityCard startsAt={nextPlannedEvent.starts_at} endsAt={nextPlannedEvent.ends_at} dateLocale={dateLocale} typeLabel={nextPlannedEvent.event_type === "training" ? "Entraînement" : nextPlannedEvent.event_type === "camp" ? "Stage" : nextPlannedEvent.event_type === "interclub" ? "Interclub" : nextPlannedEvent.event_type === "session" ? "Séance" : "Événement"} title={nextPlannedEvent.title || undefined} groupName={nextPlannedEvent.group_name || "Groupe non renseigné"} clubName={nextPlannedEvent.organization_name || sharedClubNames[0] || "Club non renseigné"} location={nextPlannedEvent.location_text} href={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? `/coach/groups/${nextPlannedEvent.group_id}/planning/${nextPlannedEvent.id}` : undefined} /> : <div className={playerStyles.empty}>Aucune activité à venir.</div>}
+                {loadingPlannedEvents ? <CompactLoadingBlock label={t("common.loading")} /> : nextPlannedEvent ? <CoachPlayerActivityCard startsAt={nextPlannedEvent.starts_at} endsAt={nextPlannedEvent.ends_at} dateLocale={dateLocale} typeLabel={nextPlannedEvent.event_type === "training" ? "Entraînement" : nextPlannedEvent.event_type === "camp" ? "Stage" : nextPlannedEvent.event_type === "interclub" ? "Interclub" : nextPlannedEvent.event_type === "session" ? "Séance" : "Événement"} title={nextPlannedEvent.title || undefined} groupName={nextPlannedEvent.group_name || "Groupe non renseigné"} clubName={nextPlannedEvent.organization_name || sharedClubNames[0] || "Club non renseigné"} location={nextPlannedEvent.location_text} href={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? `/coach/groups/${nextPlannedEvent.group_id}/planning/${nextPlannedEvent.id}` : undefined} statusLabel="À venir" /> : <div className={playerStyles.empty}>Aucune activité à venir.</div>}
               </section>
               <section className={playerStyles.panel}>
                 <h2 className={playerStyles.panelTitle}>Points d’attention</h2>
@@ -3802,7 +3802,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div style={{ display: "grid", gap: 8 }}>
                 {plannedEventsVisible.map((event) => {
                   const type = event.event_type === "training" ? "Entraînement" : event.event_type === "camp" ? "Stage" : event.event_type === "interclub" ? "Interclub" : event.event_type === "session" ? "Séance" : "Événement";
-                  return <CoachPlayerActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at} dateLocale={dateLocale} typeLabel={type} title={String(event.title ?? "").trim() || undefined} groupName={String(event.group_name ?? "").trim() || "Groupe non renseigné"} clubName={String(event.organization_name ?? "").trim() || "Club non renseigné"} location={event.location_text} href={event.can_open_detail && event.group_id ? `/coach/groups/${event.group_id}/planning/${event.id}` : undefined} actionLabel="Détails" />;
+                  return <CoachPlayerActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at} dateLocale={dateLocale} typeLabel={type} title={String(event.title ?? "").trim() || undefined} groupName={String(event.group_name ?? "").trim() || "Groupe non renseigné"} clubName={String(event.organization_name ?? "").trim() || "Club non renseigné"} location={event.location_text} href={event.can_open_detail && event.group_id ? `/coach/groups/${event.group_id}/planning/${event.id}` : undefined} actionLabel="Détails" statusLabel={new Date(event.ends_at ?? event.starts_at).getTime() < Date.now() ? "Terminée" : "À venir"} />;
                 })}
                 {plannedEvents.length > plannedEventsPageSize ? (
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
@@ -4210,10 +4210,8 @@ function presetToSelectValue(p: Preset): Preset {
                   {pickLocaleText(locale, "Aucun parcours en compétition sur la période.", "No competition rounds in this period.")}
                 </div>
               ) : (
-                <div className="user-mgmt-table-wrap">
-                  <table className="user-mgmt-table">
-                    <thead><tr><th>DATE</th><th>COMPÉTITION</th><th>PARCOURS</th><th>BRUT</th><th>NET</th><th>PUTTS</th><th>GIR</th><th>FAIRWAYS</th><th className={playerStyles.competitionActions}>ACTIONS</th></tr></thead>
-                    <tbody>{competitionRounds.map((r) => {
+                <div className={playerStyles.competitionList}>
+                  {competitionRounds.map((r) => {
                     const gross = omScoresByRoundId[r.id]?.gross ?? r.total_score ?? null;
                     const netFromOm = omScoresByRoundId[r.id]?.net ?? null;
                     const net = netFromOm ?? (typeof gross === "number" ? gross - Number(r.handicap_start ?? 0) : null);
@@ -4228,12 +4226,20 @@ function presetToSelectValue(p: Preset): Preset {
                       typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
                         ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
                         : "—";
-                    return <tr key={r.id}>
-                      <td>{date}</td><td><strong>{name}</strong></td><td>{cfg || "—"}</td><td>{gross ?? "—"}</td><td>{net ?? "—"}</td><td>{r.total_putts ?? "—"}</td><td>{r.gir ?? "—"}</td><td>{fwPct}</td>
-                      <td className={playerStyles.competitionActions}><button type="button" className={actionStyles.secondaryButton} onClick={() => setSelectedCompetitionRoundId(r.id)}>{t("rounds.scorecard")}</button></td>
-                    </tr>;
-                  })}</tbody>
-                  </table>
+                    return <article className={playerStyles.competitionCard} key={r.id}>
+                      <div className={playerStyles.competitionCardHeader}>
+                        <div><span>{date}</span><strong>{name}</strong><small>{cfg || pickLocaleText(locale, "Parcours non renseigné", "Course not provided")}</small></div>
+                        <button type="button" className={actionStyles.secondaryButton} onClick={() => setSelectedCompetitionRoundId(r.id)}>{t("rounds.scorecard")}</button>
+                      </div>
+                      <div className={playerStyles.competitionMetrics}>
+                        <div><span>Brut</span><b>{gross ?? "—"}</b></div>
+                        <div><span>Net</span><b>{net ?? "—"}</b></div>
+                        <div><span>Putts</span><b>{r.total_putts ?? "—"}</b></div>
+                        <div><span>GIR</span><b>{r.gir ?? "—"}</b></div>
+                        <div><span>Fairways</span><b>{fwPct}</b></div>
+                      </div>
+                    </article>;
+                  })}
                 </div>
               )}
             </div>

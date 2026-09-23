@@ -26,7 +26,46 @@ function BurgerIcon() {
 export default function CoachHeader() {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingActivityEvaluationCount, setPendingActivityEvaluationCount] = useState(0);
   const { t } = useI18n();
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPendingEvaluations() {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || !mounted) return;
+
+      try {
+        const response = await fetch("/api/coach/home", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !mounted) return;
+        const pendingActivities = Array.isArray(payload?.pendingEvalEvents)
+          ? payload.pendingEvalEvents.length
+          : Number(payload?.pendingEvaluationCount) || 0;
+        setPendingActivityEvaluationCount(Math.max(0, pendingActivities));
+      } catch {
+        // Keep the last known count when a background refresh fails.
+      }
+    }
+
+    void loadPendingEvaluations();
+    const onFocus = () => void loadPendingEvaluations();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void loadPendingEvaluations();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      mounted = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [open]);
 
   useEffect(() => {
     let mounted = true;
@@ -160,7 +199,7 @@ export default function CoachHeader() {
 
       <PushActivationBanner settingsHref="/coach/notifications/settings" />
 
-      <CoachDesktopDrawer open={open} onClose={() => setOpen(false)} />
+      <CoachDesktopDrawer open={open} onClose={() => setOpen(false)} pendingEvaluationCount={pendingActivityEvaluationCount} />
     </>
   );
 }

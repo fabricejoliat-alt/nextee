@@ -10,7 +10,8 @@ import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
-import { ArrowRight, Pencil, PlusCircle, Trash2, ArrowLeft, MapPin, Check } from "lucide-react";
+import eventStyles from "./CoachEventDetail.module.css";
+import { ClipboardCheck, Eye, Pencil, PlusCircle, Trash2, ArrowLeft, MapPin } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -249,6 +250,7 @@ export default function CoachEventDetailPage() {
   const [eventThreadId, setEventThreadId] = useState<string>("");
   const [eventThreadMessages, setEventThreadMessages] = useState<ThreadMessageRow[]>([]);
   const [eventThreadParticipants, setEventThreadParticipants] = useState<string[]>([]);
+  const [canManageActivity, setCanManageActivity] = useState(false);
   const [loadingEventThread, setLoadingEventThread] = useState(false);
   const [threadComposer, setThreadComposer] = useState("");
   const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
@@ -351,6 +353,7 @@ export default function CoachEventDetailPage() {
       setClubName(String(detailJson?.clubName ?? "Club"));
       setGroupName(String(detailJson?.groupName ?? "Groupe"));
       setMeId(String(detailJson?.meId ?? ""));
+      setCanManageActivity(detailJson?.canManageActivity === true);
       setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
       setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
       setSelectedCoachIds(
@@ -610,10 +613,12 @@ export default function CoachEventDetailPage() {
             <ArrowLeft size={16} aria-hidden="true" />
             {tr("Retour à la planification", "Back to planning")}
           </Link>
-          <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
-            <Pencil size={16} aria-hidden="true" />
-            {t("common.edit")}
-          </Link>
+          {canManageActivity ? (
+            <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
+              <Pencil size={16} aria-hidden="true" />
+              {t("common.edit")}
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -641,6 +646,11 @@ export default function CoachEventDetailPage() {
               </div>
               <span className="pill-soft">{event.duration_minutes} {t("common.min")}</span>
             </div>
+            <div className="manager-calendar-detail-grid">
+              <div><span>{tr("Groupe", "Group")}</span><b>{groupName}</b></div>
+              <div><span>{tr("Club", "Club")}</span><b>{clubName}</b></div>
+              <div><span>{tr("Type", "Type")}</span><b>{eventTypeLabelLocalized(event.event_type, locale)}</b></div>
+            </div>
             {event.coach_note?.trim() ? <p className="manager-calendar-detail-note">{event.coach_note}</p> : null}
             <div className="planning-event-footer">
               <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{event.location_text?.trim() || tr("Lieu non disponible", "Location unavailable")}</span></span>
@@ -653,21 +663,16 @@ export default function CoachEventDetailPage() {
         <div className={styles.sectionHeading}>
           <div><h2>{tr("Coachs attendus", "Expected coaches")}</h2><p>{tr("Coachs affectés à cette activité.", "Coaches assigned to this activity.")}</p></div>
         </div>
-        <div className="user-mgmt-table-wrap">
-          <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-            <thead><tr><th>{tr("Nom et prénom", "Name")}</th><th aria-label="Actions" /></tr></thead>
-            <tbody>
-              {selectedCoaches.map((coach) => (
-                <tr key={coach.id}>
-                  <td><b>{nameOf(coach.first_name, coach.last_name)}</b></td>
-                  <td><button type="button" className={actionStyles.secondaryButton} onClick={() => removeCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={tr("Retirer le coach", "Remove coach")} title={tr("Retirer le coach", "Remove coach")}><Trash2 size={16} aria-hidden="true" /></button></td>
-                </tr>
-              ))}
-              {selectedCoaches.length === 0 ? <tr><td colSpan={2}>{tr("Aucun coach assigné.", "No coach assigned.")}</td></tr> : null}
-            </tbody>
-          </table>
+        <div className={eventStyles.coachList}>
+          {selectedCoaches.map((coach) => (
+            <div key={coach.id} className={eventStyles.coachRow}>
+              <b>{nameOf(coach.first_name, coach.last_name)}</b>
+              {canManageActivity ? <button type="button" className={eventStyles.iconButton} onClick={() => removeCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={tr("Retirer le coach", "Remove coach")} title={tr("Retirer le coach", "Remove coach")}><Trash2 size={16} aria-hidden="true" /></button> : null}
+            </div>
+          ))}
+          {selectedCoaches.length === 0 ? <p className={eventStyles.emptyState}>{tr("Aucun coach assigné.", "No coach assigned.")}</p> : null}
         </div>
-        {candidateCoaches.length ? (
+        {canManageActivity && candidateCoaches.length ? (
           <div className="user-mgmt-table-wrap">
             <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
               <thead><tr><th>{tr("Ajouter un coach", "Add coach")}</th><th aria-label="Actions" /></tr></thead>
@@ -677,51 +682,46 @@ export default function CoachEventDetailPage() {
         ) : null}
       </section>
 
-      <section className={styles.quickPanel}>
+      <section id="expected-players" className={styles.quickPanel}>
         <div className={styles.sectionHeading}>
           <div><h2>{tr("Joueurs attendus", "Expected players")}</h2><p>{tr("Présence et évaluation des juniors de l’activité.", "Attendance and evaluation for the activity's juniors.")}</p></div>
         </div>
-        <div className="user-mgmt-table-wrap">
-          <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-            <thead><tr><th aria-label="Avatar" /><th>{tr("Nom et prénom", "Name")}</th><th>{tr("Handicap", "Handicap")}</th><th>{tr("Présence", "Attendance")}</th><th>{tr("Évaluation", "Evaluation")}</th><th aria-label="Actions" /></tr></thead>
-            <tbody>
-              {attendees.map((attendee) => {
-                const player = attendee.profile ?? null;
-                const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
-                const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
-                const canEvaluate = (event.event_type === "training" || event.event_type === "interclub") && attendee.status !== "absent" && isEventPast;
-                const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
-                return (
-                  <tr key={attendee.player_id}>
-                    <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span></td>
-                    <td><b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b></td>
-                    <td>{typeof player?.handicap === "number" ? Number(player.handicap).toFixed(1) : "—"}</td>
-                    <td><AttendanceToggle checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} /></td>
-                    <td>{evaluation ? <span className="pill-soft" title={evaluation.coach_name ? tr(`Évalué par ${evaluation.coach_name}`, `Evaluated by ${evaluation.coach_name}`) : undefined}><Check size={14} aria-hidden="true" /> {tr("Terminée", "Completed")}</span> : <span className="pill-soft">{isEventPast ? tr("À évaluer", "To evaluate") : tr("À venir", "Upcoming")}</span>}</td>
-                    <td>
-                      <div className="user-mgmt-card-actions">
-                        {canOpenPlayerDetail ? <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}`}><ArrowRight size={16} aria-hidden="true" />{tr("Voir", "View")}</Link> : null}
-                        {canEvaluate ? <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><Pencil size={16} aria-hidden="true" />{evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")}</Link> : null}
-                        {canStructure ? <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={16} aria-hidden="true" />{tr("Structurer", "Structure")}</Link> : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {attendees.length === 0 ? <tr><td colSpan={6}>{tr("Aucun joueur.", "No player.")}</td></tr> : null}
-            </tbody>
-          </table>
+        <div className={eventStyles.playerList}>
+          {attendees.map((attendee) => {
+            const player = attendee.profile ?? null;
+            const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
+            const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
+            const canEvaluate = (event.event_type === "training" || event.event_type === "interclub") && attendee.status !== "absent" && isEventPast;
+            const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
+            return (
+              <article key={attendee.player_id} className={eventStyles.playerRow}>
+                <div className={eventStyles.playerIdentity}>
+                  <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span>
+                  <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
+                </div>
+                <div className={eventStyles.attendance}>
+                  <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                </div>
+                <div className={eventStyles.playerActions}>
+                  {canOpenPlayerDetail ? <Link className={eventStyles.viewButton} aria-label={tr("Voir le joueur", "View player")} title={tr("Voir", "View")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}`}><Eye size={17} aria-hidden="true" /></Link> : null}
+                  {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
+                </div>
+              </article>
+            );
+          })}
+          {attendees.length === 0 ? <p className={eventStyles.emptyState}>{tr("Aucun joueur.", "No player.")}</p> : null}
         </div>
       </section>
 
       {event.event_type === "training" || event.event_type === "camp" ? (
-        <section className={styles.quickPanel}>
+        <section id="activity-structure" className={styles.quickPanel}>
           <div className={styles.sectionHeading}><div><h2>{tr("Structure de l’activité", "Activity structure")}</h2><p>{tr("Déroulement prévu pour cette activité.", "Planned structure for this activity.")}</p></div></div>
           {structureItems.length ? <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>{structureItems.map((item, index) => <li key={`${item.category}-${index}`}><b>{categoryLabel(item.category)}</b> — {item.minutes} min{item.note ? ` · ${item.note}` : ""}</li>)}</ul> : <p style={{ margin: 0 }}>{tr("Aucune structure planifiée.", "No planned structure.")}</p>}
-          <div className="user-mgmt-card-actions">
-            {event.series_id ? <button type="button" className={actionStyles.secondaryButton} onClick={copyStructureToFutureEvents} disabled={copyingStructure || !structureItems.length}>{copyingStructure ? tr("Copie…", "Copying…") : tr("Copier sur les activités futures", "Copy to future activities")}</button> : null}
-            <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</Link>
-          </div>
+          {canManageActivity ? <div className="user-mgmt-card-actions">
+            {event.series_id ? <button type="button" className={eventStyles.copyButton} onClick={copyStructureToFutureEvents} disabled={copyingStructure || !structureItems.length}>{copyingStructure ? tr("Copie…", "Copying…") : tr("Copier sur les activités futures", "Copy to future activities")}</button> : null}
+            <Link className={eventStyles.actionIconButton} aria-label={t("common.edit")} title={t("common.edit")} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}><Pencil size={16} aria-hidden="true" /></Link>
+          </div> : null}
           {copyStructureMessage ? <div className={actionStyles.successAlert}>{copyStructureMessage}</div> : null}
         </section>
       ) : null}

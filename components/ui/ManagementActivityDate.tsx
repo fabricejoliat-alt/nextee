@@ -1,5 +1,6 @@
 type ManagementActivityDateProps = {
   startsAt: string;
+  endsAt?: string | null;
   locale?: string;
   showTime?: boolean;
   className?: string;
@@ -7,6 +8,7 @@ type ManagementActivityDateProps = {
 
 export default function ManagementActivityDate({
   startsAt,
+  endsAt,
   locale = "fr-CH",
   showTime = true,
   className = "",
@@ -25,6 +27,7 @@ export default function ManagementActivityDate({
           <div className="planning-event-time-divider" />
           <div className="planning-event-times">
             <span>{format({ hour: "2-digit", minute: "2-digit" })}</span>
+            {endsAt ? <span>{new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(endsAt))}</span> : null}
           </div>
         </>
       ) : null}
