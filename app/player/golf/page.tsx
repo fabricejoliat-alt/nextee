@@ -22,6 +22,7 @@ import type { EChartsOption } from "echarts";
 import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
+  ArrowLeft,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -52,6 +53,7 @@ import {
   CheckCircle2,
   Clock3,
   MessageSquareText,
+  X,
 } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
@@ -691,6 +693,28 @@ export default function GolfDashboardPage() {
     setToDate(isoToYMD(now));
     setPreset("season");
   }, []);
+
+  useEffect(() => {
+    if (!viewerDocument) return;
+    const scrollArea = document.querySelector<HTMLElement>(".player-scroll-area");
+    const previousOverflow = scrollArea?.style.overflow ?? "";
+    const previousOverscrollBehavior = scrollArea?.style.overscrollBehavior ?? "";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewerDocument(null);
+    };
+    if (scrollArea) {
+      scrollArea.style.overflow = "hidden";
+      scrollArea.style.overscrollBehavior = "none";
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      if (scrollArea) {
+        scrollArea.style.overflow = previousOverflow;
+        scrollArea.style.overscrollBehavior = previousOverscrollBehavior;
+      }
+    };
+  }, [viewerDocument]);
 
   useEffect(() => {
     (async () => {
@@ -2869,148 +2893,6 @@ function presetToSelectValue(p: Preset): Preset {
 
         {activeSection === "rounds" ? null : golfSectionNavigation}
 
-        {activeSection === "documents" ? (
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
-            <div style={{ display: "grid", gap: 8 }}>
-              <input
-                ref={docFileInputRef}
-                type="file"
-                onChange={onPickDocument}
-                style={{ display: "none" }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-                >
-                  <button
-                    type="button"
-                    className="btn"
-                  onClick={openDocumentPicker}
-                  disabled={uploadingDocument}
-                >
-                  Choisir un fichier
-                </button>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
-                    }}
-                  >
-                    {docFile ? docFile.name : "Aucun fichier sélectionné"}
-                  </span>
-                </div>
-              <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
-                <input
-                  className="input"
-                  value={docName}
-                  onChange={(e) => setDocName(e.target.value)}
-                  placeholder="Nom du document"
-                  maxLength={180}
-                />
-              </label>
-              <div>
-                <button
-                  className="btn btn-primary btn-upload-green"
-                  type="button"
-                  onClick={() => void uploadDocument()}
-                  style={{
-                    opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
-                    pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
-                  }}
-                >
-                  <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  Upload
-                </button>
-              </div>
-            </div>
-            {loadingDocuments ? (
-              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
-              </div>
-            ) : documents.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {documents.map((d) => {
-                  const uploader = String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8);
-                  const fileName = String(d.file_name ?? "").trim();
-                  const dot = fileName.lastIndexOf(".");
-                  const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
-                  const Picto = documentPicto(d.mime_type, fileName);
-                  return (
-                    <div
-                      key={d.id}
-                      style={{
-                        border: "1px solid rgba(0,0,0,0.10)",
-                        borderRadius: 12,
-                        background: "rgba(255,255,255,0.86)",
-                        padding: "10px 12px",
-                        display: "grid",
-                        gap: 8,
-                        boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
-                      }}
-                    >
-                      <div style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
-                        <div className={documentStyles.typeIcon} aria-hidden="true">
-                          <Picto size={16} strokeWidth={2.2} />
-                        </div>
-                        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                          <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>
-                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.6)", lineHeight: 1.35 }}>
-                            {ext} · {shortDate(d.created_at, dateLocale)}
-                          </div>
-                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
-                            Uploadé par {uploader}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className={documentStyles.actions}>
-                        <button className={documentStyles.iconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`Voir ${fileName}`} title="Voir">
-                          <Eye size={15} aria-hidden="true" />
-                        </button>
-                        {String(d.uploaded_by ?? "") === currentUserId ? (
-                          <>
-                            <button
-                              className={documentStyles.iconButton}
-                              type="button"
-                              onClick={() => void renameDocument(d)}
-                              disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
-                              aria-label={`Renommer ${fileName}`}
-                              title="Renommer"
-                            >
-                              <Pencil size={15} aria-hidden="true" />
-                            </button>
-                            <button
-                              className={documentStyles.iconButton}
-                              type="button"
-                              onClick={() => void deleteDocument(d)}
-                              disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
-                              aria-label={`Supprimer ${fileName}`}
-                              title="Supprimer"
-                            >
-                              <Trash2 size={15} aria-hidden="true" />
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-        ) : null}
-
        {/* ===== Filters ===== */}
 {activeSection !== "rounds" ? <div className="glass-section">
   <div className="glass-card" style={{ padding: 14 }}>
@@ -3165,6 +3047,148 @@ function presetToSelectValue(p: Preset): Preset {
     </div>
   </div>
 </div> : null}
+
+        {activeSection === "documents" ? (
+        <div className="glass-section">
+          <div className="glass-card" style={{ display: "grid", gap: 10 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <input
+                ref={docFileInputRef}
+                type="file"
+                onChange={onPickDocument}
+                style={{ display: "none" }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+                >
+                  <button
+                    type="button"
+                    className="btn"
+                  onClick={openDocumentPicker}
+                  disabled={uploadingDocument}
+                >
+                  Choisir un fichier
+                </button>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                  </span>
+                </div>
+              <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
+                <input
+                  className="input"
+                  value={docName}
+                  onChange={(e) => setDocName(e.target.value)}
+                  placeholder="Nom du document"
+                  maxLength={180}
+                />
+              </label>
+              <div>
+                <button
+                  className="btn btn-primary btn-upload-green"
+                  type="button"
+                  onClick={() => void uploadDocument()}
+                  style={{
+                    opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
+                    pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
+                  }}
+                >
+                  <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  Upload
+                </button>
+              </div>
+            </div>
+            {loadingDocuments ? (
+              <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
+              </div>
+            ) : documents.length === 0 ? (
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {documents.map((d) => {
+                  const uploader = String(d.uploaded_by_name ?? "").trim() || String(d.uploaded_by ?? "").slice(0, 8);
+                  const fileName = String(d.file_name ?? "").trim();
+                  const dot = fileName.lastIndexOf(".");
+                  const ext = dot > 0 ? fileName.slice(dot + 1).toUpperCase() : "DOC";
+                  const Picto = documentPicto(d.mime_type, fileName);
+                  return (
+                    <div
+                      key={d.id}
+                      style={{
+                        border: "1px solid rgba(0,0,0,0.10)",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,0.86)",
+                        padding: "10px 12px",
+                        display: "grid",
+                        gap: 8,
+                        boxShadow: "0 1px 5px rgba(0,0,0,0.035)",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "34px minmax(0,1fr)", gap: 10, alignItems: "start" }}>
+                        <div className={documentStyles.typeIcon} aria-hidden="true">
+                          <Picto size={16} strokeWidth={2.2} />
+                        </div>
+                        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                          <div style={{ fontWeight: 850, fontSize: 12, lineHeight: 1.3 }} className="truncate">{fileName}</div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.6)", lineHeight: 1.35 }}>
+                            {ext} · {shortDate(d.created_at, dateLocale)}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
+                            Uploadé par {uploader}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={documentStyles.actions}>
+                        <button className={documentStyles.iconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`Voir ${fileName}`} title="Voir">
+                          <Eye size={15} aria-hidden="true" />
+                        </button>
+                        {String(d.uploaded_by ?? "") === currentUserId ? (
+                          <>
+                            <button
+                              className={documentStyles.iconButton}
+                              type="button"
+                              onClick={() => void renameDocument(d)}
+                              disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
+                              aria-label={`Renommer ${fileName}`}
+                              title="Renommer"
+                            >
+                              <Pencil size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              className={documentStyles.iconButton}
+                              type="button"
+                              onClick={() => void deleteDocument(d)}
+                              disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
+                              aria-label={`Supprimer ${fileName}`}
+                              title="Supprimer"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        ) : null}
 
         {activeSection === "overview" ? (
           <div className={overviewStyles.overview}>
@@ -3935,78 +3959,65 @@ function presetToSelectValue(p: Preset): Preset {
 
       {viewerDocument ? (
         <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1200,
-            background: "rgba(0,0,0,0.46)",
-            display: "grid",
-            placeItems: "center",
-            padding: 16,
-          }}
-          onClick={() => setViewerDocument(null)}
+          className={documentStyles.viewerBackdrop}
+          onMouseDown={() => setViewerDocument(null)}
         >
-          <div
-            style={{
-              width: "min(1200px, 100%)",
-              height: "min(94vh, 1100px)",
-              borderRadius: 14,
-              background: "white",
-              border: "1px solid rgba(0,0,0,0.12)",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.28)",
-              overflow: "hidden",
-              display: "grid",
-              gridTemplateRows: "auto 1fr",
-            }}
-            onClick={(e) => e.stopPropagation()}
+          <article
+            className={documentStyles.viewerDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-viewer-title"
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            <div style={{ padding: "10px 12px", borderBottom: "1px solid rgba(0,0,0,0.1)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ fontWeight: 900, minWidth: 0 }} className="truncate">
+            <button className={documentStyles.viewerMobileBack} type="button" onClick={() => setViewerDocument(null)}>
+              <ArrowLeft size={19} aria-hidden="true" />
+              Retour aux documents
+            </button>
+            <header className={documentStyles.viewerHeader}>
+              <h2 id="document-viewer-title" className="truncate">
                 {viewerDocument.file_name}
-              </div>
-              <div style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <a className="btn" href={viewerDocument.public_url} target="_blank" rel="noreferrer">
+              </h2>
+              <div className={documentStyles.viewerActions}>
+                <a className={documentStyles.viewerOpen} href={viewerDocument.public_url} target="_blank" rel="noreferrer">
                   Ouvrir
                 </a>
-                <button className="btn" type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer">
-                  Fermer
+                <button className={documentStyles.viewerClose} type="button" onClick={() => setViewerDocument(null)} aria-label="Fermer le document">
+                  <X size={20} aria-hidden="true" />
                 </button>
               </div>
-            </div>
-            <div style={{ padding: 10, overflow: "auto", background: "rgba(248,250,252,1)" }}>
+            </header>
+            <div className={documentStyles.viewerBody}>
               {(viewerDocument.mime_type ?? "").startsWith("image/") ? (
                 <img
                   src={viewerDocument.public_url}
                   alt={viewerDocument.file_name}
-                  style={{ width: "100%", height: "auto", borderRadius: 10, display: "block" }}
+                  className={documentStyles.viewerImage}
                 />
               ) : (viewerDocument.mime_type ?? "").startsWith("video/") ? (
-                <div style={{ display: "grid", placeItems: "center" }}>
-                  <video src={viewerDocument.public_url} controls style={{ width: "100%", maxHeight: "calc(94vh - 120px)", borderRadius: 10 }} />
+                <div className={documentStyles.viewerMediaCenter}>
+                  <video src={viewerDocument.public_url} controls className={documentStyles.viewerVideo} />
                 </div>
               ) : isPdfDocument(viewerDocument.mime_type, viewerDocument.file_name) ? (
                 <object
                   data={`${viewerDocument.public_url}#view=FitH`}
                   type="application/pdf"
-                  style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                  className={documentStyles.viewerFrame}
                 >
                   <iframe
                     title={viewerDocument.file_name}
                     src={`${viewerDocument.public_url}#view=FitH`}
-                    style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                    className={documentStyles.viewerFrame}
                   />
                 </object>
               ) : (
                 <iframe
                   title={viewerDocument.file_name}
                   src={viewerDocument.public_url}
-                  style={{ width: "100%", height: "calc(94vh - 120px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, background: "white" }}
+                  className={documentStyles.viewerFrame}
                 />
               )}
             </div>
-          </div>
+          </article>
         </div>
       ) : null}
 

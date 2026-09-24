@@ -743,7 +743,7 @@ export default function NewRoundPage() {
     }
 
     if (isMatchPlayCompetition) {
-      router.push("/player/golf/rounds");
+      router.push("/player/golf?section=rounds");
     } else {
       router.push(`/player/golf/rounds/${createdRoundIds[0]}/edit?mode=${inputMode}`);
     }
@@ -760,7 +760,7 @@ export default function NewRoundPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Ajouter" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf?section=rounds" }, { label: "Ajouter" }]} />
         <div className="glass-section">
           <div className={`marketplace-header ${styles.heroHeader}`}>
             <div style={{ display: "grid", gap: 10 }}>
@@ -773,7 +773,7 @@ export default function NewRoundPage() {
             </div>
 
             <div className={styles.heroActions}>
-              <Link className={styles.headerAction} href="/player/golf/rounds">
+              <Link className={styles.headerAction} href="/player/golf?section=rounds">
                 <ArrowLeft size={15} aria-hidden="true" />
                 {t("common.back")}
               </Link>
@@ -1286,7 +1286,7 @@ export default function NewRoundPage() {
               </label>
 
               <div className={styles.formActions}>
-                <Link className={`${styles.actionButton} ${styles.secondaryAction}`} href="/player/golf/rounds">
+                <Link className={`${styles.actionButton} ${styles.secondaryAction}`} href="/player/golf?section=rounds">
                   {t("common.cancel")}
                 </Link>
                 <button
