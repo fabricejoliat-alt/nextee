@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, CalendarDays, CheckCircle2, ChevronRight, CircleAlert, Clock3, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -17,14 +18,16 @@ export type Card = { position:number; card_version_id:string; rules_card_version
 export type RulesLeaderboard =
   | { status:"upcoming"; publishesAt:string|null }
   | { status:"unavailable" }
-  | { status:"published"; club:{ name:string|null; participants:number; rows:Array<{rank:number;name:string|null;score:number;isMe:boolean}> }; interclub:{ retainedScores:number; rows:Array<{clubId:string;rank:number|null;name:string;participants:number;eligible:boolean;score:number;minimum:number;isMyClub:boolean}> } };
+  | { status:"published"; publishedSeries:number; minimumSeries:number; clubs:Array<{clubId:string;name:string|null;participants:number;rows:Array<{rank:number|null;name:string|null;score:number;eligible:boolean;completedSeries:number;minimumSeries:number;rawPoints:number;possiblePoints:number;isMe:boolean}>}>; interclub:{ minimumParticipants:number; rows:Array<{clubId:string;rank:number|null;name:string;participants:number;eligiblePlayers:number;eligible:boolean;score:number;minimum:number;isMyClub:boolean}> } };
 export type RulesQuizAttempt = { id:string; status:"in_progress"|"submitted"|"expired"|"void"; submitted_at:string|null; total_score:number|null; correct_count:number|null };
-type Payload = { season:{ title_i18n:Record<string,string>; status:string }|null; series:Series[]; currentSeriesId:string|null; cards:Card[]; progress:Array<{card_version_id:string}>; quizAttempt:RulesQuizAttempt|null; leaderboard:RulesLeaderboard|null };
+type Payload = { season:{ title_i18n:Record<string,string>; status:string }|null; series:Series[]; currentSeriesId:string|null; quizAvailable:boolean; cards:Card[]; progress:Array<{card_version_id:string}>; quizAttempt:RulesQuizAttempt|null; leaderboard:RulesLeaderboard|null };
 
 export default function RulesWorkspace({ scope }: { scope: Scope }) {
+  const searchParams = useSearchParams();
+  const requestedSeriesId = searchParams.get("series_id") ?? "";
   const { locale } = useI18n(); const tr=useCallback((fr:string,en:string)=>pickLocaleText(locale,fr,en),[locale]);
   const [data,setData]=useState<Payload|null>(null); const [error,setError]=useState(""); const [selected,setSelected]=useState<Card|null>(null);
-  const load=useCallback(async()=>{ const { data:session }=await supabase.auth.getSession(); setError(""); const token=session.session?.access_token; if(!token){setError(tr("Session expirée.","Session expired."));return;} const res=await fetch("/api/rules/overview",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}); const json=await res.json().catch(()=>({})); if(!res.ok){setError(String(json.error??tr("Chargement impossible.","Unable to load.")));return;} setData(json); },[tr]);
+  const load=useCallback(async()=>{ const { data:session }=await supabase.auth.getSession(); setError(""); const token=session.session?.access_token; if(!token){setError(tr("Session expirée.","Session expired."));return;} const query=requestedSeriesId?`?series_id=${encodeURIComponent(requestedSeriesId)}`:""; const res=await fetch(`/api/rules/overview${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}); const json=await res.json().catch(()=>({})); if(!res.ok){setError(String(json.error??tr("Chargement impossible.","Unable to load.")));return;} setData(json); },[requestedSeriesId,tr]);
   // Loading is an external synchronization; state updates occur after the auth promise resolves.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(()=>{void load();},[load]);
@@ -35,7 +38,7 @@ export default function RulesWorkspace({ scope }: { scope: Scope }) {
   if(!data)return scope==="player"?<PlayerRulesLoading/>:scope==="coach"?<CoachRulesLoading/>:<main className={styles.page} aria-busy="true"><div className={styles.skeleton}><i/><i/><i/><i/></div></main>;
   if(!data.season)return scope==="coach"?<CoachRulesLoading empty/>:<main className={styles.page}><section className={styles.state}><BookOpen/><h1>{tr("Règles de golf","Rules of golf")}</h1><p>{scope==="admin"?tr("La migration est prête. Créez ou publiez une saison après validation éditoriale.","The migration is ready. Create or publish a season after editorial review."):tr("Aucune saison n’est publiée pour le moment.","No season is published yet.")}</p></section></main>;
   const phaseLabel=phase?tr({upcoming:"À venir",learning:"Apprentissage",quiz_soon:"Quiz bientôt",quiz_open:"Quiz ouvert",quiz_closed:"Quiz terminé",results:"Résultats publiés",archived:"Archivé"}[phase],phase):tr("Préparation","Preparing");
-  if(scope==="player")return <PlayerRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phase={phase} phaseLabel={phaseLabel} quizAttempt={data.quizAttempt} leaderboard={data.leaderboard} />;
+  if(scope==="player")return <PlayerRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phase={phase} phaseLabel={phaseLabel} quizAvailable={data.quizAvailable} quizAttempt={data.quizAttempt} leaderboard={data.leaderboard} />;
   if(scope==="coach")return <CoachRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phaseLabel={phaseLabel} />;
   return <main className={`${styles.page} ${scope==="admin"?styles.adminPage:""}`}>
     {scope==="admin"?<>

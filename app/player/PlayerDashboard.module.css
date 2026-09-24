@@ -44,7 +44,7 @@
 .benchmarks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .benchmark{display:grid;align-content:start;justify-items:start;gap:9px;min-width:0;min-height:174px;box-sizing:border-box;padding:18px;border:1px solid #e3e9e2;border-radius:15px;background:#fff;box-shadow:0 9px 24px rgba(27,45,33,.04)}
 .benchmarkHeading{display:flex;align-items:center;gap:9px;width:100%}
-.benchmark h3{margin:0 0 3px;color:#35483b;font-family:var(--font-inter-tight),sans-serif;font-size:14px}
+.benchmark h3{margin:0;color:#35483b;font-family:var(--font-inter-tight),sans-serif;font-size:14px;line-height:1.2}
 .benchmarkLink{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;color:#526056;text-decoration:none}
 .benchmarkLink:hover{color:#35483b}
 .benchmark strong{color:#35483b;font-family:var(--font-inter-tight),sans-serif;font-size:31px;line-height:1}
@@ -65,4 +65,4 @@
 .monthVolume p{margin:4px 0 0;color:#526056;font-size:12px;font-weight:700;line-height:1.45}
 .monthVolume :global(.donut-bg){stroke:#e9eee7}
 @media(max-width:1080px){.firstRow,.learningGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.attentionCard{grid-column:1/-1}}
-@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard{grid-column:1/-1}.rulesVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:flex-start;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
+@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard{grid-column:1/-1}.rulesVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}

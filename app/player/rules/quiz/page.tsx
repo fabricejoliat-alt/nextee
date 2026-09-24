@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, CheckCircle2, CircleAlert, Clock3, HelpCircle, Lightbulb, Medal, ShieldCheck, Sparkles, Timer, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -17,6 +18,8 @@ type Result = { score: number; correct: number; base: number; speed_bonus: numbe
 const TOTAL_QUESTIONS = 6;
 
 export default function RulesQuizPage() {
+  const searchParams = useSearchParams();
+  const requestedSeriesId = searchParams.get("series_id") ?? "";
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const [context, setContext] = useState<{ seriesId: string; clubId: string } | null>(null);
@@ -33,7 +36,8 @@ export default function RulesQuizPage() {
     void (async () => {
       try {
         const { data } = await supabase.auth.getSession();
-        const response = await fetch("/api/rules/overview", { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` } });
+        const query = requestedSeriesId ? `?series_id=${encodeURIComponent(requestedSeriesId)}` : "";
+        const response = await fetch(`/api/rules/overview${query}`, { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` } });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.currentSeriesId || !payload.clubId) {
           setError(pickLocaleText(locale, "Le quiz n’est pas disponible.", "The quiz is unavailable."));
@@ -53,7 +57,7 @@ export default function RulesQuizPage() {
         setLoading(false);
       }
     })();
-  }, [locale]);
+  }, [locale, requestedSeriesId]);
 
   async function show(attemptId: string, next: number) {
     const { data, error: rpcError } = await supabase.rpc("get_rules_quiz_question", { p_attempt_id: attemptId, p_position: next });
@@ -92,7 +96,7 @@ export default function RulesQuizPage() {
 
   return <main className={styles.page} aria-busy={loading || busy}>
     <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: tr("Règles de golf", "Golf rules"), href: "/player/rules" }, { label: tr("Quiz officiel", "Official quiz") }]} />
-    <header className={styles.topline}><div><h1>{tr("Quiz officiel", "Official quiz")}</h1><p className={styles.lead}>{tr("Teste tes connaissances et gagne des points pour le classement de ta série.", "Test your knowledge and earn points for your series leaderboard.")}</p></div></header>
+    <header className={styles.topline}><div><h1>{tr("Quiz officiel", "Official quiz")}</h1><p className={styles.lead}>{tr("Teste tes connaissances : tes points alimentent ton pourcentage de maîtrise pour la saison.", "Test your knowledge: your points contribute to your season mastery percentage.")}</p></div></header>
 
     {loading && <QuizLoading label={tr("Préparation du quiz…", "Preparing the quiz…")} />}
 
@@ -128,7 +132,7 @@ export default function RulesQuizPage() {
     </section>}
 
     {!loading && !error && result && <section className={styles.resultCard}>
-      <div className={styles.resultSummary}><span className={styles.resultIcon}><Trophy size={34} /></span><span className={styles.eyebrow}>{tr("Quiz terminé", "Quiz complete")}</span><h2>{result.score} <small>points</small></h2><p>{tr("Bravo, ton résultat est enregistré dans le classement de la série.", "Well done, your result is saved in the series leaderboard.")}</p><div className={styles.resultStats}><div><CheckCircle2 size={18} /><strong>{result.correct}/{TOTAL_QUESTIONS}</strong><small>{tr("bonnes réponses", "correct answers")}</small></div><div><Timer size={18} /><strong>+{result.speed_bonus}</strong><small>{tr("bonus rapidité", "speed bonus")}</small></div><div><Sparkles size={18} /><strong>+{result.perfect_bonus}</strong><small>{tr("bonus sans-faute", "perfect bonus")}</small></div></div><Link href="/player/rules" className={styles.primaryButton}>{tr("Retour aux règles", "Back to rules")}<ArrowRight size={16} /></Link></div>
+      <div className={styles.resultSummary}><span className={styles.resultIcon}><Trophy size={34} /></span><span className={styles.eyebrow}>{tr("Quiz terminé", "Quiz complete")}</span><h2>{result.score} <small>points</small></h2><p>{tr("Bravo, ton résultat est enregistré dans ton classement de saison. Ta participation reste visible jusqu’à ton classement définitif.", "Well done, your result is saved in your season ranking. Your participation remains visible until you become fully ranked.")}</p><div className={styles.resultStats}><div><CheckCircle2 size={18} /><strong>{result.correct}/{TOTAL_QUESTIONS}</strong><small>{tr("bonnes réponses", "correct answers")}</small></div><div><Timer size={18} /><strong>+{result.speed_bonus}</strong><small>{tr("bonus rapidité", "speed bonus")}</small></div><div><Sparkles size={18} /><strong>+{result.perfect_bonus}</strong><small>{tr("bonus sans-faute", "perfect bonus")}</small></div></div><Link href={requestedSeriesId ? `/player/rules?series_id=${encodeURIComponent(requestedSeriesId)}` : "/player/rules"} className={styles.primaryButton}>{tr("Retour aux règles", "Back to rules")}<ArrowRight size={16} /></Link></div>
       {result.questions && result.questions.length > 0 && <div className={styles.review}>
         <div className={styles.reviewHeading}><span className={styles.eyebrow}>{tr("Correction", "Review")}</span><h3>{tr("Revoir tes réponses", "Review your answers")}</h3></div>
         <div className={styles.reviewList}>{result.questions.map((item) => <article className={styles.reviewItem} key={item.position}>

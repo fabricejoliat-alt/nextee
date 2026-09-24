@@ -17,7 +17,7 @@ import {
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
-import { AlertCircle, ArrowLeft, MapPin } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Eye, MapPin } from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import corporateStyles from "@/app/manager/camps/Camps.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
@@ -207,6 +207,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
   // ✅ support both param names
   const clubEventId = String(sp.get("club_event_id") ?? sp.get("eventId") ?? "").trim();
+  const viewOnly = sp.get("mode") === "view";
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -285,9 +286,8 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
   }, [eventAttendees, userId]);
   const linkedEventAttendanceBlocked =
     linkedAttendanceStatus === "absent" || linkedAttendanceStatus === "excused" || linkedAttendanceStatus === "not_registered";
-  const linkedEventEvaluationBlocked = Boolean(linkedEvent) && !linkedEvent.requires_evaluation;
   const plannedEventLocked = Boolean(linkedEvent) && !isLinkedEventPast;
-  const inputsDisabled = busy || plannedEventLocked || linkedEventAttendanceBlocked || linkedEventEvaluationBlocked;
+  const inputsDisabled = busy || viewOnly || plannedEventLocked || linkedEventAttendanceBlocked;
   const isCoachPlannedTraining = Boolean(linkedEvent);
   const showSensationsCard = useMemo(() => {
     if (!performanceEnabled) return false;
@@ -330,8 +330,9 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
   const canSave = useMemo(() => {
     if (busy) return false;
+    if (viewOnly) return false;
     if (plannedEventLocked) return false;
-    if (linkedEventAttendanceBlocked || linkedEventEvaluationBlocked) return false;
+    if (linkedEventAttendanceBlocked) return false;
     if (!linkedEvent && !hasChosenTrainingType) return false;
     if (!userId) return false;
     if (!startAt) return false;
@@ -351,7 +352,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
     }
 
     return true;
-  }, [busy, performanceEnabled, plannedEventLocked, linkedEventAttendanceBlocked, linkedEventEvaluationBlocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
+  }, [busy, viewOnly, performanceEnabled, plannedEventLocked, linkedEventAttendanceBlocked, linkedEvent, hasChosenTrainingType, userId, startAt, sessionType, clubIdForTraining, items, nonPerformanceTotalMinutes]);
 
   const startDate = useMemo(() => {
     if (!startAt.includes("T")) return ymdToday();
@@ -767,16 +768,6 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       return;
     }
 
-    if (linkedEventEvaluationBlocked) {
-      setError(
-        locale === "fr"
-          ? "Cette activité n’est pas configurée pour être évaluée."
-          : "This activity is not configured for evaluation."
-      );
-      setBusy(false);
-      return;
-    }
-
     const dt = new Date(startAt);
     if (Number.isNaN(dt.getTime())) {
       setError("Date/heure invalide.");
@@ -930,26 +921,26 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       <div className={embedded ? undefined : `app-shell marketplace-page ${clubEventId ? styles.evaluationShell : ""}`}>
         {!embedded ? (
           <>
-            <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: clubEventId ? pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
+            <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: clubEventId ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
             <div className={clubEventId ? styles.evaluationHero : "glass-section"}>
           <header className={clubEventId ? corporateStyles.topline : "marketplace-header"}>
             <div style={{ display: "grid", gap: 10 }}>
               <h1 className={clubEventId ? undefined : "section-title"} style={{ marginBottom: 0 }}>
                 {clubEventId
-                  ? pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity")
+                  ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity")
                   : pickLocaleText(locale, "Ajouter un entraînement", "Add training")}
               </h1>
               <p className={clubEventId ? corporateStyles.lead : "section-subtitle"}>
                 {clubEventId
-                  ? pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")
+                  ? viewOnly ? pickLocaleText(locale, "Consultez les informations et le contenu de cette activité.", "Review this activity’s information and content.") : linkedEvent?.requires_evaluation === false ? pickLocaleText(locale, "Cette évaluation est facultative et n’alimente aucune tâche en retard.", "This evaluation is optional and does not create an overdue task.") : pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")
                   : pickLocaleText(locale, "Renseigne la structure réalisée et ton ressenti.", "Enter the completed structure and your feedback.")}
               </p>
             </div>
 
             <div className={clubEventId ? styles.heroActions : "marketplace-actions"} style={{ marginTop: 2 }}>
-              <Link className={clubEventId ? `${corporateStyles.secondary} ${styles.backButton}` : "btn"} href={clubEventId ? "/player/golf/trainings/to-complete" : "/player/golf/trainings?type=training"}>
+              <Link className={clubEventId ? `${corporateStyles.secondary} ${styles.backButton}` : "btn"} href={clubEventId ? "/player/golf/trainings?type=all" : "/player/golf/trainings?type=training"}>
                 {clubEventId ? <ArrowLeft size={15} aria-hidden="true" /> : null}
-                {clubEventId ? pickLocaleText(locale, "Retour aux évaluations", "Back to evaluations") : t("common.back")}
+                {clubEventId ? pickLocaleText(locale, "Retour aux activités", "Back to activities") : t("common.back")}
               </Link>
             </div>
           </header>
@@ -991,6 +982,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                         : linkedGroupName || pickLocaleText(locale, "Groupe", "Group")}
                       organizer={plannedClubName}
                       location={linkedEvent.location_text}
+                      mode={viewOnly ? "view" : linkedEvent.requires_evaluation ? "required" : "optional"}
                     />
 
                     <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
@@ -1892,13 +1884,13 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </button>
                     ) : null}
 
-                    {!embedded && linkedEvent ? (
+                    {!embedded && linkedEvent && !viewOnly ? (
                       <div className={styles.cardActions}>
-                        <Link href="/player/golf/trainings/to-complete" className={styles.cancelEvaluation}>
+                        <Link href="/player/golf/trainings?type=all" className={styles.cancelEvaluation}>
                           {pickLocaleText(locale, "Annuler", "Cancel")}
                         </Link>
                         <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
-                          {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation")}
+                          {busy ? t("trainingNew.saving") : linkedEvent.requires_evaluation ? pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation") : pickLocaleText(locale, "Enregistrer mon évaluation facultative", "Save my optional evaluation")}
                         </button>
                       </div>
                     ) : null}
@@ -1931,7 +1923,7 @@ const fieldLabelStyle: CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
-function EvaluationActivitySummary({ startsAt, locale, type, detail, organizer, location }: { startsAt: string; locale: string; type: string; detail: string; organizer: string; location: string | null }) {
+function EvaluationActivitySummary({ startsAt, locale, type, detail, organizer, location, mode }: { startsAt: string; locale: string; type: string; detail: string; organizer: string; location: string | null; mode: "view" | "required" | "optional" }) {
   const date = new Date(startsAt);
   const intlLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(date).replace(".", "");
@@ -1946,7 +1938,9 @@ function EvaluationActivitySummary({ startsAt, locale, type, detail, organizer, 
       <span className={dashboardStyles.activityMeta}>{detail} · {organizer}</span>
       {location ? <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{location}</span></span> : null}
     </div>
-    <span className={`${activityStyles.activityIconAction} ${activityStyles.evaluationIconAction} ${styles.summaryStatus}`} aria-label={pickLocaleText(locale, "À évaluer", "To evaluate")}><AlertCircle size={18} aria-hidden="true"/></span>
+    <span className={`${activityStyles.activityIconAction} ${mode === "required" ? activityStyles.evaluationIconAction : mode === "optional" ? activityStyles.optionalEvaluationIconAction : ""} ${styles.summaryStatus}`} aria-label={mode === "required" ? pickLocaleText(locale, "À évaluer", "To evaluate") : mode === "optional" ? pickLocaleText(locale, "Évaluation facultative", "Optional evaluation") : pickLocaleText(locale, "Consultation", "View")}>
+      {mode === "required" || mode === "optional" ? <ClipboardCheck size={17} aria-hidden="true"/> : <Eye size={16} aria-hidden="true"/>}
+    </span>
   </article>;
 }
 

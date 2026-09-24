@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Eye, MapPin } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, Eye, MapPin } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -128,7 +128,7 @@ export default function CoachCalendarPage() {
           <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{event.location_text || tr("Lieu à confirmer", "Location to be confirmed")}</span></span>
         </div>
         <div className={activityStyles.actions}>
-          {needsEvaluation && isPast ? <Link className={`${activityStyles.iconAction} ${activityStyles.evaluationAction}`} href={`${href}#expected-players`} aria-label={tr(`Évaluer ${customTitle || typeLabel}`, `Evaluate ${customTitle || typeLabel}`)} title={tr("À évaluer", "To evaluate")}><AlertCircle size={18} aria-hidden="true" /></Link> : null}
+          {needsEvaluation && isPast ? <Link className={`${activityStyles.iconAction} ${activityStyles.evaluationAction}`} href={`${href}#expected-players`} aria-label={tr(`Évaluer ${customTitle || typeLabel}`, `Evaluate ${customTitle || typeLabel}`)} title={tr("À évaluer", "To evaluate")}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
           <Link className={activityStyles.iconAction} href={href} aria-label={tr(`Ouvrir ${customTitle || typeLabel}`, `Open ${customTitle || typeLabel}`)} title={tr("Ouvrir l’activité", "Open activity")}><Eye size={15} aria-hidden="true" /></Link>
         </div>
       </article>;

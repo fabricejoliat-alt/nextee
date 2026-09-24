@@ -47,6 +47,94 @@ export function calculateRulesScore(
 
 export type ClubScore = { clubId: string; score: number; correct: number; perfect: boolean; speed: number; submittedAt: string };
 
+export type RulesSeasonAttemptScore = {
+  seriesId: string;
+  playerId: string;
+  clubId: string;
+  score: number;
+  possible: number;
+  submittedAt: string;
+};
+
+export type RulesSeasonPlayerScore = {
+  playerId: string;
+  clubId: string;
+  completedSeries: number;
+  rawPoints: number;
+  possiblePoints: number;
+  percentage: number;
+  eligible: boolean;
+  rank: number | null;
+  lastSubmittedAt: string;
+};
+
+export function rulesSeasonPlayerLeaderboard(rows: RulesSeasonAttemptScore[], minimumSeries = 4): RulesSeasonPlayerScore[] {
+  const grouped = new Map<string, RulesSeasonAttemptScore[]>();
+  for (const row of rows) {
+    const key = `${row.clubId}:${row.playerId}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+  const aggregated = [...grouped.values()].map((entries) => {
+    const uniqueBySeries = new Map(entries.map((entry) => [entry.seriesId, entry]));
+    const attempts = [...uniqueBySeries.values()];
+    const rawPoints = attempts.reduce((sum, entry) => sum + Math.max(0, Number(entry.score) || 0), 0);
+    const possiblePoints = attempts.reduce((sum, entry) => sum + Math.max(0, Number(entry.possible) || 0), 0);
+    const completedSeries = attempts.length;
+    return {
+      playerId: attempts[0]?.playerId ?? "",
+      clubId: attempts[0]?.clubId ?? "",
+      completedSeries,
+      rawPoints,
+      possiblePoints,
+      percentage: possiblePoints > 0 ? Math.min(100, (rawPoints / possiblePoints) * 100) : 0,
+      eligible: completedSeries >= minimumSeries,
+      rank: null,
+      lastSubmittedAt: attempts.reduce((latest, entry) => entry.submittedAt > latest ? entry.submittedAt : latest, ""),
+    } satisfies RulesSeasonPlayerScore;
+  }).sort((a, b) => Number(b.eligible) - Number(a.eligible)
+    || b.percentage - a.percentage
+    || b.completedSeries - a.completedSeries
+    || b.rawPoints - a.rawPoints
+    || a.lastSubmittedAt.localeCompare(b.lastSubmittedAt)
+    || a.playerId.localeCompare(b.playerId));
+  const rankByClub = new Map<string, number>();
+  return aggregated.map((row) => {
+    if (!row.eligible) return row;
+    const rank = (rankByClub.get(row.clubId) ?? 0) + 1;
+    rankByClub.set(row.clubId, rank);
+    return { ...row, rank };
+  });
+}
+
+export function rulesSeasonClubLeaderboard(
+  players: RulesSeasonPlayerScore[],
+  minimumParticipants: number | ((clubId: string) => number) = 5,
+) {
+  const grouped = new Map<string, RulesSeasonPlayerScore[]>();
+  for (const player of players) grouped.set(player.clubId, [...(grouped.get(player.clubId) ?? []), player]);
+  const rows = [...grouped.entries()].map(([clubId, entries]) => {
+    const eligiblePlayers = entries.filter((entry) => entry.eligible);
+    const minimum = typeof minimumParticipants === "function" ? minimumParticipants(clubId) : minimumParticipants;
+    return {
+      clubId,
+      participants: entries.length,
+      eligiblePlayers: eligiblePlayers.length,
+      eligible: eligiblePlayers.length >= minimum,
+      minimum,
+      score: eligiblePlayers.length ? eligiblePlayers.reduce((sum, entry) => sum + entry.percentage, 0) / eligiblePlayers.length : 0,
+      completedSeries: eligiblePlayers.reduce((sum, entry) => sum + entry.completedSeries, 0),
+      rawPoints: eligiblePlayers.reduce((sum, entry) => sum + entry.rawPoints, 0),
+    };
+  }).sort((a, b) => Number(b.eligible) - Number(a.eligible)
+    || b.score - a.score
+    || b.eligiblePlayers - a.eligiblePlayers
+    || b.completedSeries - a.completedSeries
+    || b.rawPoints - a.rawPoints
+    || a.clubId.localeCompare(b.clubId));
+  let rank = 0;
+  return rows.map((row) => ({ ...row, rank: row.eligible ? ++rank : null }));
+}
+
 export type EditorialQuestion = {
   kind: "practice" | "official";
   editorial_status: string;

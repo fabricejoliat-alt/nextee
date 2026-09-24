@@ -49,11 +49,9 @@ import {
   Target,
   Activity,
   BarChart3,
-  CalendarDays,
   CheckCircle2,
   Clock3,
   MessageSquareText,
-  Repeat2,
 } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
@@ -199,9 +197,6 @@ type PlayerDashboardDocument = {
 
 type Preset = "week" | "month" | "last3" | "season" | "lastSeason" | "all" | "custom";
 type DashboardSection = "overview" | "trainings" | "evaluations" | "rounds" | "stats" | "documents";
-type TrainingSubview = "summary" | "sessions" | "evaluations";
-type EvaluationFilter = "all" | "pending" | "completed";
-
 type OverviewEvent = {
   id: string;
   event_type: string | null;
@@ -585,6 +580,24 @@ function safeDiv(n: number, d: number) {
   return n / d;
 }
 
+function linearTrend(values: Array<number | null>) {
+  const points = values.flatMap((value, index) => typeof value === "number" ? [{ x: index, y: value }] : []);
+  if (!points.length) return values.map(() => null);
+  if (points.length === 1) return values.map(() => points[0].y);
+
+  const meanX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+  const meanY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+  const numerator = points.reduce((sum, point) => sum + ((point.x - meanX) * (point.y - meanY)), 0);
+  const denominator = points.reduce((sum, point) => sum + ((point.x - meanX) ** 2), 0);
+  const slope = denominator ? numerator / denominator : 0;
+  const intercept = meanY - (slope * meanX);
+
+  return values.map((_, index) => {
+    const predicted = Math.max(0, Math.min(6, intercept + (slope * index)));
+    return Math.round(predicted * 100) / 100;
+  });
+}
+
 function scoreBucketFromHole(par: number | null, score: number | null) {
   if (typeof par !== "number" || typeof score !== "number") return null;
   const diff = score - par;
@@ -605,21 +618,10 @@ export default function GolfDashboardPage() {
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
-  const [trainingSubview, setTrainingSubview] = useState<TrainingSubview>("summary");
-  const [evaluationFilter, setEvaluationFilter] = useState<EvaluationFilter>("all");
-  const [trainingOriginFilter, setTrainingOriginFilter] = useState<"all" | SessionType>("all");
-  const [trainingSectorFilter, setTrainingSectorFilter] = useState("all");
-  const [trainingStatusFilter, setTrainingStatusFilter] = useState<"all" | "pending" | "completed">("all");
+  const [playerChartView, setPlayerChartView] = useState<"values" | "trend">("values");
+  const [coachChartView, setCoachChartView] = useState<"values" | "trend">("values");
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section");
-    if (section === "evaluations") {
-      setActiveSection("trainings");
-      setTrainingSubview("evaluations");
-      const url = new URL(window.location.href);
-      url.searchParams.set("section", "trainings");
-      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      return;
-    }
     if (["overview", "trainings", "evaluations", "rounds", "stats", "documents"].includes(String(section))) {
       setActiveSection(section === "stats" ? "rounds" : section as DashboardSection);
     }
@@ -1638,7 +1640,7 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     (async () => {
-      if (activeSection !== "trainings" || !effectivePlayerId) {
+      if (!["trainings", "evaluations"].includes(activeSection) || !effectivePlayerId) {
         setCoachEvaluations([]);
         setLoadingCoachEvaluations(false);
         return;
@@ -1705,7 +1707,7 @@ export default function GolfDashboardPage() {
   }, [activeSection, effectivePlayerId, fromDate, toDate]);
 
   useEffect(() => {
-    if (activeSection !== "trainings" || !effectivePlayerId) {
+    if (activeSection !== "evaluations" || !effectivePlayerId) {
       setCustomCoachEvaluations([]);
       return;
     }
@@ -1989,39 +1991,17 @@ function presetToSelectValue(p: Preset): Preset {
     return [...grouped.entries()].map(([name, data]) => ({ name, value: data.values.length ? avg(data.values) : data.latest }));
   }, [customCoachEvaluations]);
 
-  const coachEvalTrendSeries = useMemo(() => {
-    const asc = [...coachEvaluations].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1));
-    if (asc.length === 0) return [];
-    const linearTrendEnds = (key: "engagement" | "attitude" | "application") => {
-      const values = asc
-        .map((row, index) => ({ x: index, y: typeof row[key] === "number" ? row[key] : null }))
-        .filter((point): point is { x: number; y: number } => point.y != null);
-      if (values.length === 0) return { start: null as number | null, end: null as number | null };
-      if (values.length === 1) return { start: values[0].y, end: values[0].y };
-
-      const n = values.length;
-      const sumX = values.reduce((sum, point) => sum + point.x, 0);
-      const sumY = values.reduce((sum, point) => sum + point.y, 0);
-      const sumXY = values.reduce((sum, point) => sum + point.x * point.y, 0);
-      const sumXX = values.reduce((sum, point) => sum + point.x * point.x, 0);
-      const denom = n * sumXX - sumX * sumX;
-      if (denom === 0) return { start: values[0].y, end: values[n - 1].y };
-      const slope = (n * sumXY - sumX * sumY) / denom;
-      const intercept = (sumY - slope * sumX) / n;
-      const start = Math.round((intercept + slope * values[0].x) * 10) / 10;
-      const end = Math.round((intercept + slope * values[n - 1].x) * 10) / 10;
-      return { start, end };
+  const coachEvaluationSeries = useMemo(() => {
+    const rows = [...coachEvaluations].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const engagement = rows.map((row) => typeof row.engagement === "number" ? row.engagement : null);
+    const attitude = rows.map((row) => typeof row.attitude === "number" ? row.attitude : null);
+    const application = rows.map((row) => typeof row.application === "number" ? row.application : null);
+    return {
+      labels: rows.map((row) => shortDate(row.starts_at, dateLocale)),
+      values: { engagement, attitude, application },
+      trend: { engagement: linearTrend(engagement), attitude: linearTrend(attitude), application: linearTrend(application) },
     };
-
-    const engagement = linearTrendEnds("engagement");
-    const attitude = linearTrendEnds("attitude");
-    const application = linearTrendEnds("application");
-
-    return [
-      { point: "Début", engagement: engagement.start, attitude: attitude.start, application: application.start },
-      { point: "Fin", engagement: engagement.end, attitude: attitude.end, application: application.end },
-    ];
-  }, [coachEvaluations]);
+  }, [coachEvaluations, dateLocale]);
 
   const sessionIdByClubEventId = useMemo(() => {
     const map = new Map<string, string>();
@@ -2096,15 +2076,21 @@ function presetToSelectValue(p: Preset): Preset {
     return { active: active.filter(Boolean).length, current, best, total: active.length };
   }, [trainingWeeklyRows]);
 
-  const previousActiveWeeks = useMemo(() => {
-    const weeks = new Set(prevSessions.map((session) => isoToYMD(weekStartMonday(new Date(session.start_at)))));
-    return weeks.size;
-  }, [prevSessions]);
-
   const evaluatedSessions = useMemo(
     () => sessions.filter((session) => [session.motivation, session.difficulty, session.satisfaction].every((value) => typeof value === "number")),
     [sessions]
   );
+  const playerEvaluationSeries = useMemo(() => {
+    const rows = [...evaluatedSessions].sort((a, b) => a.start_at.localeCompare(b.start_at));
+    const motivation = rows.map((row) => typeof row.motivation === "number" ? row.motivation : null);
+    const difficulty = rows.map((row) => typeof row.difficulty === "number" ? row.difficulty : null);
+    const satisfaction = rows.map((row) => typeof row.satisfaction === "number" ? row.satisfaction : null);
+    return {
+      labels: rows.map((row) => shortDate(row.start_at, dateLocale)),
+      values: { motivation, difficulty, satisfaction },
+      trend: { motivation: linearTrend(motivation), difficulty: linearTrend(difficulty), satisfaction: linearTrend(satisfaction) },
+    };
+  }, [dateLocale, evaluatedSessions]);
   const evaluationDenominator = evaluatedSessions.length + pendingEvaluationCount;
   const evaluationRate = evaluationDenominator ? Math.round((evaluatedSessions.length / evaluationDenominator) * 100) : null;
 
@@ -2164,19 +2150,24 @@ function presetToSelectValue(p: Preset): Preset {
     return {
       animationDuration: 700,
       grid: { left: 8, right: 8, top: 32, bottom: 28, containLabel: true },
-      tooltip: { formatter: (params: unknown) => { const point = params as { data?: number[] }; const index = Number(point.data?.[0] ?? 0); return `${rows[index]?.label ?? ""}<br/><b>${rows[index]?.total ?? 0} min</b>`; } },
+      tooltip: { formatter: (params: unknown) => { const point = params as { data?: number[] | { value?: number[] } }; const value = Array.isArray(point.data) ? point.data : point.data?.value; const index = Number(value?.[0] ?? 0); return `${rows[index]?.label ?? ""}<br/><b>${rows[index]?.total ?? 0} min</b>`; } },
       visualMap: { min: 0, max: maximum, show: false, inRange: { color: ["#f0f3ef", "#cbd8c7", "#789071", "#35483b"] } },
       xAxis: { type: "category", data: rows.map((row) => row.label), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#7d8780", fontSize: 10 } },
       yAxis: { type: "category", data: [pickLocaleText(locale, "Volume", "Volume")], axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#657168", fontSize: 10 } },
-      series: [{ type: "heatmap", data: rows.map((row, index) => [index, 0, row.total]), label: { show: true, formatter: (params: unknown) => `${(params as { value?: number[] }).value?.[2] ?? 0}`, color: "#304438", fontSize: 10, fontWeight: 700 }, itemStyle: { borderColor: "#fff", borderWidth: 5, borderRadius: 9 } }],
+      series: [{ type: "heatmap", data: rows.map((row, index) => ({ value: [index, 0, row.total], label: { color: row.total / maximum >= 0.52 ? "#ffffff" : "#304438" } })), label: { show: true, formatter: (params: unknown) => `${(params as { value?: number[] }).value?.[2] ?? 0}`, fontSize: 10, fontWeight: 800 }, itemStyle: { borderColor: "#fff", borderWidth: 5, borderRadius: 9 } }],
     };
   }, [locale, trainingWeeklyRows]);
 
-  const latestEvaluatedSession = useMemo(
-    () => [...evaluatedSessions].sort((a, b) => b.start_at.localeCompare(a.start_at))[0] ?? null,
-    [evaluatedSessions]
-  );
   const latestCoachEvaluation = coachEvaluations[0] ?? null;
+  const latestCrossedEvaluation = useMemo(() => {
+    const evaluatedByDate = [...evaluatedSessions].sort((a, b) => b.start_at.localeCompare(a.start_at));
+    for (const session of evaluatedByDate) {
+      if (!session.club_event_id) continue;
+      const coachEvaluation = coachEvaluations.find((evaluation) => evaluation.event_id === session.club_event_id);
+      if (coachEvaluation) return { session, coachEvaluation };
+    }
+    return null;
+  }, [coachEvaluations, evaluatedSessions]);
   const trainingRoundObservation = useMemo(() => {
     if (rounds.length < 4 || sessions.length < 6) return null;
     const samples = rounds
@@ -2198,21 +2189,6 @@ function presetToSelectValue(p: Preset): Preset {
     const averageMinutes = Math.round(regular.reduce((sum, sample) => sum + sample.minutes, 0) / regular.length);
     return { sampleSize: samples.length, regularScore, lighterScore, difference: Math.round((regularScore - lighterScore) * 10) / 10, averageMinutes };
   }, [rounds, sessionMinutesById, sessions]);
-
-  const filteredEvaluationSessions = useMemo(() => {
-    if (evaluationFilter === "pending") return [];
-    if (evaluationFilter === "completed") return evaluatedSessions;
-    return evaluatedSessions;
-  }, [evaluatedSessions, evaluationFilter]);
-
-  const filteredHistorySessions = useMemo(() => sessions.filter((session) => {
-    if (trainingOriginFilter !== "all" && session.session_type !== trainingOriginFilter) return false;
-    if (trainingSectorFilter !== "all" && !items.some((item) => item.session_id === session.id && item.category === trainingSectorFilter)) return false;
-    const complete = evaluatedSessions.some((item) => item.id === session.id);
-    if (trainingStatusFilter === "completed" && !complete) return false;
-    if (trainingStatusFilter === "pending" && complete) return false;
-    return true;
-  }), [evaluatedSessions, items, sessions, trainingOriginFilter, trainingSectorFilter, trainingStatusFilter]);
 
   // ===== MES PARCOURS AGGREGATES (CURRENT + PREV) =====
   const holeAgg = useMemo(() => {
@@ -2337,6 +2313,7 @@ function presetToSelectValue(p: Preset): Preset {
 
     return {
       holesPlayed,
+      completedRounds: completedRounds.length,
       avgScore18,
       dist,
       distDen,
@@ -2464,6 +2441,7 @@ function presetToSelectValue(p: Preset): Preset {
 
     return {
       holesPlayed,
+      completedRounds: completedRounds.length,
       avgScore18,
       dist,
       distDen,
@@ -2781,6 +2759,25 @@ function presetToSelectValue(p: Preset): Preset {
     return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
   }, [fromDate, overviewAttendance, overviewEvents, prevRange, toDate]);
 
+  const trainingAttendanceOverview = useMemo(() => {
+    const calculate = (from: string, to: string) => {
+      const fromTime = new Date(`${from}T00:00:00`).getTime();
+      const toTime = new Date(`${to}T23:59:59`).getTime();
+      const now = Date.now();
+      const eligible = overviewEvents.filter((event) => {
+        const eventTime = new Date(event.starts_at).getTime();
+        const status = overviewAttendance[event.id];
+        return event.status === "scheduled" && event.event_type === "training" && eventTime >= fromTime && eventTime <= toTime && eventTime < now && (status === "present" || status === "absent");
+      });
+      const present = eligible.filter((event) => overviewAttendance[event.id] === "present").length;
+      return { present, total: eligible.length, rate: eligible.length ? Math.round((present / eligible.length) * 100) : null };
+    };
+    if (!fromDate || !toDate) return { present: 0, total: 0, rate: null, trend: null };
+    const current = calculate(fromDate, toDate);
+    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
+    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
+  }, [fromDate, overviewAttendance, overviewEvents, prevRange, toDate]);
+
   const orderedRounds = useMemo(
     () => [...rounds].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
     [rounds]
@@ -2819,11 +2816,6 @@ function presetToSelectValue(p: Preset): Preset {
   }, [keyKpisUI.fwPct, keyKpisUI.girPct, keyKpisUI.scramblingPct, locale]);
 
   function selectSection(section: DashboardSection) {
-    if (section === "evaluations") {
-      setActiveSection("trainings");
-      setTrainingSubview("evaluations");
-      section = "trainings";
-    }
     setActiveSection(section);
     if (section === "overview" && !["month", "last3", "season", "lastSeason"].includes(preset)) setPreset("season");
     const url = new URL(window.location.href);
@@ -2841,6 +2833,7 @@ function presetToSelectValue(p: Preset): Preset {
         {[
           { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
           { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
+          { id: "evaluations" as DashboardSection, label: pickLocaleText(locale, "Évaluations", "Evaluations") },
           { id: "rounds" as DashboardSection, label: pickLocaleText(locale, "Parcours & statistiques", "Rounds & statistics") },
           { id: "documents" as DashboardSection, label: pickLocaleText(locale, "Documents", "Documents") },
         ].map((tab) => {
@@ -2860,7 +2853,6 @@ function presetToSelectValue(p: Preset): Preset {
       </div>
     </section>
   );
-
   return (
     <div className="player-dashboard-bg player-golf-page">
       <div className="app-shell marketplace-page">
@@ -3076,7 +3068,7 @@ function presetToSelectValue(p: Preset): Preset {
       >
         <option value="month">{t("common.thisMonth")}</option>
         <option value="last3">{t("common.last3Months")}</option>
-        {activeSection === "overview" || activeSection === "trainings" ? (
+        {activeSection === "overview" || activeSection === "trainings" || activeSection === "evaluations" ? (
           <>
             <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
             {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
@@ -3240,13 +3232,16 @@ function presetToSelectValue(p: Preset): Preset {
               </section>
 
               <section className={overviewStyles.panel}>
-                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Repères de jeu", "Playing benchmarks")}</h2><p>{pickLocaleText(locale, "Vos résultats sur la période.", "Your results for this period.")}</p></div></div>
-                <div className={overviewStyles.benchmarkList}>
-                  <div><span>{pickLocaleText(locale, "Score moyen", "Average score")}</span><strong>{holeAgg.avgScore18 ?? "—"}</strong>{keyKpisUI.girArrow != null ? null : <small>{rounds.length} {pickLocaleText(locale, "parcours", "rounds")}</small>}</div>
-                  <div><span>GIR</span><strong>{keyKpisUI.girPct == null ? "—" : `${keyKpisUI.girPct}%`}</strong>{keyKpisUI.girArrow != null ? <small className={keyKpisUI.girArrow >= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.girArrow > 0 ? "+" : ""}{round1(keyKpisUI.girArrow)} pts</small> : null}</div>
-                  <div><span>{pickLocaleText(locale, "Putts / 18 trous", "Putts / 18 holes")}</span><strong>{keyKpisUI.putts18 ?? "—"}</strong>{keyKpisUI.putts18Arrow != null ? <small className={keyKpisUI.putts18Arrow <= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.putts18Arrow > 0 ? "+" : ""}{round1(keyKpisUI.putts18Arrow)}</small> : null}</div>
-                  <div><span>{pickLocaleText(locale, "Secteur le plus performant", "Strongest area")}</span><strong className={overviewStyles.markerValue}>{strongestGameMarker?.label ?? "—"}</strong>{strongestGameMarker ? <small>{strongestGameMarker.value}%</small> : null}</div>
-                </div>
+                <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Repères de jeu", "Playing benchmarks")}</h2><p>{pickLocaleText(locale, "Les chiffres clés de vos parcours sur la période.", "Key figures from your rounds during this period.")}</p></div><button type="button" onClick={() => selectSection("stats")}>{pickLocaleText(locale, "Voir le détail", "View details")}<ArrowRight size={14} /></button></div>
+                {loadingRounds || loadingHoles ? <div className={overviewStyles.benchmarkSkeleton}><span /><span /><span /></div> : holeAgg.holesPlayed === 0 ? <div className={overviewStyles.benchmarkEmpty}><Flag size={22} /><b>{pickLocaleText(locale, "Aucun repère disponible", "No benchmarks available")}</b><small>{pickLocaleText(locale, "Saisissez un parcours trou par trou pour afficher vos statistiques.", "Enter a round hole by hole to display your statistics.")}</small><Link href="/player/golf/rounds/new">{pickLocaleText(locale, "Saisir un parcours", "Enter a round")}<ArrowRight size={13} /></Link></div> : <>
+                  {strongestGameMarker ? <div className={overviewStyles.benchmarkHighlight}><span><Target size={17} /></span><div><small>{pickLocaleText(locale, "Votre point fort actuel", "Your current strength")}</small><strong>{strongestGameMarker.label}</strong></div><b>{strongestGameMarker.value}%</b></div> : null}
+                  <div className={overviewStyles.benchmarkGrid}>
+                    <div><span>{pickLocaleText(locale, "Score moyen", "Average score")}</span><strong>{holeAgg.avgScore18 ?? "—"}</strong><small>{holeAgg.completedRounds} {pickLocaleText(locale, holeAgg.completedRounds === 1 ? "parcours de 18 trous" : "parcours de 18 trous", holeAgg.completedRounds === 1 ? "18-hole round" : "18-hole rounds")}</small></div>
+                    <div><span>{pickLocaleText(locale, "Greens en régulation", "Greens in regulation")}</span><strong>{keyKpisUI.girPct == null ? "—" : `${keyKpisUI.girPct}%`}</strong><small className={keyKpisUI.girArrow == null ? "" : keyKpisUI.girArrow >= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.girArrow == null ? pickLocaleText(locale, "Greens atteints dans le par", "Greens reached in regulation") : `${keyKpisUI.girArrow > 0 ? "+" : ""}${round1(keyKpisUI.girArrow)} pts · ${compareLabel}`}</small></div>
+                    <div><span>{pickLocaleText(locale, "Putts moyens", "Average putts")}</span><strong>{keyKpisUI.putts18 ?? "—"}</strong><small className={keyKpisUI.putts18Arrow == null ? "" : keyKpisUI.putts18Arrow <= 0 ? overviewStyles.positive : overviewStyles.caution}>{keyKpisUI.putts18Arrow == null ? pickLocaleText(locale, "Par parcours de 18 trous", "Per 18-hole round") : `${keyKpisUI.putts18Arrow > 0 ? "+" : ""}${round1(keyKpisUI.putts18Arrow)} · ${compareLabel}`}</small></div>
+                  </div>
+                  <p className={overviewStyles.benchmarkSource}>{holeAgg.holesPlayed} {pickLocaleText(locale, holeAgg.holesPlayed === 1 ? "trou analysé" : "trous analysés", holeAgg.holesPlayed === 1 ? "hole analysed" : "holes analysed")}</p>
+                </>}
               </section>
             </div>
 
@@ -3267,54 +3262,31 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "trainings" ? (
+        {activeSection === "trainings" || activeSection === "evaluations" ? (
           <div className={trainingStyles.dashboard}>
-            <nav className={trainingStyles.subnav} aria-label={pickLocaleText(locale, "Navigation des entraînements", "Training navigation")}>
-              {([
-                ["summary", pickLocaleText(locale, "Synthèse", "Overview")],
-                ["sessions", pickLocaleText(locale, "Mes séances", "My sessions")],
-                ["evaluations", pickLocaleText(locale, "Évaluations", "Evaluations")],
-              ] as Array<[TrainingSubview, string]>).map(([id, label]) => (
-                <button key={id} type="button" aria-selected={trainingSubview === id} onClick={() => setTrainingSubview(id)}>
-                  {label}{id === "evaluations" && pendingEvaluationCount ? ` (${pendingEvaluationCount})` : ""}
-                </button>
-              ))}
-            </nav>
-
-            {trainingSubview === "summary" ? <>
-              <section className={trainingStyles.kpis} aria-label={pickLocaleText(locale, "Repères d’entraînement", "Training benchmarks")}>
-                <article className={trainingStyles.kpi}>
-                  <div className={trainingStyles.kpiTitle}><span><Activity size={17} /></span><h2>{pickLocaleText(locale, "Volume réalisé", "Completed volume")}</h2></div>
-                  <strong>{totalMinutes} min</strong>
-                  <p>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</p>
-                  <small className={volumeDelta == null ? "" : volumeDelta >= 0 ? trainingStyles.positive : trainingStyles.caution}>{volumeDelta == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${volumeDelta > 0 ? "+" : ""}${volumeDelta}% · ${compareLabel}`}</small>
+            {activeSection === "trainings" ? <>
+              <section className={trainingStyles.trainingSummaryGrid} aria-label={pickLocaleText(locale, "Repères d’entraînement", "Training benchmarks")}>
+                <article className={`${trainingStyles.kpi} ${trainingStyles.volumeKpi}`}>
+                  <div className={trainingStyles.kpiTitle}><span><Activity size={17} /></span><h2>{pickLocaleText(locale, "Volume d’entraînement", "Training volume")}</h2></div>
+                  <div className={trainingStyles.volumeKpiContent}>
+                    {overviewFtemPercent == null ? <div className={trainingStyles.volumeNoGoal}><strong>{totalMinutes} min</strong><p>{pickLocaleText(locale, "Objectif FTEM indisponible", "FTEM goal unavailable")}</p></div> : <div className={trainingStyles.ftemDonut}><ProgressDonut percent={overviewFtemPercent} size={132} /></div>}
+                    <div className={trainingStyles.volumeKpiDetails}>
+                      <strong>{totalMinutes} min</strong>
+                      <p>{pickLocaleText(locale, "sur", "of")} {overviewObjective || "—"} min · {trainingVolumeTarget?.ftem_code ?? "FTEM"}</p>
+                      <div className={trainingStyles.metrics}><span>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</span>{overviewFtemPercent != null ? <span>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</span> : null}</div>
+                      {trainingVolumeMotivation ? <p className={trainingStyles.volumeMotivation}>{trainingVolumeMotivation}</p> : null}
+                      <small className={volumeDelta == null ? "" : volumeDelta >= 0 ? trainingStyles.positive : trainingStyles.caution}>{volumeDelta == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${volumeDelta > 0 ? "+" : ""}${volumeDelta}% · ${compareLabel}`}</small>
+                    </div>
+                  </div>
                 </article>
 
-                <article className={trainingStyles.kpi}>
-                  <div className={trainingStyles.kpiTitle}><span><Target size={17} /></span><h2>{pickLocaleText(locale, "Objectif FTEM", "FTEM goal")}</h2></div>
-                  {overviewFtemPercent == null ? <><strong>—</strong><p>{pickLocaleText(locale, "Aucun objectif disponible", "No goal available")}</p></> : <>
-                    <strong>{overviewFtemPercent}%</strong>
-                    <div className={trainingStyles.progress}><span style={{ width: `${Math.min(100, overviewFtemPercent)}%` }} /></div>
-                    <p>{totalMinutes} / {overviewObjective} min · {trainingVolumeTarget?.ftem_code ?? "FTEM"}</p>
-                    <small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "de volume restant à poursuivre", "of volume left to pursue")}{trainingVolumeMotivation ? ` · ${trainingVolumeMotivation}` : ""}</small>
-                  </>}
+                <article className={`${trainingStyles.kpi} ${trainingStyles.attendanceKpi}`}>
+                  <div className={trainingStyles.kpiTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité", "Attendance")}</h2></div>
+                  <strong>{trainingAttendanceOverview.rate == null ? "—" : `${trainingAttendanceOverview.rate}%`}</strong>
+                  <p>{trainingAttendanceOverview.present} {pickLocaleText(locale, trainingAttendanceOverview.present === 1 ? "entraînement suivi" : "entraînements suivis", trainingAttendanceOverview.present === 1 ? "training attended" : "trainings attended")} / {trainingAttendanceOverview.total}</p>
+                  {trainingAttendanceOverview.rate != null ? <div className={trainingStyles.progress}><span style={{ width: `${trainingAttendanceOverview.rate}%` }} /></div> : null}
+                  <small className={trainingAttendanceOverview.trend == null ? "" : trainingAttendanceOverview.trend >= 0 ? trainingStyles.positive : trainingStyles.caution}>{trainingAttendanceOverview.trend == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${trainingAttendanceOverview.trend > 0 ? "+" : ""}${trainingAttendanceOverview.trend} pts · ${compareLabel}`}</small>
                 </article>
-
-                <article className={trainingStyles.kpi}>
-                  <div className={trainingStyles.kpiTitle}><span><Repeat2 size={17} /></span><h2>{pickLocaleText(locale, "Régularité", "Consistency")}</h2></div>
-                  <strong>{regularity.active} / {regularity.total}</strong>
-                  <p>{pickLocaleText(locale, "semaines actives", "active weeks")}</p>
-                  <div className={trainingStyles.metrics}><span>{pickLocaleText(locale, "Série actuelle", "Current streak")} · {regularity.current}</span><span>{pickLocaleText(locale, "Meilleure", "Best")} · {regularity.best}</span></div>
-                  <small>{prevRange ? `${regularity.active - previousActiveWeeks >= 0 ? "+" : ""}${regularity.active - previousActiveWeeks} ${pickLocaleText(locale, "vs période précédente", "vs previous period")}` : pickLocaleText(locale, "Pas de période comparable", "No comparable period")}</small>
-                </article>
-
-                <button type="button" className={trainingStyles.kpi} onClick={() => setTrainingSubview("evaluations")}>
-                  <div className={trainingStyles.kpiTitle}><span><ClipboardList size={17} /></span><h2>{pickLocaleText(locale, "Évaluations", "Evaluations")}</h2></div>
-                  <strong>{pendingEvaluationCount}</strong>
-                  <p>{pickLocaleText(locale, pendingEvaluationCount === 1 ? "auto-évaluation en attente" : "auto-évaluations en attente", pendingEvaluationCount === 1 ? "self-evaluation pending" : "self-evaluations pending")}</p>
-                  <div className={trainingStyles.metrics}><span>{evaluatedSessions.length} {pickLocaleText(locale, "complétées", "completed")}</span><span>{coachEvaluations.length} {pickLocaleText(locale, "retours coach", "coach reviews")}</span></div>
-                  <small>{pickLocaleText(locale, "Ouvrir le suivi", "Open evaluation tracking")} <ArrowRight size={12} /></small>
-                </button>
               </section>
 
               <div className={trainingStyles.split}>
@@ -3326,7 +3298,7 @@ function presetToSelectValue(p: Preset): Preset {
                   <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Actions utiles liées à vos séances.", "Useful actions related to your sessions.")}</p></div></div>
                   <div className={trainingStyles.attentionList}>
                     {pendingEvaluationCount ? <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Compléter mon ressenti", "Complete my feedback")}</small></div><ArrowRight size={14} /></Link> : null}
-                    {latestCoachEvaluation?.player_note ? <button type="button" onClick={() => setTrainingSubview("evaluations")}><span><MessageSquareText size={16} /></span><div><b>{pickLocaleText(locale, "Nouveau retour du coach", "New coach feedback")}</b><small>{latestCoachEvaluation.title || shortDate(latestCoachEvaluation.starts_at, dateLocale)}</small></div><ArrowRight size={14} /></button> : null}
+                    {latestCoachEvaluation?.player_note ? <button type="button" onClick={() => selectSection("evaluations")}><span><MessageSquareText size={16} /></span><div><b>{pickLocaleText(locale, "Nouveau retour du coach", "New coach feedback")}</b><small>{latestCoachEvaluation.title || shortDate(latestCoachEvaluation.starts_at, dateLocale)}</small></div><ArrowRight size={14} /></button> : null}
                     {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep pursuing the FTEM goal")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
                     {!pendingEvaluationCount && !latestCoachEvaluation?.player_note && !(overviewFtemPercent != null && overviewFtemPercent < 100) ? <div className={trainingStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Tout est à jour pour le moment.", "Everything is up to date for now.")}</div> : null}
                   </div>
@@ -3344,56 +3316,87 @@ function presetToSelectValue(p: Preset): Preset {
                 </section>
               </div>
 
+            </> : null}
+
+            {activeSection === "evaluations" ? <>
               <div className={trainingStyles.twoPanels}>
                 <section className={trainingStyles.panel}>
                   <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Ressenti du joueur", "Player feedback")}</h2><p>{evaluationRate == null ? pickLocaleText(locale, "Données insuffisantes", "Insufficient data") : `${evaluationRate}% ${pickLocaleText(locale, "des séances auto-évaluées", "of sessions self-evaluated")}`}</p></div></div>
+                  <div className={trainingStyles.chartToolbar}><span>{playerChartView === "values" ? pickLocaleText(locale, "Chaque évaluation", "Each evaluation") : pickLocaleText(locale, "Une droite de tendance par critère", "One trend line per criterion")}</span><div><button type="button" aria-pressed={playerChartView === "values"} onClick={() => setPlayerChartView("values")}>{pickLocaleText(locale, "Valeurs", "Values")}</button><button type="button" aria-pressed={playerChartView === "trend"} onClick={() => setPlayerChartView("trend")}>{pickLocaleText(locale, "Tendance", "Trend")}</button></div></div>
                   <div className={trainingStyles.scoreGrid}><div><span>{t("common.motivation")}</span><strong>{avgMotivation ?? "—"}</strong></div><div><span>{t("common.difficulty")}</span><strong>{avgDifficulty ?? "—"}</strong></div><div><span>{t("common.satisfaction")}</span><strong>{avgSatisfaction ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Réponses", "Responses")}</span><strong>{evaluatedSessions.length}</strong></div></div>
-                  {evaluatedSessions.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={pickLocaleText(locale, "Évolution hebdomadaire du ressenti", "Weekly feedback trend")} option={buildManagementLineChartOption({ labels: weekSeries.map((row) => row.weekLabel), min: 0, max: 6, series: [{ name: t("common.motivation"), data: weekSeries.map((row) => row.motivation), color: MANAGEMENT_CHART_COLORS[0] }, { name: t("common.difficulty"), data: weekSeries.map((row) => row.difficulty), color: MANAGEMENT_CHART_COLORS[2], dashed: true }, { name: t("common.satisfaction"), data: weekSeries.map((row) => row.satisfaction), color: MANAGEMENT_CHART_COLORS[1] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Données insuffisantes pour afficher une tendance.", "Insufficient data to display a trend.")}</div>}
+                  {evaluatedSessions.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={playerChartView === "values" ? pickLocaleText(locale, "Valeurs de chaque ressenti", "Values for each feedback entry") : pickLocaleText(locale, "Une ligne de tendance droite et continue pour chaque critère du ressenti", "One straight continuous trend line for each feedback criterion")} option={buildManagementLineChartOption({ labels: playerEvaluationSeries.labels, min: 0, max: 6, series: playerChartView === "trend" ? [{ name: t("common.motivation"), data: playerEvaluationSeries.trend.motivation, color: MANAGEMENT_CHART_COLORS[0], showSymbols: false, smooth: false }, { name: t("common.difficulty"), data: playerEvaluationSeries.trend.difficulty, color: MANAGEMENT_CHART_COLORS[2], showSymbols: false, smooth: false }, { name: t("common.satisfaction"), data: playerEvaluationSeries.trend.satisfaction, color: MANAGEMENT_CHART_COLORS[1], showSymbols: false, smooth: false }] : [{ name: t("common.motivation"), data: playerEvaluationSeries.values.motivation, color: MANAGEMENT_CHART_COLORS[0] }, { name: t("common.difficulty"), data: playerEvaluationSeries.values.difficulty, color: MANAGEMENT_CHART_COLORS[2], dashed: true }, { name: t("common.satisfaction"), data: playerEvaluationSeries.values.satisfaction, color: MANAGEMENT_CHART_COLORS[1] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Deux évaluations sont nécessaires pour afficher le graphique.", "Two evaluations are required to display the chart.")}</div>}
                 </section>
                 <section className={trainingStyles.panel}>
                   <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Regard du coach", "Coach perspective")}</h2><p>{coachEvaluations.length} {pickLocaleText(locale, "évaluation(s) reçue(s)", "evaluation(s) received")}</p></div></div>
+                  <div className={trainingStyles.chartToolbar}><span>{coachChartView === "values" ? pickLocaleText(locale, "Chaque évaluation", "Each evaluation") : pickLocaleText(locale, "Une droite de tendance par critère", "One trend line per criterion")}</span><div><button type="button" aria-pressed={coachChartView === "values"} onClick={() => setCoachChartView("values")}>{pickLocaleText(locale, "Valeurs", "Values")}</button><button type="button" aria-pressed={coachChartView === "trend"} onClick={() => setCoachChartView("trend")}>{pickLocaleText(locale, "Tendance", "Trend")}</button></div></div>
                   <div className={trainingStyles.scoreGrid}><div><span>{pickLocaleText(locale, "Engagement", "Engagement")}</span><strong>{avgCoachEngagement ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Attitude", "Attitude")}</span><strong>{avgCoachAttitude ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Application", "Application")}</span><strong>{avgCoachApplication ?? "—"}</strong></div><div><span>{pickLocaleText(locale, "Retours", "Reviews")}</span><strong>{coachEvaluations.length}</strong></div></div>
                   {customCoachCriteriaSummary.length ? <div className={trainingStyles.customCriteria}>{customCoachCriteriaSummary.map((criterion) => <div key={criterion.name}><span>{criterion.name}</span><b>{typeof criterion.value === "boolean" ? (criterion.value ? pickLocaleText(locale, "Oui", "Yes") : pickLocaleText(locale, "Non", "No")) : criterion.value ?? "—"}</b></div>)}</div> : null}
-                  {coachEvaluations.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={pickLocaleText(locale, "Tendance des évaluations du coach", "Coach evaluation trend")} option={buildManagementLineChartOption({ labels: coachEvalTrendSeries.map((row) => row.point), min: 0, max: 6, series: [{ name: "Engagement", data: coachEvalTrendSeries.map((row) => row.engagement), color: MANAGEMENT_CHART_COLORS[0] }, { name: "Attitude", data: coachEvalTrendSeries.map((row) => row.attitude), color: MANAGEMENT_CHART_COLORS[3] }, { name: "Application", data: coachEvalTrendSeries.map((row) => row.application), color: MANAGEMENT_CHART_COLORS[2] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Données insuffisantes pour afficher une tendance.", "Insufficient data to display a trend.")}</div>}
+                  {coachEvaluations.length >= 2 ? <ActiviteeEChart height={260} ariaLabel={coachChartView === "values" ? pickLocaleText(locale, "Valeurs de chaque évaluation du coach", "Values for each coach evaluation") : pickLocaleText(locale, "Une ligne de tendance droite et continue pour chaque critère du coach", "One straight continuous trend line for each coach criterion")} option={buildManagementLineChartOption({ labels: coachEvaluationSeries.labels, min: 0, max: 6, series: coachChartView === "trend" ? [{ name: "Engagement", data: coachEvaluationSeries.trend.engagement, color: MANAGEMENT_CHART_COLORS[0], showSymbols: false, smooth: false }, { name: "Attitude", data: coachEvaluationSeries.trend.attitude, color: MANAGEMENT_CHART_COLORS[3], showSymbols: false, smooth: false }, { name: "Application", data: coachEvaluationSeries.trend.application, color: MANAGEMENT_CHART_COLORS[2], showSymbols: false, smooth: false }] : [{ name: "Engagement", data: coachEvaluationSeries.values.engagement, color: MANAGEMENT_CHART_COLORS[0] }, { name: "Attitude", data: coachEvaluationSeries.values.attitude, color: MANAGEMENT_CHART_COLORS[3] }, { name: "Application", data: coachEvaluationSeries.values.application, color: MANAGEMENT_CHART_COLORS[2] }] })} /> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Deux évaluations sont nécessaires pour afficher le graphique.", "Two evaluations are required to display the chart.")}</div>}
                 </section>
               </div>
 
-              <section className={trainingStyles.panel}>
-                <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Regards croisés", "Combined perspectives")}</h2><p>{pickLocaleText(locale, "Deux perspectives présentées sans créer de score artificiel.", "Two perspectives shown without creating an artificial score.")}</p></div></div>
-                <div className={trainingStyles.crossed}>
-                  <article className={trainingStyles.perspective}><h3>{pickLocaleText(locale, "Ressenti du joueur", "Player feedback")}</h3>{latestEvaluatedSession ? <><dl><dt>{t("common.motivation")}</dt><dd>{latestEvaluatedSession.motivation}/6</dd><dt>{t("common.difficulty")}</dt><dd>{latestEvaluatedSession.difficulty}/6</dd><dt>{t("common.satisfaction")}</dt><dd>{latestEvaluatedSession.satisfaction}/6</dd></dl><p>{latestEvaluatedSession.notes || pickLocaleText(locale, "Aucun commentaire personnel.", "No personal comment.")}</p></> : <p>{pickLocaleText(locale, "Aucune auto-évaluation disponible.", "No self-evaluation available.")}</p>}</article>
-                  <article className={trainingStyles.perspective}><h3>{pickLocaleText(locale, "Regard du coach", "Coach perspective")}</h3>{latestCoachEvaluation ? <><dl><dt>{pickLocaleText(locale, "Engagement", "Engagement")}</dt><dd>{latestCoachEvaluation.engagement ?? "—"}/6</dd><dt>{pickLocaleText(locale, "Attitude", "Attitude")}</dt><dd>{latestCoachEvaluation.attitude ?? "—"}/6</dd><dt>{pickLocaleText(locale, "Application", "Application")}</dt><dd>{latestCoachEvaluation.application ?? "—"}/6</dd></dl><p>{latestCoachEvaluation.player_note || pickLocaleText(locale, "Aucun commentaire visible.", "No visible comment.")}</p></> : <p>{pickLocaleText(locale, "Aucune évaluation coach disponible.", "No coach evaluation available.")}</p>}</article>
+              {latestCrossedEvaluation ? <section className={`${trainingStyles.panel} ${trainingStyles.crossedPanel}`}>
+                <div className={trainingStyles.panelHeader}>
+                  <div>
+                    <h2>{pickLocaleText(locale, "Regards croisés", "Combined perspectives")}</h2>
+                    <div className={trainingStyles.crossedActivity}>
+                      <span><Dumbbell size={13} />{pickLocaleText(locale, "Activité comparée", "Compared activity")}</span>
+                      <strong>{latestCrossedEvaluation.coachEvaluation.title || pickLocaleText(locale, "Séance d’entraînement", "Training session")} {pickLocaleText(locale, "du", "on")} {new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(latestCrossedEvaluation.session.start_at))}</strong>
+                      <div>
+                        <span><Clock3 size={12} />{new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(latestCrossedEvaluation.session.start_at))}{(sessionMinutesById.get(latestCrossedEvaluation.session.id) ?? 0) > 0 ? ` · ${sessionMinutesById.get(latestCrossedEvaluation.session.id)} min` : ""}</span>
+                        {latestCrossedEvaluation.session.location_text ? <span>{latestCrossedEvaluation.session.location_text}</span> : null}
+                        {latestCrossedEvaluation.session.coach_name ? <span>{pickLocaleText(locale, "Coach", "Coach")} : {latestCrossedEvaluation.session.coach_name.replace(/^coach\s*:\s*/i, "")}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <Link href={`/player/golf/trainings/${latestCrossedEvaluation.session.id}`}>{pickLocaleText(locale, "Voir la séance", "View session")}<ArrowRight size={14} /></Link>
                 </div>
-              </section>
+                <div className={trainingStyles.crossed}>
+                  <article className={`${trainingStyles.perspective} ${trainingStyles.playerPerspective}`}>
+                    <div className={trainingStyles.perspectiveHeading}><span><MessageSquareText size={17} /></span><div><small>{pickLocaleText(locale, "Auto-évaluation", "Self-evaluation")}</small><h3>{pickLocaleText(locale, "Mon ressenti", "My feedback")}</h3></div></div>
+                    <div className={trainingStyles.perspectiveScores}>{[
+                      [t("common.motivation"), latestCrossedEvaluation.session.motivation],
+                      [t("common.difficulty"), latestCrossedEvaluation.session.difficulty],
+                      [t("common.satisfaction"), latestCrossedEvaluation.session.satisfaction],
+                    ].map(([label, value]) => <div className={trainingStyles.perspectiveScore} key={String(label)}><div><span>{label}</span><b>{value}/6</b></div><span className={trainingStyles.scoreTrack}><i style={{ width: `${(Number(value) / 6) * 100}%` }} /></span></div>)}</div>
+                  </article>
+                  <article className={`${trainingStyles.perspective} ${trainingStyles.coachPerspective}`}>
+                    <div className={trainingStyles.perspectiveHeading}><span><Eye size={17} /></span><div><small>{pickLocaleText(locale, "Évaluation du coach", "Coach evaluation")}</small><h3>{pickLocaleText(locale, "Regard du coach", "Coach perspective")}</h3></div></div>
+                    <div className={trainingStyles.perspectiveScores}>{[
+                      [pickLocaleText(locale, "Engagement", "Engagement"), latestCrossedEvaluation.coachEvaluation.engagement],
+                      [pickLocaleText(locale, "Attitude", "Attitude"), latestCrossedEvaluation.coachEvaluation.attitude],
+                      [pickLocaleText(locale, "Application", "Application"), latestCrossedEvaluation.coachEvaluation.application],
+                    ].map(([label, value]) => <div className={trainingStyles.perspectiveScore} key={String(label)}><div><span>{label}</span><b>{value ?? "—"}/6</b></div><span className={trainingStyles.scoreTrack}><i style={{ width: `${(Number(value) / 6) * 100}%` }} /></span></div>)}</div>
+                  </article>
+                </div>
+              </section> : null}
 
+              <section className={trainingStyles.panel}>
+                <div className={trainingStyles.panelHeader}>
+                  <div>
+                    <h2>{pickLocaleText(locale, "Toutes les évaluations du coach", "All coach evaluations")}</h2>
+                    <p>{periodLabel} · {coachEvaluations.length} {pickLocaleText(locale, "évaluation(s) reçue(s)", "evaluation(s) received")}</p>
+                  </div>
+                </div>
+                {loadingCoachEvaluations ? <div className={trainingStyles.empty}>{t("common.loading")}</div> : coachEvaluations.length ? <div className={trainingStyles.evaluationList}>{coachEvaluations.map((evaluation) => {
+                  const sessionId = sessionIdByClubEventId.get(evaluation.event_id);
+                  const criteria = customCoachEvaluations.filter((criterion) => criterion.event_id === evaluation.event_id);
+                  const content = <><div><b>{evaluation.title || pickLocaleText(locale, "Séance d’entraînement", "Training session")} {pickLocaleText(locale, "du", "on")} {new Intl.DateTimeFormat(dateLocale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(evaluation.starts_at))}</b><small>{pickLocaleText(locale, "Engagement", "Engagement")} {evaluation.engagement ?? "—"}/6 · {pickLocaleText(locale, "Attitude", "Attitude")} {evaluation.attitude ?? "—"}/6 · {pickLocaleText(locale, "Application", "Application")} {evaluation.application ?? "—"}/6</small>{criteria.length ? <span className={trainingStyles.evaluationCriteria}>{criteria.map((criterion) => <span key={criterion.criterion_id}>{criterion.name} : <b>{typeof criterion.value === "boolean" ? (criterion.value ? pickLocaleText(locale, "Oui", "Yes") : pickLocaleText(locale, "Non", "No")) : criterion.value}</b></span>)}</span> : null}</div>{sessionId ? <><span>{pickLocaleText(locale, "Voir le détail", "View details")}</span><ArrowRight size={13} /></> : null}</>;
+                  return sessionId ? <Link className={trainingStyles.coachEvaluationRow} href={`/player/golf/trainings/${sessionId}`} key={evaluation.event_id}>{content}</Link> : <div className={trainingStyles.coachEvaluationRow} key={evaluation.event_id}>{content}</div>;
+                })}</div> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucune évaluation du coach sur cette période.", "No coach evaluation for this period.")}</div>}
+              </section>
+            </> : null}
+
+            {activeSection === "trainings" ? <>
               {sectorRows.length ? <section className={trainingStyles.panel}>
                 <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Analyse par secteur", "Analysis by training area")}</h2><p>{pickLocaleText(locale, "Les tendances ne sont affichées qu’avec une période comparable.", "Trends are only shown with a comparable period.")}</p></div></div>
-                <div className={trainingStyles.tableWrap}><table className={trainingStyles.table}><thead><tr><th>{pickLocaleText(locale, "Secteur", "Area")}</th><th>{pickLocaleText(locale, "Volume", "Volume")}</th><th>{pickLocaleText(locale, "Séances", "Sessions")}</th><th>{pickLocaleText(locale, "Satisfaction", "Satisfaction")}</th><th>{pickLocaleText(locale, "Tendance volume", "Volume trend")}</th></tr></thead><tbody>{sectorRows.map((row) => <tr key={row.category}><td><b>{row.label}</b></td><td>{row.minutes} min · {row.percent}%</td><td>{row.sessions}</td><td>{row.satisfaction == null ? "—" : `${row.satisfaction}/6`}</td><td>{row.delta == null ? "—" : `${row.delta > 0 ? "+" : ""}${row.delta}%`}</td></tr>)}</tbody></table></div>
+                <div className={trainingStyles.tableWrap}><table className={trainingStyles.table}><thead><tr><th>{pickLocaleText(locale, "Secteur", "Area")}</th><th>{pickLocaleText(locale, "Volume", "Volume")}</th><th>{pickLocaleText(locale, "Séances", "Sessions")}</th><th>{pickLocaleText(locale, "Satisfaction", "Satisfaction")}</th><th>{pickLocaleText(locale, "Tendance volume", "Volume trend")}</th></tr></thead><tbody>{sectorRows.map((row) => <tr key={row.category}><td data-label={pickLocaleText(locale, "Secteur", "Area")}><b>{row.label}</b></td><td data-label={pickLocaleText(locale, "Volume", "Volume")}>{row.minutes} min · {row.percent}%</td><td data-label={pickLocaleText(locale, "Séances", "Sessions")}>{row.sessions}</td><td data-label={pickLocaleText(locale, "Satisfaction", "Satisfaction")}>{row.satisfaction == null ? "—" : `${row.satisfaction}/6`}</td><td data-label={pickLocaleText(locale, "Tendance", "Trend")}>{row.delta == null ? "—" : `${row.delta > 0 ? "+" : ""}${row.delta}%`}</td></tr>)}</tbody></table></div>
               </section> : null}
 
               {trainingRoundObservation ? <section className={trainingStyles.panel}><div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Relation entraînement–parcours", "Training–round relationship")}</h2><p>{pickLocaleText(locale, "Observation descriptive sur les 14 jours précédant un parcours.", "Descriptive observation over the 14 days preceding a round.")}</p></div></div><p className={trainingStyles.observation}>{pickLocaleText(locale, `Sur ${trainingRoundObservation.sampleSize} parcours, les périodes comprenant au moins deux séances (${trainingRoundObservation.averageMinutes} min en moyenne) sont associées à un score moyen de ${trainingRoundObservation.regularScore}, contre ${trainingRoundObservation.lighterScore} pour les autres périodes. Écart observé : ${trainingRoundObservation.difference > 0 ? "+" : ""}${trainingRoundObservation.difference} coup(s). Cette association ne démontre pas un lien de causalité.`, `Across ${trainingRoundObservation.sampleSize} rounds, periods with at least two sessions (${trainingRoundObservation.averageMinutes} average minutes) are associated with an average score of ${trainingRoundObservation.regularScore}, compared with ${trainingRoundObservation.lighterScore} for other periods. Observed difference: ${trainingRoundObservation.difference > 0 ? "+" : ""}${trainingRoundObservation.difference} stroke(s). This association does not establish causality.`)}</p></section> : null}
 
-              <section className={trainingStyles.panel}><div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Retours récents", "Recent feedback")}</h2><p>{pickLocaleText(locale, "Les derniers éléments utiles, sans dupliquer l’historique.", "Latest useful items without duplicating history.")}</p></div></div>{latestCoachEvaluation || latestEvaluatedSession ? <div className={trainingStyles.recent}><span className={trainingStyles.recentIcon}><MessageSquareText size={16} /></span><div><b>{latestCoachEvaluation?.player_note || latestEvaluatedSession?.notes || pickLocaleText(locale, "Évaluation complétée", "Evaluation completed")}</b><small>{shortDate(latestCoachEvaluation?.starts_at || latestEvaluatedSession?.start_at || new Date().toISOString(), dateLocale)} · {latestCoachEvaluation?.title || pickLocaleText(locale, "Séance d’entraînement", "Training session")}</small></div><button type="button" onClick={() => setTrainingSubview("evaluations")}>{pickLocaleText(locale, "Voir", "View")}<ArrowRight size={13} /></button></div> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}</section>
             </> : null}
 
-            {trainingSubview === "sessions" ? <section className={trainingStyles.panel}>
-              <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Historique des séances", "Session history")}</h2><p>{periodLabel} · {sessions.length} {pickLocaleText(locale, "séance(s)", "session(s)")}</p></div><Link href="/player/golf/trainings?plan=training">{pickLocaleText(locale, "Ajouter un entraînement", "Add training")}<ArrowRight size={14} /></Link></div>
-              <div className={trainingStyles.historyFilters}>
-                <label><span>{pickLocaleText(locale, "Origine", "Source")}</span><select value={trainingOriginFilter} onChange={(event) => setTrainingOriginFilter(event.target.value as "all" | SessionType)}><option value="all">{pickLocaleText(locale, "Toutes", "All")}</option><option value="club">Club</option><option value="private">{pickLocaleText(locale, "Cours privé", "Private lesson")}</option><option value="individual">{pickLocaleText(locale, "Individuel", "Individual")}</option></select></label>
-                <label><span>{pickLocaleText(locale, "Secteur", "Area")}</span><select value={trainingSectorFilter} onChange={(event) => setTrainingSectorFilter(event.target.value)}><option value="all">{pickLocaleText(locale, "Tous", "All")}</option>{sectorRows.map((row) => <option key={row.category} value={row.category}>{row.label}</option>)}</select></label>
-                <label><span>{pickLocaleText(locale, "Évaluation", "Evaluation")}</span><select value={trainingStatusFilter} onChange={(event) => setTrainingStatusFilter(event.target.value as "all" | "pending" | "completed")}><option value="all">{pickLocaleText(locale, "Tous les statuts", "All statuses")}</option><option value="pending">{pickLocaleText(locale, "À évaluer", "To evaluate")}</option><option value="completed">{pickLocaleText(locale, "Terminées", "Completed")}</option></select></label>
-              </div>
-              {filteredHistorySessions.length ? <div className={trainingStyles.tableWrap}><table className={trainingStyles.table}><thead><tr><th>{pickLocaleText(locale, "Date", "Date")}</th><th>{pickLocaleText(locale, "Origine", "Source")}</th><th>{pickLocaleText(locale, "Durée", "Duration")}</th><th>{pickLocaleText(locale, "Secteurs", "Areas")}</th><th>{pickLocaleText(locale, "Coach", "Coach")}</th><th>{pickLocaleText(locale, "Ressenti", "Feedback")}</th><th>{pickLocaleText(locale, "Statut", "Status")}</th><th /></tr></thead><tbody>{[...filteredHistorySessions].sort((a, b) => b.start_at.localeCompare(a.start_at)).map((session) => { const categories = [...new Set(items.filter((item) => item.session_id === session.id).map((item) => t(`cat.${item.category}`)))]; const complete = evaluatedSessions.some((item) => item.id === session.id); const hasCoach = session.club_event_id ? coachEvaluations.some((evaluation) => evaluation.event_id === session.club_event_id) : false; return <tr key={session.id}><td><b>{shortDate(session.start_at, dateLocale)}</b></td><td>{typeLabelLong(session.session_type, t)}</td><td>{sessionMinutesById.get(session.id) ?? 0} min</td><td>{categories.join(", ") || "—"}</td><td>{session.coach_name || "—"}</td><td>{session.satisfaction == null ? "—" : `${session.satisfaction}/6`}</td><td><span className={`${trainingStyles.tag} ${complete ? "" : trainingStyles.warningTag}`}>{complete ? pickLocaleText(locale, "Auto-évaluée", "Self-evaluated") : pickLocaleText(locale, "À évaluer", "To evaluate")}</span>{hasCoach ? <span className={trainingStyles.tag}>{pickLocaleText(locale, "Coach reçu", "Coach review")}</span> : null}</td><td><Link href={`/player/golf/trainings/${session.id}`}>{pickLocaleText(locale, "Ouvrir", "Open")}</Link></td></tr>; })}</tbody></table></div> : <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucune séance ne correspond aux filtres.", "No session matches these filters.")}</div>}
-            </section> : null}
-
-            {trainingSubview === "evaluations" ? <section className={trainingStyles.panel}>
-              <div className={trainingStyles.evaluationToolbar}><div className={trainingStyles.panelHeader} style={{ borderBottom: 0, paddingBottom: 0 }}><div><h2>{pickLocaleText(locale, "Suivi des évaluations", "Evaluation tracking")}</h2><p>{periodLabel} · {pickLocaleText(locale, "auto-évaluations et retours du coach", "self-evaluations and coach feedback")}</p></div></div><div className={trainingStyles.filterButtons}>{(["all", "pending", "completed"] as EvaluationFilter[]).map((filter) => <button key={filter} type="button" aria-pressed={evaluationFilter === filter} onClick={() => setEvaluationFilter(filter)}>{filter === "all" ? pickLocaleText(locale, "Toutes", "All") : filter === "pending" ? pickLocaleText(locale, "À compléter", "Pending") : pickLocaleText(locale, "Terminées", "Completed")}</button>)}</div></div>
-              <div className={trainingStyles.evaluationList}>
-                {evaluationFilter !== "completed" && pendingEvaluationCount > 0 ? <div className={trainingStyles.evaluationRow}><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité attend votre auto-évaluation" : "activités attendent votre auto-évaluation", pendingEvaluationCount === 1 ? "activity awaits your self-evaluation" : "activities await your self-evaluation")}</b><small>{pickLocaleText(locale, "Motivation, difficulté, satisfaction et structure de séance", "Motivation, difficulty, satisfaction and session structure")}</small></div><Link href="/player/golf/trainings/to-complete">{pickLocaleText(locale, "Voir les activités", "View activities")}<ArrowRight size={13} /></Link></div> : null}
-                {evaluationFilter !== "pending" ? filteredEvaluationSessions.map((session) => { const coach = session.club_event_id ? coachEvaluations.find((evaluation) => evaluation.event_id === session.club_event_id) : null; return <div className={trainingStyles.evaluationRow} key={session.id}><div><b>{shortDate(session.start_at, dateLocale)} · {typeLabelLong(session.session_type, t)}</b><small>{pickLocaleText(locale, "Auto-évaluation", "Self-evaluation")} · M {session.motivation}/6 · D {session.difficulty}/6 · S {session.satisfaction}/6{coach ? ` · ${pickLocaleText(locale, "Retour coach reçu", "Coach review received")}` : ""}</small>{coach?.player_note ? <small>{coach.player_note}</small> : null}</div><Link href={`/player/golf/trainings/${session.id}`}>{pickLocaleText(locale, "Détail", "Details")}<ArrowRight size={13} /></Link></div>; }) : null}
-                {((evaluationFilter === "pending" && pendingEvaluationCount === 0) || (evaluationFilter === "completed" && !filteredEvaluationSessions.length) || (evaluationFilter === "all" && pendingEvaluationCount === 0 && !filteredEvaluationSessions.length)) ? <div className={trainingStyles.empty}>{pickLocaleText(locale, "Aucune évaluation dans ce filtre.", "No evaluation matches this filter.")}</div> : null}
-              </div>
-            </section> : null}
           </div>
         ) : null}
 
@@ -3620,13 +3623,13 @@ function presetToSelectValue(p: Preset): Preset {
                   height={280}
                   ariaLabel="Évolution des évaluations du coach"
                   option={buildManagementLineChartOption({
-                    labels: coachEvalTrendSeries.map((item) => item.point),
+                    labels: coachEvaluationSeries.labels,
                     min: 0,
                     max: 6,
                     series: [
-                      { name: "Engagement", data: coachEvalTrendSeries.map((item) => item.engagement), color: MANAGEMENT_CHART_COLORS[0] },
-                      { name: "Attitude", data: coachEvalTrendSeries.map((item) => item.attitude), color: MANAGEMENT_CHART_COLORS[3] },
-                      { name: "Application", data: coachEvalTrendSeries.map((item) => item.application), color: MANAGEMENT_CHART_COLORS[2] },
+                      { name: "Engagement", data: coachEvaluationSeries.trend.engagement, color: MANAGEMENT_CHART_COLORS[0], showSymbols: false, smooth: false },
+                      { name: "Attitude", data: coachEvaluationSeries.trend.attitude, color: MANAGEMENT_CHART_COLORS[3], showSymbols: false, smooth: false },
+                      { name: "Application", data: coachEvaluationSeries.trend.application, color: MANAGEMENT_CHART_COLORS[2], showSymbols: false, smooth: false },
                     ],
                   })}
                 />

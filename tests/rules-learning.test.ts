@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateRulesScore, clubLeaderboard, rulesPhase, rulesQuestionReadiness, speedBonus } from "../lib/rulesLearning.ts";
+import { calculateRulesScore, clubLeaderboard, rulesPhase, rulesQuestionReadiness, rulesSeasonClubLeaderboard, rulesSeasonPlayerLeaderboard, speedBonus } from "../lib/rulesLearning.ts";
 
 const config = { pointsPerCorrect: 100, speedBonusEnabled: true, maxSpeedBonus: 15, freeReadingSeconds: 5, decaySeconds: 15, perfectBonus: 50 };
 
@@ -35,6 +35,50 @@ test("le classement retient 10 ou 15 scores et applique le minimum", () => {
   assert.equal(ten[0].score, 995.5);
   assert.equal(ten[1].eligible, false);
   assert.equal(clubLeaderboard(rows, 15, 1)[0].score, 993);
+});
+
+test("le classement saisonnier exige quatre séries et départage par participation", () => {
+  const attempts = [
+    ...Array.from({ length: 4 }, (_, index) => ({ seriesId: `a-${index}`, playerId: "a", clubId: "club-a", score: 90, possible: 100, submittedAt: `2027-0${index + 1}-28` })),
+    { seriesId: "b-1", playerId: "b", clubId: "club-a", score: 100, possible: 100, submittedAt: "2027-01-28" },
+    ...Array.from({ length: 5 }, (_, index) => ({ seriesId: `c-${index}`, playerId: "c", clubId: "club-a", score: 450, possible: 500, submittedAt: `2027-0${index + 1}-28` })),
+  ];
+  const rows = rulesSeasonPlayerLeaderboard(attempts, 4);
+  assert.equal(rows.find((row) => row.playerId === "c")?.rank, 1);
+  assert.equal(rows.find((row) => row.playerId === "a")?.rank, 2);
+  assert.equal(rows.find((row) => row.playerId === "b")?.rank, null);
+  assert.equal(rows.find((row) => row.playerId === "b")?.eligible, false);
+  assert.equal(rows.find((row) => row.playerId === "b")?.percentage, 100);
+});
+
+test("le classement club moyenne seulement les juniors éligibles", () => {
+  const players = rulesSeasonPlayerLeaderboard([
+    ...Array.from({ length: 4 }, (_, index) => ({ seriesId: `a-${index}`, playerId: "a", clubId: "club-a", score: 90, possible: 100, submittedAt: `2027-0${index + 1}-28` })),
+    ...Array.from({ length: 4 }, (_, index) => ({ seriesId: `b-${index}`, playerId: "b", clubId: "club-a", score: 80, possible: 100, submittedAt: `2027-0${index + 1}-28` })),
+    { seriesId: "c-1", playerId: "c", clubId: "club-a", score: 100, possible: 100, submittedAt: "2027-01-28" },
+  ], 4);
+  const clubs = rulesSeasonClubLeaderboard(players, 2);
+  assert.equal(clubs[0].eligiblePlayers, 2);
+  assert.equal(clubs[0].participants, 3);
+  assert.equal(clubs[0].eligible, true);
+  assert.equal(clubs[0].score, 85);
+});
+
+test("un joueur multi-clubs reçoit un rang propre dans chacun de ses clubs", () => {
+  const attempts = ["club-a", "club-b"].flatMap((clubId) => Array.from({ length: 4 }, (_, index) => ({
+    seriesId: `series-${index}`,
+    playerId: "multi-club-player",
+    clubId,
+    score: 90,
+    possible: 100,
+    submittedAt: `2027-0${index + 1}-28`,
+  })));
+  const rows = rulesSeasonPlayerLeaderboard([
+    ...attempts,
+    ...Array.from({ length: 4 }, (_, index) => ({ seriesId: `series-${index}`, playerId: "leader-a", clubId: "club-a", score: 95, possible: 100, submittedAt: `2027-0${index + 1}-27` })),
+  ], 4);
+  assert.equal(rows.find((row) => row.playerId === "multi-club-player" && row.clubId === "club-a")?.rank, 2);
+  assert.equal(rows.find((row) => row.playerId === "multi-club-player" && row.clubId === "club-b")?.rank, 1);
 });
 
 test("la publication exige un entraînement et deux variantes officielles valides", () => {

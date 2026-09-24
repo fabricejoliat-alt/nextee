@@ -438,8 +438,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                 },
               ]
             : []),
-          { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
           { label: t("player.myGolf"), icon: Flag, href: ROUTES.golfDashboard },
+          { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
         ],
       },
       {

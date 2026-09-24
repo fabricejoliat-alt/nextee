@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { AlertCircle, ArrowLeft, CheckCircle2, MapPin } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardCheck, MapPin } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import campsStyles from "@/app/manager/camps/Camps.module.css";
@@ -373,7 +373,7 @@ function EvaluationActivityCard({ start, type, title, organizer, location, href,
       {location ? <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{location}</span></span> : null}
     </div>
     <div className={activityStyles.activityAction}>
-      <Link className={`${activityStyles.activityIconAction} ${activityStyles.evaluationIconAction}`} href={href} aria-label={`${evaluateLabel} ${title}`} title={pickLocaleText(locale, "À évaluer", "To evaluate")}><AlertCircle size={18} aria-hidden="true"/></Link>
+      <Link className={`${activityStyles.activityIconAction} ${activityStyles.evaluationIconAction}`} href={href} aria-label={`${evaluateLabel} ${title}`} title={pickLocaleText(locale, "À évaluer", "To evaluate")}><ClipboardCheck size={17} aria-hidden="true"/></Link>
     </div>
   </article>;
 }

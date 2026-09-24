@@ -18,6 +18,7 @@ import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
 import coachStyles from "@/app/coach/CoachDashboard.module.css";
 import validationStyles from "@/app/coach/validations/CoachValidations.module.css";
+import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
 import styles from "./PlayerDashboard.module.css";
 
 type Profile = {
@@ -2002,21 +2003,21 @@ export default function PlayerHomePage() {
             <section className={`${coachStyles.panel} ${styles.attentionCard}`}>
               <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
               {upcomingLoading || insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : (
-                <div className={coachStyles.taskList}>
-                  {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete" className={coachStyles.taskWarning}>
+                <div className={overviewStyles.attentionList}>
+                  {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete">
                     <span><ClipboardCheck size={17} /></span>
-                    <b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b>
+                    <div><b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div>
                     <ArrowRight size={15} />
                   </Link> : null}
-                  {attentionEvents.map(({ event }) => <Link key={event.id} href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}`} className={coachStyles.taskWarning}>
+                  {attentionEvents.map(({ event }) => <Link key={event.id} href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}`}>
                     <span><AlertTriangle size={17} /></span>
-                    <b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")} · {event.title?.trim() || eventTypeLabel(event.event_type, locale)}</b>
+                    <div><b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")}</b><small>{event.title?.trim() || eventTypeLabel(event.event_type, locale)}</small></div>
                     <ArrowRight size={15} />
                   </Link>)}
                   {trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20 ? (
-                    <Link href="#player-training-volume" className={coachStyles.taskWarning}><span><Target size={17} /></span><b>{pickLocaleText(locale, "Objectif FTEM du mois à atteindre", "Monthly FTEM goal to reach")}</b><ArrowRight size={15} /></Link>
+                    <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
                   ) : null}
-                  {!insightsError && !pendingTrainings.length && !attentionEvents.length && !(trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20) ? <div className={coachStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Aucun point d’attention.", "Nothing needs attention.")}</div> : null}
+                  {!insightsError && !pendingTrainings.length && !attentionEvents.length && !(trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20) ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
                   {insightsError ? <div className={coachStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
               )}
@@ -2055,7 +2056,7 @@ export default function PlayerHomePage() {
           </section>
 
           <section className={styles.benchmarksSection}>
-            <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Votre progression en un coup d’œil.", "Your progress at a glance.")}</p></div></div>
+            <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
             {insightsLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
               <article className={styles.benchmark}>
                 <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>

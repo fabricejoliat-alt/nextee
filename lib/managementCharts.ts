@@ -7,6 +7,8 @@ type ChartSeries = {
   data: Array<number | null>;
   color?: string;
   dashed?: boolean;
+  showSymbols?: boolean;
+  smooth?: boolean;
 };
 
 function baseOption(labels: string[], showLegend: boolean): EChartsOption {
@@ -63,10 +65,10 @@ export function buildManagementLineChartOption({
     type: "line",
     name: entry.name,
     data: entry.data,
-    smooth: true,
+    smooth: entry.smooth ?? true,
     connectNulls: false,
-    symbol: "circle",
-    symbolSize: 7,
+    symbol: entry.showSymbols === false ? "none" : "circle",
+    symbolSize: entry.showSymbols === false ? 0 : 7,
     lineStyle: {
       color: entry.color ?? MANAGEMENT_CHART_COLORS[index % MANAGEMENT_CHART_COLORS.length],
       width: 3,
