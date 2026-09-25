@@ -35,8 +35,10 @@ export type CampOptionInput = {
   day_indexes?: number[];
   capacity?: number | null;
   allows_quantity?: boolean;
+  input_type?: "checkbox" | "yes_no" | "select" | "radio" | null;
+  choices?: string[] | null;
   internal_note?: string | null;
-  player_assignments?: Array<{ player_id?: string | null; quantity?: number | null; note?: string | null }>;
+  player_assignments?: Array<{ player_id?: string | null; quantity?: number | null; note?: string | null; selected_value?: string | null }>;
 };
 
 type CampPlayerRegistrationInput = {
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
 
     const campsRes = await supabaseAdmin
       .from("club_camps")
-      .select("id,club_id,title,notes,status,head_coach_user_id,capacity,archived_at,season_id,participants_snapshot_at,created_at,updated_at")
+      .select("*")
       .in("club_id", managedClubIds)
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
@@ -406,7 +408,7 @@ export async function GET(req: NextRequest) {
     }
 
     const optionsRes = campIds.length
-      ? await supabaseAdmin.from("club_camp_options").select("id,camp_id,name,description,is_active,applies_to_all_days,capacity,allows_quantity,internal_note,sort_order").in("camp_id", campIds).order("sort_order", { ascending: true })
+      ? await supabaseAdmin.from("club_camp_options").select("id,camp_id,name,description,is_active,applies_to_all_days,capacity,allows_quantity,input_type,choices,internal_note,sort_order").in("camp_id", campIds).order("sort_order", { ascending: true })
       : ({ data: [], error: null } as const);
     if (optionsRes.error) return NextResponse.json({ error: optionsRes.error.message }, { status: 400 });
     const optionIds = uniq((optionsRes.data ?? []).map((option: any) => option.id));
@@ -415,7 +417,7 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin.from("club_camp_option_days").select("option_id,camp_day_id").in("option_id", optionIds)
         : ({ data: [], error: null } as const),
       optionIds.length
-        ? supabaseAdmin.from("club_camp_player_options").select("option_id,player_id,quantity,note").in("option_id", optionIds)
+        ? supabaseAdmin.from("club_camp_player_options").select("option_id,player_id,quantity,note,selected_value").in("option_id", optionIds)
         : ({ data: [], error: null } as const),
     ]);
     if (optionDaysRes.error) return NextResponse.json({ error: optionDaysRes.error.message }, { status: 400 });
@@ -435,7 +437,7 @@ export async function GET(req: NextRequest) {
     (optionAssignmentsRes.data ?? []).forEach((row: any) => {
       const optionId = String(row.option_id ?? "");
       if (!assignmentsByOptionId[optionId]) assignmentsByOptionId[optionId] = [];
-      assignmentsByOptionId[optionId].push({ player_id: row.player_id, quantity: Number(row.quantity ?? 1), note: row.note ?? null });
+      assignmentsByOptionId[optionId].push({ player_id: row.player_id, quantity: Number(row.quantity ?? 1), note: row.note ?? null, selected_value: row.selected_value ?? null });
     });
     const optionsByCampId: Record<string, any[]> = {};
     (optionsRes.data ?? []).forEach((option: any) => {
@@ -490,6 +492,7 @@ export async function POST(req: NextRequest) {
     const clubId = normalizeText(body?.club_id);
     const title = normalizeText(body?.title);
     const notes = normalizeText(body?.notes) || null;
+    const imageUrl = normalizeText(body?.image_url) || null;
     const headCoachUserId = normalizeText(body?.head_coach_user_id) || null;
     let groupIds = uniqIds(body?.group_ids);
     const playerIds = uniqIds(body?.player_ids);
@@ -533,6 +536,7 @@ export async function POST(req: NextRequest) {
         club_id: clubId,
         title,
         notes,
+        image_url: imageUrl,
         head_coach_user_id: headCoachUserId,
         capacity,
         season_id: seasonId,

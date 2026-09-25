@@ -67,11 +67,14 @@ type Camp = {
     day_indexes: number[];
     capacity: number | null;
     allows_quantity: boolean;
+    input_type: "checkbox" | "yes_no" | "select" | "radio";
+    choices: string[];
     internal_note: string | null;
     player_assignments: Array<{
       player_id: string;
       quantity: number;
       note: string | null;
+      selected_value: string | null;
     }>;
     assigned_count: number;
     assigned_quantity: number;
@@ -96,6 +99,25 @@ function initials(profile?: Profile | null) {
     `${profile?.first_name?.[0] ?? ""}${profile?.last_name?.[0] ?? ""}`.toUpperCase() ||
     "?"
   );
+}
+function optionTypeLabel(type: Camp["options"][number]["input_type"]) {
+  if (type === "yes_no") return "Oui / Non";
+  if (type === "select") return "Liste déroulante";
+  if (type === "radio") return "Boutons radio";
+  return "Case à cocher";
+}
+function optionAnswer(value: string | null, type: Camp["options"][number]["input_type"]) {
+  if (!value) return type === "checkbox" ? "Oui" : "";
+  if (type === "yes_no") return value === "yes" ? "Oui" : value === "no" ? "Non" : value;
+  if (type === "checkbox") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String).join(", ");
+    } catch {
+      return value;
+    }
+  }
+  return value;
 }
 function Avatar({ profile }: { profile?: Profile | null }) {
   return (
@@ -261,7 +283,7 @@ export default function CampDetailPage() {
   }, [camp, registrations]);
   function exportOptions() {
     if (!camp) return;
-    const rows = [["Option", "Junior", "Quantité", "Note"]];
+    const rows = [["Option", "Type", "Junior", "Réponse", "Quantité", "Note"]];
     camp.options.forEach((option) =>
       option.player_assignments.forEach((assignment) => {
         const registration = registrations.find(
@@ -269,7 +291,9 @@ export default function CampDetailPage() {
         );
         rows.push([
           option.name,
+          option.input_type,
           name(registration?.player),
+          optionAnswer(assignment.selected_value, option.input_type),
           String(assignment.quantity),
           assignment.note ?? "",
         ]);
@@ -655,6 +679,9 @@ export default function CampDetailPage() {
                         </div>
                         <div className={styles.cardMeta}>
                           <span className={styles.badge}>
+                            {optionTypeLabel(option.input_type)}
+                          </span>
+                          <span className={styles.badge}>
                             {option.applies_to_all_days
                               ? "Option de stage"
                               : `Jour(s) ${option.day_indexes
@@ -700,6 +727,9 @@ export default function CampDetailPage() {
                               {name(registration?.player)}
                               {option.allows_quantity
                                 ? ` × ${assignment.quantity}`
+                                : ""}
+                              {assignment.selected_value
+                                ? ` · ${optionAnswer(assignment.selected_value, option.input_type)}`
                                 : ""}
                             </span>
                           );

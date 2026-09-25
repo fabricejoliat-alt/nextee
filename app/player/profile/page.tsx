@@ -57,16 +57,18 @@ type ProfileCustomField = {
   id: string;
   field_key: string;
   label: string;
-  field_type: "text" | "boolean" | "select";
+  field_type: "text" | "short_text" | "long_text" | "number" | "date" | "boolean" | "select" | "radio" | "checkbox";
   options_json: string[];
   visible_in_profile: boolean;
   editable_in_profile: boolean;
+  scope: "permanent" | "season";
   value: string | boolean | null;
 };
 type ProfileCustomFieldGroup = {
   member_id: string;
   club_id: string;
   club_name: string;
+  season_name: string | null;
   role: "player" | "parent" | "coach" | "manager";
   fields: ProfileCustomField[];
 };
@@ -879,6 +881,22 @@ export default function PlayerProfilePage() {
     [birthDate]
   );
   const showOrganizationLabelInCustomFields = customFieldGroups.length > 1;
+  const customFieldSections = ([
+    {
+      key: "player",
+      title: "Paramètres du joueur",
+      groups: customFieldGroups
+        .map((group) => ({ ...group, fields: group.fields.filter((field) => field.scope === "permanent") }))
+        .filter((group) => group.fields.length > 0),
+    },
+    {
+      key: "season",
+      title: "Paramètres de saison",
+      groups: customFieldGroups
+        .map((group) => ({ ...group, fields: group.fields.filter((field) => field.scope === "season") }))
+        .filter((group) => group.fields.length > 0),
+    },
+  ] as const).filter((section) => section.groups.length > 0);
 
   return (
     <div className="player-dashboard-bg">
@@ -1210,14 +1228,16 @@ export default function PlayerProfilePage() {
                   ) : null}
                 </SectionCard>
 
-                {customFieldGroups.length > 0 ? (
-                  <SectionCard title="Paramètres organisationnels" icon={<Building2 size={17} />} wide>
+                {customFieldSections.map((section) => (
+                  <SectionCard key={section.key} title={section.title} icon={<Building2 size={17} />} wide>
                     <div className={styles.organizationGroups}>
-                      {customFieldGroups.map((group) => (
+                      {section.groups.map((group) => (
                         <div key={group.member_id} className={styles.organizationGroup}>
-                          {showOrganizationLabelInCustomFields ? (
+                          {showOrganizationLabelInCustomFields || (section.key === "season" && group.season_name) ? (
                             <div className={styles.organizationName}>
-                              {group.club_name}
+                              {showOrganizationLabelInCustomFields ? group.club_name : null}
+                              {showOrganizationLabelInCustomFields && section.key === "season" && group.season_name ? " · " : null}
+                              {section.key === "season" ? group.season_name : null}
                             </div>
                           ) : null}
                           <div className="grid-2">
@@ -1319,7 +1339,7 @@ export default function PlayerProfilePage() {
                       ))}
                     </div>
                   </SectionCard>
-                ) : null}
+                ))}
 
                 <SectionCard title={t("playerProfile.addressSection")} icon={<MapPin size={17} />}>
                   <Field label={t("playerProfile.address")}>

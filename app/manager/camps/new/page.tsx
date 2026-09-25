@@ -8,16 +8,19 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronRight,
+  ImagePlus,
   Plus,
   Save,
   Trash2,
   UserPlus,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import { isSelectableCampGroup } from "@/lib/campsManagement";
+import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import EventCriteriaSelector from "@/components/evaluations/EventCriteriaSelector";
 import styles from "../Camps.module.css";
 
@@ -59,12 +62,15 @@ type Option = {
   day_indexes: number[];
   capacity: number | null;
   allows_quantity: boolean;
+  input_type: "checkbox" | "yes_no" | "select" | "radio";
+  choices: string[];
   internal_note: string;
   assigns_to_all_participants: boolean;
   player_assignments: Array<{
     player_id: string;
     quantity: number;
     note?: string | null;
+    selected_value?: string | null;
   }>;
 };
 type Camp = {
@@ -72,6 +78,7 @@ type Camp = {
   club_id: string;
   title: string;
   notes: string | null;
+  image_url: string | null;
   status: string;
   capacity: number | null;
   head_coach_user_id: string | null;
@@ -135,6 +142,8 @@ function emptyOption(): Option {
     day_indexes: [],
     capacity: null,
     allows_quantity: false,
+    input_type: "checkbox",
+    choices: [],
     internal_note: "",
     assigns_to_all_participants: true,
     player_assignments: [],
@@ -151,6 +160,27 @@ function emptyDay(index = 0): Day {
     responsible_coach_id: "",
     evaluation_enabled: false,
     evaluation_criterion_ids: [],
+  };
+}
+
+function addOneDay(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setDate(date.getDate() + 1);
+  return localInput(date);
+}
+
+function dayAfter(previous: Day | undefined, index: number): Day {
+  const fallback = emptyDay(index);
+  if (!previous) return fallback;
+
+  return {
+    ...fallback,
+    starts_at: addOneDay(previous.starts_at) || fallback.starts_at,
+    ends_at: addOneDay(previous.ends_at) || fallback.ends_at,
+    location_text: previous.location_text,
+    practical_info: previous.practical_info,
+    responsible_coach_id: previous.responsible_coach_id,
   };
 }
 
@@ -177,6 +207,9 @@ export default function CampEditorPage() {
   const [clubId, setClubId] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [capacity, setCapacity] = useState<number | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [players, setPlayers] = useState<Profile[]>([]);
@@ -205,6 +238,9 @@ export default function CampEditorPage() {
     setClubId(camp.club_id);
     setTitle(duplicate ? `${camp.title} — copie` : camp.title);
     setNotes(normalizeCampRichTextHtml(camp.notes ?? ""));
+    setImageUrl(camp.image_url ?? "");
+    setImageFile(null);
+    setImagePreview(camp.image_url ?? null);
     setCapacity(camp.capacity ?? null);
     setGroupIds(camp.group_ids ?? []);
     setPlayerIds(camp.player_ids ?? []);
@@ -241,6 +277,8 @@ export default function CampEditorPage() {
         id: duplicate ? null : option.id,
         name: option.name ?? "",
         description: option.description ?? "",
+        input_type: option.input_type ?? "checkbox",
+        choices: Array.isArray(option.choices) ? option.choices : [],
         internal_note: option.internal_note ?? "",
         day_indexes: option.day_indexes ?? [],
         player_assignments: option.player_assignments ?? [],
@@ -461,6 +499,22 @@ export default function CampEditorPage() {
     setError(null);
     try {
       if (!title.trim()) throw new Error("Le nom du stage est requis.");
+      let uploadedImageUrl = imageUrl || null;
+      if (imageFile) {
+        const uploadData = new FormData();
+        uploadData.set("club_id", clubId);
+        uploadData.set("image", imageFile);
+        const uploadResponse = await fetch("/api/manager/camps/image", {
+          method: "POST",
+          headers: await authHeaders(),
+          body: uploadData,
+        });
+        const uploadPayload = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok || !uploadPayload?.image_url) {
+          throw new Error(String(uploadPayload?.error ?? "Upload de l’image impossible."));
+        }
+        uploadedImageUrl = String(uploadPayload.image_url);
+      }
       const validDays = days.filter((day) => day.starts_at && day.ends_at);
       options.forEach((option, index) => {
         if (!String(option.name ?? "").trim())
@@ -469,6 +523,8 @@ export default function CampEditorPage() {
           throw new Error(
             `Sélectionnez au moins une journée pour l’option « ${String(option.name ?? "").trim()} ».`,
           );
+        if ((option.input_type === "select" || option.input_type === "radio") && option.choices.filter((choice) => choice.trim()).length < 2)
+          throw new Error(`Ajoutez au moins deux choix pour l’option « ${String(option.name ?? "").trim()} ».`);
       });
       if (status === "scheduled") {
         if (!headCoachId) throw new Error("Sélectionnez un head coach.");
@@ -491,6 +547,7 @@ export default function CampEditorPage() {
         club_id: clubId,
         title: title.trim(),
         notes: normalizeCampRichTextHtml(notes),
+        image_url: uploadedImageUrl,
         capacity,
         status,
         group_ids: groupIds,
@@ -507,6 +564,8 @@ export default function CampEditorPage() {
           day_indexes: option.day_indexes,
           capacity: option.capacity,
           allows_quantity: option.allows_quantity,
+          input_type: option.input_type,
+          choices: option.choices.map((choice) => choice.trim()).filter(Boolean),
           internal_note: option.internal_note,
           player_assignments: option.player_assignments,
         })),
@@ -607,6 +666,70 @@ export default function CampEditorPage() {
                 />
               </label>
             </div>
+            <div className={styles.imageField}>
+              <div className={styles.imageFieldHeader}>
+                <div>
+                  <span>Image du stage</span>
+                  <p>Format 16:9 · JPG, PNG ou WebP · 8 Mo maximum</p>
+                </div>
+                {imagePreview ? (
+                  <button
+                    type="button"
+                    className={styles.removeImage}
+                    onClick={() => {
+                      setImageFile(null);
+                      setImageUrl("");
+                      setImagePreview(null);
+                    }}
+                  >
+                    <X size={14} />
+                    Retirer
+                  </button>
+                ) : null}
+              </div>
+              {imagePreview ? (
+                <label className={styles.imagePreview}>
+                  <img src={imagePreview} alt="Aperçu du stage" />
+                  <span>Remplacer l’image</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const optimized = await optimizeUploadFile(file, {
+                        maxWidth: 1920,
+                        maxHeight: 1080,
+                        quality: 0.84,
+                      });
+                      setImageFile(optimized);
+                      setImagePreview(URL.createObjectURL(optimized));
+                    }}
+                  />
+                </label>
+              ) : (
+                <label className={styles.imageDrop}>
+                  <ImagePlus size={22} />
+                  <span>Ajouter une image</span>
+                  <small>Elle sera recadrée proprement en 16:9.</small>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const optimized = await optimizeUploadFile(file, {
+                        maxWidth: 1920,
+                        maxHeight: 1080,
+                        quality: 0.84,
+                      });
+                      setImageFile(optimized);
+                      setImagePreview(URL.createObjectURL(optimized));
+                    }}
+                  />
+                </label>
+              )}
+            </div>
             <div className={styles.richTextField}>
               <span>Présentation et notes générales</span>
               <TiptapSimpleEditor
@@ -617,7 +740,7 @@ export default function CampEditorPage() {
             </div>
           </section>
 
-          <section className={styles.panel} style={{ order: 3 }}>
+          <section className={styles.panel} style={{ order: 2 }}>
             <div className={styles.panelHeader}>
               <div>
                 <h2>Journées</h2>
@@ -630,7 +753,10 @@ export default function CampEditorPage() {
                 className={styles.secondary}
                 type="button"
                 onClick={() =>
-                  setDays((current) => [...current, emptyDay(current.length)])
+                  setDays((current) => [
+                    ...current,
+                    dayAfter(current.at(-1), current.length),
+                  ])
                 }
               >
                 <Plus size={15} />
@@ -814,7 +940,7 @@ export default function CampEditorPage() {
             </div>
           </section>
 
-          <section className={styles.panel} style={{ order: 4 }}>
+          <section className={styles.panel} style={{ order: 3 }}>
             <div className={styles.panelHeader}>
               <div>
                 <h2>Participants</h2>
@@ -894,7 +1020,7 @@ export default function CampEditorPage() {
             </div>
           </section>
 
-          <section className={styles.panel} style={{ order: 5 }}>
+          <section className={styles.panel} style={{ order: 4 }}>
             <div className={styles.panelHeader}>
               <div>
                 <h2>Encadrement</h2>
@@ -1062,7 +1188,7 @@ export default function CampEditorPage() {
             )}
           </section>
 
-          <section className={styles.panel} style={{ order: 2 }}>
+          <section className={styles.panel} style={{ order: 5 }}>
             <div className={styles.panelHeader}>
               <div>
                 <h2>Options facultatives</h2>
@@ -1169,6 +1295,29 @@ export default function CampEditorPage() {
                         />
                       </label>
                       <label className={styles.field}>
+                        <span>Type de réponse</span>
+                        <select
+                          value={option.input_type}
+                          onChange={(event) => {
+                            const inputType = event.target.value as Option["input_type"];
+                            updateOption(index, {
+                              input_type: inputType,
+                              choices: inputType === "checkbox" || inputType === "select" || inputType === "radio"
+                                ? (option.choices.length ? option.choices : ["Choix 1", "Choix 2"])
+                                : [],
+                              allows_quantity: inputType === "checkbox" ? option.allows_quantity : false,
+                              assigns_to_all_participants: false,
+                              player_assignments: inputType === "checkbox" ? option.player_assignments : [],
+                            });
+                          }}
+                        >
+                          <option value="checkbox">Case à cocher</option>
+                          <option value="yes_no">Oui / Non</option>
+                          <option value="select">Liste déroulante</option>
+                          <option value="radio">Boutons radio</option>
+                        </select>
+                      </label>
+                      <label className={styles.field}>
                         <span>Note interne</span>
                         <input
                           value={option.internal_note}
@@ -1205,6 +1354,25 @@ export default function CampEditorPage() {
                         </select>
                       </label>
                     </div>
+                    {option.input_type === "checkbox" || option.input_type === "select" || option.input_type === "radio" ? (
+                      <label className={styles.field}>
+                        <span>Choix proposés · un par ligne{option.input_type === "checkbox" ? " · facultatif" : ""}</span>
+                        <textarea
+                          rows={Math.max(3, option.choices.length)}
+                          value={option.choices.join("\n")}
+                          onChange={(event) => {
+                            const choices = event.target.value.split("\n");
+                            updateOption(index, {
+                              choices,
+                              allows_quantity: choices.some((choice) => choice.trim()) ? false : option.allows_quantity,
+                              assigns_to_all_participants: choices.some((choice) => choice.trim()) ? false : option.assigns_to_all_participants,
+                              player_assignments: choices.some((choice) => choice.trim()) ? [] : option.player_assignments,
+                            });
+                          }}
+                          placeholder={"Matériel inclus\nJe prends mon matériel"}
+                        />
+                      </label>
+                    ) : null}
                     <div className={styles.pillRow}>
                       <label className={styles.check}>
                         <input
@@ -1218,7 +1386,7 @@ export default function CampEditorPage() {
                         />
                         <span>Option active</span>
                       </label>
-                      <label className={styles.check}>
+                      {option.input_type === "checkbox" && !option.choices.some((choice) => choice.trim()) ? <label className={styles.check}>
                         <input
                           type="checkbox"
                           checked={option.allows_quantity}
@@ -1229,7 +1397,7 @@ export default function CampEditorPage() {
                           }
                         />
                         <span>Quantité par participant</span>
-                      </label>
+                      </label> : null}
                     </div>
                     {!option.applies_to_all_days ? (
                       <div className={styles.stack}>
@@ -1265,7 +1433,7 @@ export default function CampEditorPage() {
                         </div>
                       </div>
                     ) : null}
-                    <div>
+                    {option.input_type === "checkbox" && !option.choices.some((choice) => choice.trim()) ? <div className={styles.assignmentBlock}>
                       <div className={styles.sectionTitle}>
                         <h3>Attribution aux juniors</h3>
                         <p>
@@ -1279,7 +1447,7 @@ export default function CampEditorPage() {
                           : ""}
                         </p>
                       </div>
-                      <div className={styles.pillRow}>
+                      <div className={`${styles.pillRow} ${styles.assignmentChoices}`}>
                         <label className={styles.check}>
                           <input
                             type="checkbox"
@@ -1302,7 +1470,7 @@ export default function CampEditorPage() {
                           <span>Tous les participants</span>
                         </label>
                       </div>
-                      <div className={styles.pillRow}>
+                      <div className={`${styles.pillRow} ${styles.assignmentChoices}`}>
                         {selectedPlayers.map((player) => {
                           const assignment = optionAssignment(
                             option,
@@ -1361,7 +1529,10 @@ export default function CampEditorPage() {
                           );
                         })}
                       </div>
-                    </div>
+                    </div> : <div className={styles.sectionTitle}>
+                      <h3>Réponse du joueur</h3>
+                      <p>Le joueur renseignera cette option depuis sa page Stages après son inscription.</p>
+                    </div>}
                   </article>
                 ))}
               </div>

@@ -34,7 +34,7 @@ type ProfileCustomField = {
   id: string;
   field_key: string;
   label: string;
-  field_type: "text" | "boolean" | "select";
+  field_type: "text" | "short_text" | "long_text" | "number" | "date" | "boolean" | "select" | "radio" | "checkbox";
   options_json: string[];
   visible_in_profile: boolean;
   editable_in_profile: boolean;

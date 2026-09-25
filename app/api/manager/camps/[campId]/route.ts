@@ -74,6 +74,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ campId: s
     const body = await req.json().catch(() => ({}));
     const title = normalizeText(body?.title);
     const notes = normalizeText(body?.notes) || null;
+    const imageUrl = normalizeText(body?.image_url) || null;
     const headCoachUserId = normalizeText(body?.head_coach_user_id) || null;
     let groupIds = uniqIds(body?.group_ids);
     const playerIds = uniqIds(body?.player_ids);
@@ -238,6 +239,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ campId: s
       .update({
         title,
         notes,
+        image_url: imageUrl,
         head_coach_user_id: headCoachUserId,
         capacity,
         season_id: seasonId,

@@ -11,11 +11,14 @@ export type CampOptionPayload = {
   day_indexes?: number[];
   capacity?: number | null;
   allows_quantity?: boolean;
+  input_type?: "checkbox" | "yes_no" | "select" | "radio" | null;
+  choices?: string[] | null;
   internal_note?: string | null;
   player_assignments?: Array<{
     player_id?: string | null;
     quantity?: number | null;
     note?: string | null;
+    selected_value?: string | null;
   }>;
 };
 
@@ -71,6 +74,18 @@ export async function syncCampOptions(
       capacityRaw != null && Number.isFinite(capacityRaw)
         ? Math.max(1, Math.trunc(capacityRaw))
         : null;
+    const inputType = ["checkbox", "yes_no", "select", "radio"].includes(String(option?.input_type ?? ""))
+      ? String(option?.input_type)
+      : "checkbox";
+    const choices = inputType === "checkbox" || inputType === "select" || inputType === "radio"
+      ? uniq((Array.isArray(option?.choices) ? option.choices : []).map((choice) => normalizeText(choice)))
+      : [];
+    if ((inputType === "select" || inputType === "radio") && choices.length < 2) {
+      return {
+        error: `Ajoutez au moins deux choix pour l’option « ${name} ».`,
+        status: 400 as const,
+      };
+    }
     const assignments = (
       Array.isArray(option?.player_assignments) ? option.player_assignments : []
     )
@@ -81,6 +96,7 @@ export async function syncCampOptions(
           Math.trunc(Number(assignment?.quantity ?? 1) || 1),
         ),
         note: normalizeText(assignment?.note) || null,
+        selected_value: normalizeText(assignment?.selected_value) || null,
       }))
       .filter(
         (assignment) =>
@@ -123,7 +139,9 @@ export async function syncCampOptions(
       is_active: option?.is_active !== false,
       applies_to_all_days: appliesToAllDays,
       capacity,
-      allows_quantity: Boolean(option?.allows_quantity),
+      allows_quantity: inputType === "checkbox" && choices.length === 0 && Boolean(option?.allows_quantity),
+      input_type: inputType,
+      choices,
       internal_note: normalizeText(option?.internal_note) || null,
       sort_order: sortOrder,
       updated_at: new Date().toISOString(),

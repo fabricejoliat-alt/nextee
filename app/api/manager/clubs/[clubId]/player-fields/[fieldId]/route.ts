@@ -44,6 +44,21 @@ function normalizeProfileVisibility(rawVisible: unknown, rawEditable: unknown) {
   };
 }
 
+function normalizeRoleProfilePermissions(body: Record<string, unknown>) {
+  const visibleToPlayer = Boolean(body?.visible_to_player);
+  const visibleToCoach = Boolean(body?.visible_to_coach);
+  return {
+    visible_to_player: visibleToPlayer,
+    editable_by_player: visibleToPlayer && Boolean(body?.editable_by_player),
+    visible_to_coach: visibleToCoach,
+    editable_by_coach: visibleToCoach && Boolean(body?.editable_by_coach),
+    visible_in_profile: visibleToPlayer || visibleToCoach,
+    editable_in_profile:
+      (visibleToPlayer && Boolean(body?.editable_by_player)) ||
+      (visibleToCoach && Boolean(body?.editable_by_coach)),
+  };
+}
+
 const MEMBER_ROLES = ["manager", "coach", "player", "parent"] as const;
 type MemberRole = (typeof MEMBER_ROLES)[number];
 
@@ -70,7 +85,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const body = await req.json().catch(() => ({}));
     const { data: field, error: fieldError } = await supabaseAdmin
       .from("club_player_fields")
-      .select("id,legacy_binding,field_type,applies_to_roles,visible_in_profile,editable_in_profile")
+      .select("id,legacy_binding,field_type,applies_to_roles,visible_in_profile,editable_in_profile,visible_to_player,editable_by_player,visible_to_coach,editable_by_coach")
       .eq("id", fieldId)
       .eq("club_id", clubId)
       .maybeSingle();
@@ -92,7 +107,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     }
     if (!field.legacy_binding && Object.prototype.hasOwnProperty.call(body, "field_type")) {
       const fieldType = String(body.field_type ?? "").trim().toLowerCase();
-      if (!["text", "boolean", "select"].includes(fieldType)) {
+      if (!["text", "short_text", "long_text", "number", "date", "select", "radio", "checkbox", "boolean"].includes(fieldType)) {
         return NextResponse.json({ error: "Type invalide" }, { status: 400 });
       }
       patch.field_type = fieldType;
@@ -101,31 +116,30 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       patch.applies_to_roles = normalizeFieldRoles(body.applies_to_roles);
     }
     if (
-      Object.prototype.hasOwnProperty.call(body, "visible_in_profile") ||
-      Object.prototype.hasOwnProperty.call(body, "editable_in_profile")
+      Object.prototype.hasOwnProperty.call(body, "visible_to_player") ||
+      Object.prototype.hasOwnProperty.call(body, "editable_by_player") ||
+      Object.prototype.hasOwnProperty.call(body, "visible_to_coach") ||
+      Object.prototype.hasOwnProperty.call(body, "editable_by_coach")
     ) {
-      const profileVisibility = normalizeProfileVisibility(
-        Object.prototype.hasOwnProperty.call(body, "visible_in_profile") ? body.visible_in_profile : (field as any).visible_in_profile,
-        Object.prototype.hasOwnProperty.call(body, "editable_in_profile") ? body.editable_in_profile : (field as any).editable_in_profile
-      );
-      patch.visible_in_profile = profileVisibility.visible_in_profile;
-      patch.editable_in_profile = profileVisibility.editable_in_profile;
+      Object.assign(patch, normalizeRoleProfilePermissions({ ...field, ...body }));
     }
     if (Object.prototype.hasOwnProperty.call(body, "options")) {
       const nextType = String(patch.field_type ?? field.field_type);
       const options = normalizeOptions(body.options);
-      if (nextType === "select" && options.length === 0) {
+      if (["select", "radio", "checkbox"].includes(nextType) && options.length === 0) {
         return NextResponse.json({ error: "Les options sont requises" }, { status: 400 });
       }
-      patch.options_json = nextType === "select" ? options : [];
+      patch.options_json = ["select", "radio", "checkbox"].includes(nextType) ? options : [];
     }
+    if (Object.prototype.hasOwnProperty.call(body, "scope")) patch.scope = body.scope === "season" ? "season" : "permanent";
+    if (Object.prototype.hasOwnProperty.call(body, "description")) patch.description = String(body.description ?? "").trim() || null;
 
     const { data, error } = await supabaseAdmin
       .from("club_player_fields")
       .update(patch)
       .eq("id", fieldId)
       .eq("club_id", clubId)
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,visible_to_player,editable_by_player,visible_to_coach,editable_by_coach,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 

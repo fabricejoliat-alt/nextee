@@ -48,6 +48,21 @@ function normalizeProfileVisibility(rawVisible: unknown, rawEditable: unknown) {
   };
 }
 
+function normalizeRoleProfilePermissions(body: Record<string, unknown>) {
+  const visibleToPlayer = Boolean(body?.visible_to_player);
+  const visibleToCoach = Boolean(body?.visible_to_coach);
+  return {
+    visible_to_player: visibleToPlayer,
+    editable_by_player: visibleToPlayer && Boolean(body?.editable_by_player),
+    visible_to_coach: visibleToCoach,
+    editable_by_coach: visibleToCoach && Boolean(body?.editable_by_coach),
+    visible_in_profile: visibleToPlayer || visibleToCoach,
+    editable_in_profile:
+      (visibleToPlayer && Boolean(body?.editable_by_player)) ||
+      (visibleToCoach && Boolean(body?.editable_by_coach)),
+  };
+}
+
 const MEMBER_ROLES = ["manager", "coach", "player", "parent"] as const;
 type MemberRole = (typeof MEMBER_ROLES)[number];
 
@@ -106,7 +121,7 @@ function toFieldPayload(body: any) {
   const isActive = body?.is_active == null ? true : Boolean(body.is_active);
   const sortOrder = Number(body?.sort_order ?? 0);
   const appliesToRoles = normalizeFieldRoles(body?.applies_to_roles);
-  const profileVisibility = normalizeProfileVisibility(body?.visible_in_profile, body?.editable_in_profile);
+  const profileVisibility = normalizeRoleProfilePermissions(body);
 
   if (!label) throw new Error("Label manquant");
   const scope = body?.scope === "season" ? "season" : "permanent";
@@ -140,7 +155,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     const { data, error } = await supabaseAdmin
       .from("club_player_fields")
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,visible_to_player,editable_by_player,visible_to_coach,editable_by_coach,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
       .eq("club_id", clubId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
@@ -184,7 +199,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
         field_key: fieldKey,
         ...payload,
       })
-      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
+      .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,visible_to_player,editable_by_player,visible_to_coach,editable_by_coach,legacy_binding,scope,description,is_required,visibility,editable_by,is_sensitive")
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
