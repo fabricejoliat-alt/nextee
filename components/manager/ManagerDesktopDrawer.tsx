@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline, BookOpen } from "lucide-react";
+import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline, BookOpen, WandSparkles } from "lucide-react";
 
 const ROUTES = {
   home: "/manager",
@@ -29,6 +29,7 @@ const ROUTES = {
   performanceCoaches: "/manager/performance/coaches",
   trainingVolume: "/manager/training-volume",
   evaluationCriteria: "/manager/evaluation-criteria",
+  aiAssistance: "/manager/ai-assistance",
   rules: "/manager/rules",
   profileEdit: "/manager/profile",
 } as const;
@@ -171,6 +172,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: locale === "fr" ? "E-mails" : "Emails", icon: Mail, href: ROUTES.userManagementEmailConfiguration },
           { label: locale === "fr" ? "Volume d'entraînement" : "Training volume", icon: Gauge, href: ROUTES.trainingVolume },
           { label: locale === "fr" ? "Critères d’évaluation" : "Evaluation criteria", icon: ClipboardCheck, href: ROUTES.evaluationCriteria },
+          { label: locale === "fr" ? "Assistance IA" : "AI assistance", icon: WandSparkles, href: ROUTES.aiAssistance },
           { label: locale === "fr" ? "Tournois exceptionnels" : "Exceptional tournaments", icon: Sparkles, href: ROUTES.omTournaments },
           { label: locale === "fr" ? "Notifications" : "Notifications", icon: Bell, href: ROUTES.notifications },
         ],

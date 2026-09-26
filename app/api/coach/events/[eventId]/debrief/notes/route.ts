@@ -15,8 +15,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     const { supabaseAdmin, callerId } = await requireCaller(token);
     const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
     if (event.event_type !== "training") return NextResponse.json({ error: "Training only" }, { status: 400 });
-    if (!(await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id))) {
-      return NextResponse.json({ error: "Training assistance is disabled for this organization." }, { status: 403 });
+    if (!(await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId))) {
+      return NextResponse.json({ error: "Training assistance is disabled for this coach." }, { status: 403 });
     }
 
     const attendeesRes = await supabaseAdmin

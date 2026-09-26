@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -11,7 +11,7 @@ import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import eventStyles from "./CoachEventDetail.module.css";
-import { ClipboardCheck, Eye, Pencil, PlusCircle, Trash2, ArrowLeft, MapPin } from "lucide-react";
+import { ClipboardCheck, Pencil, PlusCircle, Trash2, ArrowLeft, MapPin, Sparkles } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -80,6 +80,12 @@ type PlayerEvaluationSummary = {
   player_id: string;
   coach_id: string | null;
   coach_name: string | null;
+};
+type PlayerPreparationInsight = {
+  player_id: string;
+  points: Array<{ text: string }>;
+  source_event_count: number;
+  generated_at: string;
 };
 type EventStructureItemRow = {
   category: string;
@@ -263,6 +269,45 @@ export default function CoachEventDetailPage() {
   const [copyingStructure, setCopyingStructure] = useState(false);
   const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
   const [coachTrainingAssistanceEnabled, setCoachTrainingAssistanceEnabled] = useState(false);
+  const [preparationInsightsByPlayerId, setPreparationInsightsByPlayerId] = useState<Map<string, PlayerPreparationInsight>>(new Map());
+  const [preparationInsightsLoading, setPreparationInsightsLoading] = useState(false);
+  const [preparationInsightsError, setPreparationInsightsError] = useState(false);
+  const preparationRequestRef = useRef(0);
+
+  async function loadPreparationInsights(token: string, targetEvent: EventRow, assistanceEnabled: boolean) {
+    const requestId = ++preparationRequestRef.current;
+    setPreparationInsightsByPlayerId(new Map());
+    setPreparationInsightsError(false);
+    const startsAt = new Date(targetEvent.starts_at).getTime();
+    if (!assistanceEnabled || targetEvent.event_type !== "training" || !Number.isFinite(startsAt) || startsAt <= Date.now()) {
+      setPreparationInsightsLoading(false);
+      return;
+    }
+
+    setPreparationInsightsLoading(true);
+    try {
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(targetEvent.id)}/preparation-insights`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json?.error ?? "Preparation insights unavailable"));
+      if (requestId !== preparationRequestRef.current) return;
+      const insights = Array.isArray(json?.insights) ? (json.insights as PlayerPreparationInsight[]) : [];
+      setPreparationInsightsByPlayerId(
+        new Map(
+          insights
+            .filter((insight) => insight?.player_id && Array.isArray(insight.points) && insight.points.length > 0)
+            .map((insight) => [insight.player_id, insight] as const)
+        )
+      );
+    } catch {
+      if (requestId === preparationRequestRef.current) setPreparationInsightsError(true);
+    } finally {
+      if (requestId === preparationRequestRef.current) setPreparationInsightsLoading(false);
+    }
+  }
 
   async function copyStructureToFutureEvents() {
     if (!event?.series_id) return;
@@ -332,8 +377,12 @@ export default function CoachEventDetailPage() {
   }
 
   async function load() {
+    preparationRequestRef.current += 1;
     setLoading(true);
     setError(null);
+    setPreparationInsightsByPlayerId(new Map());
+    setPreparationInsightsLoading(false);
+    setPreparationInsightsError(false);
 
     try {
       if (!eventId) throw new Error("Événement manquant.");
@@ -358,7 +407,8 @@ export default function CoachEventDetailPage() {
       setGroupName(String(detailJson?.groupName ?? "Groupe"));
       setMeId(String(detailJson?.meId ?? ""));
       setCanManageActivity(detailJson?.canManageActivity === true);
-      setCoachTrainingAssistanceEnabled(detailJson?.coachTrainingAssistanceEnabled === true);
+      const assistanceEnabled = detailJson?.coachTrainingAssistanceEnabled === true;
+      setCoachTrainingAssistanceEnabled(assistanceEnabled);
       setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
       setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
       setSelectedCoachIds(
@@ -383,6 +433,7 @@ export default function CoachEventDetailPage() {
             .map((row) => [row.player_id, row] as const)
         )
       );
+      void loadPreparationInsights(token, ev, assistanceEnabled);
 
       // Thread preview
       setLoadingEventThread(true);
@@ -444,6 +495,10 @@ export default function CoachEventDetailPage() {
       setSelectedCoachIds([]);
       setStructureItems([]);
       setEvaluatedPlayersById(new Map());
+      preparationRequestRef.current += 1;
+      setPreparationInsightsByPlayerId(new Map());
+      setPreparationInsightsLoading(false);
+      setPreparationInsightsError(false);
       setMeId("");
       setEventThreadId("");
       setEventThreadMessages([]);
@@ -595,6 +650,7 @@ export default function CoachEventDetailPage() {
   const date = eventDateSummary(event.starts_at, event.ends_at);
   const isEventPast = new Date(event.starts_at).getTime() < Date.now();
   const isTrainingPast = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+  const showPreparationInsights = coachTrainingAssistanceEnabled && event.event_type === "training" && !isEventPast;
   const isSpecific = groupName === "Groupe spécifique" || event.title?.trim() === "Activité spécifique";
 
   return (
@@ -696,20 +752,39 @@ export default function CoachEventDetailPage() {
 
       <section id="expected-players" className={styles.quickPanel}>
         <div className={styles.sectionHeading}>
-          <div><h2>{tr("Joueurs attendus", "Expected players")}</h2><p>{tr("Présence et évaluation des juniors de l’activité.", "Attendance and evaluation for the activity's juniors.")}</p></div>
+          <div><h2>{tr("Joueurs attendus", "Expected players")}</h2><p>{showPreparationInsights ? tr("Présence et points d’attention générés uniquement à partir des notes privées des cinq derniers entraînements.", "Attendance and focus points generated only from private notes from the last five training sessions.") : tr("Présence et évaluation des juniors de l’activité.", "Attendance and evaluation for the activity's juniors.")}</p></div>
         </div>
         <div className={eventStyles.playerList}>
           {attendees.map((attendee) => {
             const player = attendee.profile ?? null;
             const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
-            const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
             const canEvaluate = event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
             const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
+            const preparationInsight = preparationInsightsByPlayerId.get(attendee.player_id) ?? null;
             return (
               <article key={attendee.player_id} className={eventStyles.playerRow}>
-                <div className={eventStyles.playerIdentity}>
-                  <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span>
-                  <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
+                <div className={eventStyles.playerMain}>
+                  <div className={eventStyles.playerIdentity}>
+                    <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span>
+                    <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
+                  </div>
+                  {showPreparationInsights ? (
+                    <div className={eventStyles.preparationInsight}>
+                      <div className={eventStyles.preparationInsightHeader}>
+                        <span><Sparkles size={14} aria-hidden="true" />{tr("Points d’attention", "Focus points")}</span>
+                        {preparationInsight ? <small>{preparationInsight.source_event_count} {tr(preparationInsight.source_event_count > 1 ? "séances avec note privée" : "séance avec note privée", preparationInsight.source_event_count > 1 ? "sessions with a private note" : "session with a private note")}</small> : null}
+                      </div>
+                      {preparationInsightsLoading ? (
+                        <div className={eventStyles.preparationLoading} aria-label={tr("Préparation des points d’attention", "Preparing focus points")}><i /><i /><i /></div>
+                      ) : preparationInsight ? (
+                        <ul className={eventStyles.preparationChecklist}>
+                          {preparationInsight.points.map((point, index) => <li key={`${attendee.player_id}-${index}`}>{point.text}</li>)}
+                        </ul>
+                      ) : (
+                        <p className={eventStyles.preparationEmpty}>{preparationInsightsError ? tr("Points d’attention momentanément indisponibles.", "Focus points are temporarily unavailable.") : tr("Aucune note privée exploitable sur les cinq dernières séances.", "No usable private note from the last five sessions.")}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
                 <div className={eventStyles.attendance}>
                   {isTrainingPast ? (
@@ -725,7 +800,6 @@ export default function CoachEventDetailPage() {
                   )}
                 </div>
                 <div className={eventStyles.playerActions}>
-                  {canOpenPlayerDetail ? <Link className={eventStyles.viewButton} aria-label={tr("Voir le joueur", "View player")} title={tr("Voir", "View")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}`}><Eye size={17} aria-hidden="true" /></Link> : null}
                   {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}

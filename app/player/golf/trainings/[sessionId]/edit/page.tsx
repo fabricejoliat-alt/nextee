@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -18,9 +18,9 @@ import {
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, Plus, Trash2 } from "lucide-react";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
-import styles from "../../new/PlayerTrainingNew.module.css";
+import styles from "./PlayerTrainingEdit.module.css";
 
 type SessionType = "club" | "private" | "individual";
 
@@ -552,471 +552,307 @@ export default function PlayerTrainingEditPage() {
   }
 
   return (
-    <div className={`player-dashboard-bg ${styles.evaluationPage}`}>
-      <div className={`app-shell marketplace-page ${styles.evaluationShell}`}>
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "Modifier l’activité", "Edit activity") }]} />
-        {/* Header */}
-        <div className={styles.evaluationHero}>
-          <header className={playerUiStyles.topline}>
-            <div style={{ display: "grid", gap: 10 }}>
-              <h1 style={{ marginBottom: 0 }}>
-                {pickLocaleText(locale, "Modifier l’activité", "Edit activity")}
-              </h1>
-              <p className={playerUiStyles.lead}>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
-            </div>
+    <div className={["player-dashboard-bg", styles.pageBackground].join(" ")}>
+      <div className={["app-shell", "marketplace-page", styles.shell].join(" ")}>
+        <PlayerBreadcrumb
+          items={[
+            { label: "Player", href: "/player" },
+            { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" },
+            { label: pickLocaleText(locale, "Modifier l’activité", "Edit activity") },
+          ]}
+        />
 
-            <div className={styles.heroActions} style={{ marginTop: 2 }}>
-              <Link className={`${playerUiStyles.secondary} ${styles.backButton}`} href={`/player/golf/trainings/${sessionId}`}>
-                <ArrowLeft size={15} aria-hidden="true" />
-                {pickLocaleText(locale, "Retour à l’activité", "Back to activity")}
-              </Link>
-            </div>
-          </header>
+        <header className={styles.hero}>
+          <div>
+            <h1>{pickLocaleText(locale, "Modifier l’activité", "Edit activity")}</h1>
+            <p>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
+          </div>
+          <Link className={playerUiStyles.secondary} href={"/player/golf/trainings/" + sessionId}>
+            <ArrowLeft size={15} aria-hidden="true" />
+            {pickLocaleText(locale, "Retour à l’activité", "Back to activity")}
+          </Link>
+        </header>
 
-          {error && <div className="marketplace-error">{error}</div>}
+        {error ? <div className={playerUiStyles.alertError}>{error}</div> : null}
 
-          {sessionType === "club" && clubIds.length === 0 && !loading && (
-            <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.92)" }}>
-              {t("trainingNew.noActiveClub")}
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <TrainingPageSkeleton variant="form" label={t("common.loading")} />
+        ) : (
+          <form onSubmit={save} className={styles.form}>
+            <section className={playerUiStyles.panel}>
+              <EditSectionHeader
+                title={pickLocaleText(locale, "Informations de l’activité", "Activity information")}
+                description={pickLocaleText(locale, "Date, lieu, durée et encadrement.", "Date, place, duration and coaching.")}
+              />
 
-        {/* Form */}
-        <div className={styles.evaluationContent}>
-          {loading ? (
-            <TrainingPageSkeleton variant="form" label={t("common.loading")} />
-          ) : (
-            <form onSubmit={save} className={`${styles.evaluationForm} ${styles.actionsInCard}`} style={{ display: "grid", gap: 12 }}>
-              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>
-                  {pickLocaleText(locale, "Date, lieu et type d'entraînement", "Date, place and training type")}
+              {attendanceBlocked ? (
+                <div className={styles.warning}>
+                  {pickLocaleText(
+                    locale,
+                    "Tu es indiqué absent ou excusé sur cet entraînement. L’évaluation joueur est désactivée.",
+                    "You are marked absent or excused for this training. Player evaluation is disabled."
+                  )}
                 </div>
-                {attendanceBlocked ? (
-                  <div
-                    style={{
-                      border: "1px solid rgba(239,68,68,0.18)",
-                      background: "rgba(239,68,68,0.08)",
-                      color: "rgba(127,29,29,1)",
-                      borderRadius: 12,
-                      padding: "10px 12px",
-                      fontSize: 12,
-                      fontWeight: 900,
-                    }}
-                  >
-                    {pickLocaleText(
-                      locale,
-                      "Tu es indiqué absent sur cet entraînement. L'évaluation joueur est désactivée.",
-                      "You are marked absent for this training. Player evaluation is disabled."
-                    )}
-                  </div>
-                ) : null}
+              ) : null}
 
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{t("roundsNew.dateTime")}</span>
-                    <input
-                      type="datetime-local"
-                      value={startAt}
-                      onChange={(e) => setStartAt(e.target.value)}
-                      disabled={busy || isCoachPlannedTraining}
-                    />
-                  </label>
+              {sessionType === "club" && clubIds.length === 0 ? (
+                <div className={styles.warning}>{t("trainingNew.noActiveClub")}</div>
+              ) : null}
 
-                  {performanceEnabled ? (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Total (min)", "Total (min)")}</span>
-                      <div
-                        style={{
-                          height: 42,
-                          borderRadius: 10,
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          background: "rgba(255,255,255,0.65)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "0 12px",
-                          fontWeight: 950,
-                          color: "rgba(0,0,0,0.78)",
-                        }}
-                      >
-                        <span>{effectiveTotalMinutes}</span>
-                        <span style={{ fontSize: 11, fontWeight: 900, opacity: 0.65 }}>min</span>
-                      </div>
+              <div className={styles.fieldGrid}>
+                <label className={styles.field}>
+                  <span>{t("roundsNew.dateTime")}</span>
+                  <input
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(event) => setStartAt(event.target.value)}
+                    disabled={busy || isCoachPlannedTraining}
+                  />
+                </label>
+
+                <div className={styles.field}>
+                  <span>{performanceEnabled ? pickLocaleText(locale, "Total réalisé", "Completed total") : pickLocaleText(locale, "Durée", "Duration")}</span>
+                  {performanceEnabled || (isCoachPlannedTraining && sessionType === "club") ? (
+                    <div className={styles.readOnlyValue}>
+                      <strong>{effectiveTotalMinutes > 0 ? effectiveTotalMinutes : "—"}</strong>
+                      <small>min</small>
                     </div>
                   ) : (
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Durée (min)", "Duration (min)")}</span>
-                      {isCoachPlannedTraining && sessionType === "club" ? (
-                        <div
-                          style={{
-                            borderRadius: 10,
-                            border: "1px solid rgba(0,0,0,0.10)",
-                            background: "rgba(255,255,255,0.70)",
-                            padding: "10px 12px",
-                            fontSize: 13,
-                            fontWeight: 900,
-                            color: "rgba(0,0,0,0.80)",
-                          }}
-                        >
-                          {effectiveTotalMinutes > 0 ? `${effectiveTotalMinutes} min` : "—"}
-                        </div>
-                      ) : (
-                        <select
-                          value={nonPerformanceDuration}
-                          onChange={(e) => setNonPerformanceDuration(e.target.value)}
-                          disabled={busy}
-                          required
-                        >
-                          <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
-                          {MINUTE_OPTIONS.map((m) => (
-                            <option key={`edit-non-perf-duration-${m}`} value={String(m)}>
-                              {m} min
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
+                    <select
+                      value={nonPerformanceDuration}
+                      onChange={(event) => setNonPerformanceDuration(event.target.value)}
+                      disabled={busy}
+                      required
+                    >
+                      <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
+                      {MINUTE_OPTIONS.map((minutes) => (
+                        <option key={"edit-duration-" + minutes} value={String(minutes)}>{minutes} min</option>
+                      ))}
+                    </select>
                   )}
                 </div>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>{t("common.place")} ({t("common.optional")})</span>
+                <label className={styles.field}>
+                  <span>{t("common.place")} <small>({t("common.optional")})</small></span>
                   <input
                     value={place}
-                    onChange={(e) => setPlace(e.target.value)}
+                    onChange={(event) => setPlace(event.target.value)}
                     disabled={busy || isCoachPlannedTraining}
                     placeholder={t("trainingNew.placePlaceholder")}
                   />
                 </label>
 
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={fieldLabelStyle}>{t("trainingNew.trainingType")}</div>
+                <label className={styles.field}>
+                  <span>{t("trainingNew.trainingType")}</span>
                   <select
                     value={sessionType}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      if (!next) return;
-                      setType(next as SessionType);
+                    onChange={(event) => {
+                      if (event.target.value) setType(event.target.value as SessionType);
                     }}
                     disabled={busy || isCoachPlannedTraining}
                     required
                   >
-                    <option value="">{pickLocaleText(locale, "Veuillez sélectionner", "Please select")}</option>
                     {sessionType === "club" ? (
-                      <option value="club" disabled>
-                        {pickLocaleText(locale, "Entraînement club (planifié)", "Club training (planned)")}
-                      </option>
+                      <option value="club">{pickLocaleText(locale, "Entraînement club", "Club training")}</option>
                     ) : null}
                     <option value="private">{t("trainingDetail.typePrivate")}</option>
                     <option value="individual">{t("trainingDetail.typeIndividual")}</option>
                   </select>
+                </label>
 
-                  {sessionType === "club" && (
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{t("common.club")}</span>
-                      <select
-                        value={clubIdForTraining}
-                        onChange={(e) => setClubIdForTraining(e.target.value)}
-                        disabled={busy || clubIds.length === 0 || isCoachPlannedTraining}
-                      >
-                        <option value="">-</option>
-                        {clubIds.map((id) => (
-                          <option key={id} value={id}>
-                            {clubsById[id]?.name ?? id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-
-                  {sessionType !== "individual" ? (
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Coach", "Coach")}</span>
-                      <input
-                        value={coachName}
-                        onChange={(e) => setCoachName(e.target.value)}
-                        disabled
-                        placeholder={pickLocaleText(locale, "Coach (non modifiable ici)", "Coach (read-only here)")}
-                      />
-                    </label>
-                  ) : null}
-
-                  {!performanceEnabled ? (
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Notes / remarques", "Notes / remarks")} ({t("common.optional")})</span>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("roundsNew.notesPlaceholder")}
-                        style={{ minHeight: 90 }}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-              </section>
-
-              {performanceEnabled && isCoachPlannedTraining ? (
-              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>
-                  {pickLocaleText(locale, "Structure planifiée", "Planned structure")}
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 8,
-                    paddingTop: 2,
-                  }}
-                >
-                  {plannedStructureItems.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      {pickLocaleText(locale, "Non saisi.", "Not entered.")}
-                    </div>
-                  ) : (
-                    <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
-                      {plannedStructureItems.map((it, idx) => {
-                        const label = TRAINING_CATEGORIES.find((c) => c.value === it.category)?.label ?? it.category;
-                        const extra = String(it.note ?? "").trim();
-                        return (
-                          <li key={`planned-struct-edit-${idx}`} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {label} — {it.minutes} min
-                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </section>
-              ) : null}
-
-              {performanceEnabled ? (
-              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
-                  {plannedStructureItems.length > 0 ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={copyPlannedStructure}
-                      disabled={busy}
-                      style={{ minHeight: 34, fontWeight: 900 }}
+                {sessionType === "club" ? (
+                  <label className={styles.field}>
+                    <span>{t("common.club")}</span>
+                    <select
+                      value={clubIdForTraining}
+                      onChange={(event) => setClubIdForTraining(event.target.value)}
+                      disabled={busy || clubIds.length === 0 || isCoachPlannedTraining}
                     >
-                      {pickLocaleText(locale, "Copier la structure planifiée", "Copy planned structure")}
-                    </button>
-                  ) : null}
-                </div>
+                      <option value="">—</option>
+                      {clubIds.map((id) => (
+                        <option key={id} value={id}>{clubsById[id]?.name ?? id}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
 
-                {items.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    {t("trainingNew.addSectionHint")}
+                {sessionType !== "individual" ? (
+                  <label className={styles.field}>
+                    <span>{pickLocaleText(locale, "Coach", "Coach")}</span>
+                    <input
+                      value={coachName}
+                      onChange={(event) => setCoachName(event.target.value)}
+                      disabled
+                      placeholder={pickLocaleText(locale, "Coach non renseigné", "Coach not entered")}
+                    />
+                  </label>
+                ) : null}
+              </div>
+
+              {!performanceEnabled ? (
+                <label className={styles.field}>
+                  <span>{pickLocaleText(locale, "Notes / remarques", "Notes / remarks")} <small>({t("common.optional")})</small></span>
+                  <textarea
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    disabled={busy}
+                    placeholder={t("roundsNew.notesPlaceholder")}
+                  />
+                </label>
+              ) : null}
+            </section>
+
+            {performanceEnabled && isCoachPlannedTraining ? (
+              <section className={playerUiStyles.panel}>
+                <EditSectionHeader
+                  title={pickLocaleText(locale, "Structure planifiée", "Planned structure")}
+                  description={pickLocaleText(locale, "Le programme préparé par le coach pour cette activité.", "The programme prepared by the coach for this activity.")}
+                />
+                {plannedStructureItems.length ? (
+                  <div className={styles.plannedList}>
+                    {plannedStructureItems.map((item, index) => {
+                      const label = TRAINING_CATEGORIES.find((category) => category.value === item.category)?.label ?? item.category;
+                      return (
+                        <div className={styles.plannedItem} key={"planned-struct-edit-" + index}>
+                          <div>
+                            <strong>{label}</strong>
+                            {item.note ? <small>{item.note}</small> : null}
+                          </div>
+                          <b>{item.minutes} min</b>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {items.map((it, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          borderBottom: idx === items.length - 1 ? "0" : "1px solid rgba(53,72,59,0.12)",
-                          padding: "12px 0",
-                          display: "grid",
-                          gap: 10,
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                          <strong style={{ color: "#35483b", fontFamily: "var(--font-inter-tight), var(--font-inter), sans-serif", fontSize: 14, fontWeight: 750 }}>
-                            {t("trainingNew.section")} {idx + 1}
-                          </strong>
+                  <div className={styles.empty}>{pickLocaleText(locale, "Aucun contenu planifié.", "No planned content.")}</div>
+                )}
+              </section>
+            ) : null}
+
+            {performanceEnabled ? (
+              <section className={playerUiStyles.panel}>
+                <EditSectionHeader
+                  title={pickLocaleText(locale, "Structure réalisée", "Completed structure")}
+                  description={pickLocaleText(locale, "Indique précisément les secteurs travaillés et leur durée.", "Enter the areas trained and their duration.")}
+                  action={plannedStructureItems.length ? (
+                    <button type="button" className={playerUiStyles.secondary} onClick={copyPlannedStructure} disabled={busy}>
+                      <Copy size={14} aria-hidden="true" />
+                      {pickLocaleText(locale, "Copier le plan", "Copy plan")}
+                    </button>
+                  ) : null}
+                />
+
+                {items.length ? (
+                  <div className={styles.trainingItems}>
+                    {items.map((item, index) => (
+                      <div className={styles.trainingItem} key={index}>
+                        <div className={styles.itemHeader}>
+                          <strong>{t("trainingNew.section")} {index + 1}</strong>
                           <button
                             type="button"
-                            className={`${playerUiStyles.iconButton} ${playerUiStyles.dangerIcon}`}
-                            onClick={() => removeLine(idx)}
+                            className={[playerUiStyles.iconButton, playerUiStyles.dangerIcon].join(" ")}
+                            onClick={() => removeLine(index)}
                             disabled={busy}
                             title={t("common.delete")}
-                            aria-label={`${t("common.delete")} — ${t("trainingNew.section")} ${idx + 1}`}
+                            aria-label={t("common.delete") + " — " + t("trainingNew.section") + " " + (index + 1)}
                           >
                             <Trash2 size={15} aria-hidden="true" />
                           </button>
                         </div>
-
-                        <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>{t("trainingNew.section")}</span>
+                        <div className={styles.fieldGrid}>
+                          <label className={styles.field}>
+                            <span>{t("trainingNew.section")}</span>
                             <select
-                              value={it.category}
-                              onChange={(e) => updateLine(idx, { category: e.target.value })}
+                              value={item.category}
+                              onChange={(event) => updateLine(index, { category: event.target.value })}
                               disabled={busy}
                             >
-                              <option value="">-</option>
-                              {TRAINING_CATEGORIES.map((c) => (
-                                <option key={c.value} value={c.value}>
-                                  {c.label}
-                                </option>
+                              <option value="">—</option>
+                              {TRAINING_CATEGORIES.map((category) => (
+                                <option key={category.value} value={category.value}>{category.label}</option>
                               ))}
                             </select>
                           </label>
-
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>{t("trainingNew.duration")}</span>
+                          <label className={styles.field}>
+                            <span>{t("trainingNew.duration")}</span>
                             <select
-                              value={it.minutes}
-                              onChange={(e) => updateLine(idx, { minutes: e.target.value })}
+                              value={item.minutes}
+                              onChange={(event) => updateLine(index, { minutes: event.target.value })}
                               disabled={busy}
                             >
-                              <option value="">-</option>
-                              {MINUTE_OPTIONS.map((m) => (
-                                <option key={m} value={String(m)}>
-                                  {m} min
-                                </option>
+                              <option value="">—</option>
+                              {MINUTE_OPTIONS.map((minutes) => (
+                                <option key={minutes} value={String(minutes)}>{minutes} min</option>
                               ))}
                             </select>
                           </label>
                         </div>
-
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>{t("trainingNew.noteOptional")}</span>
+                        <label className={styles.field}>
+                          <span>{t("trainingNew.noteOptional")}</span>
                           <input
-                            value={it.note}
-                            onChange={(e) => updateLine(idx, { note: e.target.value })}
+                            value={item.note}
+                            onChange={(event) => updateLine(index, { note: event.target.value })}
                             disabled={busy}
                             placeholder={t("trainingNew.notePlaceholder")}
                           />
                         </label>
-
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className={styles.empty}>{t("trainingNew.addSectionHint")}</div>
                 )}
 
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="button" className="btn" onClick={addLine} disabled={busy}>
-                    + {t("trainingNew.addSection")}
+                <div className={styles.sectionActions}>
+                  <button type="button" className={playerUiStyles.secondary} onClick={addLine} disabled={busy}>
+                    <Plus size={15} aria-hidden="true" />
+                    {t("trainingNew.addSection")}
                   </button>
                 </div>
               </section>
-              ) : null}
+            ) : null}
 
-              {performanceEnabled ? (
-              <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>
-                  {pickLocaleText(locale, "Auto-évaluation", "Self-assessment")}
+            {performanceEnabled ? (
+              <section className={playerUiStyles.panel}>
+                <EditSectionHeader
+                  title={pickLocaleText(locale, "Mon auto-évaluation", "My self-assessment")}
+                  description={pickLocaleText(locale, "Évalue ton ressenti, puis complète les priorités définies par le club.", "Rate how you felt, then complete the priorities defined by the club.")}
+                />
+
+                <div className={styles.ratingGrid} data-disabled={evaluationDisabled}>
+                  <RatingInput
+                    label={t("trainingNew.motivationBefore")}
+                    icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>}
+                    value={motivation}
+                    onChange={setMotivation}
+                    disabled={evaluationDisabled}
+                  />
+                  <RatingInput
+                    label={t("trainingNew.difficultyDuring")}
+                    icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>}
+                    value={difficulty}
+                    onChange={setDifficulty}
+                    disabled={evaluationDisabled}
+                  />
+                  <RatingInput
+                    label={t("trainingNew.satisfactionAfter")}
+                    icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>}
+                    value={satisfaction}
+                    onChange={setSatisfaction}
+                    disabled={evaluationDisabled}
+                  />
                 </div>
 
-                <div style={{ display: "grid", gap: 10, opacity: evaluationDisabled ? 0.65 : 1 }}>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>
-                      {t("trainingNew.motivationBefore")}
-                    </span>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
-                        const val = String(v);
-                        const active = motivation === val;
-                        return (
-                          <button
-                            key={`mot-${v}`}
-                            type="button"
-                            onClick={() => setMotivation((prev) => (prev === val ? "" : val))}
-                            disabled={evaluationDisabled}
-                            aria-pressed={active}
-                            style={{
-                              width: "100%",
-                              height: 34,
-                              borderRadius: 10,
-                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                              fontWeight: 900,
-                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {v}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>
-                      {t("trainingNew.difficultyDuring")}
-                    </span>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
-                        const val = String(v);
-                        const active = difficulty === val;
-                        return (
-                          <button
-                            key={`dif-${v}`}
-                            type="button"
-                            onClick={() => setDifficulty((prev) => (prev === val ? "" : val))}
-                            disabled={evaluationDisabled}
-                            aria-pressed={active}
-                            style={{
-                              width: "100%",
-                              height: 34,
-                              borderRadius: 10,
-                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                              fontWeight: 900,
-                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {v}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </label>
-
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ ...fieldLabelStyle, display: "flex", alignItems: "center", gap: 7 }}>
-                      <EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>
-                      {t("trainingNew.satisfactionAfter")}
-                    </span>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 6, width: "100%" }}>
-                      {Array.from({ length: 6 }, (_, i) => i + 1).map((v) => {
-                        const val = String(v);
-                        const active = satisfaction === val;
-                        return (
-                          <button
-                            key={`sat-${v}`}
-                            type="button"
-                            onClick={() => setSatisfaction((prev) => (prev === val ? "" : val))}
-                            disabled={evaluationDisabled}
-                            aria-pressed={active}
-                            style={{
-                              width: "100%",
-                              height: 34,
-                              borderRadius: 10,
-                              border: active ? "1px solid rgba(32,99,62,0.55)" : "1px solid rgba(0,0,0,0.14)",
-                              background: active ? "rgba(53,72,59,0.18)" : "rgba(255,255,255,0.80)",
-                              color: active ? "rgba(16,56,34,0.95)" : "rgba(0,0,0,0.78)",
-                              fontWeight: 900,
-                              cursor: evaluationDisabled ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {v}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </label>
-                </div>
-
-                {customCriteria.length > 0 ? (
-                  <div style={{ display: "grid", gap: 12, paddingTop: 14, borderTop: "1px solid rgba(53,72,59,.12)", opacity: evaluationDisabled ? 0.65 : 1 }}>
-                    <div style={{ display: "grid", gap: 3 }}>
-                      <strong style={{ fontSize: 12, color: "#35483b" }}>{pickLocaleText(locale, "Critères du club", "Club criteria")}</strong>
-                      <small style={{ color: "rgba(0,0,0,.55)" }}>{pickLocaleText(locale, "Ces priorités ont été définies pour cette activité.", "These priorities were defined for this activity.")}</small>
+                {customCriteria.length ? (
+                  <div className={styles.customCriteria} data-disabled={evaluationDisabled}>
+                    <div className={styles.subsectionHeader}>
+                      <strong>{pickLocaleText(locale, "Critères du club", "Club criteria")}</strong>
+                      <small>{pickLocaleText(locale, "Ces priorités ont été définies pour cette activité.", "These priorities were defined for this activity.")}</small>
                     </div>
                     {customCriteria.map((criterion) => (
-                      <label key={criterion.id} style={{ display: "grid", gap: 7 }}>
-                        <span style={fieldLabelStyle}>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
-                        {criterion.snapshot_description ? <small style={{ opacity: .65 }}>{criterion.snapshot_description}</small> : null}
+                      <label className={styles.field} key={criterion.id}>
+                        <span>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
+                        {criterion.snapshot_description ? <small className={styles.fieldDescription}>{criterion.snapshot_description}</small> : null}
                         <EvaluationResponseField
                           name={criterion.snapshot_name}
                           format={criterion.snapshot_response_format}
@@ -1031,52 +867,82 @@ export default function PlayerTrainingEditPage() {
                 ) : null}
 
                 {sessionType === "club" && !isClubSessionPast ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-                    {locale === "fr"
-                      ? "L'evaluation est disponible uniquement apres la seance."
-                      : "Evaluation is available only after the training session."}
+                  <div className={styles.info}>
+                    {pickLocaleText(locale, "L’évaluation sera disponible après la séance.", "Evaluation will be available after the training session.")}
                   </div>
                 ) : null}
 
-                <label style={{ display: "grid", gap: 6, opacity: evaluationDisabled ? 0.65 : 1 }}>
-                  <span style={fieldLabelStyle}>{t("roundsNew.notesOptional")}</span>
+                <label className={styles.field} data-disabled={evaluationDisabled}>
+                  <span>{t("roundsNew.notesOptional")}</span>
                   <textarea
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={(event) => setNotes(event.target.value)}
                     disabled={evaluationDisabled}
                     placeholder={t("roundsNew.notesPlaceholder")}
-                    style={{ minHeight: 110 }}
                   />
                 </label>
-
-                <div className={styles.cardActions}>
-                  <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>
-                    {pickLocaleText(locale, "Annuler", "Cancel")}
-                  </Link>
-                  <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
-                    {busy ? t("trainingNew.saving") : pickLocaleText(locale, "Enregistrer les modifications", "Save changes")}
-                  </button>
-                </div>
-
               </section>
-              ) : null}
+            ) : null}
 
-              {!performanceEnabled ? (
-                <div className={styles.cardActions}>
-                  <Link href={`/player/golf/trainings/${sessionId}`} className={styles.cancelEvaluation}>{pickLocaleText(locale, "Annuler", "Cancel")}</Link>
-                  <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>{busy ? t("trainingNew.saving") : nonPerformanceSaveLabel}</button>
-                </div>
-              ) : null}
-            </form>
-          )}
-        </div>
+            <div className={styles.formActions}>
+              <Link href={"/player/golf/trainings/" + sessionId} className={playerUiStyles.secondary}>
+                {pickLocaleText(locale, "Annuler", "Cancel")}
+              </Link>
+              <button className={playerUiStyles.primary} type="submit" disabled={!canSave || busy}>
+                {busy ? t("trainingNew.saving") : performanceEnabled ? pickLocaleText(locale, "Enregistrer les modifications", "Save changes") : nonPerformanceSaveLabel}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
 }
 
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
+function EditSectionHeader({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+  return (
+    <div className={styles.sectionHeader}>
+      <div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function RatingInput({
+  label,
+  icon,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  icon: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset className={styles.ratingField} disabled={disabled}>
+      <legend><span>{icon}</span>{label}</legend>
+      <div className={styles.ratingButtons}>
+        {Array.from({ length: 6 }, (_, index) => String(index + 1)).map((score) => {
+          const active = value === score;
+          return (
+            <button
+              key={score}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(active ? "" : score)}
+              className={active ? styles.ratingActive : undefined}
+            >
+              {score}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}

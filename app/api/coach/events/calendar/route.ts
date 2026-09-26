@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  coachTrainingCompletionByEvent,
+  type CoachTrainingAttendeeState,
+  type CoachTrainingFeedbackState,
+} from "@/lib/coachCalendar";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -79,6 +84,30 @@ export async function GET(req: NextRequest) {
     }
 
     const events = Object.values(rowsById).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+    const trainingEventIds = events
+      .filter((event) => event.event_type === "training")
+      .map((event) => event.id);
+    const [trainingAttendeesRes, trainingFeedbackRes] = await Promise.all([
+      trainingEventIds.length > 0
+        ? supabaseAdmin
+          .from("club_event_attendees")
+          .select("event_id,player_id,coach_recorded_status")
+          .in("event_id", trainingEventIds)
+        : Promise.resolve({ data: [], error: null } as const),
+      trainingEventIds.length > 0
+        ? supabaseAdmin
+          .from("club_event_coach_feedback")
+          .select("event_id,player_id,engagement,attitude,performance")
+          .in("event_id", trainingEventIds)
+        : Promise.resolve({ data: [], error: null } as const),
+    ]);
+    if (trainingAttendeesRes.error) return NextResponse.json({ error: trainingAttendeesRes.error.message }, { status: 400 });
+    if (trainingFeedbackRes.error) return NextResponse.json({ error: trainingFeedbackRes.error.message }, { status: 400 });
+    const trainingEvaluationCompleteByEventId = coachTrainingCompletionByEvent(
+      trainingEventIds,
+      (trainingAttendeesRes.data ?? []) as CoachTrainingAttendeeState[],
+      (trainingFeedbackRes.data ?? []) as CoachTrainingFeedbackState[]
+    );
     const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
     const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
     const campEventIds = events
@@ -161,6 +190,7 @@ export async function GET(req: NextRequest) {
       clubNameById,
       campTitleByGroupId,
       campNameById,
+      trainingEvaluationCompleteByEventId,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

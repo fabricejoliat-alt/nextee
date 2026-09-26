@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       return NextResponse.json({ error: "Only training sessions can be debriefed." }, { status: 400 });
     }
 
-    const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id);
+    const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
     const [attendeesRes, feedbackRes, debriefRes, groupRes] = await Promise.all([
       supabaseAdmin
         .from("club_event_attendees")
@@ -33,11 +33,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         .eq("event_id", eventId),
       supabaseAdmin
         .from("club_event_coach_feedback")
-        .select("player_id,engagement,attitude,performance")
+        .select("player_id,engagement,attitude,performance,player_note,private_note")
         .eq("event_id", eventId),
       supabaseAdmin
         .from("coach_training_debriefs")
-        .select("id,report_text,report_scope,report_version,author_coach_id,updated_at")
+        .select("id,report_text,report_scope,collective_summary_text,individual_comments,report_version,author_coach_id,updated_at")
         .eq("event_id", eventId)
         .maybeSingle(),
       supabaseAdmin.from("coach_groups").select("id,name").eq("id", event.group_id).maybeSingle(),
@@ -65,6 +65,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         engagement: number | null;
         attitude: number | null;
         performance: number | null;
+        player_note: string | null;
+        private_note: string | null;
       }>).map((row) => [row.player_id, row])
     );
     const profileByPlayer = new Map(
@@ -89,7 +91,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       event,
       groupName: String(groupRes.data?.name ?? ""),
       attendees,
-      debrief: assistanceEnabled ? debriefRes.data ?? null : null,
+      debrief: debriefRes.data ?? null,
       coachTrainingAssistanceEnabled: assistanceEnabled,
     });
   } catch (error: unknown) {
@@ -118,20 +120,35 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const allowedIds = (attendeeRes.data ?? []).map((row: { player_id: string }) => row.player_id);
     const body = await req.json().catch(() => ({}));
     const normalized = normalizeDebriefSaveInput(body, allowedIds);
-    const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id);
+    const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
     assertCoachTrainingReportAllowed(assistanceEnabled, normalized.report_text);
 
-    const saveRes = await supabaseAdmin.rpc("save_coach_training_debrief", {
+    const saveRes = await supabaseAdmin.rpc("save_coach_training_debrief_v2", {
       p_event_id: eventId,
       p_coach_id: callerId,
-      p_report_text: normalized.report_text,
+      p_source_text: normalized.report_text,
       p_report_scope: normalized.report_scope,
+      p_collective_summary_text: normalized.collective_summary_text,
+      p_individual_comments: normalized.individual_comments,
       p_reviews: normalized.reviews,
       p_update_report: assistanceEnabled,
     });
     if (saveRes.error) throw new Error(saveRes.error.message);
 
-    return NextResponse.json({ ok: true, debriefId: saveRes.data });
+    const versionRes = assistanceEnabled
+      ? await supabaseAdmin
+          .from("coach_training_debriefs")
+          .select("report_version")
+          .eq("event_id", eventId)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (versionRes.error) throw new Error(versionRes.error.message);
+
+    return NextResponse.json({
+      ok: true,
+      debriefId: saveRes.data,
+      reportVersion: Number(versionRes.data?.report_version ?? 0) || null,
+    });
   } catch (error: unknown) {
     if (error instanceof CoachDebriefValidationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });

@@ -4,6 +4,10 @@ import {
   playerAccessErrorStatus,
   resolveAuthenticatedPlayerAccess,
 } from "@/app/api/player/access";
+import {
+  coachFeedbackWithLegacyPublicNote,
+  type PlayerVisibleCoachFeedback,
+} from "@/lib/playerTrainingFeedback";
 
 function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
@@ -73,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
 
-    const [groupRes, clubRes, feedbackRes, playerStructureRes, campRes, eventCoachLinksRes] = await Promise.all([
+    const [groupRes, clubRes, feedbackRes, legacyDebriefRes, playerStructureRes, campRes, eventCoachLinksRes] = await Promise.all([
       event.group_id
         ? supabaseAdmin.from("coach_groups").select("name").eq("id", event.group_id).maybeSingle()
         : ({ data: null, error: null } as const),
@@ -86,6 +90,11 @@ export async function GET(req: NextRequest) {
         .eq("event_id", eventId)
         .eq("player_id", effectivePlayerId)
         .eq("visible_to_player", true),
+      supabaseAdmin
+        .from("coach_training_debriefs")
+        .select("individual_comments")
+        .eq("event_id", eventId)
+        .maybeSingle(),
       supabaseAdmin
         .from("club_event_player_structure_items")
         .select("category,minutes,note,position")
@@ -102,6 +111,7 @@ export async function GET(req: NextRequest) {
     if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
     if (clubRes.error) return NextResponse.json({ error: clubRes.error.message }, { status: 400 });
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
+    if (legacyDebriefRes.error) return NextResponse.json({ error: legacyDebriefRes.error.message }, { status: 400 });
     if (playerStructureRes.error) return NextResponse.json({ error: playerStructureRes.error.message }, { status: 400 });
     if (campRes.error) return NextResponse.json({ error: campRes.error.message }, { status: 400 });
     if (eventCoachLinksRes.error) return NextResponse.json({ error: eventCoachLinksRes.error.message }, { status: 400 });
@@ -206,7 +216,11 @@ export async function GET(req: NextRequest) {
         ? Number((campDayRes.data as { day_index?: number | null }).day_index)
         : null,
       assignedCoaches,
-      coachFeedback: feedbackRes.data ?? [],
+      coachFeedback: coachFeedbackWithLegacyPublicNote(
+        (feedbackRes.data ?? []) as PlayerVisibleCoachFeedback[],
+        (legacyDebriefRes.data as { individual_comments?: unknown } | null)?.individual_comments,
+        effectivePlayerId
+      ),
       coachProfiles: coachProfilesRes.data ?? [],
       plannedStructureItems:
         (playerStructureRes.data ?? []).length > 0 ? playerStructureRes.data ?? [] : commonStructureRes.data ?? [],

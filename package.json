@@ -22,7 +22,9 @@
     "audit:player-documents-storage": "node --env-file=.env.local scripts/migrate-player-documents-storage.mjs",
     "migrate:player-documents-storage": "node --env-file=.env.local scripts/migrate-player-documents-storage.mjs --apply",
     "test:rules-learning": "node --test --experimental-strip-types tests/rules-learning.test.ts tests/rules-curriculum.test.ts",
-    "test:coach-debrief": "node --experimental-strip-types --test tests/coachDebrief.test.ts"
+    "test:coach-debrief": "node --experimental-strip-types --test tests/coachDebrief.test.ts",
+    "test:coach-calendar": "node --experimental-strip-types --test tests/coachCalendar.test.ts",
+    "test:coach-ai-assistance": "node --experimental-strip-types --test tests/coachAiAssistance.test.ts"
   },
   "dependencies": {
     "@capacitor/cli": "^8.5.2",

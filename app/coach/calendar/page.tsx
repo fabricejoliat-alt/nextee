@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, Eye, MapPin } from "lucide-react";
+import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Eye, MapPin } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -12,6 +12,7 @@ import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import activityStyles from "./CoachCalendarActivities.module.css";
+import { coachCalendarActionHref, coachCalendarActionState, coachEventEndMs, type CoachCalendarActionState } from "@/lib/coachCalendar";
 
 type CalendarView = "month" | "week" | "day";
 type EventFilter = "all" | "evaluations";
@@ -40,7 +41,7 @@ function eventTypeLabel(value: EventRow["event_type"], locale: "fr" | "en" | "de
 
 export default function CoachCalendarPage() {
   const searchParams = useSearchParams();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ export default function CoachCalendarPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
-  const [pendingEvaluationIds, setPendingEvaluationIds] = useState<Set<string>>(new Set());
+  const [trainingEvaluationCompleteByEventId, setTrainingEvaluationCompleteByEventId] = useState<Record<string, boolean>>({});
   const [canPlan, setCanPlan] = useState(false);
   const [view, setView] = useState<CalendarView>("month");
   const [eventFilter, setEventFilter] = useState<EventFilter>(searchParams.get("view") === "evaluations" ? "evaluations" : "all");
@@ -65,30 +66,30 @@ export default function CoachCalendarPage() {
         const token = session.data.session?.access_token ?? "";
         const userId = session.data.session?.user.id ?? "";
         if (!token || !userId) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session."));
-        const [calendarResponse, homeResponse, permissions] = await Promise.all([
+        const [calendarResponse, permissions] = await Promise.all([
           fetch("/api/coach/events/calendar", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
-          fetch("/api/coach/home", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
           supabase.from("club_members").select("can_manage_assigned_group_planning").eq("user_id", userId).eq("role", "coach").eq("is_active", true),
         ]);
         const calendar = await calendarResponse.json().catch(() => ({}));
-        const home = await homeResponse.json().catch(() => ({}));
         if (!calendarResponse.ok) throw new Error(String(calendar?.error ?? pickLocaleText(locale, "Chargement impossible.", "Unable to load.")));
-        if (!homeResponse.ok) throw new Error(String(home?.error ?? pickLocaleText(locale, "Chargement impossible.", "Unable to load.")));
         setEvents((calendar?.events ?? []) as EventRow[]);
         setGroupNames((calendar?.groupNameById ?? {}) as Record<string, string>);
         setClubNames((calendar?.clubNameById ?? {}) as Record<string, string>);
-        setPendingEvaluationIds(new Set<string>(((home?.pendingEvalEvents ?? []) as Array<{ id?: string }>).map((item) => String(item.id ?? "")).filter(Boolean)));
+        setTrainingEvaluationCompleteByEventId((calendar?.trainingEvaluationCompleteByEventId ?? {}) as Record<string, boolean>);
         setCanPlan(!permissions.error && (permissions.data ?? []).some((row) => Boolean(row.can_manage_assigned_group_planning)));
       } catch (cause) { setError(cause instanceof Error ? cause.message : pickLocaleText(locale, "Chargement impossible.", "Unable to load.")); }
       finally { setLoading(false); }
     })();
   }, [locale]);
 
+  const pendingEvaluationIds = useMemo(() => new Set(events
+    .filter((event) => coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow) === "needs_evaluation")
+    .map((event) => event.id)), [events, referenceNow, trainingEvaluationCompleteByEventId]);
   const visibleEvents = useMemo(() => events.filter((event) => event.status === "scheduled" && (eventFilter !== "evaluations" || pendingEvaluationIds.has(event.id)) && (typeFilter === "all" || event.event_type === typeFilter) && (groupFilter === "all" || event.group_id === groupFilter)), [eventFilter, events, groupFilter, pendingEvaluationIds, typeFilter]);
   const groups = useMemo(() => Object.entries(groupNames)
     .filter(([, name]) => !name.trim().startsWith("__") && !name.toLocaleLowerCase(dateLocale).includes("archive"))
     .sort((a, b) => a[1].localeCompare(b[1], dateLocale)), [dateLocale, groupNames]);
-  const stats = useMemo(() => { const now = new Date(); const scheduled = events.filter((event) => event.status === "scheduled"); return { completed: scheduled.filter((event) => new Date(event.ends_at ?? event.starts_at) < now).length, planned: scheduled.filter((event) => new Date(event.ends_at ?? event.starts_at) >= now).length, total: scheduled.length }; }, [events]);
+  const stats = useMemo(() => { const scheduled = events.filter((event) => event.status === "scheduled"); return { completed: scheduled.filter((event) => coachEventEndMs(event) <= referenceNow).length, planned: scheduled.filter((event) => coachEventEndMs(event) > referenceNow).length, total: scheduled.length }; }, [events, referenceNow]);
   const monthDays = useMemo(() => Array.from({ length: new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0).getDate() }, (_, index) => new Date(anchorDate.getFullYear(), anchorDate.getMonth(), index + 1)), [anchorDate]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchorDate), index)), [anchorDate]);
   const headerLabel = view === "month" ? monthLabel(anchorDate, dateLocale) : view === "week" ? `${dayLabel(weekDays[0], dateLocale)} – ${dayLabel(weekDays[6], dateLocale)}` : dayLabel(anchorDate, dateLocale);
@@ -108,9 +109,10 @@ export default function CoachCalendarPage() {
     </div></section>
     {loading ? <section className={styles.quickPanel}><ListLoadingBlock label={tr("Chargement des activités…", "Loading activities…")} /></section> : <section className={`${styles.quickPanel} ${activityStyles.panel}`}><div className={activityStyles.list}>{visibleEvents.filter((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))).map((event) => {
       const startsAt = new Date(event.starts_at);
-      const needsEvaluation = pendingEvaluationIds.has(event.id);
-      const isPast = new Date(event.ends_at ?? event.starts_at).getTime() < referenceNow;
       const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
+      const actionState = coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow);
+      const action = calendarAction(actionState, event.group_id, event.id, t);
+      const ActionIcon = action.Icon;
       const customTitle = String(event.title ?? "").trim();
       const typeLabel = eventTypeLabel(event.event_type, locale);
       const groupName = groupNames[event.group_id] ?? tr("Groupe spécifique", "Specific group");
@@ -128,12 +130,24 @@ export default function CoachCalendarPage() {
           <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{event.location_text || tr("Lieu à confirmer", "Location to be confirmed")}</span></span>
         </div>
         <div className={activityStyles.actions}>
-          {needsEvaluation && isPast ? <Link className={`${activityStyles.iconAction} ${activityStyles.evaluationAction}`} href={`${href}#expected-players`} aria-label={tr(`Évaluer ${customTitle || typeLabel}`, `Evaluate ${customTitle || typeLabel}`)} title={tr("À évaluer", "To evaluate")}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
-          <Link className={activityStyles.iconAction} href={href} aria-label={tr(`Ouvrir ${customTitle || typeLabel}`, `Open ${customTitle || typeLabel}`)} title={tr("Ouvrir l’activité", "Open activity")}><Eye size={15} aria-hidden="true" /></Link>
+          <Link className={`${activityStyles.iconAction} ${activityStyles[action.className]}`} href={action.href} aria-label={`${action.label} — ${customTitle || typeLabel}`} title={action.label}><ActionIcon size={18} aria-hidden="true" /></Link>
         </div>
       </article>;
     })}{!visibleEvents.some((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))) ? <div className="marketplace-empty">{tr("Aucune activité sur cette période.", "No activity in this period.")}</div> : null}</div></section>}
   </main>;
+}
+
+function calendarAction(
+  state: CoachCalendarActionState,
+  groupId: string,
+  eventId: string,
+  t: (key: string) => string
+) {
+  const href = coachCalendarActionHref(state, groupId, eventId);
+  if (state === "needs_evaluation") return { className: "pendingAction" as const, href, Icon: ClipboardList, label: t("coachCalendar.toEvaluate") };
+  if (state === "evaluation_complete") return { className: "completedAction" as const, href, Icon: ClipboardCheck, label: t("coachCalendar.evaluationComplete") };
+  if (state === "prepare_training") return { className: "prepareAction" as const, href, Icon: CalendarClock, label: t("coachCalendar.prepareTraining") };
+  return { className: "viewAction" as const, href, Icon: Eye, label: t("coachCalendar.viewActivity") };
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) { return <label style={fieldStyle}><span style={fieldLabelStyle}>{label}</span><select className="input" value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>; }

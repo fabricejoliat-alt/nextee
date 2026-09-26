@@ -249,11 +249,32 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-    const { data: membersRows, error: membersError } = await supabaseAdmin
+    const membersResult = await supabaseAdmin
       .from("club_members")
-      .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups,created_at")
+      .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups,coach_training_assistance_enabled,created_at")
       .eq("club_id", clubId)
       .order("created_at", { ascending: false });
+
+    const missingAssistanceColumn = membersResult.error?.code === "42703"
+      || membersResult.error?.message.includes("coach_training_assistance_enabled");
+    let membersRows: Array<Record<string, unknown>> | null = membersResult.data;
+    let membersError = membersResult.error;
+    let legacyCoachTrainingAssistanceEnabled = false;
+    if (missingAssistanceColumn) {
+      const legacyMembersResult = await supabaseAdmin
+        .from("club_members")
+        .select("id,club_id,user_id,role,is_active,is_performance,player_course_track,player_membership_paid,player_playing_right_paid,player_consent_status,can_manage_assigned_groups,can_manage_assigned_group_planning,can_transfer_players_between_club_groups,created_at")
+        .eq("club_id", clubId)
+        .order("created_at", { ascending: false });
+      membersRows = legacyMembersResult.data;
+      membersError = legacyMembersResult.error;
+      const legacySettings = await supabaseAdmin
+        .from("training_volume_settings")
+        .select("coach_training_assistance_enabled")
+        .eq("organization_id", clubId)
+        .maybeSingle();
+      legacyCoachTrainingAssistanceEnabled = legacySettings.data?.coach_training_assistance_enabled === true;
+    }
 
     if (membersError) return NextResponse.json({ error: membersError.message }, { status: 400 });
 
@@ -397,6 +418,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         can_manage_assigned_groups: Boolean(m.can_manage_assigned_groups),
         can_manage_assigned_group_planning: Boolean(m.can_manage_assigned_group_planning),
         can_transfer_players_between_club_groups: Boolean(m.can_transfer_players_between_club_groups),
+        coach_training_assistance_enabled: typeof m.coach_training_assistance_enabled === "boolean"
+          ? m.coach_training_assistance_enabled
+          : m.role === "coach" && m.is_active !== false && legacyCoachTrainingAssistanceEnabled,
         player_course_track: m.player_course_track ?? null,
         player_membership_paid: m.player_membership_paid ?? null,
         player_playing_right_paid: m.player_playing_right_paid ?? null,
@@ -432,6 +456,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     const canManageAssignedGroups = body.can_manage_assigned_groups;
     const canManageAssignedGroupPlanning = body.can_manage_assigned_group_planning;
     const canTransferPlayers = body.can_transfer_players_between_club_groups;
+    const coachTrainingAssistanceEnabled = body.coach_training_assistance_enabled;
     const authEmailRaw = typeof body.auth_email === "string" ? body.auth_email : "";
     const authEmail = normalizeAuthEmailInput(authEmailRaw);
     const authPassword = typeof body.auth_password === "string" ? body.auth_password : "";
@@ -477,10 +502,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       if (typeof canManageAssignedGroups === "boolean") memberPatch.can_manage_assigned_groups = canManageAssignedGroups;
       if (typeof canManageAssignedGroupPlanning === "boolean") memberPatch.can_manage_assigned_group_planning = canManageAssignedGroupPlanning;
       if (typeof canTransferPlayers === "boolean") memberPatch.can_transfer_players_between_club_groups = canTransferPlayers;
+      if (typeof coachTrainingAssistanceEnabled === "boolean") memberPatch.coach_training_assistance_enabled = coachTrainingAssistanceEnabled;
     } else if (role && role !== "coach") {
       memberPatch.can_manage_assigned_groups = false;
       memberPatch.can_manage_assigned_group_planning = false;
       memberPatch.can_transfer_players_between_club_groups = false;
+      memberPatch.coach_training_assistance_enabled = false;
     }
     const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const fieldById = new Map(playerFields.map((field) => [field.id, field]));

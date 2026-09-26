@@ -17,7 +17,7 @@ import {
   SatisfactionIcon,
 } from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
-import { ArrowLeft, ClipboardCheck, Eye, MapPin } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Eye, ListChecks, MapPin, MessageSquareText, UsersRound } from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
@@ -985,7 +985,15 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       mode={viewOnly ? "view" : linkedEvent.requires_evaluation ? "required" : "optional"}
                     />
 
-                    <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div className={styles.sectionHeading}>
+                      <span className={styles.sectionIcon}><UsersRound size={18} aria-hidden="true" /></span>
+                      <div>
+                        <h2>{pickLocaleText(locale, "Participants", "Participants")}</h2>
+                        <p>{pickLocaleText(locale, "Les coachs et les joueurs présents à l’activité.", "Coaches and players attending the activity.")}</p>
+                      </div>
+                    </div>
+
+                    <section className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
                         {pickLocaleText(locale, "Coachs assignés", "Assigned coaches")}
                       </div>
@@ -1038,16 +1046,13 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                                 </div>
                                 <div className={styles.personName}>{c.label}</div>
                               </div>
-                              <span className="pill-soft" style={{ fontWeight: 900, whiteSpace: "nowrap" }}>
-                                {c.roleLabel}
-                              </span>
                             </div>
                           ))}
                         </div>
                       )}
                     </section>
 
-                    <section className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <section className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
                         {pickLocaleText(locale, "Joueurs présents", "Present players")} ({eventAttendees.length})
                       </div>
@@ -1147,7 +1152,15 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       )}
                     </section>
 
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                    <div className={styles.sectionHeading}>
+                      <span className={styles.sectionIcon}><ListChecks size={18} aria-hidden="true" /></span>
+                      <div>
+                        <h2>{pickLocaleText(locale, "La structure", "Structure")}</h2>
+                        <p>{pickLocaleText(locale, "Le programme planifié et la structure réellement réalisée.", "The planned programme and the structure actually completed.")}</p>
+                      </div>
+                    </div>
+
+                    <div className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
                         {pickLocaleText(locale, "Structure planifiée", "Planned structure")}
                       </div>
@@ -1182,60 +1195,6 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </div>
                     </div>
                   </>
-                ) : null}
-
-                {Boolean(linkedEvent) && coachFeedback.length > 0 ? (
-                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                    <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.coachEvaluation")}</div>
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {coachFeedback.map((fb, idx) => {
-                        const cp = coachProfilesById[fb.coach_id];
-                        const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
-                        return (
-                          <div key={`${fb.coach_id}-${idx}`} style={{ display: "grid", gap: 8 }}>
-                            <div style={{ fontSize: 13, fontWeight: 900, color: "rgba(0,0,0,0.82)" }}>{coachName}</div>
-                            <div style={{ display: "grid", gap: 10 }}>
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Engagement</div>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.engagement ?? "—"}</div>
-                                </div>
-                                <div className="bar">
-                                  <span style={{ width: `${coachRatingPercent(fb.engagement)}%` }} />
-                                </div>
-                              </div>
-
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Attitude</div>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.attitude ?? "—"}</div>
-                                </div>
-                                <div className="bar">
-                                  <span style={{ width: `${coachRatingPercent(fb.attitude)}%` }} />
-                                </div>
-                              </div>
-
-                              <div style={{ display: "grid", gap: 6 }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Application</div>
-                                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{fb.performance ?? "—"}</div>
-                                </div>
-                                <div className="bar">
-                                  <span style={{ width: `${coachRatingPercent(fb.performance)}%` }} />
-                                </div>
-                              </div>
-
-                              {String(fb.player_note ?? "").trim() ? (
-                                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)", whiteSpace: "pre-wrap" }}>
-                                  {fb.player_note}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
                 ) : null}
 
                 {!linkedEvent ? (
@@ -1604,7 +1563,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                 ) : null}
 
                 {performanceEnabled ? (
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                <div className={`glass-card ${linkedEvent ? styles.sectionCard : ""}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
                     {plannedStructureItems.length > 0 ? (
@@ -1747,8 +1706,72 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                   </button>
                 ) : null}
 
+                {linkedEvent ? (
+                  <div className={styles.sectionHeading}>
+                    <span className={styles.sectionIcon}><MessageSquareText size={18} aria-hidden="true" /></span>
+                    <div>
+                      <h2>{pickLocaleText(locale, "Les évaluations", "Evaluations")}</h2>
+                      <p>{pickLocaleText(locale, "Le regard du coach et le ressenti du joueur, réunis au même endroit.", "Coach feedback and player reflections, together in one place.")}</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {Boolean(linkedEvent) && coachFeedback.length > 0 ? (
+                  <div className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 12 }}>
+                    <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingDetail.coachEvaluation")}</div>
+                    <div className={styles.coachEvaluationList}>
+                      {coachFeedback.map((fb, idx) => {
+                        const cp = coachProfilesById[fb.coach_id];
+                        const coachName = cp ? nameOf(cp.first_name, cp.last_name) : t("common.coach");
+                        return (
+                          <article key={`${fb.coach_id}-${idx}`} className={styles.coachEvaluationItem}>
+                            <header className={styles.coachEvaluationHeader}>
+                              <div className={styles.person}>
+                                <div className={styles.avatar}>
+                                  {cp?.avatar_url ? (
+                                    <Image src={cp.avatar_url} alt="" width={40} height={40} unoptimized />
+                                  ) : (
+                                    initialsOf(cp?.first_name ?? null, cp?.last_name ?? null)
+                                  )}
+                                </div>
+                                <div>
+                                  <div className={styles.personName}>{coachName}</div>
+                                  <div className={styles.personRole}>{t("common.coach")}</div>
+                                </div>
+                              </div>
+                            </header>
+
+                            <div className={styles.coachScoreGrid}>
+                              {[
+                                [t("trainingDetail.engagement"), fb.engagement],
+                                [t("trainingDetail.attitude"), fb.attitude],
+                                [t("trainingDetail.performance"), fb.performance],
+                              ].map(([label, value]) => (
+                                <div key={String(label)} className={styles.coachScore}>
+                                  <div className={styles.coachScoreLabel}>
+                                    <span>{label}</span>
+                                    <strong>{value ?? "—"}</strong>
+                                  </div>
+                                  <div className="bar"><span style={{ width: `${coachRatingPercent(value as number | null)}%` }} /></div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {String(fb.player_note ?? "").trim() ? (
+                              <div className={styles.coachNote}>
+                                <div>{t("trainingDetail.coachNote")}</div>
+                                <p>{fb.player_note}</p>
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
                 {linkedEvent && customCriteria.length ? (
-                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                  <div className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 12 }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>
                       {plannedEventLocked ? pickLocaleText(locale, "Objectifs du jour", "Today's goals") : pickLocaleText(locale, "Focus de l’activité", "Activity focus")}
                     </div>
@@ -1764,7 +1787,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                 ) : null}
 
                 {showSensationsCard ? (
-                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
+                  <div className={`glass-card ${linkedEvent ? styles.sectionCard : ""}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>
                       {pickLocaleText(locale, "Auto-évaluation", "Self-assessment")}
                     </div>
@@ -1884,16 +1907,17 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </button>
                     ) : null}
 
-                    {!embedded && linkedEvent && !viewOnly ? (
-                      <div className={styles.cardActions}>
-                        <Link href="/player/golf/trainings?type=all" className={styles.cancelEvaluation}>
-                          {pickLocaleText(locale, "Annuler", "Cancel")}
-                        </Link>
-                        <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
-                          {busy ? t("trainingNew.saving") : linkedEvent.requires_evaluation ? pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation") : pickLocaleText(locale, "Enregistrer mon évaluation facultative", "Save my optional evaluation")}
-                        </button>
-                      </div>
-                    ) : null}
+                  </div>
+                ) : null}
+
+                {!embedded && linkedEvent && showSensationsCard && !viewOnly ? (
+                  <div className={styles.evaluationFooter}>
+                    <Link href="/player/golf/trainings?type=all" className={styles.cancelEvaluation}>
+                      {pickLocaleText(locale, "Annuler", "Cancel")}
+                    </Link>
+                    <button className={styles.saveEvaluation} type="submit" disabled={!canSave || busy}>
+                      {busy ? t("trainingNew.saving") : linkedEvent.requires_evaluation ? pickLocaleText(locale, "Enregistrer l’évaluation", "Save evaluation") : pickLocaleText(locale, "Enregistrer mon évaluation facultative", "Save my optional evaluation")}
+                    </button>
                   </div>
                 ) : null}
 

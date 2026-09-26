@@ -189,7 +189,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const canManageActivity = clubId
       ? await hasCoachClubPermission(supabaseAdmin, callerId, clubId, "planning", groupId)
       : false;
-    const coachTrainingAssistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, clubId);
+    const coachTrainingAssistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, clubId, callerId);
 
     const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
       clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),

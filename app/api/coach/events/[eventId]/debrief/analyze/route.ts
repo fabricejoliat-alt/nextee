@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
+import {
+  hasAnalyzableDebriefSource,
+  normalizeCoachDebriefAnalysis,
+  type CoachIndividualComments,
+  type CoachReportScope,
+} from "@/lib/coachDebrief";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
 
 type OpenAIResponse = {
@@ -27,14 +33,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     const { supabaseAdmin, callerId } = await requireCaller(token);
     const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
     if (event.event_type !== "training") return NextResponse.json({ error: "Training only" }, { status: 400 });
-    if (!(await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id))) {
-      return NextResponse.json({ error: "Training assistance is disabled for this organization." }, { status: 403 });
+    if (!(await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId))) {
+      return NextResponse.json({ error: "Training assistance is disabled for this coach." }, { status: 403 });
     }
 
     const [debriefRes, attendeesRes] = await Promise.all([
       supabaseAdmin
         .from("coach_training_debriefs")
-        .select("id,report_text,report_scope,report_version")
+        .select("id,report_text,report_scope,individual_comments,report_version")
         .eq("event_id", eventId)
         .maybeSingle(),
       supabaseAdmin
@@ -44,18 +50,23 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     ]);
     if (debriefRes.error) throw new Error(debriefRes.error.message);
     if (attendeesRes.error) throw new Error(attendeesRes.error.message);
-    const reportText = String(debriefRes.data?.report_text ?? "").trim();
-    if (!reportText) return NextResponse.json({ error: "A session report is required before AI analysis." }, { status: 400 });
-
     const presentIds = (attendeesRes.data ?? [])
       .filter((row: { coach_recorded_status: string | null }) => row.coach_recorded_status === "present")
       .map((row: { player_id: string }) => row.player_id);
-    if (presentIds.length === 0) return NextResponse.json({ error: "No present player to analyze." }, { status: 400 });
+    const reportScope: CoachReportScope = debriefRes.data?.report_scope === "individual" ? "individual" : "collective";
+    const reportText = String(debriefRes.data?.report_text ?? "").trim();
+    const individualComments = (
+      debriefRes.data?.individual_comments && typeof debriefRes.data.individual_comments === "object"
+        ? debriefRes.data.individual_comments
+        : {}
+    ) as CoachIndividualComments;
+    if (!hasAnalyzableDebriefSource(reportScope, reportText, individualComments, presentIds)) {
+      return NextResponse.json({ error: "A source comment is required before AI analysis." }, { status: 400 });
+    }
 
-    const profilesRes = await supabaseAdmin
-      .from("profiles")
-      .select("id,first_name,last_name")
-      .in("id", presentIds);
+    const profilesRes = presentIds.length
+      ? await supabaseAdmin.from("profiles").select("id,first_name,last_name").in("id", presentIds)
+      : { data: [], error: null };
     if (profilesRes.error) throw new Error(profilesRes.error.message);
     const players = (profilesRes.data ?? []).map((profile: { id: string; first_name: string | null; last_name: string | null }) => ({
       player_id: profile.id,
@@ -79,25 +90,35 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
           {
             role: "system",
             content:
-              "You assist a golf coach. Extract only concrete individual observations from a hot debrief that may contain collective context, individual remarks, or both. Preserve collective context for interpretation but never turn a purely collective statement into an individual note. Use only the provided present-player IDs. If attribution is ambiguous, omit the proposal. Never make decisions, ratings, diagnoses, or invented facts. Write concise private coaching notes in the report language.",
+              "You assist a golf coach while the coach remains the final editor. Never infer or modify attendance or ActiviTee ratings. In collective mode, produce a faithful, structured collective session summary from the source without inventing facts, and separately extract private-note proposals only for concrete observations clearly attributable to a named present player. If attribution is ambiguous, omit it. In individual mode, each source comment is already assigned to one present player: keep that exact assignment and propose at most one concise private coaching note per non-empty comment. Never diagnose, decide, or add facts. Use only the provided player IDs and write in the source language. The original source remains separate and must never be rewritten in place.",
           },
           {
             role: "user",
             content: JSON.stringify({
-              report_scope: debriefRes.data?.report_scope ?? "mixed",
+              report_scope: reportScope,
               present_players: players,
-              session_report: reportText,
+              collective_source: reportScope === "collective" ? reportText : null,
+              individual_sources:
+                reportScope === "individual"
+                  ? players
+                      .map((player) => ({
+                        player_id: player.player_id,
+                        comment: String(individualComments[player.player_id] ?? "").trim(),
+                      }))
+                      .filter((item) => item.comment)
+                  : [],
             }),
           },
         ],
         text: {
           format: {
             type: "json_schema",
-            name: "coach_private_note_proposals",
+            name: "coach_debrief_proposals",
             strict: true,
             schema: {
               type: "object",
               properties: {
+                collective_summary: { type: "string" },
                 proposals: {
                   type: "array",
                   items: {
@@ -113,7 +134,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
                   },
                 },
               },
-              required: ["proposals"],
+              required: ["collective_summary", "proposals"],
               additionalProperties: false,
             },
           },
@@ -127,20 +148,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     }
 
     const outputText = extractOutputText(openAIJson);
-    const parsed = JSON.parse(outputText || "{}") as {
-      proposals?: Array<{ player_id?: string; text?: string; rationale?: string; confidence?: string }>;
-    };
-    const presentSet = new Set(presentIds);
-    const proposals = (parsed.proposals ?? [])
-      .map((proposal) => ({
-        player_id: String(proposal.player_id ?? "").trim(),
-        text: String(proposal.text ?? "").trim(),
-        rationale: String(proposal.rationale ?? "").trim(),
-        confidence: proposal.confidence === "high" ? "high" : "medium",
-      }))
-      .filter((proposal) => presentSet.has(proposal.player_id) && proposal.text.length > 0 && proposal.text.length <= 4000);
+    const analysis = normalizeCoachDebriefAnalysis(JSON.parse(outputText || "{}"), reportScope, presentIds);
 
-    return NextResponse.json({ proposals, reportVersion: Number(debriefRes.data?.report_version ?? 0) });
+    return NextResponse.json({
+      reportScope,
+      collectiveSummary: analysis.collectiveSummary,
+      proposals: analysis.proposals,
+      reportVersion: Number(debriefRes.data?.report_version ?? 0),
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "forbidden" ? 403 : message === "event_not_found" ? 404 : 500;
