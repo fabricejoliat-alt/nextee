@@ -322,7 +322,7 @@ export default function CoachTrainingDebriefPage() {
       const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/debrief/analyze-player`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "junior" }),
+        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "junior", locale }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "AI analysis failed"));
@@ -371,7 +371,7 @@ export default function CoachTrainingDebriefPage() {
       const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/debrief/analyze-player`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "private" }),
+        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "private", locale }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(String(json?.error ?? "AI analysis failed"));

@@ -209,8 +209,20 @@ test("the guided UI and API save exactly one player without exposing collective 
     new URL("../app/api/coach/events/[eventId]/debrief/player/route.ts", import.meta.url),
     "utf8"
   );
+  const eventDetailRoute = readFileSync(
+    new URL("../app/api/coach/events/[eventId]/route.ts", import.meta.url),
+    "utf8"
+  );
+  const eventDetailPage = readFileSync(
+    new URL("../app/coach/groups/[id]/planning/[eventId]/page.tsx", import.meta.url),
+    "utf8"
+  );
   const migration = readFileSync(
     new URL("../supabase/migrations/20260926_save_coach_training_player_evaluation.sql", import.meta.url),
+    "utf8"
+  );
+  const reportDependencyFix = readFileSync(
+    new URL("../supabase/migrations/20260926_fix_guided_player_evaluation_report_dependency.sql", import.meta.url),
     "utf8"
   );
 
@@ -223,20 +235,28 @@ test("the guided UI and API save exactly one player without exposing collective 
   assert.match(page, /debrief\/player/);
   assert.match(page, /audience: "junior"/);
   assert.match(page, /audience: "private"/);
+  assert.match(page, /audience: "junior", locale/);
+  assert.match(page, /audience: "private", locale/);
   assert.doesNotMatch(page, /coachDebrief\.aiDisclosure/);
   assert.doesNotMatch(page, /scopeChoice|collectiveSummary|analyzeReport/);
   assert.match(playerAnalyzeRoute, /enum: \[playerId\]/);
   assert.match(playerAnalyzeRoute, /individual_source: sourceText/);
   assert.match(playerAnalyzeRoute, /body\?\.audience === "private"/);
+  assert.match(playerAnalyzeRoute, /responseLanguage\(body\?\.locale\)/);
+  assert.match(playerAnalyzeRoute, /write both the text and rationale only in \$\{outputLanguage\}/);
   assert.doesNotMatch(playerAnalyzeRoute, /collective_source|individual_sources|save_coach_training_debrief/);
   assert.match(playerSaveRoute, /save_coach_training_player_evaluation_v1/);
   assert.match(playerSaveRoute, /p_player_id: normalized\.player_id/);
   assert.doesNotMatch(playerSaveRoute, /Training assistance is disabled for this coach/);
+  assert.match(eventDetailRoute, /player_id,status,coach_recorded_status,coach_recorded_by,coach_recorded_at/);
+  assert.match(eventDetailPage, /const attendanceStatus = attendee\.coach_recorded_status/);
   assert.match(page, /player_note: playerNote/);
   assert.match(page, /privateNoteHelp/);
   assert.match(page, /feedbackNoteBlock/);
   assert.match(migration, /update public\.club_event_attendees/);
   assert.match(migration, /insert into public\.club_event_coach_feedback/);
   assert.match(migration, /nullif\(v_private_note, ''\), nullif\(v_source_text, ''\)/);
+  assert.match(reportDependencyFix, /nullif\(v_private_note, ''\), nullif\(v_source_text, ''\)/);
+  assert.doesNotMatch(reportDependencyFix, /report_required|validate_coach_training_private_notes/);
   assert.doesNotMatch(migration, /set report_text\s*=/);
 });

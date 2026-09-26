@@ -761,6 +761,8 @@ export default function CoachEventDetailPage() {
             const canEvaluate = event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
             const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
             const preparationInsight = preparationInsightsByPlayerId.get(attendee.player_id) ?? null;
+            const attendanceStatus = attendee.coach_recorded_status
+              ?? (attendee.status === "present" || attendee.status === "absent" ? attendee.status : null);
             return (
               <article key={attendee.player_id} className={eventStyles.playerRow}>
                 <div className={eventStyles.playerMain}>
@@ -789,9 +791,9 @@ export default function CoachEventDetailPage() {
                 <div className={eventStyles.attendance}>
                   {isTrainingPast ? (
                     <span className="pill-soft">
-                      {attendee.coach_recorded_status === "present"
+                      {attendanceStatus === "present"
                         ? t("coachDebrief.present")
-                        : attendee.coach_recorded_status === "absent"
+                        : attendanceStatus === "absent"
                           ? t("coachDebrief.absent")
                           : t("coachDebrief.noPreset")}
                     </span>

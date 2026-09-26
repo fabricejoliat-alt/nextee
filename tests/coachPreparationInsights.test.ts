@@ -5,6 +5,7 @@ import {
   completedBefore,
   isFutureTraining,
   normalizeCoachPreparationPoints,
+  selectPreparationPrivateNote,
 } from "../lib/coachPreparationInsights.ts";
 
 test("normalizes, deduplicates and caps preparation checklist points", () => {
@@ -40,6 +41,26 @@ test("keeps only completed, non-cancelled history events", () => {
   assert.equal(completedBefore({ starts_at: "2026-09-26T08:00:00.000Z", ends_at: null, duration_minutes: 60, status: "cancelled" }, boundary), false);
 });
 
+test("a newer cleared feedback note overrides an older validated private note", () => {
+  assert.equal(selectPreparationPrivateNote({
+    feedbackText: null,
+    feedbackUpdatedAt: "2026-09-26T18:56:01.000Z",
+    validatedText: "Ancienne note privée validée",
+    validatedAt: "2026-09-26T18:33:05.000Z",
+  }), null);
+
+  assert.deepEqual(selectPreparationPrivateNote({
+    feedbackText: null,
+    feedbackUpdatedAt: "2026-09-26T18:20:00.000Z",
+    validatedText: "Note privée validée ensuite",
+    validatedAt: "2026-09-26T18:33:05.000Z",
+  }), {
+    source: "validated",
+    text: "Note privée validée ensuite",
+    savedAt: "2026-09-26T18:33:05.000Z",
+  });
+});
+
 test("the coach event page and endpoint keep insights gated and player-isolated", () => {
   const page = readFileSync(
     new URL("../app/coach/groups/[id]/planning/[eventId]/page.tsx", import.meta.url),
@@ -59,6 +80,9 @@ test("the coach event page and endpoint keep insights gated and player-isolated"
   assert.match(route, /from\("coach_player_private_notes"\)/);
   assert.match(route, /select\("id,event_id,player_id,body,source_report_version,validated_at"\)/);
   assert.match(route, /latestValidatedNoteByKey/);
+  assert.match(route, /selectPreparationPrivateNote/);
+  assert.match(route, /playersWithoutSource/);
+  assert.match(route, /\.delete\(\)/);
   assert.match(route, /private_notes_by_session/);
   assert.doesNotMatch(route, /individual_comments|player_note|source_report_text/);
   assert.match(route, /minItems: 1/);

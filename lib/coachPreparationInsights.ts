@@ -13,6 +13,38 @@ export type CoachPreparationInsight = {
   generated_at: string;
 };
 
+type PreparationPrivateNoteInput = {
+  feedbackText: string | null | undefined;
+  feedbackUpdatedAt: string | null | undefined;
+  validatedText: string | null | undefined;
+  validatedAt: string | null | undefined;
+};
+
+export function selectPreparationPrivateNote(input: PreparationPrivateNoteInput) {
+  const feedbackText = String(input.feedbackText ?? "").trim();
+  const validatedText = String(input.validatedText ?? "").trim();
+  const feedbackTime = Date.parse(String(input.feedbackUpdatedAt ?? ""));
+  const validatedTime = Date.parse(String(input.validatedAt ?? ""));
+  const feedbackIsNewer = Number.isFinite(feedbackTime)
+    && (!Number.isFinite(validatedTime) || feedbackTime > validatedTime);
+
+  if (feedbackIsNewer) {
+    return feedbackText
+      ? { source: "feedback" as const, text: feedbackText, savedAt: String(input.feedbackUpdatedAt) }
+      : null;
+  }
+  if (validatedText) {
+    return {
+      source: "validated" as const,
+      text: validatedText,
+      savedAt: String(input.validatedAt ?? input.feedbackUpdatedAt ?? ""),
+    };
+  }
+  return feedbackText
+    ? { source: "feedback" as const, text: feedbackText, savedAt: String(input.feedbackUpdatedAt ?? "") }
+    : null;
+}
+
 export function normalizeCoachPreparationPoints(raw: unknown): CoachPreparationAttentionPoint[] {
   const source = Array.isArray(raw)
     ? raw

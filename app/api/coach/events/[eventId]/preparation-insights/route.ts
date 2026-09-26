@@ -7,6 +7,7 @@ import {
   completedBefore,
   isFutureTraining,
   normalizeCoachPreparationPoints,
+  selectPreparationPrivateNote,
   type CoachPreparationInsight,
 } from "@/lib/coachPreparationInsights";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
@@ -199,30 +200,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
       const privateNoteSessions = historyEvents.flatMap((historyEvent) => {
         const key = recordKey(historyEvent.id, playerId);
         const feedback = feedbackByKey.get(key);
-        const feedbackPrivateNote = String(feedback?.private_note ?? "").trim();
         const validatedNote = latestValidatedNoteByKey.get(key);
-        const validatedPrivateNote = String(validatedNote?.body ?? "").trim();
-        const privateNotes = [
-          ...(feedbackPrivateNote
-            ? [{
-                id: `feedback:${historyEvent.id}:${playerId}`,
-                text: feedbackPrivateNote,
-                saved_at: feedback?.updated_at ?? historyEvent.starts_at,
-              }]
-            : []),
-          ...(validatedPrivateNote && validatedPrivateNote !== feedbackPrivateNote
-            ? [{
-                id: validatedNote?.id ?? `validated:${historyEvent.id}:${playerId}`,
-                text: validatedPrivateNote,
-                saved_at: validatedNote?.validated_at ?? historyEvent.starts_at,
-              }]
-            : []),
-        ];
-        if (privateNotes.length === 0) return [];
+        const selectedNote = selectPreparationPrivateNote({
+          feedbackText: feedback?.private_note,
+          feedbackUpdatedAt: feedback?.updated_at,
+          validatedText: validatedNote?.body,
+          validatedAt: validatedNote?.validated_at,
+        });
+        if (!selectedNote) return [];
         return [{
           event_id: historyEvent.id,
           date: historyEvent.starts_at,
-          private_notes: privateNotes,
+          private_notes: [{
+            id: selectedNote.source === "validated"
+              ? validatedNote?.id ?? `validated:${historyEvent.id}:${playerId}`
+              : `feedback:${historyEvent.id}:${playerId}`,
+            text: selectedNote.text,
+            saved_at: selectedNote.savedAt || historyEvent.starts_at,
+          }],
         }];
       });
       if (privateNoteSessions.length === 0) continue;
@@ -237,9 +232,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
         sourceHash: fingerprint({ generationVersion: COACH_PREPARATION_GENERATION_VERSION, source }),
       });
     }
-    if (sourceByPlayerId.size === 0) {
-      return NextResponse.json({ insights: [], history_event_count: historyEventIds.length });
+    const playersWithoutSource = playerIds.filter((playerId) => !sourceByPlayerId.has(playerId));
+    if (playersWithoutSource.length > 0) {
+      const cleanupRes = await supabaseAdmin
+        .from("coach_training_preparation_insights")
+        .delete()
+        .eq("target_event_id", eventId)
+        .in("player_id", playersWithoutSource);
+      if (cleanupRes.error && !isMissingCacheTable(cleanupRes.error)) throw new Error(cleanupRes.error.message);
     }
+    if (sourceByPlayerId.size === 0) return NextResponse.json({ insights: [], history_event_count: historyEventIds.length });
 
     let cacheAvailable = true;
     const cacheByPlayerId = new Map<string, CacheRow>();

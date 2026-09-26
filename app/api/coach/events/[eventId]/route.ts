@@ -194,7 +194,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
       clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
       groupId ? supabaseAdmin.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
-      supabaseAdmin.from("club_event_attendees").select("player_id,status").eq("event_id", eventId),
+      supabaseAdmin
+        .from("club_event_attendees")
+        .select("player_id,status,coach_recorded_status,coach_recorded_by,coach_recorded_at")
+        .eq("event_id", eventId),
       supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
       supabaseAdmin
         .from("club_event_structure_items")
@@ -220,7 +223,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
     if (campDayRes.error) return NextResponse.json({ error: campDayRes.error.message }, { status: 400 });
 
-    let attendeeRows = (attendeesRes.data ?? []) as Array<{ player_id: string; status: "expected" | "present" | "absent" | "excused" }>;
+    let attendeeRows = (attendeesRes.data ?? []) as Array<{
+      player_id: string;
+      status: "expected" | "present" | "absent" | "excused";
+      coach_recorded_status: "present" | "absent" | null;
+      coach_recorded_by: string | null;
+      coach_recorded_at: string | null;
+    }>;
     if (event.event_type === "camp") {
       const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
       if (campId) {

@@ -24,6 +24,14 @@ function requiredUuid(value: unknown) {
     : null;
 }
 
+function responseLanguage(value: unknown) {
+  const locale = String(value ?? "").trim().toLowerCase().split("-")[0];
+  if (locale === "en") return "English";
+  if (locale === "de") return "German";
+  if (locale === "it") return "Italian";
+  return "French";
+}
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
   try {
     const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -36,6 +44,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     const playerId = requiredUuid(body?.player_id);
     const sourceText = String(body?.source_text ?? "").trim();
     const audience = body?.audience === "private" ? "private" : "junior";
+    const outputLanguage = responseLanguage(body?.locale);
     if (!playerId) return NextResponse.json({ error: "Invalid player" }, { status: 400 });
     if (!sourceText || sourceText.length > COACH_PRIVATE_NOTE_MAX_LENGTH) {
       return NextResponse.json({ error: "A valid individual source comment is required." }, { status: 400 });
@@ -83,14 +92,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
             role: "system",
             content:
               audience === "private"
-                ? "You assist a golf coach with one explicitly identified private coaching note. Rewrite only the supplied source into one concise internal note for authorized coaches, for that exact player_id. Preserve meaning and language. Use precise, respectful wording and do not infer or modify attendance, ActiviTee ratings, diagnoses, decisions, or facts. Never refer to or request any other player. The note must remain private. The coach will edit and explicitly apply the proposal; do not imply it has been saved."
-                : "You assist a golf coach with one explicitly identified player comment. Rewrite only the supplied source into one concise, constructive note that is suitable to be read by that junior and the coach, for that exact player_id. Preserve meaning and language. Use respectful, clear wording and do not infer or modify attendance, ActiviTee ratings, diagnoses, decisions, or facts. Never refer to or request any other player. The coach will edit and explicitly apply the proposal; do not imply it has been saved.",
+                ? `You assist a golf coach with one explicitly identified private coaching note. Rewrite only the supplied source into one concise internal note for authorized coaches, for that exact player_id. Preserve its meaning, but write both the text and rationale only in ${outputLanguage}. Use precise, respectful wording and do not infer or modify attendance, ActiviTee ratings, diagnoses, decisions, or facts. Never refer to or request any other player. The note must remain private. The coach will edit and explicitly apply the proposal; do not imply it has been saved.`
+                : `You assist a golf coach with one explicitly identified player comment. Rewrite only the supplied source into one concise, constructive note that is suitable to be read by that junior and the coach, for that exact player_id. Preserve its meaning, but write both the text and rationale only in ${outputLanguage}. Use respectful, clear wording and do not infer or modify attendance, ActiviTee ratings, diagnoses, decisions, or facts. Never refer to or request any other player. The coach will edit and explicitly apply the proposal; do not imply it has been saved.`,
           },
           {
             role: "user",
             content: JSON.stringify({
               player: { player_id: playerId, display_name: displayName },
               audience,
+              output_language: outputLanguage,
               individual_source: sourceText,
             }),
           },
