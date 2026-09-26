@@ -60,6 +60,9 @@ type CoachLite = {
 type AttendeeDbRow = {
   player_id: string;
   status: "expected" | "present" | "absent" | "excused";
+  coach_recorded_status: "present" | "absent" | null;
+  coach_recorded_by: string | null;
+  coach_recorded_at: string | null;
 };
 
 type ProfileLite = {
@@ -259,6 +262,7 @@ export default function CoachEventDetailPage() {
   const [evaluatedPlayersById, setEvaluatedPlayersById] = useState<Map<string, PlayerEvaluationSummary>>(new Map());
   const [copyingStructure, setCopyingStructure] = useState(false);
   const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
+  const [coachTrainingAssistanceEnabled, setCoachTrainingAssistanceEnabled] = useState(false);
 
   async function copyStructureToFutureEvents() {
     if (!event?.series_id) return;
@@ -354,6 +358,7 @@ export default function CoachEventDetailPage() {
       setGroupName(String(detailJson?.groupName ?? "Groupe"));
       setMeId(String(detailJson?.meId ?? ""));
       setCanManageActivity(detailJson?.canManageActivity === true);
+      setCoachTrainingAssistanceEnabled(detailJson?.coachTrainingAssistanceEnabled === true);
       setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
       setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
       setSelectedCoachIds(
@@ -589,6 +594,7 @@ export default function CoachEventDetailPage() {
 
   const date = eventDateSummary(event.starts_at, event.ends_at);
   const isEventPast = new Date(event.starts_at).getTime() < Date.now();
+  const isTrainingPast = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
   const isSpecific = groupName === "Groupe spécifique" || event.title?.trim() === "Activité spécifique";
 
   return (
@@ -617,6 +623,12 @@ export default function CoachEventDetailPage() {
             <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
               <Pencil size={16} aria-hidden="true" />
               {t("common.edit")}
+            </Link>
+          ) : null}
+          {isTrainingPast ? (
+            <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}>
+              <ClipboardCheck size={16} aria-hidden="true" />
+              {coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")}
             </Link>
           ) : null}
         </div>
@@ -691,7 +703,7 @@ export default function CoachEventDetailPage() {
             const player = attendee.profile ?? null;
             const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
             const canOpenPlayerDetail = event.event_type === "training" || event.event_type === "camp" || event.event_type === "interclub";
-            const canEvaluate = (event.event_type === "training" || event.event_type === "interclub") && attendee.status !== "absent" && isEventPast;
+            const canEvaluate = event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
             const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
             return (
               <article key={attendee.player_id} className={eventStyles.playerRow}>
@@ -700,10 +712,21 @@ export default function CoachEventDetailPage() {
                   <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
                 </div>
                 <div className={eventStyles.attendance}>
-                  <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                  {isTrainingPast ? (
+                    <span className="pill-soft">
+                      {attendee.coach_recorded_status === "present"
+                        ? t("coachDebrief.present")
+                        : attendee.coach_recorded_status === "absent"
+                          ? t("coachDebrief.absent")
+                          : t("coachDebrief.noPreset")}
+                    </span>
+                  ) : (
+                    <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                  )}
                 </div>
                 <div className={eventStyles.playerActions}>
                   {canOpenPlayerDetail ? <Link className={eventStyles.viewButton} aria-label={tr("Voir le joueur", "View player")} title={tr("Voir", "View")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}`}><Eye size={17} aria-hidden="true" /></Link> : null}
+                  {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
                 </div>

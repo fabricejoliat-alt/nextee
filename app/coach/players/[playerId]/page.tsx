@@ -226,6 +226,18 @@ type PlayerDashboardDocument = {
   public_url: string;
 };
 
+type ValidatedPrivateNote = {
+  id: string;
+  event_id: string;
+  body: string;
+  source: "ai_suggested" | "coach_manual";
+  validated_at: string;
+  event_title: string | null;
+  event_starts_at: string | null;
+  event_group_id: string | null;
+  author_name: string | null;
+};
+
 type TeamThreadMessage = {
   id: string;
   thread_id: string;
@@ -734,6 +746,8 @@ export default function GolfDashboardPage() {
   const [trainingScope, setTrainingScope] = useState<TrainingScope>("all");
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
+  const [validatedPrivateNotes, setValidatedPrivateNotes] = useState<ValidatedPrivateNote[]>([]);
+  const [loadingValidatedPrivateNotes, setLoadingValidatedPrivateNotes] = useState(false);
   const [coachEvalPage, setCoachEvalPage] = useState(0);
   const [coachEvalChartMode, setCoachEvalChartMode] = useState<EvalChartMode>("curve");
   const [plannedEvents, setPlannedEvents] = useState<PlannedEventRow[]>([]);
@@ -1201,6 +1215,38 @@ export default function GolfDashboardPage() {
       }
     })();
   }, [canLoadData, canAccessSensitiveSections, coachId, playerId, sharedClubIds]);
+
+  useEffect(() => {
+    let active = true;
+    if (!canLoadData || !canAccessSensitiveSections || activeSection !== "evaluations" || !playerId) {
+      setValidatedPrivateNotes([]);
+      return;
+    }
+
+    void (async () => {
+      setLoadingValidatedPrivateNotes(true);
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token ?? "";
+        if (!token) throw new Error("Missing token");
+        const res = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/private-notes`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(String(json?.error ?? "Load failed"));
+        if (active) setValidatedPrivateNotes((json?.notes ?? []) as ValidatedPrivateNote[]);
+      } catch {
+        if (active) setValidatedPrivateNotes([]);
+      } finally {
+        if (active) setLoadingValidatedPrivateNotes(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [activeSection, canAccessSensitiveSections, canLoadData, playerId]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {
@@ -3954,6 +4000,54 @@ function presetToSelectValue(p: Preset): Preset {
                     })}
                   </div>
                 ) : null}
+
+                <div className="hr-soft" style={{ margin: "2px 0" }} />
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
+                    {t("coachDebrief.validatedNotesTitle")} ({validatedPrivateNotes.length})
+                  </div>
+                  {loadingValidatedPrivateNotes ? (
+                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
+                  ) : validatedPrivateNotes.length === 0 ? (
+                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("coachDebrief.noValidatedNotes")}</div>
+                  ) : (
+                    validatedPrivateNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        style={{
+                          border: "1px solid rgba(15,92,53,0.14)",
+                          borderRadius: 12,
+                          background: "rgba(240,253,244,0.72)",
+                          padding: "10px 12px",
+                          display: "grid",
+                          gap: 6,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.68)" }}>
+                            {note.event_starts_at ? shortDate(note.event_starts_at, dateLocale) : "—"}
+                            {note.event_title ? ` • ${note.event_title}` : ""}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 900, color: "#166534" }}>
+                            {note.source === "ai_suggested" ? t("coachDebrief.aiSource") : t("coachDebrief.privateNote")}
+                            {note.author_name ? ` ${t("coachDebrief.byCoach")} ${note.author_name}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.80)", whiteSpace: "pre-wrap" }}>{note.body}</div>
+                        {note.event_group_id ? (
+                          <Link
+                            className="btn"
+                            style={{ width: "fit-content", minHeight: 44 }}
+                            href={`/coach/groups/${note.event_group_id}/planning/${note.event_id}`}
+                          >
+                            {t("coachDebrief.back")}
+                          </Link>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
 
                 <div className="hr-soft" style={{ margin: "2px 0" }} />
 

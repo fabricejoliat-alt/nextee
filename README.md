@@ -16,6 +16,22 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Coach debrief AI
+
+The optional post-training analysis runs only on the server and requires:
+
+```bash
+OPENAI_API_KEY=...
+# Optional; defaults to gpt-4o-mini
+OPENAI_COACH_MODEL=...
+```
+
+Never expose `OPENAI_API_KEY` through a `NEXT_PUBLIC_` variable. Apply the matching
+Supabase migration before using the debrief flow in an environment. Training
+assistance is disabled by default per organization and can be enabled by a
+manager from the training-volume settings page; attendance and ActiviTee ratings
+remain available when it is disabled.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

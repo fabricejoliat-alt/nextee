@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { isOrgStaffMember, requireCaller } from "@/app/api/messages/_lib";
 import { hasCoachClubPermission } from "@/lib/coachAuthorization";
+import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -188,6 +189,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const canManageActivity = clubId
       ? await hasCoachClubPermission(supabaseAdmin, callerId, clubId, "planning", groupId)
       : false;
+    const coachTrainingAssistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, clubId);
 
     const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
       clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
@@ -340,6 +342,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       evaluatedPlayers,
       meId: callerId,
       canManageActivity,
+      coachTrainingAssistanceEnabled,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

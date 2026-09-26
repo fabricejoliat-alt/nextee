@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, Copy, Pencil, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import campsStyles from "@/app/manager/camps/Camps.module.css";
 import styles from "@/app/manager/training-volume/TrainingVolume.module.css";
 
@@ -72,9 +73,10 @@ function toRow(input: unknown): VolumeRow {
   };
 }
 
-function configurationSnapshot(rows: VolumeRow[], seasonMonths: number[]) {
+function configurationSnapshot(rows: VolumeRow[], seasonMonths: number[], coachTrainingAssistanceEnabled: boolean) {
   return JSON.stringify({
     season_months: [...seasonMonths].sort((left, right) => left - right),
+    coach_training_assistance_enabled: coachTrainingAssistanceEnabled,
     rows: rows.map((row) => ({
       ftem_code: row.ftem_code,
       level_label: row.level_label,
@@ -206,10 +208,12 @@ function uniqueDuplicateCode(code: string, rows: VolumeRow[]) {
 }
 
 export default function ManagerTrainingVolumePage() {
+  const { t } = useI18n();
   const [clubId, setClubId] = useState("");
   const [rows, setRows] = useState<VolumeRow[]>([]);
   const [seasonMonths, setSeasonMonths] = useState<number[]>([]);
   const [offseasonMonths, setOffseasonMonths] = useState<number[]>([]);
+  const [coachTrainingAssistanceEnabled, setCoachTrainingAssistanceEnabled] = useState(false);
   const [defaultConfiguration, setDefaultConfiguration] = useState<DefaultConfiguration | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorErrors, setEditorErrors] = useState<EditorErrors>({});
@@ -219,10 +223,16 @@ export default function ManagerTrainingVolumePage() {
   const [success, setSuccess] = useState("");
   const baseline = useRef("");
 
-  const snapshot = useMemo(() => configurationSnapshot(rows, seasonMonths), [rows, seasonMonths]);
+  const snapshot = useMemo(
+    () => configurationSnapshot(rows, seasonMonths, coachTrainingAssistanceEnabled),
+    [coachTrainingAssistanceEnabled, rows, seasonMonths]
+  );
   const hasChanges = Boolean(baseline.current) && snapshot !== baseline.current;
   const editorHasChanges = Boolean(editor && JSON.stringify(editor.draft) !== JSON.stringify(editor.original));
-  const defaultSnapshot = useMemo(() => defaultConfiguration ? configurationSnapshot(defaultConfiguration.rows, defaultConfiguration.seasonMonths) : "", [defaultConfiguration]);
+  const defaultSnapshot = useMemo(
+    () => defaultConfiguration ? configurationSnapshot(defaultConfiguration.rows, defaultConfiguration.seasonMonths, coachTrainingAssistanceEnabled) : "",
+    [coachTrainingAssistanceEnabled, defaultConfiguration]
+  );
   const isDefaultConfiguration = Boolean(defaultSnapshot) && snapshot === defaultSnapshot;
 
   async function authHeader(json = false) {
@@ -242,6 +252,7 @@ export default function ManagerTrainingVolumePage() {
       const nextSeason = ALL_MONTHS.filter((month) => incomingSeason.includes(month));
       const nextOffseason = ALL_MONTHS.filter((month) => !nextSeason.includes(month));
       const nextRows = (Array.isArray(json?.rows) ? json.rows : []).map(toRow);
+      const nextCoachTrainingAssistanceEnabled = json?.settings?.coach_training_assistance_enabled === true;
       const incomingDefaultSeason = Array.isArray(json?.defaults?.settings?.season_months) ? json.defaults.settings.season_months.map(Number) : [];
       const nextDefaultSeason = ALL_MONTHS.filter((month) => incomingDefaultSeason.includes(month));
       const nextDefaultOffseason = ALL_MONTHS.filter((month) => !nextDefaultSeason.includes(month));
@@ -249,15 +260,17 @@ export default function ManagerTrainingVolumePage() {
       setSeasonMonths(nextSeason);
       setOffseasonMonths(nextOffseason);
       setRows(nextRows);
+      setCoachTrainingAssistanceEnabled(nextCoachTrainingAssistanceEnabled);
       setDefaultConfiguration({ rows: nextDefaultRows, seasonMonths: nextDefaultSeason, offseasonMonths: nextDefaultOffseason });
       setEditor(null);
       setEditorErrors({});
-      baseline.current = configurationSnapshot(nextRows, nextSeason);
+      baseline.current = configurationSnapshot(nextRows, nextSeason, nextCoachTrainingAssistanceEnabled);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Erreur de chargement.");
       setRows([]);
       setSeasonMonths([]);
       setOffseasonMonths([]);
+      setCoachTrainingAssistanceEnabled(false);
       setDefaultConfiguration(null);
       baseline.current = "";
     } finally {
@@ -393,6 +406,7 @@ export default function ManagerTrainingVolumePage() {
         body: JSON.stringify({
           season_months: seasonMonths,
           offseason_months: offseasonMonths,
+          coach_training_assistance_enabled: coachTrainingAssistanceEnabled,
           rows: rows.map((row) => ({
             ftem_code: row.ftem_code.trim().toUpperCase(), level_label: row.level_label.trim(), handicap_label: row.handicap_label,
             handicap_min: row.handicap_min, handicap_max: row.handicap_max, motivation_text: row.motivation_text.trim(),
@@ -402,7 +416,7 @@ export default function ManagerTrainingVolumePage() {
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(json?.error ?? "Erreur de sauvegarde."));
-      baseline.current = configurationSnapshot(rows, seasonMonths);
+      baseline.current = configurationSnapshot(rows, seasonMonths, coachTrainingAssistanceEnabled);
       setSuccess("Les périodes et les niveaux FTEM ont été enregistrés.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Erreur de sauvegarde.");
@@ -423,6 +437,29 @@ export default function ManagerTrainingVolumePage() {
     {success ? <div className={campsStyles.alertSuccess} role="status">{success}</div> : null}
 
     {loading ? <section className={campsStyles.panel}><ListLoadingBlock label="Chargement du volume d’entraînement…" /></section> : <>
+      <section className={campsStyles.panel}>
+        <div className={campsStyles.panelHeader}>
+          <div>
+            <h2>{t("managerTrainingAssistance.title")}</h2>
+            <p id="coach-training-assistance-help">{t("managerTrainingAssistance.description")}</p>
+            <p>{t("managerTrainingAssistance.attendanceUnaffected")}</p>
+          </div>
+          <label style={{ minHeight: 48, display: "inline-flex", alignItems: "center", gap: 10, cursor: loading ? "not-allowed" : "pointer" }}>
+            <input
+              type="checkbox"
+              checked={coachTrainingAssistanceEnabled}
+              disabled={loading}
+              aria-describedby="coach-training-assistance-help"
+              onChange={(event) => setCoachTrainingAssistanceEnabled(event.target.checked)}
+              style={{ width: 24, height: 24, accentColor: "var(--green-dark)" }}
+            />
+            <span style={{ fontWeight: 900 }}>
+              {coachTrainingAssistanceEnabled ? t("managerTrainingAssistance.enabled") : t("managerTrainingAssistance.disabled")}
+            </span>
+          </label>
+        </div>
+      </section>
+
       <section className={campsStyles.panel}>
         <div className={campsStyles.panelHeader}><div><h2>Périodes d’entraînement</h2><p>Définissez si chaque mois appartient à la saison ou à la période hors saison.</p></div><div className={campsStyles.actions}><button type="button" className={campsStyles.secondary} onClick={() => setAllMonths(true)}>Tout en saison</button><button type="button" className={campsStyles.secondary} onClick={() => setAllMonths(false)}>Tout hors saison</button></div></div>
         <div className={styles.monthGrid} aria-label="Période de chaque mois">{MONTHS.map((month) => {

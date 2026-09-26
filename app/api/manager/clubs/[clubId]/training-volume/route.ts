@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type VolumeRow = {
   ftem_code: string;
@@ -47,7 +48,7 @@ function sanitizeMonths(value: unknown): number[] {
   return Array.from(uniq);
 }
 
-async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
+async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: SupabaseClient, clubId: string) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
 
@@ -75,7 +76,7 @@ async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, c
   return { ok: true as const };
 }
 
-async function ensureDefaults(supabaseAdmin: any, clubId: string) {
+async function ensureDefaults(supabaseAdmin: SupabaseClient, clubId: string) {
   const settingsRes = await supabaseAdmin
     .from("training_volume_settings")
     .select("organization_id")
@@ -86,6 +87,7 @@ async function ensureDefaults(supabaseAdmin: any, clubId: string) {
       organization_id: clubId,
       season_months: DEFAULT_SEASON_MONTHS,
       offseason_months: DEFAULT_OFFSEASON_MONTHS,
+      coach_training_assistance_enabled: false,
     });
   }
 
@@ -118,7 +120,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const [settingsRes, rowsRes] = await Promise.all([
       supabaseAdmin
         .from("training_volume_settings")
-        .select("season_months,offseason_months")
+        .select("season_months,offseason_months,coach_training_assistance_enabled")
         .eq("organization_id", clubId)
         .maybeSingle(),
       supabaseAdmin
@@ -136,6 +138,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       settings: {
         season_months: sanitizeMonths(settingsRes.data?.season_months ?? DEFAULT_SEASON_MONTHS),
         offseason_months: sanitizeMonths(settingsRes.data?.offseason_months ?? DEFAULT_OFFSEASON_MONTHS),
+        coach_training_assistance_enabled: settingsRes.data?.coach_training_assistance_enabled === true,
       },
       rows: rowsRes.data ?? [],
       defaults: {
@@ -146,8 +149,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         rows: DEFAULT_ROWS,
       },
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
@@ -164,6 +167,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const seasonMonths = sanitizeMonths(body?.season_months);
     const offseasonMonths = sanitizeMonths(body?.offseason_months);
     const rows = Array.isArray(body?.rows) ? body.rows : [];
+    const hasCoachTrainingAssistanceSetting = typeof body?.coach_training_assistance_enabled === "boolean";
+    const coachTrainingAssistanceEnabled = body?.coach_training_assistance_enabled === true;
 
     const overlap = seasonMonths.some((m) => offseasonMonths.includes(m));
     if (overlap) {
@@ -175,7 +180,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
     }
 
     const normalizedRows: VolumeRow[] = rows
-      .map((r: any, index: number) => {
+      .map((raw: unknown, index: number) => {
+        const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
         const ftemCode = String(r?.ftem_code ?? "").trim().toUpperCase();
         const levelLabel = String(r?.level_label ?? "").trim();
         const handicapLabel = String(r?.handicap_label ?? "").trim();
@@ -211,6 +217,9 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
         organization_id: clubId,
         season_months: seasonMonths,
         offseason_months: offseasonMonths,
+        ...(hasCoachTrainingAssistanceSetting
+          ? { coach_training_assistance_enabled: coachTrainingAssistanceEnabled }
+          : {}),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "organization_id" }
@@ -235,7 +244,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
