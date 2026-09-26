@@ -39,8 +39,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: str
       .order("sort_order", { ascending: true });
     if (imgRes.error) return NextResponse.json({ error: imgRes.error.message }, { status: 400 });
 
-    const images = (imgRes.data ?? [])
-      .map((row: any) => String(row.path ?? "").trim())
+    const images = ((imgRes.data ?? []) as Array<{ path: string | null; sort_order: number | null }>)
+      .map((row) => String(row.path ?? "").trim())
       .filter(Boolean)
       .map((path) => supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
 
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: str
       images,
       isMine: ownerId === access.effectiveUserId,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

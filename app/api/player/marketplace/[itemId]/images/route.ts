@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: st
       image: imageRes.data,
       publicUrl: supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function loadInvitation(supabaseAdmin: any, rawToken: string) {
+async function loadInvitation(supabaseAdmin: SupabaseClient, rawToken: string) {
   const tokenHash = hashToken(rawToken);
   const { data, error } = await supabaseAdmin
     .from("access_invitation_tokens")
@@ -58,8 +58,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
           : null,
       invitation_kind: invite.row.invitation_kind,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

@@ -1,28 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  requirePlayerActor,
+  visibleGuardianLinks,
+} from "@/app/api/player/access";
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const parentId = callerData.user.id;
-
-    const { data: links, error: linksErr } = await supabaseAdmin
-      .from("player_guardians")
-      .select("player_id,is_primary,relation")
-      .eq("guardian_user_id", parentId);
-    if (linksErr) return NextResponse.json({ error: linksErr.message }, { status: 400 });
+    const actor = await requirePlayerActor(bearerTokenFromRequest(req));
+    const { supabaseAdmin } = actor;
+    if (!actor.actorRoles.includes("parent")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const visibleLinks = visibleGuardianLinks(actor.guardianLinks);
+    const visiblePlayerIds = new Set(visibleLinks.map((link) => link.playerId));
+    const links = actor.guardianRows.filter((row) => visiblePlayerIds.has(String(row.player_id ?? "").trim()));
 
     const playerIds = Array.from(
       new Set((links ?? []).map((r: any) => String(r.player_id ?? "")).filter(Boolean))
@@ -104,8 +97,10 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ children });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }
-

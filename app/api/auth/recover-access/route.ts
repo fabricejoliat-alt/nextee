@@ -4,6 +4,17 @@ import { createHash, randomBytes } from "crypto";
 
 export const runtime = "nodejs";
 
+type ProfileLiteRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  username: string | null;
+};
+
+type MembershipRow = { club_id: string | null; role: string | null; is_active: boolean | null };
+type GuardianRow = { guardian_user_id: string | null; can_edit: boolean | null };
+type GuardianProfileRow = Pick<ProfileLiteRow, "id" | "first_name" | "last_name">;
+
 function mustEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -205,14 +216,14 @@ async function fetchProfileLite(supabaseAdmin: ReturnType<typeof createAdminClie
     .eq("id", userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data
-    ? {
-        id: String((data as any).id ?? ""),
-        first_name: ((data as any).first_name ?? null) as string | null,
-        last_name: ((data as any).last_name ?? null) as string | null,
-        username: ((data as any).username ?? null) as string | null,
-      }
-    : null;
+  if (!data) return null;
+  const profile = data as ProfileLiteRow;
+  return {
+    id: String(profile.id ?? ""),
+    first_name: profile.first_name ?? null,
+    last_name: profile.last_name ?? null,
+    username: profile.username ?? null,
+  };
 }
 
 function fullName(profile?: { first_name: string | null; last_name: string | null } | null) {
@@ -281,9 +292,10 @@ export async function POST(req: NextRequest) {
       .eq("is_active", true);
     if (membershipsErr) throw new Error(membershipsErr.message);
 
+    const membershipRows = (memberships ?? []) as MembershipRow[];
     const playerClubId = String(
-      (memberships ?? []).find((row: any) => String(row.role ?? "") === "player")?.club_id ??
-        (memberships ?? [])[0]?.club_id ??
+      membershipRows.find((row) => String(row.role ?? "") === "player")?.club_id ??
+        membershipRows[0]?.club_id ??
         ""
     ).trim();
     if (!playerClubId) {
@@ -297,9 +309,11 @@ export async function POST(req: NextRequest) {
       .eq("can_edit", true);
     if (guardiansErr) throw new Error(guardiansErr.message);
 
-    const guardianIds = Array.from(
-      new Set((guardians ?? []).map((row: any) => String(row.guardian_user_id ?? "").trim()).filter(Boolean))
-    );
+    const guardianIds = Array.from(new Set(
+      ((guardians ?? []) as GuardianRow[])
+        .map((row) => String(row.guardian_user_id ?? "").trim())
+        .filter(Boolean)
+    ));
     if (guardianIds.length === 0) {
       return NextResponse.json({ ok: true });
     }
@@ -310,10 +324,10 @@ export async function POST(req: NextRequest) {
       .in("id", guardianIds);
     if (guardianProfilesRes.error) throw new Error(guardianProfilesRes.error.message);
     const guardianProfileById = new Map<string, { first_name: string | null; last_name: string | null }>();
-    for (const row of guardianProfilesRes.data ?? []) {
-      guardianProfileById.set(String((row as any).id ?? ""), {
-        first_name: ((row as any).first_name ?? null) as string | null,
-        last_name: ((row as any).last_name ?? null) as string | null,
+    for (const row of (guardianProfilesRes.data ?? []) as GuardianProfileRow[]) {
+      guardianProfileById.set(String(row.id ?? ""), {
+        first_name: row.first_name ?? null,
+        last_name: row.last_name ?? null,
       });
     }
 
@@ -348,7 +362,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

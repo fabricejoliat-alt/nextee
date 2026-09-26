@@ -1,25 +1,14 @@
 "use client";
 
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { localizedHelpSections, type HelpSection } from "./localizedHelp";
+import styles from "./PlayerHelp.module.css";
 
 const GUIDE_URL =
   "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf";
 
-type HelpBlock = {
-  heading?: string;
-  paragraphs?: string[];
-  bullets?: string[];
-  ordered?: string[];
-};
-
-type HelpSection = {
-  id: string;
-  title: string;
-  intro?: string;
-  blocks: HelpBlock[];
-};
-
-const sections: HelpSection[] = [
+const frenchSections: HelpSection[] = [
   {
     id: "intro",
     title: "ActiviTee – Junior Golf Platform",
@@ -567,7 +556,7 @@ const sections: HelpSection[] = [
   },
   {
     id: "page-mon-activite",
-    title: "Page • Mon activité",
+    title: "Page • Mes activités",
     blocks: [
       {
         paragraphs: [
@@ -645,7 +634,7 @@ const sections: HelpSection[] = [
   },
   {
     id: "dashboard",
-    title: "Page • Mon Golf - Dashboard",
+    title: "Page • Mon golf – Dashboard",
     blocks: [
       {
         paragraphs: [
@@ -945,142 +934,41 @@ const sections: HelpSection[] = [
 ];
 
 export default function PlayerHelpPage() {
+  const { locale, t } = useI18n();
+  const sections = locale === "fr" ? frenchSections : localizedHelpSections[locale];
+
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Aide" }]} />
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div>
-              <h1 className="section-title" style={{ marginBottom: 0 }}>Aide</h1>
-              <div className="section-subtitle">Guide joueur ActiviTee.</div>
-            </div>
-            <div className="marketplace-actions">
-              <a href={GUIDE_URL} target="_blank" rel="noreferrer" className="cta-green cta-green-inline">Ouvrir le PDF</a>
-              <a href={GUIDE_URL} download className="btn">Télécharger</a>
-            </div>
+      <div className={`app-shell ${styles.page}`}>
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.help") }]} />
+        <header className={styles.header}>
+          <div><h1>{t("help.title")}</h1><p>{t("help.subtitle")}</p></div>
+          <div className={styles.actions}>
+            <a href={GUIDE_URL} target="_blank" rel="noreferrer" className="cta-green cta-green-inline">{t("help.openPdf")}</a>
+            <a href={GUIDE_URL} download className="btn">{t("help.downloadPdf")}</a>
           </div>
-        </div>
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 16, display: "grid", gap: 14 }}>
-            <div style={{ display: "grid", gap: 8 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Sommaire
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {sections.map((section) => (
-                  <a
-                    key={section.id}
-                    href={`#${section.id}`}
-                    className="pill-soft"
-                    style={{ textDecoration: "none" }}
-                  >
-                    {section.title}
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            {sections.map((section) => (
-              <section
-                key={section.id}
-                id={section.id}
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  scrollMarginTop: 90,
-                  paddingTop: 6,
-                  borderTop: "1px solid rgba(0,0,0,0.06)",
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <h2
-                    style={{
-                      margin: 0,
-                      fontSize: 21,
-                      lineHeight: 1.2,
-                      fontWeight: 900,
-                      color: "#132018",
-                    }}
-                  >
-                    {section.title}
-                  </h2>
-                  {section.intro ? (
-                    <p style={{ margin: 0, color: "#5f6c62", lineHeight: 1.6 }}>
-                      {section.intro}
-                    </p>
-                  ) : null}
+        </header>
+        <article className={styles.content} lang={locale}>
+          <p className={styles.notice}>{locale === "fr" ? t("help.fullGuide") : t("help.localizedGuide")}</p>
+          <nav className={styles.contents} aria-label={t("help.contents")}>
+            <h2>{t("help.contents")}</h2>
+            <div className={styles.contentsLinks}>{sections.map((section) => <a key={section.id} href={`#${section.id}`}>{section.title}</a>)}</div>
+          </nav>
+          {sections.map((section) => (
+            <section className={styles.section} key={section.id} id={section.id}>
+              <div className={styles.sectionHeading}><h2>{section.title}</h2>{section.intro ? <p>{section.intro}</p> : null}</div>
+              {section.blocks.map((block, blockIndex) => (
+                <div className={styles.block} key={`${section.id}-${blockIndex}`}>
+                  {block.heading ? <h3>{block.heading}</h3> : null}
+                  {block.paragraphs?.map((paragraph, paragraphIndex) => <p key={`${section.id}-${blockIndex}-p-${paragraphIndex}`}>{paragraph}</p>)}
+                  {block.bullets ? <ul>{block.bullets.map((item, itemIndex) => <li key={`${section.id}-${blockIndex}-b-${itemIndex}`}>{item}</li>)}</ul> : null}
+                  {block.ordered ? <ol>{block.ordered.map((item, itemIndex) => <li key={`${section.id}-${blockIndex}-o-${itemIndex}`}>{item}</li>)}</ol> : null}
                 </div>
-
-                {section.blocks.map((block, blockIndex) => (
-                  <div key={`${section.id}-${blockIndex}`} style={{ display: "grid", gap: 7 }}>
-                    {block.heading ? (
-                      <h3
-                        style={{
-                          margin: 0,
-                          fontSize: 16,
-                          lineHeight: 1.3,
-                          fontWeight: 800,
-                          color: "#132018",
-                        }}
-                      >
-                        {block.heading}
-                      </h3>
-                    ) : null}
-                    {block.paragraphs?.map((paragraph, paragraphIndex) => (
-                      <p
-                        key={`${section.id}-${blockIndex}-p-${paragraphIndex}`}
-                        style={{
-                          margin: 0,
-                          color: "#26362d",
-                          lineHeight: 1.55,
-                          whiteSpace: "pre-wrap",
-                          fontSize: 14,
-                        }}
-                      >
-                        {paragraph}
-                      </p>
-                    ))}
-                    {block.bullets ? (
-                      <ul
-                        style={{
-                          margin: 0,
-                          paddingLeft: 22,
-                          color: "#26362d",
-                          lineHeight: 1.5,
-                          display: "grid",
-                          gap: 4,
-                          fontSize: 14,
-                        }}
-                      >
-                        {block.bullets.map((item, itemIndex) => (
-                          <li key={`${section.id}-${blockIndex}-b-${itemIndex}`}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {block.ordered ? (
-                      <ol
-                        style={{
-                          margin: 0,
-                          paddingLeft: 22,
-                          color: "#26362d",
-                          lineHeight: 1.5,
-                          display: "grid",
-                          gap: 4,
-                          fontSize: 14,
-                        }}
-                      >
-                        {block.ordered.map((item, itemIndex) => (
-                          <li key={`${section.id}-${blockIndex}-o-${itemIndex}`}>{item}</li>
-                        ))}
-                      </ol>
-                    ) : null}
-                  </div>
-                ))}
-              </section>
-            ))}
-          </div>
-        </div>
+              ))}
+            </section>
+          ))}
+          {locale !== "fr" ? <p className={styles.notice}>{t("help.pdfFrenchNote")}</p> : null}
+        </article>
       </div>
     </div>
   );

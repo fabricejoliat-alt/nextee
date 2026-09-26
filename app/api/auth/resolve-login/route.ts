@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-async function fetchAuthEmailByUserId(supabaseAdmin: any, userId: string) {
-  const authSchema = (supabaseAdmin as any).schema("auth");
+async function fetchAuthEmailByUserId(supabaseAdmin: SupabaseClient, userId: string) {
+  const authSchema = supabaseAdmin.schema("auth");
   const authUsersRes = await authSchema.from("users").select("email").eq("id", userId).maybeSingle();
   if (!authUsersRes.error) {
     const email = typeof authUsersRes.data?.email === "string" ? authUsersRes.data.email.toLowerCase() : null;
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ email: authUser.email });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

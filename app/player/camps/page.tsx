@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Club and profile images are dynamic Storage URLs. */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
@@ -8,6 +10,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import styles from "./PlayerCamps.module.css";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
@@ -107,6 +110,7 @@ function CampSkeleton() {
 }
 
 export default function PlayerCampsPage() {
+  const { t } = useI18n();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
@@ -263,10 +267,10 @@ export default function PlayerCampsPage() {
   return (
     <div className={`player-dashboard-bg ${styles.page}`}>
       <div className={`app-shell marketplace-page ${styles.shell}`}>
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Stages / camps" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("player.camps") }]} />
         <section className="glass-section">
           <div className="marketplace-header">
-            <div><h1 className="section-title">Stages / camps</h1><p className="section-subtitle">Retrouve les informations, le programme et les participants de tes prochains stages.</p></div>
+            <div><h1 className="section-title">{t("player.camps")}</h1><p className="section-subtitle">{t("player.campsSubtitle")}</p></div>
           </div>
         </section>
         {error ? <div className={styles.error} role="alert">{error}</div> : null}

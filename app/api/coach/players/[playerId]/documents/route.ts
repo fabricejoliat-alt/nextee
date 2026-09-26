@@ -1,16 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import {
+  buildPlayerDocumentObjectPath,
+  issuePlayerDocumentUploadReservation,
+  isOwnedPlayerDocumentPath,
+  verifyPlayerDocumentUploadReservation,
+} from "@/lib/playerDocumentUpload";
+import { PLAYER_DOCUMENT_BUCKET, validatePlayerDocumentFile } from "@/lib/playerDocumentPolicy";
+import {
+  discardPlayerDocumentUploadReservation,
+  finalizePlayerDocumentUploadReservation,
+  inspectUploadedPlayerDocument,
+  persistPlayerDocumentUploadReservation,
+  requirePendingPlayerDocumentUploadReservation,
+  signPlayerDocumentRows,
+  validatePlayerDocumentEventLink,
+  removePlayerDocumentObject,
+} from "@/lib/playerDocumentStorage";
 
-const DOCUMENTS_BUCKET = "marketplace";
-const MAX_DOCUMENT_SIZE_BYTES = 500 * 1024 * 1024;
-
-function safeFileName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function buildObjectPath(organizationId: string, playerId: string, originalName: string) {
-  return `player-documents/${organizationId}/${playerId}/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeFileName(originalName || "document")}`;
+function uploadReservationSecret() {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  return secret;
 }
 
 async function resolveUploaderName(supabaseAdmin: any, callerId: string) {
@@ -54,8 +66,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
 
     let docsQuery = supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
+      .select("id,organization_id,player_id,uploaded_by,file_name,storage_bucket,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
+      .in("organization_id", allowedSharedClubIds)
       .order("created_at", { ascending: false });
     if (requestedEventId) docsQuery = docsQuery.eq("club_event_id", requestedEventId);
     const docsRes = await docsQuery.limit(200);
@@ -95,12 +108,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
       }
     }
 
-    const docs = (docsRes.data ?? []).map((d: any) => ({
+    const docsWithNames = (docsRes.data ?? []).map((d: any) => ({
       ...d,
       uploaded_by_name: uploaderNameById.get(String(d.uploaded_by ?? "")) ?? String(d.uploaded_by ?? "").slice(0, 8),
       linked_event_group_id: eventMetaById.get(String(d.club_event_id ?? ""))?.group_id ?? null,
-      public_url: supabaseAdmin.storage.from("marketplace").getPublicUrl(String(d.storage_path ?? "")).data.publicUrl,
     }));
+    const docs = await signPlayerDocumentRows(supabaseAdmin, docsWithNames);
     return NextResponse.json({ documents: docs });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
@@ -129,10 +142,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
         mime_type?: string | null;
         size_bytes?: number | string | null;
         storage_path?: string | null;
+        reservation_token?: string | null;
       };
 
       const action = String(body?.action ?? "").trim();
       const sizeBytes = Number(body?.size_bytes ?? 0);
+      const originalName = String(body?.original_name ?? "").trim();
+      const requestedMimeType = String(body?.mime_type ?? "").trim();
       const organizationIdFromBody = String(body?.organization_id ?? "").trim();
       const coachOnlyFromBody = String(body?.coach_only ?? "false").trim() === "true";
       const clubEventIdFromBody = String(body?.club_event_id ?? "").trim() || null;
@@ -152,35 +168,135 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       if (!organizationIdFromBody || !allowedSharedClubIds.includes(organizationIdFromBody)) {
         return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
       }
-      if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-        return NextResponse.json({ error: "Invalid size_bytes" }, { status: 400 });
-      }
-      if (sizeBytes > MAX_DOCUMENT_SIZE_BYTES) {
-        return NextResponse.json(
-          { error: `Fichier trop volumineux. Limite ${Math.round(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))} MB.` },
-          { status: 400 }
-        );
-      }
+      if (!originalName) return NextResponse.json({ error: "Missing original_name" }, { status: 400 });
+      const fileValidation = validatePlayerDocumentFile({
+        fileName: originalName,
+        mimeType: requestedMimeType,
+        sizeBytes,
+      });
+      if (fileValidation.ok === false) return NextResponse.json({ error: fileValidation.error }, { status: 400 });
+      const mimeType = fileValidation.mimeType;
 
       if (action === "prepare") {
-        const originalName = String(body?.original_name ?? "").trim();
-        if (!originalName) return NextResponse.json({ error: "Missing original_name" }, { status: 400 });
-        const objectPath = buildObjectPath(organizationIdFromBody, playerId, originalName);
-        const signedRes = await supabaseAdmin.storage.from(DOCUMENTS_BUCKET).createSignedUploadUrl(objectPath);
+        const eventError = await validatePlayerDocumentEventLink(
+          supabaseAdmin,
+          organizationIdFromBody,
+          playerId,
+          clubEventIdFromBody
+        );
+        if (eventError) return NextResponse.json({ error: eventError }, { status: 400 });
+        const objectPath = buildPlayerDocumentObjectPath(
+          organizationIdFromBody,
+          playerId,
+          originalName
+        );
+        const signedRes = await supabaseAdmin.storage.from(PLAYER_DOCUMENT_BUCKET).createSignedUploadUrl(objectPath);
         if (signedRes.error) return NextResponse.json({ error: signedRes.error.message }, { status: 400 });
+        const issuedReservation = issuePlayerDocumentUploadReservation(
+          {
+            bucket: PLAYER_DOCUMENT_BUCKET,
+            storagePath: objectPath,
+            organizationId: organizationIdFromBody,
+            playerId,
+            uploadedBy: callerId,
+            originalName,
+            mimeType,
+            sizeBytes,
+            clubEventId: clubEventIdFromBody,
+            coachOnly: coachOnlyFromBody,
+          },
+          uploadReservationSecret()
+        );
+        await persistPlayerDocumentUploadReservation(supabaseAdmin, issuedReservation.reservation);
         return NextResponse.json({
+          bucket: PLAYER_DOCUMENT_BUCKET,
           path: objectPath,
           token: String((signedRes.data as any)?.token ?? ""),
-          max_bytes: MAX_DOCUMENT_SIZE_BYTES,
+          reservation_token: issuedReservation.token,
+          mime_type: mimeType,
+          max_bytes: fileValidation.maxBytes,
         });
       }
 
       if (action === "finalize") {
         const storagePath = String(body?.storage_path ?? "").trim();
         const providedName = String(body?.file_name ?? "").trim();
-        const originalName = String(body?.original_name ?? "").trim();
-        const mimeType = String(body?.mime_type ?? "").trim() || null;
+        const reservationToken = String(body?.reservation_token ?? "").trim();
         if (!storagePath) return NextResponse.json({ error: "Missing storage_path" }, { status: 400 });
+        if (!reservationToken) return NextResponse.json({ error: "Missing reservation_token" }, { status: 400 });
+        if (!isOwnedPlayerDocumentPath(storagePath, organizationIdFromBody, playerId)) {
+          return NextResponse.json({ error: "Invalid storage_path" }, { status: 403 });
+        }
+
+        const reservation = verifyPlayerDocumentUploadReservation(
+          reservationToken,
+          {
+            bucket: PLAYER_DOCUMENT_BUCKET,
+            storagePath,
+            organizationId: organizationIdFromBody,
+            playerId,
+            uploadedBy: callerId,
+            originalName,
+            mimeType,
+            sizeBytes,
+            clubEventId: clubEventIdFromBody,
+            coachOnly: coachOnlyFromBody,
+          },
+          uploadReservationSecret()
+        );
+        if (reservation.ok === false) {
+          return NextResponse.json({ error: reservation.error }, { status: 403 });
+        }
+        const persistedReservationError = await requirePendingPlayerDocumentUploadReservation(
+          supabaseAdmin,
+          reservation.reservation
+        );
+        if (persistedReservationError) {
+          return NextResponse.json({ error: persistedReservationError }, { status: 409 });
+        }
+        const eventError = await validatePlayerDocumentEventLink(
+          supabaseAdmin,
+          organizationIdFromBody,
+          playerId,
+          clubEventIdFromBody
+        );
+        if (eventError) return NextResponse.json({ error: eventError }, { status: 400 });
+
+        const inspection = await inspectUploadedPlayerDocument(supabaseAdmin, {
+          bucket: PLAYER_DOCUMENT_BUCKET,
+          storagePath,
+          originalName,
+          mimeType,
+          sizeBytes,
+        });
+        if (inspection.ok === false) {
+          if (inspection.cleanup) {
+            const cleanupError = await removePlayerDocumentObject(
+              supabaseAdmin,
+              PLAYER_DOCUMENT_BUCKET,
+              storagePath
+            );
+            if (!cleanupError) {
+              await discardPlayerDocumentUploadReservation(
+                supabaseAdmin,
+                reservation.reservation.reservationId
+              ).catch(() => undefined);
+            }
+          }
+          return NextResponse.json({ error: inspection.error }, { status: 400 });
+        }
+
+        const duplicateRes = await supabaseAdmin
+          .from("player_dashboard_documents")
+          .select("id")
+          .eq("storage_bucket", PLAYER_DOCUMENT_BUCKET)
+          .eq("storage_path", storagePath)
+          .limit(1)
+          .maybeSingle();
+        if (duplicateRes.error) return NextResponse.json({ error: duplicateRes.error.message }, { status: 400 });
+        if (duplicateRes.data?.id) {
+          return NextResponse.json({ error: "Upload already finalized" }, { status: 409 });
+        }
 
         const insRes = await supabaseAdmin
           .from("player_dashboard_documents")
@@ -189,83 +305,51 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
             player_id: playerId,
             uploaded_by: callerId,
             file_name: providedName || originalName || "document",
+            storage_bucket: PLAYER_DOCUMENT_BUCKET,
             storage_path: storagePath,
             mime_type: mimeType,
             size_bytes: sizeBytes,
             coach_only: coachOnlyFromBody,
             club_event_id: clubEventIdFromBody,
           })
-          .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
+          .select("id,organization_id,player_id,uploaded_by,file_name,storage_bucket,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
           .single();
-        if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
+        if (insRes.error) {
+          if (String(insRes.error.code ?? "") === "23505") {
+            return NextResponse.json({ error: "Upload already finalized" }, { status: 409 });
+          }
+          const cleanupError = await removePlayerDocumentObject(
+            supabaseAdmin,
+            PLAYER_DOCUMENT_BUCKET,
+            storagePath
+          );
+          if (!cleanupError) {
+            await discardPlayerDocumentUploadReservation(
+              supabaseAdmin,
+              reservation.reservation.reservationId
+            ).catch(() => undefined);
+          }
+          return NextResponse.json({ error: insRes.error.message }, { status: 400 });
+        }
 
+        await finalizePlayerDocumentUploadReservation(
+          supabaseAdmin,
+          reservation.reservation.reservationId
+        ).catch(() => undefined);
         const uploadedByName = await resolveUploaderName(supabaseAdmin, callerId);
-        const publicUrl = supabaseAdmin.storage.from(DOCUMENTS_BUCKET).getPublicUrl(storagePath).data.publicUrl;
-        return NextResponse.json({ document: { ...insRes.data, uploaded_by_name: uploadedByName, public_url: publicUrl } });
+        const [document] = await signPlayerDocumentRows(supabaseAdmin, [
+          { ...insRes.data, uploaded_by_name: uploadedByName },
+        ]);
+        return NextResponse.json({ document });
       }
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
-    const form = await req.formData();
-    const organizationId = String(form.get("organization_id") ?? "").trim();
-    const coachOnly = String(form.get("coach_only") ?? "false").trim() === "true";
-    const clubEventId = String(form.get("club_event_id") ?? "").trim() || null;
-    const providedName = String(form.get("file_name") ?? "").trim();
-    const file = form.get("file");
-    const campAccess = clubEventId
-      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, clubEventId)
-      : { allowed: false, clubId: null };
-    const allowedSharedClubIds = Array.from(
-      new Set([
-        ...access.sharedClubIds,
-        ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
-      ])
+    return NextResponse.json(
+      { error: "Multipart uploads are disabled. Use the prepare/finalize flow." },
+      { status: 415 }
     );
-    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
-    if (!canAccessDocuments) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-    if (!organizationId || !allowedSharedClubIds.includes(organizationId)) {
-      return NextResponse.json({ error: "Invalid organization_id" }, { status: 400 });
-    }
-    if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
-    if ((file.size ?? 0) > MAX_DOCUMENT_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: `Fichier trop volumineux. Limite ${Math.round(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))} MB.` },
-        { status: 400 }
-      );
-    }
-
-    const originalName = safeFileName(file.name || "document");
-    const objectPath = buildObjectPath(organizationId, playerId, originalName);
-    const arrayBuffer = await file.arrayBuffer();
-    const uploadRes = await supabaseAdmin.storage.from(DOCUMENTS_BUCKET).upload(objectPath, Buffer.from(arrayBuffer), {
-      contentType: file.type || "application/octet-stream",
-      upsert: false,
-    });
-    if (uploadRes.error) return NextResponse.json({ error: uploadRes.error.message }, { status: 400 });
-
-    const insRes = await supabaseAdmin
-      .from("player_dashboard_documents")
-      .insert({
-        organization_id: organizationId,
-        player_id: playerId,
-        uploaded_by: callerId,
-        file_name: providedName || file.name || originalName,
-        storage_path: objectPath,
-        mime_type: file.type || null,
-        size_bytes: file.size ?? null,
-        coach_only: coachOnly,
-        club_event_id: clubEventId,
-      })
-      .select("id,organization_id,player_id,uploaded_by,file_name,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
-      .single();
-    if (insRes.error) return NextResponse.json({ error: insRes.error.message }, { status: 400 });
-
-    const uploadedByName = await resolveUploaderName(supabaseAdmin, callerId);
-    const publicUrl = supabaseAdmin.storage.from(DOCUMENTS_BUCKET).getPublicUrl(objectPath).data.publicUrl;
-    return NextResponse.json({ document: { ...insRes.data, uploaded_by_name: uploadedByName, public_url: publicUrl } });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }

@@ -26,11 +26,16 @@ export default function CountUpNumber({
     }
 
     if (target <= 0 || durationMs <= 0) {
-      setDisplay(target);
-      return;
+      rafRef.current = requestAnimationFrame(() => {
+        setDisplay(target);
+        rafRef.current = null;
+      });
+      return () => {
+        if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      };
     }
 
-    setDisplay(0);
     let startTs: number | null = null;
 
     const tick = (ts: number) => {
@@ -60,4 +65,3 @@ export default function CountUpNumber({
     </span>
   );
 }
-

@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/periodic-reports",
       "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/player-document-cleanup",
+      "schedule": "17 * * * *"
     }
   ]
 }

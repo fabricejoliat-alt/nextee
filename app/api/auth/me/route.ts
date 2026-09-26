@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { loadPlayerActorAuthorization, visibleGuardianLinks } from "@/app/api/player/access";
+import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
 
 export async function GET(req: Request) {
   try {
@@ -41,40 +43,27 @@ export async function GET(req: Request) {
       });
     }
 
-    // membership actif (premier)
-    const { data: membership, error: memErr } = await supabaseAdmin
-      .from("club_members")
-      .select("club_id, role, is_active")
-      .eq("user_id", userId)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (memErr) {
-      return NextResponse.json({ error: memErr.message }, { status: 400 });
-    }
-
-    let parentHasChildren = true;
-    if (membership?.role === "parent") {
-      const { data: linkRow, error: linkErr } = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (linkErr) {
-        return NextResponse.json({ error: linkErr.message }, { status: 400 });
-      }
-      parentHasChildren = Boolean(linkRow?.player_id);
-    }
+    const actor = await loadPlayerActorAuthorization(supabaseAdmin, userId);
+    const primaryRole = selectPrimaryApplicationRole(actor.actorRoles);
+    const primaryMembership = primaryRole
+      ? actor.memberships
+          .filter((membership) => membership.role === primaryRole)
+          .sort((left, right) => String(left.club_id ?? "").localeCompare(String(right.club_id ?? "")))[0] ?? null
+      : null;
+    const membership = primaryMembership
+      ? { club_id: primaryMembership.club_id, role: primaryMembership.role, is_active: true }
+      : null;
+    const parentHasChildren = actor.actorRoles.includes("parent") && visibleGuardianLinks(actor.guardianLinks).length > 0;
 
     return NextResponse.json({
       userId,
       isSuperAdmin: false,
-      membership: membership ?? null, // {club_id, role, is_active}
+      membership,
+      memberships: actor.memberships.map((row) => ({ ...row, is_active: true })),
+      roles: actor.actorRoles,
       parentHasChildren,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

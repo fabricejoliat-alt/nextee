@@ -77,8 +77,8 @@ export default function PlayerSupportCenter() {
       const badgesJson = await badgesRes.json().catch(() => ({}));
       if (!badgesRes.ok) throw new Error(String(badgesJson?.error ?? tr("Erreur de chargement.", "Loading error.")));
       setBadgesByThreadId((badgesJson?.badges ?? {}) as Record<string, ThreadBadge>);
-    } catch (e: any) {
-      setError(e?.message ?? tr("Erreur de chargement.", "Loading error."));
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : tr("Erreur de chargement.", "Loading error."));
       setRows([]);
       setBadgesByThreadId({});
     } finally {
@@ -104,8 +104,8 @@ export default function PlayerSupportCenter() {
       if (!res.ok) throw new Error(String(json?.error ?? tr("Action impossible.", "Action failed.")));
       const threadId = String(json?.thread?.id ?? "").trim();
       router.push(threadId ? `/player/messages?thread_id=${encodeURIComponent(threadId)}` : "/player/messages");
-    } catch (e: any) {
-      setError(e?.message ?? tr("Action impossible.", "Action failed."));
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : tr("Action impossible.", "Action failed."));
     } finally {
       setBusyId("");
     }

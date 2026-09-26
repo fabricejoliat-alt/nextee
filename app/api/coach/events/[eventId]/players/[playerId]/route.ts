@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCaller, isOrgStaffMember } from "@/app/api/messages/_lib";
+import { signPlayerDocumentRows } from "@/lib/playerDocumentStorage";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -195,7 +196,8 @@ export async function GET(
 
     const docsRes = await supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,file_name,coach_only,created_at,storage_path,uploaded_by")
+      .select("id,file_name,coach_only,created_at,storage_bucket,storage_path,uploaded_by")
+      .eq("organization_id", clubId)
       .eq("player_id", playerId)
       .eq("club_event_id", eventId)
       .order("created_at", { ascending: false });
@@ -217,14 +219,16 @@ export async function GET(
       });
     }
 
-    const linkedDocuments = (docsRes.data ?? []).map((doc: any) => ({
+    const linkedDocumentRows = (docsRes.data ?? []).map((doc: any) => ({
       id: String(doc.id ?? ""),
       file_name: String(doc.file_name ?? "document"),
       coach_only: Boolean(doc.coach_only),
       created_at: String(doc.created_at ?? ""),
-      public_url: supabaseAdmin.storage.from("marketplace").getPublicUrl(String(doc.storage_path ?? "")).data.publicUrl,
+      storage_bucket: String(doc.storage_bucket ?? "marketplace"),
+      storage_path: String(doc.storage_path ?? ""),
       uploaded_by_name: uploaderNameById.get(String(doc.uploaded_by ?? "")) ?? null,
     }));
+    const linkedDocuments = await signPlayerDocumentRows(supabaseAdmin, linkedDocumentRows);
 
     return NextResponse.json({
       meId: callerId,

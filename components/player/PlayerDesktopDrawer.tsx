@@ -64,6 +64,28 @@ type ParentChildLite = {
   is_primary: boolean;
 };
 
+type TrainingSessionLite = {
+  id: string;
+  start_at: string;
+  club_event_id: string | null;
+  motivation: number | null;
+  difficulty: number | null;
+  satisfaction: number | null;
+};
+
+type AttendanceLite = {
+  event_id: string;
+  status: "expected" | "present" | "absent" | "excused" | null;
+};
+
+type EvaluationEventLite = {
+  id: string;
+  event_type: string | null;
+  starts_at: string;
+  status: string | null;
+  requires_evaluation: boolean | null;
+};
+
 type DrawerFooterCache = {
   fullName: string;
   viewerRole: "player" | "parent";
@@ -116,7 +138,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
   const [pendingEvalCount, setPendingEvalCount] = useState(0);
@@ -321,8 +343,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         setPendingEvalCount(0);
         return;
       }
-      const sessions = sRes.data ?? [];
-      const sessionIds = sessions.map((s: any) => s.id as string);
+      const sessions = (sRes.data ?? []) as TrainingSessionLite[];
+      const sessionIds = sessions.map((session) => session.id);
 
       const sessionItemsById: Record<string, { minutes: number }[]> = {};
       if (sessionIds.length > 0) {
@@ -340,7 +362,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
       }
 
       const completeSessionIds = new Set<string>();
-      for (const s of sessions as any[]) {
+      for (const s of sessions) {
         const items = sessionItemsById[s.id] ?? [];
         const hasPoste = items.some((it) => (it.minutes ?? 0) > 0);
         const hasSensations =
@@ -360,13 +382,14 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         return;
       }
       const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-      (aRes.data ?? []).forEach((row: any) => {
+      const attendanceRows = (aRes.data ?? []) as AttendanceLite[];
+      attendanceRows.forEach((row) => {
         const eventId = String(row.event_id ?? "").trim();
         if (!eventId) return;
         attendanceMap[eventId] = (row.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
       });
 
-      const incompletePastSessionsCount = (sessions as any[])
+      const incompletePastSessionsCount = sessions
         .filter((s) => new Date(String(s.start_at)).getTime() < nowTs)
         .filter((s) => {
           const eventId = s.club_event_id ? String(s.club_event_id) : "";
@@ -377,18 +400,18 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         .filter((s) => !completeSessionIds.has(String(s.id))).length;
 
       const completedEventIds = new Set(
-        (sessions as any[])
+        sessions
           .filter((s) => completeSessionIds.has(String(s.id)))
           .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
           .filter((x): x is string => !!x)
       );
       const eventIdsWithAnySession = new Set(
-        (sessions as any[])
+        sessions
           .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
           .filter((x): x is string => !!x)
       );
 
-      const eventIds = Array.from(new Set((aRes.data ?? []).map((r: any) => String(r.event_id))));
+      const eventIds = Array.from(new Set(attendanceRows.map((row) => String(row.event_id))));
 
       let incompleteEventsCount = 0;
       if (eventIds.length > 0) {
@@ -397,17 +420,18 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           .select("id,event_type,starts_at,status,requires_evaluation")
           .in("id", eventIds);
         if (!eRes.error) {
-          incompleteEventsCount = (eRes.data ?? [])
-            .filter((ev: any) => ev.status === "scheduled")
-            .filter((ev: any) => ev.requires_evaluation === true)
-            .filter((ev: any) => ev.event_type === "training")
-            .filter((ev: any) => new Date(String(ev.starts_at)).getTime() < nowTs)
-            .filter((ev: any) => {
-              const status = attendanceMap[String(ev.id)] ?? null;
+          const events = (eRes.data ?? []) as EvaluationEventLite[];
+          incompleteEventsCount = events
+            .filter((event) => event.status === "scheduled")
+            .filter((event) => event.requires_evaluation === true)
+            .filter((event) => event.event_type === "training")
+            .filter((event) => new Date(String(event.starts_at)).getTime() < nowTs)
+            .filter((event) => {
+              const status = attendanceMap[String(event.id)] ?? null;
               return status !== "absent" && status !== "excused";
             })
-            .filter((ev: any) => !completedEventIds.has(String(ev.id)))
-            .filter((ev: any) => !eventIdsWithAnySession.has(String(ev.id))).length;
+            .filter((event) => !completedEventIds.has(String(event.id)))
+            .filter((event) => !eventIdsWithAnySession.has(String(event.id))).length;
         }
       }
 
@@ -418,20 +442,20 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const navSections = useMemo(
     () => [
       {
-        label: locale === "fr" ? "Accueil" : "Home",
+        label: t("nav.home"),
         items: [
-          { label: locale === "fr" ? "Tableau de bord" : "Dashboard", icon: Home, href: ROUTES.home },
-          { label: locale === "fr" ? "Actualités" : "News", icon: Newspaper, href: ROUTES.news },
+          { label: t("nav.dashboard"), icon: Home, href: ROUTES.home },
+          { label: t("nav.news"), icon: Newspaper, href: ROUTES.news },
         ],
       },
       {
-        label: locale === "fr" ? "Activités" : "Activities",
+        label: t("player.activities"),
         items: [
-          { label: locale === "fr" ? "Mes activités" : "My activities", icon: ClipboardList, href: ROUTES.trainingsList },
+          { label: t("player.activities"), icon: ClipboardList, href: ROUTES.trainingsList },
           ...(performanceEnabled
             ? [
                 {
-                  label: locale === "fr" ? "Activités à évaluer" : "Activities to evaluate",
+                  label: t("player.activitiesToEvaluate"),
                   icon: ListChecks,
                   href: ROUTES.trainingsToComplete,
                   badgeCount: pendingEvalCount > 0 ? pendingEvalCount : 0,
@@ -439,36 +463,22 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
               ]
             : []),
           { label: t("player.myGolf"), icon: Flag, href: ROUTES.golfDashboard },
-          { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
+          { label: t("player.camps"), icon: Tent, href: ROUTES.camps },
         ],
       },
       {
-        label: locale === "fr" ? "Progression" : "Progress",
+        label: t("player.progression"),
         items: [
-          { label: "Validations", icon: ShieldCheck, href: ROUTES.validations },
+          { label: t("player.validations"), icon: ShieldCheck, href: ROUTES.validations },
           {
-            label:
-              locale === "fr"
-                ? "Règles de golf"
-                : locale === "de"
-                ? "Golfregeln"
-                : locale === "it"
-                ? "Regole del golf"
-                : "Golf rules",
+            label: t("player.rules"),
             icon: BookOpen,
             href: ROUTES.rules,
           },
           ...(performanceEnabled
             ? [
                 {
-                  label:
-                    locale === "fr"
-                      ? "Ordre du mérite"
-                      : locale === "de"
-                      ? "Order of Merit"
-                      : locale === "it"
-                      ? "Ordine di merito"
-                      : "Order of Merit",
+                  label: t("player.orderOfMerit"),
                   icon: Trophy,
                   href: ROUTES.om,
                 },
@@ -477,11 +487,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
       {
-        label: "Services",
+        label: t("player.services"),
         items: [{ label: t("nav.marketplace"), icon: Store, href: ROUTES.marketplaceAll }],
       },
     ],
-    [t, locale, pendingEvalCount, performanceEnabled]
+    [t, pendingEvalCount, performanceEnabled]
   );
 
   async function handleLogout() {
@@ -576,7 +586,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           {viewerRole === "parent" && parentChildren.length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.8, marginBottom: 6 }}>
-                Enfant sélectionné
+                {t("player.selectedChild")}
               </div>
               <select
                 value={selectedChildIdForView}
@@ -592,11 +602,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                 }}
               >
                 {parentChildren.map((c) => {
-                  const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Joueur";
+                  const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || t("player.playerFallback");
                   return (
                     <option key={c.id} value={c.id} style={{ color: "#111827" }}>
                       {name}
-                      {c.is_primary ? " (principal)" : ""}
+                      {c.is_primary ? ` (${t("player.primaryChild")})` : ""}
                     </option>
                   );
                 })}
@@ -614,7 +624,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
           <Link href={ROUTES.help} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.help) ? "active" : ""}`} onClick={onClose}>
             <span className="drawer-item-left">
               <CircleHelp size={16} strokeWidth={2} />
-              <span>Aide</span>
+              <span>{t("nav.help")}</span>
             </span>
           </Link>
 

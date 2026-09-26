@@ -15,6 +15,12 @@
     "test:manager-performance": "node --test --experimental-strip-types tests/manager-performance.test.ts",
     "test:coach-permissions": "node --test --experimental-strip-types tests/coach-permissions.test.ts",
     "test:golf-rounds": "node --test --experimental-strip-types tests/golf-round-metrics.test.ts",
+    "test:player-security": "node --test --experimental-strip-types tests/player-security.test.ts",
+    "test:player-transactions": "node --test --experimental-strip-types tests/player-transactions.test.ts",
+    "test:player-reliability": "node --test --experimental-strip-types tests/player-reliability.test.ts",
+    "test:player-ui": "node --test --experimental-strip-types tests/player-ui-localization.test.ts",
+    "audit:player-documents-storage": "node --env-file=.env.local scripts/migrate-player-documents-storage.mjs",
+    "migrate:player-documents-storage": "node --env-file=.env.local scripts/migrate-player-documents-storage.mjs --apply",
     "test:rules-learning": "node --test --experimental-strip-types tests/rules-learning.test.ts tests/rules-curriculum.test.ts"
   },
   "dependencies": {

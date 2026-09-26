@@ -12,14 +12,11 @@ type ActiviteeEChartProps = {
 export default function ActiviteeEChart({ option, ariaLabel, height = 260 }: ActiviteeEChartProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
-  const optionRef = useRef(option);
-  optionRef.current = option;
 
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current, undefined, { renderer: "svg" });
     chartRef.current = chart;
-    chart.setOption(optionRef.current, { notMerge: true });
 
     let resizeFrame = 0;
     let settleFrame = 0;

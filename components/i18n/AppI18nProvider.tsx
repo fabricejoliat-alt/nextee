@@ -19,7 +19,9 @@ export default function AppI18nProvider({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === "fr" || raw === "en" || raw === "de" || raw === "it") setLocaleState(raw);
+    if (raw !== "fr" && raw !== "en" && raw !== "de" && raw !== "it") return;
+    const timer = window.setTimeout(() => setLocaleState(raw), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

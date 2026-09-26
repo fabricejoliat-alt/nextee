@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, resolvePlayerAccess } from "@/app/api/camps/_lib";
+import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
 
 export async function PATCH(
   req: NextRequest,
@@ -23,47 +24,19 @@ export async function PATCH(
     const access = await resolvePlayerAccess(supabaseAdmin, accessToken, childId, "edit");
     if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
 
-    const campDayRes = await supabaseAdmin
-      .from("club_camp_days")
-      .select("camp_id")
-      .eq("event_id", eventId)
-      .maybeSingle();
-    if (campDayRes.error) return NextResponse.json({ error: campDayRes.error.message }, { status: 400 });
-    if (!campDayRes.data?.camp_id) return NextResponse.json({ error: "Camp day not found" }, { status: 404 });
-
-    const campPlayerRes = await supabaseAdmin
-      .from("club_camp_players")
-      .select("camp_id,registration_status")
-      .eq("camp_id", campDayRes.data.camp_id)
-      .eq("player_id", access.effectiveUserId)
-      .maybeSingle();
-    if (campPlayerRes.error) return NextResponse.json({ error: campPlayerRes.error.message }, { status: 400 });
-    if (!campPlayerRes.data?.camp_id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (campPlayerRes.data.registration_status !== "registered") {
-      return NextResponse.json({ error: "Inscription au stage requise." }, { status: 400 });
+    const result = await supabaseAdmin.rpc("set_player_camp_attendance_transactional", {
+      p_event_id: eventId,
+      p_player_id: access.effectiveUserId,
+      p_actor_id: access.viewerUserId,
+      p_status: nextStatus,
+    });
+    if (result.error) {
+      const mapped = mapPlayerTransactionError(result.error, "Mise à jour de la présence impossible.");
+      return NextResponse.json({ error: mapped.error }, { status: mapped.status });
     }
 
-    const attendeeUpdateRes = await supabaseAdmin
-      .from("club_event_attendees")
-      .update({ status: nextStatus })
-      .eq("event_id", eventId)
-      .eq("player_id", access.effectiveUserId);
-    if (attendeeUpdateRes.error) return NextResponse.json({ error: attendeeUpdateRes.error.message }, { status: 400 });
-
-    if (nextStatus === "present" && campPlayerRes.data.registration_status !== "registered") {
-      const campPlayerUpdateRes = await supabaseAdmin
-        .from("club_camp_players")
-        .update({
-          registration_status: "registered",
-          registered_at: new Date().toISOString(),
-        })
-        .eq("camp_id", campDayRes.data.camp_id)
-        .eq("player_id", access.effectiveUserId);
-      if (campPlayerUpdateRes.error) return NextResponse.json({ error: campPlayerUpdateRes.error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json(result.data ?? { ok: true });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

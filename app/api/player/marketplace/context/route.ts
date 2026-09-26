@@ -18,8 +18,7 @@ export async function GET(req: NextRequest) {
       preferredClubId: access.preferredClubId,
       phone: access.phone,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
-

@@ -1,4 +1,5 @@
 import { createSupabaseAdmin, requireCaller } from "@/app/api/messages/_lib";
+import { resolveAuthenticatedPlayerAccess } from "@/app/api/player/access";
 import { getValidationBadge, type ValidationAttemptItem, type ValidationDashboardPayload, type ValidationExerciseItem, type ValidationSectionItem } from "@/lib/validations";
 
 type SectionRow = {
@@ -55,91 +56,19 @@ export async function requireSuperAdmin(accessToken: string) {
 
 export async function resolveValidationPlayerAccess(accessToken: string, childIdRaw: string, mode: "view" | "edit" = "view") {
   const supabaseAdmin = createSupabaseAdmin();
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) {
-    const err = new Error("Invalid token");
-    (err as Error & { status?: number }).status = 401;
-    throw err;
-  }
-
-  const viewerUserId = normalizeText(callerData.user.id);
-  const requestedChildId = normalizeText(childIdRaw);
-
-  const membershipsRes = await supabaseAdmin
-    .from("club_members")
-    .select("role")
-    .eq("user_id", viewerUserId)
-    .eq("is_active", true);
-  if (membershipsRes.error) throw new Error(membershipsRes.error.message);
-
-  const roles = new Set(
-    ((membershipsRes.data ?? []) as Array<{ role: string | null }>)
-      .map((row) => normalizeText(row.role).toLowerCase())
-      .filter(Boolean)
-  );
-  const isParent = roles.has("parent");
-
-  let effectivePlayerId = viewerUserId;
-  let canRecordAttempts = !isParent;
-
-  if (isParent) {
-    const permissionFilter = mode === "edit" ? "can_edit.eq.true" : "can_view.is.null,can_view.eq.true";
-    if (requestedChildId) {
-      const guardianRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", viewerUserId)
-        .eq("player_id", requestedChildId)
-        .or(permissionFilter)
-        .maybeSingle();
-      if (guardianRes.error) throw new Error(guardianRes.error.message);
-      if (!guardianRes.data?.player_id) {
-        const err = new Error("Forbidden");
-        (err as Error & { status?: number }).status = 403;
-        throw err;
-      }
-      effectivePlayerId = normalizeText(guardianRes.data.player_id);
-    } else {
-      const guardianRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,is_primary")
-        .eq("guardian_user_id", viewerUserId)
-        .or(permissionFilter)
-        .order("is_primary", { ascending: false })
-        .order("created_at", { ascending: true })
-        .limit(1);
-      if (guardianRes.error) throw new Error(guardianRes.error.message);
-      const fallbackPlayerId = normalizeText(guardianRes.data?.[0]?.player_id ?? "");
-      if (!fallbackPlayerId) {
-        const err = new Error("Forbidden");
-        (err as Error & { status?: number }).status = 403;
-        throw err;
-      }
-      effectivePlayerId = fallbackPlayerId;
-    }
-
-    const canEditRes = await supabaseAdmin
-      .from("player_guardians")
-      .select("player_id")
-      .eq("guardian_user_id", viewerUserId)
-      .eq("player_id", effectivePlayerId)
-      .eq("can_edit", true)
-      .maybeSingle();
-    if (canEditRes.error) throw new Error(canEditRes.error.message);
-    canRecordAttempts = Boolean(canEditRes.data?.player_id);
-    if (mode === "edit" && !canRecordAttempts) {
-      const err = new Error("Forbidden");
-      (err as Error & { status?: number }).status = 403;
-      throw err;
-    }
-  }
+  const access = await resolveAuthenticatedPlayerAccess({
+    accessToken,
+    requestedPlayerId: childIdRaw,
+    mode,
+    supabaseAdmin,
+  });
 
   return {
     supabaseAdmin,
-    viewerUserId,
-    effectivePlayerId,
-    isParent,
-    canRecordAttempts,
+    viewerUserId: access.actorUserId,
+    effectivePlayerId: access.subjectPlayerId,
+    isParent: access.isGuardianContext,
+    canRecordAttempts: access.permissions.edit,
   };
 }
 

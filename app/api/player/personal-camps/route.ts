@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ campId, sessionIds: createdSessionIds });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

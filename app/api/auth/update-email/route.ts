@@ -42,8 +42,7 @@ export async function POST(req: NextRequest) {
     if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 });
 
     return NextResponse.json({ ok: true, email });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
-

@@ -1,94 +1,42 @@
 import { NextResponse, type NextRequest } from "next/server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-function computeAge(birthDate: string | null | undefined) {
-  if (!birthDate) return null;
-  const d = new Date(birthDate);
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
-  return age >= 0 ? age : null;
-}
+import { resolvePlayerConsentStatus } from "@/lib/playerConsent";
+import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  requirePlayerActor,
+  resolvePlayerAccessContext,
+  visibleGuardianLinks,
+} from "@/app/api/player/access";
 
 type ConsentStatus = "granted" | "pending" | "refused" | "adult";
 
-function aggregateConsentStatus(
-  statuses: Array<string | null | undefined>,
-  birthDate: string | null | undefined
-): ConsentStatus {
-  if (statuses.some((v) => v === "granted")) return "granted";
-  if (statuses.some((v) => v === "refused")) return "refused";
-  if (statuses.some((v) => v === "adult")) return "adult";
-  if (statuses.some((v) => v === "pending")) return "pending";
-  const age = computeAge(birthDate);
-  if (age != null && age >= 18) return "adult";
-  return "pending";
-}
-
-async function getCaller(req: NextRequest) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { error: "Missing token", status: 401 as const };
-
-  const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { error: "Invalid token", status: 401 as const };
-
-  const userId = callerData.user.id;
-  const { data: membership, error: membershipErr } = await supabaseAdmin
-    .from("club_members")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (membershipErr) return { error: membershipErr.message, status: 400 as const };
-
-  return {
-    supabaseAdmin,
-    userId,
-    role: String(membership?.role ?? "player"),
-  };
-}
-
-async function recordConsentDetails(supabaseAdmin: any, args: { playerId: string; status: "granted" | "adult"; changedBy: string; signerId?: string | null; signerName?: string | null }) {
-  const memberships = await supabaseAdmin.from("club_members").select("club_id").eq("user_id", args.playerId).eq("role", "player").eq("is_active", true);
-  if (memberships.error) throw new Error(memberships.error.message);
-  for (const membership of memberships.data ?? []) {
-    const values = { club_id: membership.club_id, player_user_id: args.playerId, status: args.status, decided_at: new Date().toISOString(), signer_guardian_user_id: args.signerId ?? null, signer_name: args.signerName ?? null, source: "parent_portal", consent_version: "activitee-v1", internal_notes: null, updated_by: args.changedBy, updated_at: new Date().toISOString() };
-    const current = await supabaseAdmin.from("player_consents").upsert(values, { onConflict: "club_id,player_user_id" });
-    if (current.error && !/relation|schema cache/i.test(current.error.message)) throw new Error(current.error.message);
-    if (!current.error) {
-      const history = await supabaseAdmin.from("player_consent_history").insert({ club_id: membership.club_id, player_user_id: args.playerId, status: args.status, decided_at: values.decided_at, signer_guardian_user_id: values.signer_guardian_user_id, signer_name: values.signer_name, source: values.source, consent_version: values.consent_version, changed_by: args.changedBy });
-      if (history.error) throw new Error(history.error.message);
-    }
-  }
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const caller = await getCaller(req);
-    if ("error" in caller) return NextResponse.json({ error: caller.error }, { status: caller.status });
+    const caller = await requirePlayerActor(bearerTokenFromRequest(req));
+    const { supabaseAdmin, actorUserId: userId, actorRoles } = caller;
+    const visibleLinks = visibleGuardianLinks(caller.guardianLinks);
+    const requestedChildId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
+    const useParentContext =
+      actorRoles.includes("parent") &&
+      visibleLinks.length > 0 &&
+      (!actorRoles.includes("player") || Boolean(requestedChildId));
 
-    const { supabaseAdmin, userId, role } = caller;
+    if (useParentContext) {
+      if (requestedChildId) {
+        await resolvePlayerAccessContext({
+          supabaseAdmin,
+          actorUserId: userId,
+          actorRoles,
+          guardianLinks: caller.guardianLinks,
+          requestedPlayerId: requestedChildId,
+          mode: "view",
+        });
+      }
+      const links = visibleLinks;
 
-    if (role === "parent") {
-      const { data: links, error: linksErr } = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,is_primary")
-        .eq("guardian_user_id", userId);
-      if (linksErr) return NextResponse.json({ error: linksErr.message }, { status: 400 });
-
-      const playerIds = Array.from(new Set((links ?? []).map((r: any) => String(r.player_id ?? "")).filter(Boolean)));
+      const playerIds = Array.from(new Set(links.map((link) => link.playerId).filter(Boolean)));
       if (playerIds.length === 0) {
         return NextResponse.json({ viewerRole: "parent", children: [], pendingChildren: [] });
       }
@@ -120,24 +68,26 @@ export async function GET(req: NextRequest) {
       }
 
       const primaryById = new Map<string, boolean>();
-      for (const link of links ?? []) {
-        const pid = String((link as any).player_id ?? "");
-        if (pid && Boolean((link as any).is_primary)) primaryById.set(pid, true);
+      const editableById = new Map<string, boolean>();
+      for (const link of links) {
+        if (link.playerId && link.isPrimary) primaryById.set(link.playerId, true);
+        if (link.playerId) editableById.set(link.playerId, link.canView !== false && link.canEdit === true);
       }
 
       const children = playerIds
         .map((playerId) => {
           const profile = profileById.get(playerId);
           const birthDate = (profile?.birth_date ?? null) as string | null;
-          const status = aggregateConsentStatus(statusesByPlayer.get(playerId) ?? [], birthDate);
+          const status = resolvePlayerConsentStatus(statusesByPlayer.get(playerId) ?? []) as ConsentStatus;
           return {
             playerId,
             firstName: (profile?.first_name ?? null) as string | null,
             lastName: (profile?.last_name ?? null) as string | null,
             birthDate,
             isPrimary: primaryById.get(playerId) ?? false,
+            canEdit: editableById.get(playerId) ?? false,
             consentStatus: status,
-            pending: status === "pending",
+            pending: status !== "granted" && status !== "adult",
           };
         })
         .sort((a, b) => {
@@ -151,8 +101,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         viewerRole: "parent",
         children,
-        pendingChildren: children.filter((c) => c.pending).map((c) => c.playerId),
+        pendingChildren: children.filter((c) => c.pending && c.canEdit).map((c) => c.playerId),
       });
+    }
+
+    if (!actorRoles.includes("player")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const [profileRes, membershipsRes] = await Promise.all([
@@ -169,9 +123,10 @@ export async function GET(req: NextRequest) {
     if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
 
     const birthDate = (profileRes.data?.birth_date ?? null) as string | null;
-    const status = aggregateConsentStatus(
-      (membershipsRes.data ?? []).map((row: any) => (row?.player_consent_status ?? null) as string | null),
-      birthDate
+    const status = resolvePlayerConsentStatus(
+      ((membershipsRes.data ?? []) as Array<{ player_consent_status: string | null }>).map(
+        (row) => row.player_consent_status
+      )
     );
 
     return NextResponse.json({
@@ -182,88 +137,63 @@ export async function GET(req: NextRequest) {
         lastName: (profileRes.data?.last_name ?? null) as string | null,
         birthDate,
         consentStatus: status,
-        pending: status === "pending",
+        pending: status !== "granted" && status !== "adult",
       },
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const caller = await getCaller(req);
-    if ("error" in caller) return NextResponse.json({ error: caller.error }, { status: caller.status });
-
-    const { supabaseAdmin, userId, role } = caller;
+    const caller = await requirePlayerActor(bearerTokenFromRequest(req));
+    const { supabaseAdmin, actorUserId: userId } = caller;
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "").trim();
 
     if (action === "grant") {
-      if (role !== "parent") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
       const playerId = String(body?.playerId ?? "").trim();
       const confirmed = body?.confirmed === true;
       if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
       if (!confirmed) return NextResponse.json({ error: "Consent confirmation required" }, { status: 400 });
 
-      const { data: linkRow, error: linkErr } = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", userId)
-        .eq("player_id", playerId)
-        .maybeSingle();
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
-      if (!linkRow) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-      const { error: updateErr } = await supabaseAdmin
-        .from("club_members")
-        .update({ player_consent_status: "granted" })
-        .eq("user_id", playerId)
-        .eq("role", "player")
-        .eq("is_active", true);
-      if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 });
+      const access = await resolvePlayerAccessContext({
+        supabaseAdmin,
+        actorUserId: userId,
+        actorRoles: caller.actorRoles,
+        guardianLinks: caller.guardianLinks,
+        requestedPlayerId: playerId,
+        mode: "consent",
+      });
+      if (!access.isGuardianContext) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
       const signer = await supabaseAdmin.from("profiles").select("first_name,last_name").eq("id", userId).maybeSingle();
-      await recordConsentDetails(supabaseAdmin, { playerId, status: "granted", changedBy: userId, signerId: userId, signerName: `${signer.data?.first_name ?? ""} ${signer.data?.last_name ?? ""}`.trim() || null });
+      if (signer.error) return NextResponse.json({ error: signer.error.message }, { status: 400 });
 
-      return NextResponse.json({ ok: true, consentStatus: "granted" });
-    }
-
-    if (action === "declare_adult") {
-      if (role !== "player") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-      const birthDate = String(body?.birthDate ?? "").trim();
-      if (!birthDate) return NextResponse.json({ error: "Missing birthDate" }, { status: 400 });
-      const age = computeAge(birthDate);
-      if (age == null) return NextResponse.json({ error: "Date de naissance invalide" }, { status: 400 });
-      if (age < 18) {
-        return NextResponse.json(
-          { error: "Cette date de naissance indique un joueur mineur. Le consentement d'un parent reste nécessaire." },
-          { status: 400 }
-        );
+      const signerName = `${signer.data?.first_name ?? ""} ${signer.data?.last_name ?? ""}`.trim() || null;
+      const consent = await supabaseAdmin.rpc("grant_player_consent_transactional", {
+        p_player_id: playerId,
+        p_guardian_user_id: userId,
+        p_signer_name: signerName,
+        p_consent_version: "activitee-v1",
+      });
+      if (consent.error) {
+        const mapped = mapPlayerTransactionError(consent.error, "Impossible d’enregistrer le consentement.");
+        return NextResponse.json({ error: mapped.error }, { status: mapped.status });
       }
 
-      const [profileUpdate, membershipUpdate] = await Promise.all([
-        supabaseAdmin.from("profiles").update({ birth_date: birthDate }).eq("id", userId),
-        supabaseAdmin
-          .from("club_members")
-          .update({ player_consent_status: "adult" })
-          .eq("user_id", userId)
-          .eq("role", "player")
-          .eq("is_active", true),
-      ]);
-
-      if (profileUpdate.error) return NextResponse.json({ error: profileUpdate.error.message }, { status: 400 });
-      if (membershipUpdate.error) return NextResponse.json({ error: membershipUpdate.error.message }, { status: 400 });
-
-      await recordConsentDetails(supabaseAdmin, { playerId: userId, status: "adult", changedBy: userId });
-
-      return NextResponse.json({ ok: true, consentStatus: "adult" });
+      return NextResponse.json({ ok: true, consentStatus: "granted", transaction: consent.data });
     }
 
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

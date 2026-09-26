@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+/* eslint-disable @next/next/no-img-element -- Marketplace images are dynamic user uploads. */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
+import type { AppLocale } from "@/lib/i18n/messages";
 
 type Item = {
   id: string;
@@ -27,22 +31,11 @@ type Item = {
   delivery: string | null;
 };
 
-type Profile = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-};
-
-function truncate(s: string, max: number) {
-  const t = (s ?? "").trim();
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1) + "…";
-}
-
-function compactMeta(it: Item) {
+function compactMeta(it: Item, locale: AppLocale) {
   const parts: string[] = [];
   if (it.category) parts.push(it.category);
-  if (it.condition) parts.push(it.condition);
+  const conditionLabel = marketplaceConditionLabel(locale, it.condition);
+  if (conditionLabel) parts.push(conditionLabel);
 
   const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
   if (bm) parts.push(bm);
@@ -70,13 +63,11 @@ function MarketplaceCardsSkeleton() {
 }
 
 export default function PlayerMarketplaceHome() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [userId, setUserId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
 
   // ✅ Ancre au-dessus de la liste (plus fiable que window.scrollTo(0) avec header fixed)
@@ -89,8 +80,6 @@ export default function PlayerMarketplaceHome() {
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
 
-  const bucket = "marketplace";
-
   const placeholderSvg = useMemo(() => {
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="240" height="180">
@@ -102,12 +91,11 @@ export default function PlayerMarketplaceHome() {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const ctx = await resolveEffectivePlayerContext();
-      setUserId(ctx.effectiveUserId);
 
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
@@ -123,21 +111,19 @@ export default function PlayerMarketplaceHome() {
       if (!res.ok) throw new Error(String(json?.error ?? t("marketplace.noActiveClub")));
 
       setItems((json?.items ?? []) as Item[]);
-      setProfilesById((json?.profilesById ?? {}) as Record<string, Profile>);
       setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
     } catch (loadError: unknown) {
       setItems([]);
-      setProfilesById({});
       setMainImageByItemId({});
       setError(loadError instanceof Error ? loadError.message : t("marketplace.noActiveClub"));
     } finally {
       setLoading(false);
     }
-  }
+  }, [t]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   // Reset page quand on change de catégorie
   useEffect(() => {
@@ -274,7 +260,7 @@ export default function PlayerMarketplaceHome() {
               <div className="marketplace-list">
                 {pagedItems.map((it) => {
                   const img = mainImageByItemId[it.id] || placeholderSvg;
-                  const meta = compactMeta(it);
+                  const meta = compactMeta(it, locale);
 
                   return (
                     <Link key={it.id} href={`/player/marketplace/${it.id}`} className="marketplace-link">

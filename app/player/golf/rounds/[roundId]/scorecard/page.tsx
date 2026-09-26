@@ -8,8 +8,9 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Check, Pencil, X } from "lucide-react";
-import campsStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { getRouteParam } from "@/lib/routeParams";
 
 type Round = {
   id: string;
@@ -50,11 +51,10 @@ type Hole = {
   note: string | null;
 };
 
-function getParamString(p: any): string | null {
-  if (typeof p === "string") return p;
-  if (Array.isArray(p) && typeof p[0] === "string") return p[0];
-  return null;
-}
+type TournamentRoundRow = {
+  id: string;
+  competition_name: string | null;
+};
 
 function fmtDate(iso: string, locale: string) {
   const d = new Date(iso);
@@ -169,8 +169,8 @@ const shapeOuter: React.CSSProperties = {
 
 export default function ScorecardPage() {
   const { t, locale } = useI18n();
-  const params = useParams();
-  const roundId = useMemo(() => getParamString((params as any)?.roundId), [params]);
+  const params = useParams<{ roundId: string | string[] }>();
+  const roundId = useMemo(() => getRouteParam(params?.roundId), [params]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -240,11 +240,12 @@ export default function ScorecardPage() {
 
       if (!sameTournamentRes.error) {
         const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
-        const sameTournament = (sameTournamentRes.data ?? []).filter((r: any) => {
+        const tournamentRows = (sameTournamentRes.data ?? []) as TournamentRoundRow[];
+        const sameTournament = tournamentRows.filter((r) => {
           const normName = (r.competition_name ?? "").trim().toLowerCase();
           return normName === normCurrentName;
         });
-        const idx = sameTournament.findIndex((r: any) => r.id === loadedRound.id);
+        const idx = sameTournament.findIndex((r) => r.id === loadedRound.id);
         if (idx >= 0) {
           setRoundPositionLabel(`Tour ${idx + 1}/${sameTournament.length}`);
           if (idx > 0) setPrevRoundId(String(sameTournament[idx - 1].id));
@@ -366,15 +367,15 @@ export default function ScorecardPage() {
   if (loading) {
     return (
       <div className="player-dashboard-bg">
-        <div className={`app-shell marketplace-page ${campsStyles.page}`}>
+        <div className={`app-shell marketplace-page ${playerUiStyles.page}`}>
           <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
-          <div className={campsStyles.topline}>
+          <div className={playerUiStyles.topline}>
             <div>
               <h1>{t("rounds.scorecard")}</h1>
-              <p className={campsStyles.lead}>{t("common.loading")}</p>
+              <p className={playerUiStyles.lead}>{t("common.loading")}</p>
             </div>
           </div>
-          <div className={campsStyles.panel}>
+          <div className={playerUiStyles.panel}>
             <CompactLoadingBlock label={t("common.loading")} />
           </div>
         </div>
@@ -400,29 +401,29 @@ export default function ScorecardPage() {
 
   return (
     <div className="player-dashboard-bg">
-      <div className={`app-shell marketplace-page ${campsStyles.page}`}>
+      <div className={`app-shell marketplace-page ${playerUiStyles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
-        <div className={campsStyles.topline}>
+        <div className={playerUiStyles.topline}>
           <div>
             <h1>{t("rounds.scorecard")}</h1>
-            <p className={campsStyles.lead}>{configLine || fmtDate(round.start_at, locale)}</p>
+            <p className={playerUiStyles.lead}>{configLine || fmtDate(round.start_at, locale)}</p>
           </div>
           <div className="marketplace-actions" style={{ marginTop: 2 }}>
               {prevRoundId ? (
-                <Link className={campsStyles.secondary} href={`/player/golf/rounds/${prevRoundId}/scorecard`}>
+                <Link className={playerUiStyles.secondary} href={`/player/golf/rounds/${prevRoundId}/scorecard`}>
                   Tour precedent
                 </Link>
               ) : null}
               {nextRoundId ? (
-                <Link className={campsStyles.secondary} href={`/player/golf/rounds/${nextRoundId}/scorecard`}>
+                <Link className={playerUiStyles.secondary} href={`/player/golf/rounds/${nextRoundId}/scorecard`}>
                   Tour suivant
                 </Link>
               ) : null}
-              <Link className={campsStyles.primary} href={`/player/golf/rounds/${round.id}/edit`}>
+              <Link className={playerUiStyles.primary} href={`/player/golf/rounds/${round.id}/edit`}>
                 <Pencil size={15} aria-hidden="true" />
                 {t("common.edit")}
               </Link>
-              <Link className={campsStyles.secondary} href="/player/golf/rounds">
+              <Link className={playerUiStyles.secondary} href="/player/golf/rounds">
                 <ArrowLeft size={16} aria-hidden="true" />
                 {t("rounds.title")}
               </Link>

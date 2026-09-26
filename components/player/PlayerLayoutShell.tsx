@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import PlayerHeader from "@/components/player/PlayerHeader";
 import PlayerMobileNav from "@/components/player/PlayerMobileNav";
 import PlayerConsentGate from "@/components/player/PlayerConsentGate";
+import PlayerConnectivityStatus from "@/components/player/PlayerConnectivityStatus";
 
 export default function PlayerLayoutShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -14,12 +15,13 @@ export default function PlayerLayoutShell({ children }: { children: ReactNode })
   return (
     <>
       {!isConsentPage ? <PlayerHeader /> : null}
+      {!isConsentPage ? <PlayerConnectivityStatus /> : null}
       <PlayerConsentGate />
       {isConsentPage ? (
-        <main className="app-shell admin-shell manager-shell player-shell player-shell--consent">{children}</main>
+        <main className="app-shell player-shell player-shell--consent">{children}</main>
       ) : (
-        <div className={`manager-scroll-area player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`}>
-          <main className="app-shell admin-shell manager-shell player-shell">{children}</main>
+        <div className={`player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`} data-scroll-container>
+          <main className="app-shell player-shell">{children}</main>
         </div>
       )}
       {!isConsentPage ? <PlayerMobileNav /> : null}

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 type HandicapHistoryRow = {
   id: string;
@@ -19,7 +19,7 @@ function mustEnv(name: string) {
   return v;
 }
 
-async function requireUser(req: NextRequest, supabaseAdmin: any) {
+async function requireUser(req: NextRequest, supabaseAdmin: SupabaseClient) {
   const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
@@ -53,7 +53,7 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function syncCurrentHandicap(supabaseAdmin: any, userId: string) {
+async function syncCurrentHandicap(supabaseAdmin: SupabaseClient, userId: string) {
   const today = todayIsoDate();
   const { data, error } = await supabaseAdmin
     .from("player_handicap_history")
@@ -71,7 +71,7 @@ async function syncCurrentHandicap(supabaseAdmin: any, userId: string) {
   if (updateError) throw new Error(updateError.message);
 }
 
-async function listEntries(supabaseAdmin: any, userId: string) {
+async function listEntries(supabaseAdmin: SupabaseClient, userId: string) {
   const { data, error } = await supabaseAdmin
     .from("player_handicap_history")
     .select("id,user_id,effective_date,value,note,source,created_by,created_at,updated_at")
@@ -90,8 +90,8 @@ export async function GET(req: NextRequest) {
 
     const entries = await listEntries(supabaseAdmin, auth.userId);
     return NextResponse.json({ entries });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     await syncCurrentHandicap(supabaseAdmin, auth.userId);
     const entries = await listEntries(supabaseAdmin, auth.userId);
     return NextResponse.json({ ok: true, entries });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

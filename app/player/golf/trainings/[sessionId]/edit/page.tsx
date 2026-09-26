@@ -19,7 +19,7 @@ import {
 } from "@/components/evaluations/StandardEvaluationIcons";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import managerStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import styles from "../../new/PlayerTrainingNew.module.css";
 
 type SessionType = "club" | "private" | "individual";
@@ -557,16 +557,16 @@ export default function PlayerTrainingEditPage() {
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "Modifier l’activité", "Edit activity") }]} />
         {/* Header */}
         <div className={styles.evaluationHero}>
-          <header className={managerStyles.topline}>
+          <header className={playerUiStyles.topline}>
             <div style={{ display: "grid", gap: 10 }}>
               <h1 style={{ marginBottom: 0 }}>
                 {pickLocaleText(locale, "Modifier l’activité", "Edit activity")}
               </h1>
-              <p className={managerStyles.lead}>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
+              <p className={playerUiStyles.lead}>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
             </div>
 
             <div className={styles.heroActions} style={{ marginTop: 2 }}>
-              <Link className={`${managerStyles.secondary} ${styles.backButton}`} href={`/player/golf/trainings/${sessionId}`}>
+              <Link className={`${playerUiStyles.secondary} ${styles.backButton}`} href={`/player/golf/trainings/${sessionId}`}>
                 <ArrowLeft size={15} aria-hidden="true" />
                 {pickLocaleText(locale, "Retour à l’activité", "Back to activity")}
               </Link>
@@ -830,7 +830,7 @@ export default function PlayerTrainingEditPage() {
                           </strong>
                           <button
                             type="button"
-                            className={`${managerStyles.iconButton} ${managerStyles.dangerIcon}`}
+                            className={`${playerUiStyles.iconButton} ${playerUiStyles.dangerIcon}`}
                             onClick={() => removeLine(idx)}
                             disabled={busy}
                             title={t("common.delete")}

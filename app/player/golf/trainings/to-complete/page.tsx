@@ -8,7 +8,7 @@ import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardCheck, MapPin } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import campsStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import activityStyles from "../PlayerActivities.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
@@ -296,10 +296,10 @@ export default function PlayerTrainingsToCompletePage() {
       <div className={`app-shell ${styles.shell}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "À évaluer", "To evaluate") }]} />
 
-        <header className={campsStyles.topline}>
+        <header className={playerUiStyles.topline}>
           <div>
             <h1>{pickLocaleText(locale, "Activités à évaluer", "Activities to evaluate")}</h1>
-            <p className={campsStyles.lead}>{pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")}</p>
+            <p className={playerUiStyles.lead}>{pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")}</p>
           </div>
           <Link className={styles.backButton} href="/player/golf/trainings">
             <ArrowLeft size={15} aria-hidden="true" />

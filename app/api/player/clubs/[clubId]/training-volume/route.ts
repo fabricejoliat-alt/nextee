@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 function sanitizeMonths(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
@@ -19,70 +17,20 @@ function sanitizeMonths(value: unknown): number[] {
   return Array.from(uniq);
 }
 
-async function canReadTrainingVolume(supabaseAdmin: SupabaseClient, callerId: string, clubId: string, playerId?: string | null) {
-  const effectivePlayerId = (playerId ?? callerId).trim();
-
-  const directPlayerMembership = await supabaseAdmin
-    .from("club_members")
-    .select("id")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("role", "player")
-    .eq("is_active", true)
-    .maybeSingle();
-  if (directPlayerMembership.data?.id) return true;
-
-  if (!effectivePlayerId) return false;
-
-  const parentMembership = await supabaseAdmin
-    .from("club_members")
-    .select("id")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("role", "parent")
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!parentMembership.data?.id) return false;
-
-  const playerMembership = await supabaseAdmin
-    .from("club_members")
-    .select("id")
-    .eq("club_id", clubId)
-    .eq("user_id", effectivePlayerId)
-    .eq("role", "player")
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!playerMembership.data?.id) return false;
-
-  const guardianLink = await supabaseAdmin
-    .from("player_guardians")
-    .select("player_id")
-    .eq("guardian_user_id", callerId)
-    .eq("player_id", effectivePlayerId)
-    .eq("can_view", true)
-    .maybeSingle();
-
-  return Boolean(guardianLink.data?.player_id);
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
     const url = new URL(req.url);
     const playerId = (url.searchParams.get("player_id") ?? "").trim() || null;
-
-    const allowed = await canReadTrainingVolume(supabaseAdmin, callerData.user.id, clubId, playerId);
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: playerId,
+      requestedOrganizationId: clubId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
 
     const [settingsRes, rowsRes, seasonsRes] = await Promise.all([
       supabaseAdmin
@@ -116,6 +64,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       seasons: seasonsRes.data ?? [],
     });
   } catch (e: unknown) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Server error" },
+      { status: playerAccessErrorStatus(e) }
+    );
   }
 }

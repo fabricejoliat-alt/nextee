@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- News images are dynamic club-managed URLs. */
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Eye, Newspaper, X } from "lucide-react";
@@ -9,8 +11,7 @@ import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
-import managerStyles from "@/app/manager/camps/Camps.module.css";
-import coachNewsStyles from "@/components/coach/CoachNewsFeed.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import styles from "./PlayerNewsFeed.module.css";
 
 type NewsItem = {
@@ -43,7 +44,7 @@ function displayDate(item: NewsItem) {
 
 export default function PlayerNewsFeed() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const tr = (fr: string, en: string, de?: string, it?: string) => pickLocaleText(locale, fr, en, de, it);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -102,25 +103,25 @@ export default function PlayerNewsFeed() {
   const activeNews = news.filter((item) => item.status !== "archived");
   const archivedNews = news.filter((item) => item.status === "archived");
 
-  return <main className={`${managerStyles.page} ${styles.newsPage}`}>
+  return <main className={`${playerUiStyles.page} ${styles.newsPage}`}>
     <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: tr("Actualités", "News") }]} />
-    <header className={managerStyles.topline}><div><h1>{tr("Actualités", "News")}</h1><p className={managerStyles.lead}>{tr("Retrouvez les informations publiées par votre club.", "Find the latest information published by your club.")}</p></div></header>
-    {error ? <div className={managerStyles.alertError} role="alert"><span>{error}</span><button type="button" className={managerStyles.secondary} onClick={() => setReloadKey((key) => key + 1)}>{tr("Réessayer", "Try again")}</button></div> : null}
-    <section className={coachNewsStyles.activeSection} aria-label={tr("Actualités actives", "Active news")}>
-      {loading ? <ActiveNewsSkeleton label={tr("Chargement des actualités…", "Loading news…")} /> : activeNews.length === 0 ? <div className={managerStyles.empty}><Newspaper size={20} aria-hidden="true"/><p>{tr("Aucune actualité active pour le moment.", "No active news at the moment.")}</p></div> : (
-        <div className={coachNewsStyles.activeList}>
+    <header className={playerUiStyles.topline}><div><h1>{tr("Actualités", "News")}</h1><p className={playerUiStyles.lead}>{tr("Retrouvez les informations publiées par votre club.", "Find the latest information published by your club.")}</p></div></header>
+    {error ? <div className={playerUiStyles.alertError} role="alert"><span>{error}</span><button type="button" className={playerUiStyles.secondary} onClick={() => setReloadKey((key) => key + 1)}>{tr("Réessayer", "Try again")}</button></div> : null}
+    <section className={styles.activeSection} aria-label={tr("Actualités actives", "Active news")}>
+      {loading ? <ActiveNewsSkeleton label={tr("Chargement des actualités…", "Loading news…")} /> : activeNews.length === 0 ? <div className={playerUiStyles.empty}><Newspaper size={20} aria-hidden="true"/><p>{tr("Aucune actualité active pour le moment.", "No active news at the moment.")}</p></div> : (
+        <div className={styles.activeList}>
           {activeNews.map((item) => {
             const link = openHref(item);
             return (
-              <article className={`${coachNewsStyles.activeArticle} ${styles.activeArticle} ${item.image_url ? styles.activeArticleWithImage : ""}`} key={item.id}>
+              <article className={`${styles.activeArticle} ${item.image_url ? styles.activeArticleWithImage : ""}`} key={item.id}>
                 {item.image_url ? <div className={styles.coverImage}><img src={item.image_url} alt="" /></div> : null}
                 <div className={styles.articleContent}>
-                  <div className={coachNewsStyles.articleMeta}><span>{formatDate(displayDate(item), locale)}</span>{item.club_name ? <span className={styles.clubName}>{item.club_name}</span> : null}</div>
+                  <div className={styles.articleMeta}><span>{formatDate(displayDate(item), locale)}</span>{item.club_name ? <span className={styles.clubName}>{item.club_name}</span> : null}</div>
                   <h3>{item.title}</h3>
-                  {item.summary ? <p className={coachNewsStyles.summary}>{item.summary}</p> : null}
-                  {item.linked_content_label ? <span className={coachNewsStyles.linkedLabel}>{item.linked_content_label}</span> : null}
-                  <div className={coachNewsStyles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(item.body) }}/>
-                  {link ? <div className={coachNewsStyles.articleActions}><Link href={link} className={managerStyles.secondary}>{tr("Ouvrir l’activité liée", "Open linked activity")} <ArrowRight size={14} aria-hidden="true"/></Link></div> : null}
+                  {item.summary ? <p className={styles.summary}>{item.summary}</p> : null}
+                  {item.linked_content_label ? <span className={styles.linkedLabel}>{item.linked_content_label}</span> : null}
+                  <div className={styles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(item.body) }}/>
+                  {link ? <div className={styles.articleActions}><Link href={link} className={playerUiStyles.secondary}>{tr("Ouvrir l’activité liée", "Open linked activity")} <ArrowRight size={14} aria-hidden="true"/></Link></div> : null}
                 </div>
               </article>
             );
@@ -128,11 +129,11 @@ export default function PlayerNewsFeed() {
         </div>
       )}
     </section>
-    <section className={managerStyles.panel} aria-labelledby="archived-player-news-title">
-      <div className={managerStyles.panelHeader}><div><h2 id="archived-player-news-title">{tr("Actualités archivées", "Archived news")}</h2><p>{loading ? <span className={styles.countSkeleton} aria-hidden="true"/> : tr(`${archivedNews.length} actualité${archivedNews.length > 1 ? "s" : ""} archivée${archivedNews.length > 1 ? "s" : ""}.`, `${archivedNews.length} archived news item${archivedNews.length === 1 ? "" : "s"}.`)}</p></div></div>
-      {loading ? <ArchivedNewsSkeleton label={tr("Chargement des archives…", "Loading archives…")} /> : archivedNews.length === 0 ? <div className={managerStyles.empty}>{tr("Aucune actualité archivée.", "No archived news.")}</div> : <div className={managerStyles.tableWrap}><table className={`${managerStyles.table} ${coachNewsStyles.archiveTable}`}><thead><tr><th>{tr("Date", "Date")}</th><th>{tr("Titre", "Title")}</th><th>Club</th><th>{tr("Actions", "Actions")}</th></tr></thead><tbody>{archivedNews.map((item) => <tr key={item.id}><td data-label={tr("Date", "Date")} className={coachNewsStyles.dateCell}>{formatDate(displayDate(item), locale)}</td><td data-label={tr("Titre", "Title")}><div className={managerStyles.titleCell}><b>{item.title}</b>{item.summary ? <span className={managerStyles.muted}>{item.summary}</span> : null}</div></td><td data-label="Club">{item.club_name || "—"}</td><td data-label={tr("Actions", "Actions")}><div className={managerStyles.actions}><button type="button" className={managerStyles.iconButton} title={tr("Voir le détail", "View details")} aria-label={tr(`Voir le détail de ${item.title}`, `View details of ${item.title}`)} onClick={() => setSelectedNews(item)}><Eye size={15} aria-hidden="true"/></button></div></td></tr>)}</tbody></table></div>}
+    <section className={playerUiStyles.panel} aria-labelledby="archived-player-news-title">
+      <div className={playerUiStyles.panelHeader}><div><h2 id="archived-player-news-title">{tr("Actualités archivées", "Archived news")}</h2><p>{loading ? <span className={styles.countSkeleton} aria-hidden="true"/> : tr(`${archivedNews.length} actualité${archivedNews.length > 1 ? "s" : ""} archivée${archivedNews.length > 1 ? "s" : ""}.`, `${archivedNews.length} archived news item${archivedNews.length === 1 ? "" : "s"}.`, `${archivedNews.length} archivierte Meldung${archivedNews.length === 1 ? "" : "en"}.`, `${archivedNews.length} notizi${archivedNews.length === 1 ? "a archiviata" : "e archiviate"}.`)}</p></div></div>
+      {loading ? <ArchivedNewsSkeleton label={tr("Chargement des archives…", "Loading archives…")} /> : archivedNews.length === 0 ? <div className={playerUiStyles.empty}>{tr("Aucune actualité archivée.", "No archived news.")}</div> : <div className={playerUiStyles.tableWrap}><table className={`${playerUiStyles.table} ${styles.archiveTable}`}><thead><tr><th>{tr("Date", "Date")}</th><th>{tr("Titre", "Title")}</th><th>Club</th><th>{tr("Actions", "Actions")}</th></tr></thead><tbody>{archivedNews.map((item) => <tr key={item.id}><td data-label={tr("Date", "Date")} className={styles.dateCell}>{formatDate(displayDate(item), locale)}</td><td data-label={tr("Titre", "Title")}><div className={playerUiStyles.titleCell}><b>{item.title}</b>{item.summary ? <span className={playerUiStyles.muted}>{item.summary}</span> : null}</div></td><td data-label="Club">{item.club_name || "—"}</td><td data-label={tr("Actions", "Actions")}><div className={playerUiStyles.actions}><button type="button" className={playerUiStyles.iconButton} title={tr("Voir le détail", "View details")} aria-label={tr(`Voir le détail de ${item.title}`, `View details of ${item.title}`, `Details zu ${item.title} ansehen`, `Vedi i dettagli di ${item.title}`)} onClick={() => setSelectedNews(item)}><Eye size={15} aria-hidden="true"/></button></div></td></tr>)}</tbody></table></div>}
     </section>
-    {selectedNews ? <div className={coachNewsStyles.modalOverlay} role="presentation"><button type="button" className={coachNewsStyles.modalBackdrop} aria-label={tr("Fermer le détail", "Close details")} onClick={() => setSelectedNews(null)}/><section className={coachNewsStyles.modal} role="dialog" aria-modal="true" aria-labelledby="archived-player-news-detail-title"><header className={coachNewsStyles.modalHeader}><div><span className={coachNewsStyles.date}>{formatDate(displayDate(selectedNews), locale)}</span><h2 id="archived-player-news-detail-title">{selectedNews.title}</h2>{selectedNews.summary ? <p>{selectedNews.summary}</p> : null}</div><button type="button" className={managerStyles.iconButton} title={tr("Fermer", "Close")} aria-label={tr("Fermer", "Close")} onClick={() => setSelectedNews(null)}><X size={17} aria-hidden="true"/></button></header><div className={coachNewsStyles.modalBody}>{selectedNews.image_url ? <div className={styles.modalCover}><img src={selectedNews.image_url} alt="" /></div> : null}{selectedNews.linked_content_label ? <span className={coachNewsStyles.linkedLabel}>{selectedNews.linked_content_label}</span> : null}<div className={coachNewsStyles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(selectedNews.body) }}/></div></section></div> : null}
+    {selectedNews ? <div className={styles.modalOverlay} role="presentation"><button type="button" className={styles.modalBackdrop} aria-label={tr("Fermer le détail", "Close details")} onClick={() => setSelectedNews(null)}/><section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="archived-player-news-detail-title"><header className={styles.modalHeader}><div><span className={styles.date}>{formatDate(displayDate(selectedNews), locale)}</span><h2 id="archived-player-news-detail-title">{selectedNews.title}</h2>{selectedNews.summary ? <p>{selectedNews.summary}</p> : null}</div><button type="button" className={playerUiStyles.iconButton} title={tr("Fermer", "Close")} aria-label={tr("Fermer", "Close")} onClick={() => setSelectedNews(null)}><X size={17} aria-hidden="true"/></button></header><div className={styles.modalBody}>{selectedNews.image_url ? <div className={styles.modalCover}><img src={selectedNews.image_url} alt="" /></div> : null}{selectedNews.linked_content_label ? <span className={styles.linkedLabel}>{selectedNews.linked_content_label}</span> : null}<div className={styles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(selectedNews.body) }}/></div></section></div> : null}
   </main>;
 }
 

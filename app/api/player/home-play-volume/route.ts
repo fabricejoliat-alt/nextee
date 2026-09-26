@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
-}
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 function rollingYearWindows(now = new Date()) {
   const curEnd = new Date(now);
@@ -105,50 +103,14 @@ function scramblingPctFromHoles(holes: Array<{
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const viewerUserId = callerData.user.id;
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
-
-    const membershipsRes = await supabaseAdmin
-      .from("club_members")
-      .select("role")
-      .eq("user_id", viewerUserId)
-      .eq("is_active", true);
-    if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
-
-    const roles = new Set(((membershipsRes.data ?? []) as Array<{ role: string | null }>).map((row) => String(row.role ?? "")));
-    const isParent = roles.has("parent");
-
-    let effectiveUserId = viewerUserId;
-    if (isParent && childId) {
-      const linkRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", viewerUserId)
-        .eq("player_id", childId)
-        .or("can_view.is.null,can_view.eq.true")
-        .maybeSingle();
-      if (linkRes.error) return NextResponse.json({ error: linkRes.error.message }, { status: 400 });
-      if (linkRes.data?.player_id) effectiveUserId = String(linkRes.data.player_id);
-    }
-    if (isParent && effectiveUserId === viewerUserId) {
-      const childrenRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,is_primary")
-        .eq("guardian_user_id", viewerUserId)
-        .or("can_view.is.null,can_view.eq.true")
-        .order("is_primary", { ascending: false })
-        .limit(1);
-      if (childrenRes.error) return NextResponse.json({ error: childrenRes.error.message }, { status: 400 });
-      const fallbackChildId = String(childrenRes.data?.[0]?.player_id ?? "").trim();
-      if (fallbackChildId) effectiveUserId = fallbackChildId;
-    }
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
+    const effectiveUserId = access.subjectPlayerId;
 
     const { curStart, curEnd } = rollingYearWindows(new Date());
     const roundsRes = await supabaseAdmin
@@ -249,6 +211,9 @@ export async function GET(req: NextRequest) {
       scramblingPct,
     });
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

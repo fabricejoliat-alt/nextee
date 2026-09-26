@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { fetchVisiblePlayerNews } from "@/app/api/news/_lib";
+import { playerAccessErrorStatus } from "@/app/api/player/access";
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +21,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(payload);
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

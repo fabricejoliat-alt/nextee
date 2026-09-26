@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+/* eslint-disable @next/next/no-img-element -- Document previews use short-lived signed Storage URLs. */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import CountUpNumber from "@/components/ui/CountUpNumber";
@@ -10,11 +12,10 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import { buildManagementDualLineChartOption, buildManagementLineChartOption, buildManagementVolumeChartOption, MANAGEMENT_CHART_COLORS } from "@/lib/managementCharts";
-import managerStyles from "@/app/manager/camps/Camps.module.css";
-import adminCardStyles from "@/components/admin/AdminHomeStats.module.css";
-import navigationStyles from "@/app/design-system/design-system.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "./PlayerGolfOverview.module.css";
 import documentStyles from "./PlayerGolfDocuments.module.css";
 import trainingStyles from "./PlayerGolfTraining.module.css";
@@ -49,7 +50,6 @@ import {
   Dumbbell,
   Target,
   Activity,
-  BarChart3,
   CheckCircle2,
   Clock3,
   MessageSquareText,
@@ -211,8 +211,6 @@ type OverviewEvent = {
 type OverviewSession = TrainingSessionRow & {
   location_text?: string | null;
 };
-
-const LOOKBACK_DAYS = 14;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -491,29 +489,6 @@ function ProgressDonut({ percent, size = 156 }: { percent: number; size?: number
   );
 }
 
-const chipStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  borderWidth: 1,
-  borderStyle: "solid",
-  borderColor: "rgba(0,0,0,0.12)",
-  borderRadius: 999,
-  padding: "8px 12px",
-  background: "rgba(255,255,255,0.70)",
-  fontWeight: 900,
-  fontSize: 13,
-  color: "rgba(0,0,0,0.78)",
-  cursor: "pointer",
-  userSelect: "none",
-};
-
-const chipActive: React.CSSProperties = {
-  borderColor: "rgba(53,72,59,0.45)",
-  background: "rgba(53,72,59,0.14)",
-  boxShadow: "0 8px 18px rgba(0,0,0,0.10)",
-};
-
 function diffDaysInclusive(fromYmd: string, toYmd: string) {
   const a = new Date(`${fromYmd}T00:00:00`).getTime();
   const b = new Date(`${toYmd}T00:00:00`).getTime();
@@ -528,58 +503,8 @@ function shiftYmd(ymd: string, days: number) {
   return isoToYMD(d);
 }
 
-function toISOStartMinusDays(fromYmd: string, days: number) {
-  const d = new Date(`${fromYmd}T00:00:00`);
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
-function pearson(xs: number[], ys: number[]) {
-  const n = Math.min(xs.length, ys.length);
-  if (n < 3) return null;
-
-  const x = xs.slice(0, n);
-  const y = ys.slice(0, n);
-
-  const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
-  const mx = mean(x);
-  const my = mean(y);
-
-  let num = 0;
-  let dx = 0;
-  let dy = 0;
-  for (let i = 0; i < n; i++) {
-    const vx = x[i] - mx;
-    const vy = y[i] - my;
-    num += vx * vy;
-    dx += vx * vx;
-    dy += vy * vy;
-  }
-  if (dx === 0 || dy === 0) return null;
-  return num / Math.sqrt(dx * dy);
-}
-
-function corrStrength(r: number | null) {
-  if (r == null) return { labelKey: "golfDashboard.corr.none" };
-  const ar = Math.abs(r);
-  if (ar >= 0.6) return { labelKey: "golfDashboard.corr.strong" };
-  if (ar >= 0.35) return { labelKey: "golfDashboard.corr.moderate" };
-  if (ar >= 0.2) return { labelKey: "golfDashboard.corr.weak" };
-  return { labelKey: "golfDashboard.corr.veryWeak" };
-}
-
-function pct(n: number, d: number) {
-  if (!d) return null;
-  return Math.round((n / d) * 1000) / 10;
-}
-
 function round1(n: number) {
   return Math.round(n * 10) / 10;
-}
-
-function safeDiv(n: number, d: number) {
-  if (!d) return null;
-  return n / d;
 }
 
 function linearTrend(values: Array<number | null>) {
@@ -628,12 +553,8 @@ export default function GolfDashboardPage() {
       setActiveSection(section === "stats" ? "rounds" : section as DashboardSection);
     }
   }, []);
-  const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
-  const [loadingPrevRounds, setLoadingPrevRounds] = useState(false);
   const [loadingHoles, setLoadingHoles] = useState(false);
-  const [loadingPrevHoles, setLoadingPrevHoles] = useState(false);
-  const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [effectivePlayerId, setEffectivePlayerId] = useState("");
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
@@ -666,8 +587,6 @@ export default function GolfDashboardPage() {
   const [holes, setHoles] = useState<GolfHoleRow[]>([]);
   const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
 
-  const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
-  const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
   const [customCoachEvaluations, setCustomCoachEvaluations] = useState<CustomCoachEvaluation[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
@@ -940,7 +859,7 @@ export default function GolfDashboardPage() {
     return token;
   }
 
-  async function loadDocuments(targetPlayerId?: string) {
+  const loadDocuments = useCallback(async (targetPlayerId?: string) => {
     setLoadingDocuments(true);
     try {
       const ctx = await resolveEffectivePlayerContext();
@@ -966,7 +885,7 @@ export default function GolfDashboardPage() {
     } finally {
       setLoadingDocuments(false);
     }
-  }
+  }, [effectivePlayerId]);
 
   function openDocumentPicker() {
     if (uploadingDocument) return;
@@ -1007,20 +926,32 @@ export default function GolfDashboardPage() {
           size_bytes: uploadFile.size,
         }),
       });
-      const prepareJson = await prepareRes.json().catch(() => ({})) as { error?: unknown; path?: unknown; token?: unknown };
+      const prepareJson = await prepareRes.json().catch(() => ({})) as {
+        error?: unknown;
+        bucket?: unknown;
+        path?: unknown;
+        token?: unknown;
+        reservation_token?: unknown;
+        mime_type?: unknown;
+      };
       if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
 
+      const uploadBucket = String(prepareJson?.bucket ?? "").trim();
       const uploadPath = String(prepareJson?.path ?? "").trim();
       const uploadToken = String(prepareJson?.token ?? "").trim();
-      if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
+      const reservationToken = String(prepareJson?.reservation_token ?? "").trim();
+      const normalizedMimeType = String(prepareJson?.mime_type ?? "").trim();
+      if (!uploadBucket || !uploadPath || !uploadToken || !reservationToken || !normalizedMimeType) {
+        throw new Error("Upload initialization failed");
+      }
 
-      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(
+      const uploadRes = await supabase.storage.from(uploadBucket).uploadToSignedUrl(
         uploadPath,
         uploadToken,
         uploadFile,
         {
           upsert: false,
-          contentType: uploadFile.type || "application/octet-stream",
+          contentType: normalizedMimeType,
         }
       );
       if (uploadRes.error) throw new Error(uploadRes.error.message);
@@ -1034,9 +965,10 @@ export default function GolfDashboardPage() {
         body: JSON.stringify({
           action: "finalize",
           storage_path: uploadPath,
+          reservation_token: reservationToken,
           original_name: uploadFile.name,
           file_name: finalDocName,
-          mime_type: uploadFile.type,
+          mime_type: normalizedMimeType,
           size_bytes: uploadFile.size,
         }),
       });
@@ -1129,18 +1061,12 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     void getAuthToken();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!effectivePlayerId) return;
     void loadDocuments(effectivePlayerId);
-  }, [effectivePlayerId]);
-
-  useEffect(() => {
-    if (activeSection !== "documents" || !effectivePlayerId) return;
-    void loadDocuments(effectivePlayerId);
-  }, [activeSection, effectivePlayerId]);
+  }, [effectivePlayerId, loadDocuments]);
 
   useEffect(() => {
     const now = new Date();
@@ -1198,21 +1124,6 @@ export default function GolfDashboardPage() {
       return;
     }
   }, [currentClubSeason, preset, previousClubSeason]);
-
-  function onChangeFrom(v: string) {
-    setFromDate(v);
-    setPreset("custom");
-  }
-  function onChangeTo(v: string) {
-    setToDate(v);
-    setPreset("custom");
-  }
-  function clearDates() {
-    setFromDate("");
-    setToDate("");
-    setPreset("all");
-    setCustomOpen(false);
-  }
 
   const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate, dateLocale, t), [dateLocale, fromDate, t, toDate]);
 
@@ -1291,7 +1202,7 @@ export default function GolfDashboardPage() {
     }
     if (locale === "fr") return `vs ${compareMonths} mois précédent${compareMonths > 1 ? "s" : ""}`;
     return `vs previous ${compareMonths} month${compareMonths > 1 ? "s" : ""}`;
-  }, [prevRange, locale, compareMonths]);
+  }, [prevRange, locale, compareMonths, preset]);
 
   // ===== LOAD TRAININGS (current) =====
   useEffect(() => {
@@ -1353,7 +1264,6 @@ export default function GolfDashboardPage() {
         return;
       }
 
-      setLoadingPrev(true);
       try {
         if (!effectivePlayerId) {
           setPrevSessions([]);
@@ -1388,10 +1298,10 @@ export default function GolfDashboardPage() {
         setPrevSessions([]);
         setPrevItems([]);
       } finally {
-        setLoadingPrev(false);
+        // No dedicated spinner: the previous period is comparison-only data.
       }
     })();
-  }, [effectivePlayerId, prevRange?.from, prevRange?.to]);
+  }, [effectivePlayerId, prevRange]);
 
   useEffect(() => {
     (async () => {
@@ -1456,7 +1366,6 @@ export default function GolfDashboardPage() {
   }, [effectivePlayerId, fromDate, toDate]);
 
   const shouldLoadRoundStats = activeSection === "overview" || activeSection === "trainings" || activeSection === "stats" || activeSection === "rounds";
-  const shouldLoadTrainLookback = activeSection === "stats" && isPerformanceEnabled;
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
@@ -1506,11 +1415,9 @@ export default function GolfDashboardPage() {
       }
       if (!shouldLoadRoundStats) {
         setPrevRounds([]);
-        setLoadingPrevRounds(false);
         return;
       }
 
-      setLoadingPrevRounds(true);
       try {
         if (!effectivePlayerId) {
           setPrevRounds([]);
@@ -1533,10 +1440,10 @@ export default function GolfDashboardPage() {
       } catch {
         setPrevRounds([]);
       } finally {
-        setLoadingPrevRounds(false);
+        // No dedicated spinner: the previous period is comparison-only data.
       }
     })();
-  }, [effectivePlayerId, prevRange?.from, prevRange?.to, shouldLoadRoundStats]);
+  }, [effectivePlayerId, prevRange, shouldLoadRoundStats]);
 
   // ===== LOAD HOLES (current) =====
   useEffect(() => {
@@ -1574,10 +1481,8 @@ export default function GolfDashboardPage() {
     (async () => {
       if (!shouldLoadRoundStats) {
         setPrevHoles([]);
-        setLoadingPrevHoles(false);
         return;
       }
-      setLoadingPrevHoles(true);
       try {
         if (!prevRange) {
           setPrevHoles([]);
@@ -1599,68 +1504,10 @@ export default function GolfDashboardPage() {
       } catch {
         setPrevHoles([]);
       } finally {
-        setLoadingPrevHoles(false);
+        // No dedicated spinner: the previous period is comparison-only data.
       }
     })();
   }, [prevRange, prevRounds, shouldLoadRoundStats]);
-
-  // ===== LOAD TRAININGS LOOKBACK (for correlation) =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainLookback) {
-        setSessionsLookback([]);
-        setItemsLookback([]);
-        setLoadingTrainLookback(false);
-        return;
-      }
-      setLoadingTrainLookback(true);
-      try {
-        if (!effectivePlayerId) {
-          setSessionsLookback([]);
-          setItemsLookback([]);
-          return;
-        }
-
-        const now = new Date();
-        const fallbackFrom = isoToYMD(new Date(now.getFullYear(), now.getMonth() - 2, 1));
-        const from = fromDate || fallbackFrom;
-        const to = toDate || isoToYMD(now);
-
-        const fromISO = toISOStartMinusDays(from, LOOKBACK_DAYS);
-        const toISO = nextDayStartISO(to);
-
-        const sRes = await supabase
-          .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
-          .eq("user_id", effectivePlayerId)
-          .gte("start_at", fromISO)
-          .lt("start_at", toISO)
-          .order("start_at", { ascending: true })
-          .limit(1500);
-
-        if (sRes.error) throw new Error(sRes.error.message);
-
-        const sess = (sRes.data ?? []) as TrainingSessionRow[];
-        setSessionsLookback(sess);
-
-        const ids = sess.map((s) => s.id);
-        if (ids.length === 0) {
-          setItemsLookback([]);
-          return;
-        }
-
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
-        if (iRes.error) throw new Error(iRes.error.message);
-
-        setItemsLookback((iRes.data ?? []) as TrainingItemRow[]);
-      } catch {
-        setSessionsLookback([]);
-        setItemsLookback([]);
-      } finally {
-        setLoadingTrainLookback(false);
-      }
-    })();
-  }, [effectivePlayerId, fromDate, toDate, shouldLoadTrainLookback]);
 
   useEffect(() => {
     (async () => {
@@ -1773,20 +1620,6 @@ export default function GolfDashboardPage() {
     })();
   }, [activeSection, effectivePlayerId, fromDate, overviewEvents, toDate]);
       
-  const PRESET_LABEL: Record<Preset, string> = {
-    week: t("common.thisWeek"),
-    month: t("common.thisMonth"),
-    last3: t("common.last3Months"),
-    season: pickLocaleText(locale, "Cette saison", "This season"),
-    lastSeason: pickLocaleText(locale, "La saison dernière", "Last season"),
-    all: t("common.allActivity"),
-    custom: t("common.custom"),
-  };
-
-function presetToSelectValue(p: Preset): Preset {
-  // Le select doit rester cohérent : si customOpen est ouvert ou preset=custom -> custom
-  return p;
-}
   const volumeCardTitle = useMemo(() => {
     if (preset === "week") return pickLocaleText(locale, "Volume de la semaine", "Weekly training volume");
     if (preset === "month") return pickLocaleText(locale, "Volume du mois", "Monthly training volume");
@@ -2580,151 +2413,6 @@ function presetToSelectValue(p: Preset): Preset {
     };
   }, [holeAgg, prevHoleAgg, prevRange]);
 
-  // ===== CORRELATION TRAINING -> ROUNDS (LOOKBACK) =====
-  const corr = useMemo(() => {
-    if (rounds.length < 3 || sessionsLookback.length === 0) return null;
-
-    const sList = sessionsLookback.map((s) => ({
-      ...s,
-      t: new Date(s.start_at).getTime(),
-      mins: s.total_minutes || 0,
-    }));
-
-    const itemsBySession: Record<string, Array<{ cat: string; minutes: number }>> = {};
-    for (const it of itemsLookback) {
-      (itemsBySession[it.session_id] ??= []).push({ cat: it.category, minutes: it.minutes || 0 });
-    }
-
-    const perRound = rounds
-      .map((r) => {
-        const rt = new Date(r.start_at).getTime();
-        const windowStart = rt - LOOKBACK_DAYS * 24 * 3600 * 1000;
-
-        let mins = 0;
-        const catMins: Record<string, number> = {};
-
-        for (const s of sList) {
-          if (s.t >= windowStart && s.t < rt) {
-            mins += s.mins;
-            const its = itemsBySession[s.id] ?? [];
-            for (const x of its) catMins[x.cat] = (catMins[x.cat] ?? 0) + x.minutes;
-          }
-        }
-
-        const fwTot = r.fairways_total ?? 0;
-        const fwHit = r.fairways_hit ?? 0;
-        const fwPct = fwTot > 0 ? (fwHit / fwTot) * 100 : null;
-
-        return {
-          id: r.id,
-          trainingMins14: mins,
-          puttingMins14: catMins["putting"] ?? 0,
-          longGameMins14: catMins["long_game"] ?? 0,
-          shortMins14: (catMins["wedging"] ?? 0) + (catMins["pitching"] ?? 0) + (catMins["chipping"] ?? 0),
-          mentalMins14: catMins["mental"] ?? 0,
-
-          score: typeof r.total_score === "number" ? r.total_score : null,
-          putts: typeof r.total_putts === "number" ? r.total_putts : null,
-          gir: typeof r.gir === "number" ? r.gir : null,
-          fairwayPct: fwPct,
-          doublesPlus: typeof r.doubles_plus === "number" ? r.doubles_plus : null,
-        };
-      })
-      .filter((x) => x.score != null || x.putts != null || x.gir != null || x.fairwayPct != null);
-
-    const pairs = (xKey: keyof typeof perRound[number], yKey: keyof typeof perRound[number]) => {
-      const xs: number[] = [];
-      const ys: number[] = [];
-      for (const r of perRound) {
-        const xv = r[xKey];
-        const yv = r[yKey];
-        if (typeof xv === "number" && typeof yv === "number" && Number.isFinite(xv) && Number.isFinite(yv)) {
-          xs.push(xv);
-          ys.push(yv);
-        }
-      }
-      if (xs.length < 3) return null;
-      return { xs, ys };
-    };
-
-    return {
-      n: perRound.length,
-      mins_vs_score: (() => {
-        const p = pairs("trainingMins14", "score");
-        return p ? pearson(p.xs, p.ys) : null;
-      })(),
-      putting_vs_putts: (() => {
-        const p = pairs("puttingMins14", "putts");
-        return p ? pearson(p.xs, p.ys) : null;
-      })(),
-      long_vs_fairway: (() => {
-        const p = pairs("longGameMins14", "fairwayPct");
-        return p ? pearson(p.xs, p.ys) : null;
-      })(),
-      short_vs_gir: (() => {
-        const p = pairs("shortMins14", "gir");
-        return p ? pearson(p.xs, p.ys) : null;
-      })(),
-      mental_vs_doubles: (() => {
-        const p = pairs("mentalMins14", "doublesPlus");
-        return p ? pearson(p.xs, p.ys) : null;
-      })(),
-    };
-  }, [rounds, sessionsLookback, itemsLookback]);
-
-  // ===== RECO SUMMARY (lightweight, data-driven) =====
-  const courseAdvice = useMemo(() => {
-    if (!corr) return [];
-
-    const tips: Array<{ title: string; body: string }> = [];
-
-    if (corr.putting_vs_putts != null) {
-      const st = corrStrength(corr.putting_vs_putts);
-      const good = corr.putting_vs_putts < 0; // more putting -> fewer putts
-      tips.push({
-        title: `${t("golfDashboard.correlation.puttingPutts")} (${t(st.labelKey)})`,
-        body: good
-          ? t("golfDashboard.advice.puttingGood")
-          : t("golfDashboard.advice.puttingWeak"),
-      });
-    }
-
-    if (corr.long_vs_fairway != null) {
-      const st = corrStrength(corr.long_vs_fairway);
-      const good = corr.long_vs_fairway > 0;
-      tips.push({
-        title: `${t("golfDashboard.correlation.longFairways")} (${t(st.labelKey)})`,
-        body: good
-          ? t("golfDashboard.advice.longGameGood")
-          : t("golfDashboard.advice.longGameWeak"),
-      });
-    }
-
-    if (corr.mins_vs_score != null) {
-      const st = corrStrength(corr.mins_vs_score);
-      const good = corr.mins_vs_score < 0; // more training -> lower score
-      tips.push({
-        title: `${t("golfDashboard.correlation.volumeScore")} (${t(st.labelKey)})`,
-        body: good
-          ? t("golfDashboard.advice.volumeGood")
-          : t("golfDashboard.advice.volumeWeak"),
-      });
-    }
-
-    if (corr.mental_vs_doubles != null) {
-      const st = corrStrength(corr.mental_vs_doubles);
-      const good = corr.mental_vs_doubles < 0; // more mental -> fewer doubles+
-      tips.push({
-        title: `${t("golfDashboard.correlation.mentalDoubles")} (${t(st.labelKey)})`,
-        body: good
-          ? t("golfDashboard.advice.mentalGood")
-          : t("golfDashboard.advice.mentalWeak"),
-      });
-    }
-
-    return tips.slice(0, 4);
-  }, [corr, t]);
-
   const overviewWeekSeries = useMemo(() => {
     if (!fromDate || !toDate) return [];
     const start = weekStartMonday(new Date(`${fromDate}T12:00:00`));
@@ -2852,8 +2540,8 @@ function presetToSelectValue(p: Preset): Preset {
   const kpiGridClass = "golf-kpi-grid";
   const kpiGridStyle: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "1fr" };
   const golfSectionNavigation = (
-    <section className={`${adminCardStyles.overview} ${overviewStyles.navigationCard}`}>
-      <div className={`${navigationStyles.tabs} ${overviewStyles.navigationTabs}`} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon Golf", "My Golf sections")}>
+    <section className={overviewStyles.navigationCard}>
+      <div className={overviewStyles.navigationTabs} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon golf", "My golf sections")}>
         {[
           { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
           { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
@@ -2882,10 +2570,10 @@ function presetToSelectValue(p: Preset): Preset {
       <div className="app-shell marketplace-page">
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mon golf", "My golf") }]} />
         {/* ===== Header ===== */}
-        <header className={managerStyles.topline}>
+        <header className={playerUiStyles.topline}>
           <div>
-            <h1>{pickLocaleText(locale, "Mon Golf", "My Golf")}</h1>
-            <p className={managerStyles.lead}>{pickLocaleText(locale, "Pilotez votre progression, votre volume d’entraînement et vos repères de jeu.", "Track your progress, training volume and playing benchmarks.")}</p>
+            <h1>{t("player.myGolf")}</h1>
+            <p className={playerUiStyles.lead}>{pickLocaleText(locale, "Pilotez votre progression, votre volume d’entraînement et vos repères de jeu.", "Track your progress, training volume and playing benchmarks.")}</p>
           </div>
         </header>
 
@@ -3056,6 +2744,7 @@ function presetToSelectValue(p: Preset): Preset {
               <input
                 ref={docFileInputRef}
                 type="file"
+                accept={PLAYER_DOCUMENT_ACCEPT}
                 onChange={onPickDocument}
                 style={{ display: "none" }}
               />

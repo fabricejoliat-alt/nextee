@@ -11,17 +11,14 @@ type ConsentPayload = {
     firstName: string | null;
     lastName: string | null;
     birthDate: string | null;
-    consentStatus: "granted" | "pending" | "adult";
+    consentStatus: "granted" | "pending" | "refused" | "adult";
     pending: boolean;
   };
 };
 
 export default function PlayerConsentRequiredPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [birthDate, setBirthDate] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,12 +44,9 @@ export default function PlayerConsentRequiredPage() {
           router.replace("/player");
           return;
         }
-        setBirthDate(payload.player.birthDate ?? "");
-      } catch (e: any) {
+      } catch (cause: unknown) {
         if (cancelled) return;
-        setError(e?.message ?? "Erreur de chargement");
-      } finally {
-        if (!cancelled) setLoading(false);
+        setError(cause instanceof Error ? cause.message : "Erreur de chargement");
       }
     })();
 
@@ -60,34 +54,6 @@ export default function PlayerConsentRequiredPage() {
       cancelled = true;
     };
   }, [router]);
-
-  async function submitAdultDeclaration() {
-    if (!birthDate || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      const res = await fetch("/api/player/consent", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "declare_adult",
-          birthDate,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de mettre à jour le consentement"));
-      router.replace("/player");
-    } catch (e: any) {
-      setError(e?.message ?? "Impossible de mettre à jour le consentement");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="auth-bg">
@@ -104,7 +70,7 @@ export default function PlayerConsentRequiredPage() {
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: "#2b2517" }}>Accès momentanément bloqué</div>
             <div style={{ color: "#5f5647", fontSize: 14, lineHeight: 1.5 }}>
-              Ton accès à ActiviTee est momentanément bloqué tant que ton consentement est en attente. Pour utiliser l'application, l'un
+              Ton accès à ActiviTee est momentanément bloqué tant que le consentement requis n’a pas été accordé. Pour utiliser l’application, l’un
               de tes parents doit se connecter avec son propre compte et valider le consentement.
             </div>
             <div style={{ color: "#5f5647", fontSize: 14, lineHeight: 1.5 }}>
@@ -122,20 +88,11 @@ export default function PlayerConsentRequiredPage() {
               background: "rgba(53,72,59,0.05)",
             }}
           >
-            <div style={{ fontSize: 17, fontWeight: 800, color: "#2f4335" }}>Alternative si tu es majeur</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#2f4335" }}>Si tu es majeur</div>
             <div style={{ color: "#536356", fontSize: 13, lineHeight: 1.5 }}>
-              Si tu es majeur, tu peux confirmer ta date de naissance ci-dessous. Si tu as 18 ans ou plus, ton statut passera à
-              <b> Majeur</b> et tu pourras accéder immédiatement à l'application.
+              Demande à ton club de vérifier ta date de naissance et de définir ton statut sur <b>Majeur</b>. Pour des raisons de
+              sécurité, cette validation ne peut pas être faite depuis un compte joueur.
             </div>
-
-            <div className="field auth-field">
-              <label>Date de naissance</label>
-              <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
-            </div>
-
-            <button className="cta-green auth-submit" type="button" onClick={submitAdultDeclaration} disabled={busy || !birthDate || loading}>
-              {busy ? "Validation…" : "Je suis majeur"}
-            </button>
           </div>
 
           {error ? <div className="auth-error">{error}</div> : null}

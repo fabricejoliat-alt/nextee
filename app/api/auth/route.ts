@@ -1,39 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { playerConsentAllowsAccess } from "@/lib/playerConsent";
+import { loadPlayerActorAuthorization, visibleGuardianLinks } from "@/app/api/player/access";
+import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
 
 export const runtime = "nodejs";
 
-function computeAge(birthDate: string | null | undefined) {
-  if (!birthDate) return null;
-  const d = new Date(birthDate);
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - d.getFullYear();
-  const m = now.getMonth() - d.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
-  return age >= 0 ? age : null;
-}
-
-async function resolvePlayerConsentPending(supabaseAdmin: any, userId: string) {
-  const [profileRes, membershipsRes] = await Promise.all([
-    supabaseAdmin.from("profiles").select("birth_date").eq("id", userId).maybeSingle(),
-    supabaseAdmin
-      .from("club_members")
-      .select("player_consent_status")
-      .eq("user_id", userId)
-      .eq("role", "player")
-      .eq("is_active", true),
-  ]);
-
-  if (profileRes.error) throw new Error(profileRes.error.message);
+async function resolvePlayerConsentPending(supabaseAdmin: SupabaseClient, userId: string) {
+  const membershipsRes = await supabaseAdmin
+    .from("club_members")
+    .select("player_consent_status")
+    .eq("user_id", userId)
+    .eq("role", "player")
+    .eq("is_active", true);
   if (membershipsRes.error) throw new Error(membershipsRes.error.message);
-
-  const statuses = (membershipsRes.data ?? []).map((row: any) => String(row?.player_consent_status ?? ""));
-  if (statuses.includes("granted") || statuses.includes("adult")) return false;
-  if (statuses.includes("pending")) return true;
-  const age = computeAge((profileRes.data?.birth_date ?? null) as string | null);
-  return !(age != null && age >= 18);
+  return !playerConsentAllowsAccess(
+    ((membershipsRes.data ?? []) as Array<{ player_consent_status: string | null }>).map(
+      (row) => row.player_consent_status
+    )
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -54,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1) ✅ Utiliser en priorité le bearer token si fourni; sinon fallback sur les cookies.
-    let res = NextResponse.next();
+    const res = NextResponse.next();
     const supabase = createServerClient(supabaseUrl, anonKey, {
       cookies: {
         getAll() {
@@ -114,40 +100,16 @@ export async function POST(req: NextRequest) {
 
     if (adminRow) return NextResponse.json({ redirectTo: "/admin" }, { headers });
 
-    const { data: membership, error: memErr } = await supabaseAdmin
-      .from("club_members")
-      .select("club_id, role, is_active")
-      .eq("user_id", userId)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
+    const actor = await loadPlayerActorAuthorization(supabaseAdmin, userId);
+    const role = selectPrimaryApplicationRole(actor.actorRoles);
+    if (!role) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
 
-    if (memErr) {
-      return NextResponse.json(
-        { error: memErr.message },
-        { status: 400, headers }
-      );
-    }
-
-    if (!membership) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
-
-    const role = membership.role as "manager" | "coach" | "player" | "parent";
     if (role === "manager") return NextResponse.json({ redirectTo: "/manager" }, { headers });
     if (role === "coach") return NextResponse.json({ redirectTo: "/coach" }, { headers });
     if (role === "parent") {
-      const { data: linkRow, error: linkErr } = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (linkErr) {
-        return NextResponse.json(
-          { error: linkErr.message },
-          { status: 400, headers }
-        );
+      if (visibleGuardianLinks(actor.guardianLinks).length === 0) {
+        return NextResponse.json({ redirectTo: "/no-access" }, { headers });
       }
-      if (!linkRow?.player_id) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
       return NextResponse.json({ redirectTo: "/player" }, { headers });
     }
     if (role === "player") {
@@ -155,9 +117,9 @@ export async function POST(req: NextRequest) {
       if (pendingConsent) return NextResponse.json({ redirectTo: "/player/consent-required" }, { headers });
     }
     return NextResponse.json({ redirectTo: "/player" }, { headers });
-  } catch (e: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: e?.message ?? "Server error" },
+      { error: error instanceof Error ? error.message : "Server error" },
       { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }

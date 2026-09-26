@@ -9,6 +9,8 @@ import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { getRouteParam } from "@/lib/routeParams";
+import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 
 type Item = {
   id: string;
@@ -28,12 +30,6 @@ type Item = {
   user_id: string;
 };
 
-function getParamString(p: any): string | null {
-  if (typeof p === "string") return p;
-  if (Array.isArray(p) && typeof p[0] === "string") return p[0];
-  return null;
-}
-
 function getIdFromPathname(pathname: string): string | null {
   const parts = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
   const last = parts[parts.length - 1];
@@ -52,18 +48,7 @@ function priceLabel(it: Item, t: (key: string) => string) {
   return `${it.price} CHF`;
 }
 
-function marketplaceConditionLabel(locale: string, value: string | null | undefined) {
-  const normalized = String(value ?? "").trim();
-  if (!normalized) return "";
-  if (locale !== "fr") return normalized;
-  if (normalized === "New") return "Neuf";
-  if (normalized === "Like new") return "Comme neuf";
-  if (normalized === "Good condition") return "Bon état";
-  if (normalized === "To repair") return "À réparer";
-  return normalized;
-}
-
-function compactMeta(it: Item, locale: string) {
+function compactMeta(it: Item, locale: "fr" | "en" | "de" | "it") {
   const parts: string[] = [];
   if (it.category) parts.push(it.category);
   const conditionLabel = marketplaceConditionLabel(locale, it.condition);
@@ -76,11 +61,11 @@ function compactMeta(it: Item, locale: string) {
 export default function MarketplaceDetailPage() {
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
-  const params = useParams();
+  const params = useParams<{ itemId: string | string[] }>();
   const pathname = usePathname();
 
   const itemId = useMemo(() => {
-    const fromParams = getParamString((params as any)?.itemId);
+    const fromParams = getRouteParam(params?.itemId);
     return fromParams ?? getIdFromPathname(pathname);
   }, [params, pathname]);
 
@@ -94,8 +79,6 @@ export default function MarketplaceDetailPage() {
   // Lightbox
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-
-  const bucket = "marketplace";
 
   const placeholderSvg = useMemo(() => {
     const svg = `
@@ -136,8 +119,8 @@ export default function MarketplaceDetailPage() {
       setItem((json?.item ?? null) as Item | null);
       setIsMine(Boolean(json?.isMine));
       setImages(Array.isArray(json?.images) ? (json.images as string[]) : []);
-    } catch (e: any) {
-      setError(e?.message ?? t("common.errorLoading"));
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : t("common.errorLoading"));
       setItem(null);
       setImages([]);
       setIsMine(false);
@@ -182,7 +165,7 @@ export default function MarketplaceDetailPage() {
     return (
       <div className="player-dashboard-bg">
         <div className="app-shell marketplace-page">
-          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Détail" }]} />
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
           <div className="glass-section">
             <div className="marketplace-header">
               <div>
@@ -228,7 +211,7 @@ export default function MarketplaceDetailPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Détail" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">

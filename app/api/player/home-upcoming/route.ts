@@ -1,11 +1,57 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
-function mustEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
-}
+type AttendanceStatus = "expected" | "present" | "absent" | "excused";
+
+type AttendeeRow = { event_id: string | null; status: AttendanceStatus | null };
+type RegisteredCampPlayerRow = { camp_id: string | null };
+type FutureSessionRow = {
+  id: string;
+  start_at: string;
+  location_text: string | null;
+  session_type: string | null;
+  club_id: string | null;
+  club_event_id: string | null;
+};
+type PlannedCompetitionRow = {
+  id: string;
+  event_type: string | null;
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  location_text: string | null;
+  status: string | null;
+};
+type ClubEventRow = {
+  id: string;
+  event_type: string | null;
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  duration_minutes: number | null;
+  location_text: string | null;
+  club_id: string | null;
+  group_id: string | null;
+  status: string | null;
+  competition_level?: string | null;
+  competition_category?: string | null;
+  external_registration_url?: string | null;
+  competition_note?: string | null;
+};
+type RegisteredCampDayRow = {
+  camp_id: string | null;
+  event_id: string | null;
+  starts_at: string | null;
+  club_events: ClubEventRow[] | null;
+};
+type NamedRow = { id: string | null; name: string | null };
+type StructureRow = { event_id: string | null; category: string | null; minutes: number | null; note: string | null };
+type EventCoachRow = { event_id: string | null; coach_id: string | null };
+type CoachProfileRow = { id: string | null; first_name: string | null; last_name: string | null };
 
 function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
@@ -13,51 +59,15 @@ function uniq(values: Array<string | null | undefined>) {
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const viewerUserId = String(callerData.user.id ?? "").trim();
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
-
-    const membershipsRes = await supabaseAdmin
-      .from("club_members")
-      .select("role")
-      .eq("user_id", viewerUserId)
-      .eq("is_active", true);
-    if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
-
-    const roles = new Set(((membershipsRes.data ?? []) as Array<{ role: string | null }>).map((row) => String(row.role ?? "")));
-    const isParent = roles.has("parent");
-
-    let effectiveUserId = viewerUserId;
-    if (isParent && childId) {
-      const linkRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", viewerUserId)
-        .eq("player_id", childId)
-        .or("can_view.is.null,can_view.eq.true")
-        .maybeSingle();
-      if (linkRes.error) return NextResponse.json({ error: linkRes.error.message }, { status: 400 });
-      if (!linkRes.data?.player_id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      effectiveUserId = String(linkRes.data.player_id ?? "").trim();
-    } else if (isParent) {
-      const fallbackChildRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,is_primary")
-        .eq("guardian_user_id", viewerUserId)
-        .or("can_view.is.null,can_view.eq.true")
-        .order("is_primary", { ascending: false })
-        .order("created_at", { ascending: true })
-        .limit(1);
-      if (fallbackChildRes.error) return NextResponse.json({ error: fallbackChildRes.error.message }, { status: 400 });
-      const fallbackChildId = String(fallbackChildRes.data?.[0]?.player_id ?? "").trim();
-      if (fallbackChildId) effectiveUserId = fallbackChildId;
-    }
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
+    const viewerUserId = access.actorUserId;
+    const effectiveUserId = access.subjectPlayerId;
 
     const nowIso = new Date().toISOString();
 
@@ -94,14 +104,16 @@ export async function GET(req: NextRequest) {
     if (plannedCompetitionsRes.error) return NextResponse.json({ error: plannedCompetitionsRes.error.message }, { status: 400 });
     if (registeredCampPlayersRes.error) return NextResponse.json({ error: registeredCampPlayersRes.error.message }, { status: 400 });
 
-    const futureSessions = futureSessionsRes.data ?? [];
-    const attendeeRows = attendeeRes.data ?? [];
-    const plannedCompetitions = plannedCompetitionsRes.data ?? [];
-    const registeredCampIds = uniq((registeredCampPlayersRes.data ?? []).map((row: any) => row.camp_id));
+    const futureSessions = (futureSessionsRes.data ?? []) as FutureSessionRow[];
+    const attendeeRows = (attendeeRes.data ?? []) as AttendeeRow[];
+    const plannedCompetitions = (plannedCompetitionsRes.data ?? []) as PlannedCompetitionRow[];
+    const registeredCampIds = uniq(
+      ((registeredCampPlayersRes.data ?? []) as RegisteredCampPlayerRow[]).map((row) => row.camp_id)
+    );
 
-    const attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-    const attendeeEventIds = uniq((attendeeRows as Array<{ event_id: string | null }>).map((row) => row.event_id));
-    attendeeRows.forEach((row: any) => {
+    const attendeeStatusByEventId: Record<string, AttendanceStatus | null> = {};
+    const attendeeEventIds = uniq(attendeeRows.map((row) => row.event_id));
+    attendeeRows.forEach((row) => {
       const eventId = String(row.event_id ?? "").trim();
       if (!eventId) return;
       attendeeStatusByEventId[eventId] = (row.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
@@ -114,16 +126,17 @@ export async function GET(req: NextRequest) {
           .in("camp_id", registeredCampIds)
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
-      : ({ data: [], error: null } as const);
+      : { data: [] as RegisteredCampDayRow[], error: null };
     if (registeredCampDaysRes.error) return NextResponse.json({ error: registeredCampDaysRes.error.message }, { status: 400 });
 
-    const registeredCampEventIds = uniq((registeredCampDaysRes.data ?? []).map((row: any) => row.event_id));
-    const registeredCampEvents = (registeredCampDaysRes.data ?? [])
-      .map((row: any) => row.club_events ?? null)
-      .filter((event: any) => event && String(event.status ?? "") === "scheduled")
-      .map((event: any) => ({
+    const registeredCampDays = (registeredCampDaysRes.data ?? []) as RegisteredCampDayRow[];
+    const registeredCampEventIds = uniq(registeredCampDays.map((row) => row.event_id));
+    const registeredCampEvents = registeredCampDays
+      .flatMap((row) => row.club_events ?? [])
+      .filter((event) => String(event.status ?? "") === "scheduled")
+      .map((event): ClubEventRow => ({
         id: String(event.id ?? "").trim(),
-        event_type: (event.event_type ?? null) as any,
+        event_type: event.event_type ?? null,
         title: event.title ?? null,
         starts_at: event.starts_at ?? null,
         ends_at: event.ends_at ?? null,
@@ -133,7 +146,7 @@ export async function GET(req: NextRequest) {
         group_id: event.group_id ? String(event.group_id).trim() : null,
         status: (event.status ?? "scheduled") as "scheduled" | "cancelled",
       }))
-      .filter((event: any) => event.id && event.starts_at);
+      .filter((event) => event.id && event.starts_at);
     const plannedEventIds = uniq([...attendeeEventIds, ...registeredCampEventIds]);
     const plannedRes = plannedEventIds.length
       ? await supabaseAdmin
@@ -145,33 +158,33 @@ export async function GET(req: NextRequest) {
           .order("starts_at", { ascending: true })
       : ({ data: [], error: null } as const);
     if (plannedRes.error) return NextResponse.json({ error: plannedRes.error.message }, { status: 400 });
-    const plannedEventsMap = new Map<string, any>();
-    (plannedRes.data ?? []).forEach((event: any) => {
+    const plannedEventsMap = new Map<string, ClubEventRow>();
+    ((plannedRes.data ?? []) as ClubEventRow[]).forEach((event) => {
       const eventId = String(event.id ?? "").trim();
       if (!eventId) return;
       plannedEventsMap.set(eventId, event);
     });
-    registeredCampEvents.forEach((event: any) => {
+    registeredCampEvents.forEach((event) => {
       if (!plannedEventsMap.has(event.id)) plannedEventsMap.set(event.id, event);
     });
     const plannedEvents = Array.from(plannedEventsMap.values()).sort(
-      (a: any, b: any) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+      (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
     );
 
-    const plannedEventIdSet = new Set(plannedEvents.map((event: any) => String(event.id ?? "").trim()).filter(Boolean));
-    const dedupedFutureSessions = futureSessions.filter((session: any) => {
+    const plannedEventIdSet = new Set(plannedEvents.map((event) => String(event.id ?? "").trim()).filter(Boolean));
+    const dedupedFutureSessions = futureSessions.filter((session) => {
       const linkedEventId = String(session.club_event_id ?? "").trim();
       return !linkedEventId || !plannedEventIdSet.has(linkedEventId);
     });
 
     const clubIds = uniq([
-      ...plannedEvents.map((event: any) => event.club_id),
-      ...dedupedFutureSessions.map((session: any) => session.club_id),
+      ...plannedEvents.map((event) => event.club_id),
+      ...dedupedFutureSessions.map((session) => session.club_id),
     ]);
-    const groupIds = uniq(plannedEvents.map((event: any) => event.group_id));
+    const groupIds = uniq(plannedEvents.map((event) => event.group_id));
     const structureEventIds = uniq([
-      ...plannedEvents.map((event: any) => event.id),
-      ...futureSessions.map((session: any) => session.club_event_id),
+      ...plannedEvents.map((event) => event.id),
+      ...futureSessions.map((session) => session.club_event_id),
     ]);
     const coachEventIds = structureEventIds;
 
@@ -190,28 +203,29 @@ export async function GET(req: NextRequest) {
     if (structureRes.error) return NextResponse.json({ error: structureRes.error.message }, { status: 400 });
     if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
 
-    const coachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => row.coach_id));
+    const eventCoaches = (eventCoachesRes.data ?? []) as EventCoachRow[];
+    const coachIds = uniq(eventCoaches.map((row) => row.coach_id));
     const coachProfilesRes = coachIds.length
       ? await supabaseAdmin.from("profiles").select("id,first_name,last_name").in("id", coachIds)
       : ({ data: [], error: null } as const);
     if (coachProfilesRes.error) return NextResponse.json({ error: coachProfilesRes.error.message }, { status: 400 });
 
     const clubNameById: Record<string, string> = {};
-    (clubsRes.data ?? []).forEach((club: any) => {
+    ((clubsRes.data ?? []) as NamedRow[]).forEach((club) => {
       const id = String(club.id ?? "").trim();
       if (!id) return;
       clubNameById[id] = String(club.name ?? "Club");
     });
 
     const groupNameById: Record<string, string> = {};
-    (groupsRes.data ?? []).forEach((group: any) => {
+    ((groupsRes.data ?? []) as NamedRow[]).forEach((group) => {
       const id = String(group.id ?? "").trim();
       if (!id) return;
       groupNameById[id] = String(group.name ?? "Groupe");
     });
 
     const eventStructureByEventId: Record<string, Array<{ event_id: string; category: string; minutes: number; note: string | null }>> = {};
-    (structureRes.data ?? []).forEach((item: any) => {
+    ((structureRes.data ?? []) as StructureRow[]).forEach((item) => {
       const eventId = String(item.event_id ?? "").trim();
       if (!eventId) return;
       if (!eventStructureByEventId[eventId]) eventStructureByEventId[eventId] = [];
@@ -224,13 +238,13 @@ export async function GET(req: NextRequest) {
     });
 
     const coachNameById = new Map(
-      (coachProfilesRes.data ?? []).map((profile: any) => {
+      ((coachProfilesRes.data ?? []) as CoachProfileRow[]).map((profile) => {
         const name = [profile.first_name, profile.last_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
         return [String(profile.id ?? "").trim(), name] as const;
       })
     );
     const coachNamesByEventId: Record<string, string[]> = {};
-    (eventCoachesRes.data ?? []).forEach((row: any) => {
+    eventCoaches.forEach((row) => {
       const eventId = String(row.event_id ?? "").trim();
       const coachName = coachNameById.get(String(row.coach_id ?? "").trim()) ?? "";
       if (!eventId || !coachName) return;
@@ -241,22 +255,22 @@ export async function GET(req: NextRequest) {
 
     const upcomingCampEventIds = new Set(
       plannedEvents
-        .filter((event: any) => String(event.event_type ?? "").trim() === "camp")
-        .map((event: any) => String(event.id ?? "").trim())
+        .filter((event) => String(event.event_type ?? "").trim() === "camp")
+        .map((event) => String(event.id ?? "").trim())
         .filter(Boolean)
     );
 
     const upcomingActivities = [
-      ...plannedEvents.map((event: any) => ({ kind: "event", key: `event-${event.id}`, dateIso: event.starts_at, event })),
-      ...dedupedFutureSessions.map((session: any) => ({
+      ...plannedEvents.map((event) => ({ kind: "event", key: `event-${event.id}`, dateIso: event.starts_at, event })),
+      ...dedupedFutureSessions.map((session) => ({
         kind: "session",
         key: `session-${session.id}`,
         dateIso: session.start_at,
         session,
       })),
       ...plannedCompetitions
-        .filter((competition: any) => !(competition.event_type === "camp" && upcomingCampEventIds.size > 0))
-        .map((competition: any) => ({
+        .filter((competition) => !(competition.event_type === "camp" && upcomingCampEventIds.size > 0))
+        .map((competition) => ({
           kind: "competition",
           key: `competition-${competition.id}`,
           dateIso: competition.starts_at,
@@ -275,7 +289,10 @@ export async function GET(req: NextRequest) {
       eventStructureByEventId,
       upcomingActivities,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

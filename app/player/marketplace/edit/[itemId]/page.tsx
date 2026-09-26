@@ -9,6 +9,8 @@ import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { getRouteParam } from "@/lib/routeParams";
+import { MARKETPLACE_CONDITIONS, marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 
 const BUCKET = "marketplace";
 const MAX_IMAGES = 5;
@@ -32,8 +34,6 @@ const CATEGORIES = [
   "Accessoires",
   "Divers",
 ] as const;
-
-const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
 
 type Item = {
   id: string;
@@ -74,12 +74,6 @@ type UIImg =
       url: string; // objectURL
     };
 
-function getParamString(p: any): string | null {
-  if (typeof p === "string") return p;
-  if (Array.isArray(p) && typeof p[0] === "string") return p[0];
-  return null;
-}
-
 function getIdFromPathname(pathname: string): string | null {
   const parts = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
   const last = parts[parts.length - 1];
@@ -94,12 +88,12 @@ function safeExtFromFileName(name: string) {
 
 export default function MarketplaceEditPage() {
   const { t, locale } = useI18n();
-  const params = useParams();
+  const params = useParams<{ itemId: string | string[] }>();
   const pathname = usePathname();
   const router = useRouter();
 
   const itemId = useMemo(() => {
-    const fromParams = getParamString((params as any)?.itemId);
+    const fromParams = getRouteParam(params?.itemId);
     return fromParams ?? getIdFromPathname(pathname);
   }, [params, pathname]);
 
@@ -135,18 +129,9 @@ export default function MarketplaceEditPage() {
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const conditionOptions = useMemo(
     () =>
-      CONDITIONS.map((value) => ({
+      MARKETPLACE_CONDITIONS.map((value) => ({
         value,
-        label:
-          locale === "fr"
-            ? value === "New"
-              ? "Neuf"
-              : value === "Like new"
-              ? "Comme neuf"
-              : value === "Good condition"
-              ? "Bon état"
-              : "À réparer"
-            : value,
+        label: marketplaceConditionLabel(locale, value),
       })),
     [locale]
   );
@@ -227,8 +212,8 @@ export default function MarketplaceEditPage() {
       // reset deletion list + set images
       setDeletedExisting([]);
       setUiImages(ui);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur.");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur.");
       setItem(null);
       setUiImages([]);
       setDeletedExisting([]);
@@ -394,7 +379,7 @@ export default function MarketplaceEditPage() {
 
     try {
       // 1) update item
-      const payload: any = {
+      const payload: Omit<Item, "id" | "user_id"> = {
         title,
         description: form.description.trim() || null,
         category: form.category.trim() || null,
@@ -416,7 +401,7 @@ export default function MarketplaceEditPage() {
         for (const d of deletedExisting) {
           // fetch path from db (in case)
           const rowRes = await supabase.from("marketplace_images").select("path").eq("id", d.id).maybeSingle();
-          const path = (rowRes.data as any)?.path ?? d.path;
+          const path = (rowRes.data as { path?: string } | null)?.path ?? d.path;
 
           if (path) {
             await supabase.storage.from(BUCKET).remove([path]); // best effort
@@ -428,9 +413,6 @@ export default function MarketplaceEditPage() {
 
       // 3) rebuild final list and persist sort_order
       // First: get current existing rows that still remain
-      const existingInUI = uiImages.filter((x) => x.kind === "existing") as Extract<UIImg, { kind: "existing" }>[];
-      const newInUI = uiImages.filter((x) => x.kind === "new") as Extract<UIImg, { kind: "new" }>[];
-
       // 3a) update sort_order for existing that remain (we update by ID)
       for (let i = 0; i < uiImages.length; i++) {
         const img = uiImages[i];
@@ -487,7 +469,6 @@ export default function MarketplaceEditPage() {
           // safer: find by path prefix userId/itemId and newest sort_order i
           // We’ll match by sort_order position first, then fallback to "not used yet"
           // (works because we inserted with the correct i above)
-          // eslint-disable-next-line no-loop-func
           const match = dbNow.find((r) => r.sort_order === orderedDbIds.length && !orderedDbIds.includes(r.id));
           if (match) orderedDbIds.push(match.id);
           else {
@@ -506,8 +487,8 @@ export default function MarketplaceEditPage() {
 
       // 4) done
       router.push(`/player/marketplace/${item.id}`);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur enregistrement.");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur enregistrement.");
     } finally {
       setSaving(false);
       setBusyImages(false);
@@ -519,7 +500,7 @@ export default function MarketplaceEditPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Modifier l’annonce" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.edit") }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">

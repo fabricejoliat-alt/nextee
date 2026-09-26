@@ -5,13 +5,13 @@ import PlayerLayoutShell from "@/components/player/PlayerLayoutShell";
 
 export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="manager-page manager-page-root player-page-root">
+    <div className="player-page player-page-root">
       <AppI18nProvider>
-        <PlayerLayoutShell>
-          <RoleGuard allow={["player", "parent"]} inline quiet>
+        <RoleGuard allow={["player", "parent"]} inline quiet>
+          <PlayerLayoutShell>
             {children}
-          </RoleGuard>
-        </PlayerLayoutShell>
+          </PlayerLayoutShell>
+        </RoleGuard>
       </AppI18nProvider>
     </div>
   );

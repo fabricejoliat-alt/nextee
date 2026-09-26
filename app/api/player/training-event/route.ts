@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
-}
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
@@ -22,32 +20,17 @@ type GroupCoachRow = { coach_user_id: string; is_head: boolean | null };
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const viewerUserId = String(callerData.user.id ?? "").trim();
     const url = new URL(req.url);
     const eventId = String(url.searchParams.get("event_id") ?? "").trim();
     const childId = String(url.searchParams.get("child_id") ?? "").trim();
     if (!eventId) return NextResponse.json({ error: "Missing event_id" }, { status: 400 });
-
-    let effectivePlayerId = viewerUserId;
-    if (childId && childId !== viewerUserId) {
-      const guardianRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", viewerUserId)
-        .eq("player_id", childId)
-        .or("can_view.is.null,can_view.eq.true")
-        .maybeSingle();
-      if (guardianRes.error) return NextResponse.json({ error: guardianRes.error.message }, { status: 400 });
-      if (!guardianRes.data?.player_id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      effectivePlayerId = String(guardianRes.data.player_id);
-    }
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
+    const effectivePlayerId = access.subjectPlayerId;
 
     const attendeeRes = await supabaseAdmin
       .from("club_event_attendees")
@@ -233,6 +216,9 @@ export async function GET(req: NextRequest) {
       customCoachEvaluationResponses: coachCustomResponses,
     });
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

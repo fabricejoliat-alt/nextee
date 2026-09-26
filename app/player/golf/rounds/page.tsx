@@ -2,17 +2,19 @@
 
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
-import managerStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 export default function RoundsListPage() {
+  const { t } = useI18n();
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours et statistiques" }]} />
-        <header className={managerStyles.topline}>
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.andStatistics") }]} />
+        <header className={playerUiStyles.topline}>
           <div>
-            <h1>Mes parcours</h1>
-            <p className={managerStyles.lead}>Retrouvez vos parties, vos cartes de score et vos principaux repères de jeu.</p>
+            <h1>{t("rounds.title")}</h1>
+            <p className={playerUiStyles.lead}>{t("rounds.subtitle")}</p>
           </div>
         </header>
         <GolfRoundsWorkspace />

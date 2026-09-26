@@ -3,6 +3,8 @@ import { createAdminClient, resolveMarketplaceAccess, uniq } from "../_lib";
 
 const BUCKET = "marketplace";
 
+type ImageRow = { item_id: string | null; path: string | null; sort_order: number | null };
+
 export async function GET(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
     if (imagesRes.error) return NextResponse.json({ error: imagesRes.error.message }, { status: 400 });
 
     const mainImageByItemId: Record<string, string> = {};
-    (imagesRes.data ?? []).forEach((row: any) => {
+    ((imagesRes.data ?? []) as ImageRow[]).forEach((row) => {
       const itemId = String(row.item_id ?? "").trim();
       const path = String(row.path ?? "").trim();
       if (!itemId || !path) return;
@@ -45,8 +47,7 @@ export async function GET(req: NextRequest) {
       items,
       mainImageByItemId,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
-

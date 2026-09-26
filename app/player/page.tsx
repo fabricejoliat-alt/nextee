@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Marketplace thumbnails use user-managed Storage URLs. */
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,14 +12,13 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BookOpen, CalendarCheck2, CheckCircle2, ClipboardCheck, Flag, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BookOpen, CalendarCheck2, CheckCircle2, ClipboardCheck, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
-import coachStyles from "@/app/coach/CoachDashboard.module.css";
-import validationStyles from "@/app/coach/validations/CoachValidations.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
 import styles from "./PlayerDashboard.module.css";
 
@@ -71,20 +72,6 @@ type TrainingItemRow = {
     | "fitness"
     | "other";
   minutes: number;
-};
-
-type GolfRoundRow = {
-  id: string;
-  start_at: string;
-  gir: number | null;
-  fairways_hit: number | null;
-  fairways_total: number | null;
-  total_putts: number | null;
-  eagles?: number | null;
-  birdies?: number | null;
-  pars?: number | null;
-  bogeys?: number | null;
-  doubles_plus?: number | null;
 };
 
 type MarketplaceImageRow = {
@@ -163,11 +150,6 @@ type PlayerHomePageCache = {
   monthClubEventDurationById?: Record<string, number>;
   monthPlannedClubMinutes?: number;
   monthItems: TrainingItemRow[];
-  roundsMonth: GolfRoundRow[];
-  roundsPrevMonth: GolfRoundRow[];
-  playedHolesMonthByRoundId: Record<string, number>;
-  playedHolesPrevMonthByRoundId: Record<string, number>;
-  holesPlayedMonth: number;
   viewerUserId: string;
   effectiveUserId: string;
   attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | null>;
@@ -176,16 +158,6 @@ type PlayerHomePageCache = {
   coachNamesByEventId: Record<string, string[]>;
   eventStructureByEventId: Record<string, HomeEventStructureItem[]>;
   upcomingActivities: HomeUpcomingItem[];
-  playVolumeSummary?: PlayVolumeSummary;
-};
-
-type PlayVolumeSummary = {
-  roundsCount: number;
-  holesPlayed: number;
-  girPctAvg: number | null;
-  fwPctAvg: number | null;
-  puttAvg: number | null;
-  scramblingPct: number | null;
 };
 
 type HomeNewsItem = {
@@ -220,7 +192,6 @@ type HeroCachePayload = {
 };
 
 const HERO_CACHE_TTL_MS = 10 * 60 * 1000;
-const PLAY_VOLUME_CACHE_TTL_MS = 15 * 60 * 1000;
 
 function heroCacheKey(userId: string) {
   return `player:home:hero:${userId}`;
@@ -249,43 +220,6 @@ function writeHeroCache(userId: string, payload: { profile: Profile | null; club
       updatedAt: Date.now(),
     };
     window.localStorage.setItem(heroCacheKey(userId), JSON.stringify(data));
-  } catch {
-    // ignore cache write issues
-  }
-}
-
-type PlayVolumeCachePayload = {
-  summary: PlayVolumeSummary;
-  updatedAt: number;
-};
-
-function playVolumeCacheKey(userId: string) {
-  return `player:home:play-volume:${userId}`;
-}
-
-function readPlayVolumeCache(userId: string) {
-  if (typeof window === "undefined" || !userId) return null as PlayVolumeCachePayload | null;
-  try {
-    const raw = window.localStorage.getItem(playVolumeCacheKey(userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as PlayVolumeCachePayload;
-    if (!parsed || typeof parsed !== "object") return null;
-    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > PLAY_VOLUME_CACHE_TTL_MS) return null;
-    if (!parsed.summary || typeof parsed.summary !== "object") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writePlayVolumeCache(userId: string, summary: PlayVolumeSummary) {
-  if (typeof window === "undefined" || !userId) return;
-  try {
-    const payload: PlayVolumeCachePayload = {
-      summary,
-      updatedAt: Date.now(),
-    };
-    window.localStorage.setItem(playVolumeCacheKey(userId), JSON.stringify(payload));
   } catch {
     // ignore cache write issues
   }
@@ -370,57 +304,6 @@ function monthRangeLocal(now = new Date()) {
   return { start, end };
 }
 
-function rollingYearWindows(now = new Date()) {
-  const curEnd = new Date(now);
-  const curStart = new Date(now);
-  curStart.setFullYear(curStart.getFullYear() - 1);
-
-  const prevEnd = new Date(curStart);
-  const prevStart = new Date(curStart);
-  prevStart.setFullYear(prevStart.getFullYear() - 1);
-
-  return { curStart, curEnd, prevStart, prevEnd };
-}
-
-function isGIR(par: number | null, score: number | null, putts: number | null) {
-  if (typeof par !== "number") return false;
-  if (typeof score !== "number") return false;
-  if (typeof putts !== "number") return false;
-  return score - putts <= par - 2;
-}
-
-function roundPlayedHolesFromRound(r: GolfRoundRow) {
-  const vals = [r.eagles, r.birdies, r.pars, r.bogeys, r.doubles_plus];
-  if (vals.some((v) => typeof v === "number")) {
-    return vals.reduce((sum, v) => sum + (typeof v === "number" ? v : 0), 0);
-  }
-  if (typeof r.fairways_total === "number") return r.fairways_total <= 7 ? 9 : 18;
-  if (typeof r.total_putts === "number") return r.total_putts <= 22 ? 9 : 18;
-  if (typeof r.gir === "number") return r.gir <= 9 ? 9 : 18;
-  return 18;
-}
-
-function estimatedScramblingFromRounds(rounds: GolfRoundRow[], playedByRound: Record<string, number>) {
-  let opp = 0;
-  let success = 0;
-  for (const r of rounds) {
-    const played = playedByRound[r.id] ?? roundPlayedHolesFromRound(r);
-    const gir = typeof r.gir === "number" ? r.gir : null;
-    if (!played || gir == null) continue;
-    const roundOpp = Math.max(played - gir, 0);
-    if (roundOpp <= 0) continue;
-    const parOrBetter =
-      (typeof r.pars === "number" ? r.pars : 0) +
-      (typeof r.birdies === "number" ? r.birdies : 0) +
-      (typeof r.eagles === "number" ? r.eagles : 0);
-    const roundSuccess = Math.min(roundOpp, Math.max(parOrBetter - gir, 0));
-    opp += roundOpp;
-    success += roundSuccess;
-  }
-  if (opp <= 0) return null;
-  return Math.round((success / opp) * 1000) / 10;
-}
-
 function monthTitle(now = new Date(), locale = "fr-CH") {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now).toUpperCase();
 }
@@ -489,17 +372,6 @@ function formatNewsPublishedLabel(iso: string | null, locale: string) {
   return `News from ${datePart}`;
 }
 
-function hasDisplayableTime(iso: string) {
-  const d = new Date(iso);
-  return d.getHours() !== 0 || d.getMinutes() !== 0;
-}
-
-function sameDay(aIso: string, bIso: string) {
-  const a = new Date(aIso);
-  const b = new Date(bIso);
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
 function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: string) {
   if (locale === "en") {
     if (v === "training") return "Training";
@@ -515,19 +387,6 @@ function eventTypeLabel(v: HomePlannedEventRow["event_type"], locale: string) {
   if (v === "session") return "Réunion";
   if (v === "competition") return "Compétition";
   return "Événement";
-}
-
-function clubCompetitionLevelLabel(value: HomePlannedEventRow["competition_level"]) {
-  if (value === "internal") return "Tournoi interne";
-  if (value === "club") return "Tournoi Club";
-  if (value === "regional") return "Régional";
-  if (value === "national") return "National";
-  if (value === "international") return "International";
-  return "—";
-}
-
-function clubCompetitionCategoryLabel(value: HomePlannedEventRow["competition_category"]) {
-  return value === "all" ? "Tous" : String(value ?? "—").toUpperCase();
 }
 
 function priceLabel(it: Item, t: (key: string) => string) {
@@ -606,16 +465,6 @@ function Donut({ percent }: { percent: number }) {
   );
 }
 
-/** Flèche “standard”: up=vert, down=rouge (comme sensations) */
-function ArrowOnly({ delta }: { delta: number | null }) {
-  if (delta == null || !Number.isFinite(delta)) return <span className="sense-val">—</span>;
-  const up = delta > 0;
-  const down = delta < 0;
-  const cls = up ? "sense-val up" : down ? "sense-val down" : "sense-val";
-  const sign = up ? "▲" : down ? "▼" : "•";
-  return <span className={cls}>{sign}</span>;
-}
-
 /** Variation “dernière valeur vs précédente” (en ignorant les null) */
 function deltaLastVsPrev(values: Array<number | null | undefined>) {
   const v = values.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
@@ -623,13 +472,6 @@ function deltaLastVsPrev(values: Array<number | null | undefined>) {
   const last = v[0];
   const prev = v[1];
   return Math.round((last - prev) * 10) / 10;
-}
-
-function eventStartKey(iso: string | null | undefined) {
-  if (!iso) return "";
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return "";
-  return new Date(ms).toISOString().slice(0, 16);
 }
 
 function isClubAttendanceEventType(eventType: HomePlannedEventRow["event_type"]) {
@@ -667,21 +509,13 @@ function UpcomingAttendanceToggle({
 }
 
 function BenchmarkBadge({ icon: Icon, tone, children }: { icon: LucideIcon; tone: "positive" | "neutral" | "caution" | "highlight"; children: ReactNode }) {
-  const toneClass = tone === "positive" ? validationStyles.badgeElite : tone === "caution" ? validationStyles.badgeBronze : tone === "highlight" ? validationStyles.badgeGold : validationStyles.badgeSilver;
-  return <span className={`${validationStyles.badge} ${toneClass} ${styles.statusBadge}`}><Icon size={13} aria-hidden="true" />{children}</span>;
+  const toneClass = tone === "positive" ? playerUiStyles.badgePositive : tone === "caution" ? playerUiStyles.badgeCaution : tone === "highlight" ? playerUiStyles.badgeHighlight : playerUiStyles.badgeNeutral;
+  return <span className={`${playerUiStyles.badge} ${toneClass} ${styles.statusBadge}`}><Icon size={13} aria-hidden="true" />{children}</span>;
 }
 
 function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) {
   if (session.club_event_id) return "club" as const;
   return session.session_type;
-}
-
-function compactHomeNewsLinkedLabel(label: string | null, contentType: HomeNewsItem["linked_content_type"]) {
-  if (!label) return null;
-  const parts = label.split(" • ").map((part) => part.trim()).filter(Boolean);
-  if (parts.length <= 1) return label;
-  if (contentType === "camp") return parts[0] ?? label;
-  return parts.join(" • ");
 }
 
 type RulesHomeOverview = {
@@ -709,16 +543,16 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
     return () => { active = false; };
   }, []);
 
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const tr = (fr: string, en: string, de?: string, it?: string) => pickLocaleText(locale, fr, en, de, it);
   const current = overview?.series.find(item => item.id === overview.currentSeriesId) ?? null;
   const cardCount = current ? overview?.cards.length ?? 0 : 6;
   const month = current ? new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
-  return <Link href="/player/rules" className={`${coachStyles.panel} ${styles.rulesCard}`}>
-    <span className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
+  return <Link href="/player/rules" className={`${playerUiStyles.panel} ${styles.rulesCard}`}>
+    <span className={`${playerUiStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
     <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesVisualBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.rulesVisualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.rulesVisualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
     <span className={styles.rulesBody}>
       {current ? <>
-        <span className={styles.rulesCurrent}><small>{tr(`Série ${current.position} · ${month}`, `Series ${current.position} · ${month}`)}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></span>
+        <span className={styles.rulesCurrent}><small>{tr(`Série ${current.position} · ${month}`, `Series ${current.position} · ${month}`, `Serie ${current.position} · ${month}`, `Serie ${current.position} · ${month}`)}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></span>
         <p className={styles.rulesDescription}>{tr("Découvre les situations de la série à ton rythme, puis teste tes connaissances lors du quiz.", "Explore the situations in this series at your own pace, then test your knowledge in the quiz.")}</p>
       </> : <p>{tr("Six situations à découvrir dans la série en cours. Les bons réflexes, à ton rythme.", "Six situations in the current series. Learn the right reflexes at your own pace.")}</p>}
     </span>
@@ -743,29 +577,9 @@ export default function PlayerHomePage() {
 
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthClubEventDurationById, setMonthClubEventDurationById] = useState<Record<string, number>>({});
-  const [monthClubEventDurationByStartKey, setMonthClubEventDurationByStartKey] = useState<Record<string, number>>({});
   const [monthPlannedClubMinutes, setMonthPlannedClubMinutes] = useState<number>(0);
   const [monthPlannedClubEvents, setMonthPlannedClubEvents] = useState<Array<{ starts_at: string; ends_at: string | null; duration_minutes: number | null }>>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
-  const [playVolumeSummary, setPlayVolumeSummary] = useState<PlayVolumeSummary>({
-    roundsCount: 0,
-    holesPlayed: 0,
-    girPctAvg: null,
-    fwPctAvg: null,
-    puttAvg: null,
-    scramblingPct: null,
-  });
-
-  // ✅ Rounds month + previous month (pour tendances focus)
-  const [roundsMonth, setRoundsMonth] = useState<GolfRoundRow[]>([]);
-  const [roundsPrevMonth, setRoundsPrevMonth] = useState<GolfRoundRow[]>([]);
-  const [playedHolesMonthByRoundId, setPlayedHolesMonthByRoundId] = useState<Record<string, number>>({});
-  const [playedHolesPrevMonthByRoundId, setPlayedHolesPrevMonthByRoundId] = useState<Record<string, number>>({});
-  const [scramblingPctMonth, setScramblingPctMonth] = useState<number | null>(null);
-  const [scramblingPctPrevMonth, setScramblingPctPrevMonth] = useState<number | null>(null);
-  const [holesPlayedMonth, setHolesPlayedMonth] = useState<number>(0);
-  const [playVolumeLoading, setPlayVolumeLoading] = useState(true);
-  const [playVolumeLoadedOnce, setPlayVolumeLoadedOnce] = useState(false);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
   const [viewerRole, setViewerRole] = useState<"player" | "parent">("player");
@@ -1024,14 +838,6 @@ export default function PlayerHomePage() {
     };
   }, [monthEffectiveMinutes, monthSessions, monthItems, t, displayedTrainingVolumeObjective]);
 
-  const topMax = useMemo(() => {
-    const m = trainingsSummary.top.reduce((max, x) => Math.max(max, x.minutes), 0);
-    return m || 1;
-  }, [trainingsSummary.top]);
-
-  // ===== Focus calculé depuis golf_rounds (comme dashboard) =====
-  const focusFromRounds = playVolumeSummary;
-
   async function loadUpcomingPreview(userId: string, viewerUid?: string) {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -1152,58 +958,10 @@ export default function PlayerHomePage() {
     }
   }
 
-  async function loadRollingPlayVolume(effectiveUid: string, viewerUid: string) {
-    if (!playVolumeLoadedOnce && playVolumeSummary.roundsCount === 0 && playVolumeSummary.holesPlayed === 0) {
-      setPlayVolumeLoading(true);
-    }
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (!token) {
-        setPlayVolumeSummary({
-          roundsCount: 0,
-          holesPlayed: 0,
-          girPctAvg: null,
-          fwPctAvg: null,
-          puttAvg: null,
-          scramblingPct: null,
-        });
-        return;
-      }
-
-      const query = new URLSearchParams();
-      if (viewerUid && viewerUid !== effectiveUid) query.set("child_id", effectiveUid);
-      const res = await fetch(`/api/player/home-play-volume?${query.toString()}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Failed to load play volume"));
-
-      const summary: PlayVolumeSummary = {
-        roundsCount: Number(json?.roundsCount ?? 0),
-        holesPlayed: Number(json?.holesPlayed ?? 0),
-        girPctAvg: typeof json?.girPctAvg === "number" ? json.girPctAvg : null,
-        fwPctAvg: typeof json?.fwPctAvg === "number" ? json.fwPctAvg : null,
-        puttAvg: typeof json?.puttAvg === "number" ? json.puttAvg : null,
-        scramblingPct: typeof json?.scramblingPct === "number" ? json.scramblingPct : null,
-      };
-      setPlayVolumeSummary(summary);
-      writePlayVolumeCache(effectiveUid, summary);
-      setPlayVolumeLoadedOnce(true);
-    } catch (e) {
-      console.warn("player home play volume load failed:", e);
-    } finally {
-      setPlayVolumeLoading(false);
-    }
-  }
-
   async function load() {
     setLoading(true);
     setUpcomingLoading(true);
     setMarketplaceLoading(true);
-    if (!playVolumeLoadedOnce) setPlayVolumeLoading(true);
     setError(null);
     setHeroLoading(true);
 
@@ -1217,14 +975,12 @@ export default function PlayerHomePage() {
       setViewerUserId(viewerUid);
       setEffectiveUserId(effectiveUid);
       void loadLatestNews(effectiveUid, ctx.role === "parent" ? "parent" : "player");
-      void loadRollingPlayVolume(effectiveUid, viewerUid);
       const performanceEnabled = await isEffectivePlayerPerformanceEnabled(effectiveUid);
       setIsPerformanceEnabled(performanceEnabled);
       const pageCache = readClientPageCache<PlayerHomePageCache>(
         playerHomeCacheKey(effectiveUid),
         PLAYER_HOME_CACHE_TTL_MS
       );
-      const hasPageCache = Boolean(pageCache);
       if (pageCache) {
         setProfile(pageCache.profile);
         setClubs(pageCache.clubs);
@@ -1233,26 +989,8 @@ export default function PlayerHomePage() {
         setMarketplaceLoading(false);
         setMonthSessions(pageCache.monthSessions);
         setMonthClubEventDurationById(pageCache.monthClubEventDurationById ?? {});
-        setMonthClubEventDurationByStartKey({});
         setMonthPlannedClubMinutes(pageCache.monthPlannedClubMinutes ?? 0);
         setMonthItems(pageCache.monthItems);
-        setRoundsMonth(pageCache.roundsMonth);
-        setRoundsPrevMonth(pageCache.roundsPrevMonth);
-        setPlayedHolesMonthByRoundId(pageCache.playedHolesMonthByRoundId);
-        setPlayedHolesPrevMonthByRoundId(pageCache.playedHolesPrevMonthByRoundId);
-        setHolesPlayedMonth(pageCache.holesPlayedMonth);
-        setPlayVolumeSummary(
-          pageCache.playVolumeSummary ?? {
-            roundsCount: pageCache.roundsMonth.length,
-            holesPlayed: pageCache.holesPlayedMonth,
-            girPctAvg: null,
-            fwPctAvg: null,
-            puttAvg: null,
-            scramblingPct: null,
-          }
-        );
-        setPlayVolumeLoadedOnce(true);
-        setPlayVolumeLoading(false);
         setViewerUserId(pageCache.viewerUserId || viewerUid);
         setEffectiveUserId(pageCache.effectiveUserId || effectiveUid);
         setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
@@ -1270,12 +1008,6 @@ export default function PlayerHomePage() {
         setProfile(heroCache.profile);
         setClubs(heroCache.clubs);
         setHeroLoading(false);
-      }
-      const playCache = readPlayVolumeCache(effectiveUid);
-      if (playCache) {
-        setPlayVolumeSummary(playCache.summary);
-        setPlayVolumeLoadedOnce(true);
-        setPlayVolumeLoading(false);
       }
     } catch {
       setError(t("roundsNew.error.invalidSession"));
@@ -1430,7 +1162,6 @@ export default function PlayerHomePage() {
           .select("id,duration_minutes,starts_at,ends_at")
           .in("id", monthClubEventIds);
         const map: Record<string, number> = {};
-        const byStartKey: Record<string, number> = {};
         if (!evRes.error) {
           (evRes.data ?? []).forEach(
             (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
@@ -1438,8 +1169,6 @@ export default function PlayerHomePage() {
             const mins = Number(row.duration_minutes ?? 0);
               if (Number.isFinite(mins) && mins > 0) {
                 map[row.id] = mins;
-                const key = eventStartKey(row.starts_at);
-                if (key) byStartKey[key] = mins;
                 return;
               }
               if (row.starts_at && row.ends_at) {
@@ -1447,55 +1176,15 @@ export default function PlayerHomePage() {
                 const endMs = new Date(row.ends_at).getTime();
                 const diff = Math.round((endMs - startMs) / 60000);
                 map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-                const key = eventStartKey(row.starts_at);
-                if (key) byStartKey[key] = map[row.id];
                 return;
               }
               map[row.id] = 0;
             }
           );
         }
-        const missingClubSessions = sess.filter((s) => effectiveHomeSessionType(s) === "club" && !s.club_event_id);
-        if (missingClubSessions.length > 0) {
-          const attendeeRes = await supabase
-            .from("club_event_attendees")
-            .select("event_id")
-            .eq("player_id", effectiveUid)
-            .eq("status", "present");
-          const attendeeEventIds = Array.from(
-            new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-          );
-          if (attendeeEventIds.length > 0) {
-            const fallbackRes = await supabase
-              .from("club_events")
-              .select("starts_at,ends_at,duration_minutes")
-              .in("id", attendeeEventIds)
-              .gte("starts_at", start.toISOString())
-              .lt("starts_at", end.toISOString());
-            if (!fallbackRes.error) {
-              (fallbackRes.data ?? []).forEach(
-                (row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-                  const key = eventStartKey(row.starts_at);
-                  if (!key || byStartKey[key] > 0) return;
-                  const mins = Number(row.duration_minutes ?? 0);
-                  if (Number.isFinite(mins) && mins > 0) {
-                    byStartKey[key] = mins;
-                    return;
-                  }
-                  if (row.starts_at && row.ends_at) {
-                    const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-                    byStartKey[key] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-                  }
-                }
-              );
-            }
-          }
-        }
         setMonthClubEventDurationById(map);
-        setMonthClubEventDurationByStartKey(byStartKey);
       } else {
         setMonthClubEventDurationById({});
-        setMonthClubEventDurationByStartKey({});
       }
 
       const attendeeRes = await supabase
@@ -1539,7 +1228,6 @@ export default function PlayerHomePage() {
     } else {
       setMonthSessions([]);
       setMonthClubEventDurationById({});
-      setMonthClubEventDurationByStartKey({});
       setMonthPlannedClubMinutes(0);
       setMonthItems([]);
     }
@@ -1555,10 +1243,8 @@ export default function PlayerHomePage() {
       setMarketplaceLoading(false);
       setMonthSessions([]);
       setMonthClubEventDurationById({});
-      setMonthClubEventDurationByStartKey({});
       setMonthPlannedClubMinutes(0);
       setMonthItems([]);
-      setPlayVolumeLoading(false);
       setUpcomingActivities([]);
       setUpcomingLoading(false);
       setLatestNews([]);
@@ -1584,12 +1270,6 @@ export default function PlayerHomePage() {
       monthClubEventDurationById,
       monthPlannedClubMinutes,
       monthItems,
-      roundsMonth,
-      roundsPrevMonth,
-      playedHolesMonthByRoundId,
-      playedHolesPrevMonthByRoundId,
-      holesPlayedMonth,
-      playVolumeSummary,
       viewerUserId,
       effectiveUserId,
       attendeeStatusByEventId,
@@ -1610,12 +1290,6 @@ export default function PlayerHomePage() {
     monthClubEventDurationById,
     monthPlannedClubMinutes,
     monthItems,
-    roundsMonth,
-    roundsPrevMonth,
-    playedHolesMonthByRoundId,
-    playedHolesPrevMonthByRoundId,
-    holesPlayedMonth,
-    playVolumeSummary,
     viewerUserId,
     attendeeStatusByEventId,
     clubNameById,
@@ -1785,42 +1459,6 @@ export default function PlayerHomePage() {
     setHidePhotoPromptForever(Boolean(dismissed));
   }, [consentResolved, heroLoading, loading, playerConsentStatus, profile?.avatar_url, viewerRole, viewerUserId]);
 
-  // ✅ affichage sensations : valeur = moyenne du mois / flèche = tendance vs séance précédente
-  const senseRightStyle: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 10,
-    minWidth: 64,
-    justifyContent: "flex-end",
-  };
-
-  const roundsMonthCount = playVolumeSummary.roundsCount;
-  const holesPlayedDisplay = playVolumeSummary.holesPlayed;
-  const focusTiles = useMemo(
-    () => [
-      {
-        key: "gir",
-        label: t("golfDashboard.gir"),
-        value: focusFromRounds.girPctAvg == null ? "—" : `${focusFromRounds.girPctAvg}%`,
-      },
-      {
-        key: "putts",
-        label: pickLocaleText(locale, "Putts (18 trous)", "Putts (18 holes)"),
-        value: focusFromRounds.puttAvg == null ? "—" : `${focusFromRounds.puttAvg}`,
-      },
-      {
-        key: "fw",
-        label: t("golfDashboard.fairwaysHit"),
-        value: focusFromRounds.fwPctAvg == null ? "—" : `${focusFromRounds.fwPctAvg}%`,
-      },
-      {
-        key: "scrambling",
-        label: pickLocaleText(locale, "Scrambling", "Scrambling"),
-        value: focusFromRounds.scramblingPct == null ? "—" : `${focusFromRounds.scramblingPct}%`,
-      },
-    ],
-    [focusFromRounds.fwPctAvg, focusFromRounds.girPctAvg, focusFromRounds.puttAvg, focusFromRounds.scramblingPct, locale, t]
-  );
   const upcomingPreview = upcomingActivities.slice(0, 3);
   const attentionEvents = upcomingActivities
     .filter((item): item is Extract<HomeUpcomingItem, { kind: "event" }> => item.kind === "event")
@@ -1889,7 +1527,6 @@ export default function PlayerHomePage() {
         <div className="player-hero">
           <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
             {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             ) : (
               <div
@@ -1932,15 +1569,15 @@ export default function PlayerHomePage() {
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
-        <div className={coachStyles.page}>
+        <div className={playerUiStyles.page}>
           <div className={styles.firstRow}>
-            <section id="player-upcoming-activities" className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}>
+            <section id="player-upcoming-activities" className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}>
                 <div><h2>{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</h2><p>{pickLocaleText(locale, "Les trois prochains rendez-vous.", "Your next three activities.")}</p></div>
-                <Link className={coachStyles.textLink} href="/player/golf/trainings?type=all" aria-label={pickLocaleText(locale, "Voir mon activité", "View my activity")}><ArrowRight size={16} /></Link>
+                <Link className={playerUiStyles.textLink} href="/player/golf/trainings?type=all" aria-label={pickLocaleText(locale, "Voir mes activités", "View my activities")}><ArrowRight size={16} /></Link>
               </div>
-              {upcomingLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : upcomingPreview.length ? (
-                <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
+              {upcomingLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : upcomingPreview.length ? (
+                <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                   {upcomingPreview.map((item) => {
                     const event = item.kind === "event" ? item.event : null;
                     const session = item.kind === "session" ? item.session : null;
@@ -1975,19 +1612,19 @@ export default function PlayerHomePage() {
                         <span className={styles.activityMeta}>{activityDetail}</span>
                         <span className={`planning-event-location ${styles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{location || pickLocaleText(locale, "Lieu non renseigné", "Location not specified")}</span></span>
                       </div>
-                      {event && isClubAttendanceEventType(event.event_type) ? <UpcomingAttendanceToggle variant={2} checked={status !== "absent" && status !== "excused"} onToggle={() => handleTrainingAttendanceToggle(event, status)} disabled={attendanceBusyEventId === event.id} absentLabel={pickLocaleText(locale, "Absent", "Absent")} presentLabel={pickLocaleText(locale, "Présent", "Present")} absentSentence={pickLocaleText(locale, "Absent", "Absent")} presentSentence={pickLocaleText(locale, "Présent", "Present")} ariaLabel={pickLocaleText(locale, `Présence pour ${title}`, `Attendance for ${title}`)} /> : null}
+                      {event && isClubAttendanceEventType(event.event_type) ? <UpcomingAttendanceToggle variant={2} checked={status !== "absent" && status !== "excused"} onToggle={() => handleTrainingAttendanceToggle(event, status)} disabled={attendanceBusyEventId === event.id} absentLabel={pickLocaleText(locale, "Absent", "Absent")} presentLabel={pickLocaleText(locale, "Présent", "Present")} absentSentence={pickLocaleText(locale, "Absent", "Absent")} presentSentence={pickLocaleText(locale, "Présent", "Present")} ariaLabel={pickLocaleText(locale, `Présence pour ${title}`, `Attendance for ${title}`, `Anwesenheit für ${title}`, `Presenza per ${title}`)} /> : null}
                     </article>;
                   })}
                 </div>
-              ) : <div className={coachStyles.empty}>{pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}</div>}
+              ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}</div>}
             </section>
 
-            <section className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de mes clubs", "News from my clubs")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles publiées par mes clubs.", "The latest news published by my clubs.")}</p></div><Link className={coachStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
-              {newsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
-                <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
+            <section className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de mes clubs", "News from my clubs")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles publiées par mes clubs.", "The latest news published by my clubs.")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
+              {newsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
+                <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                   {latestNews.map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
-                    {news.image_url ? <span className={styles.newsThumbnail}><img src={news.image_url} alt="" /></span> : <span className={coachStyles.dateBox}><Newspaper size={16} /></span>}
+                    {news.image_url ? <span className={styles.newsThumbnail}><img src={news.image_url} alt="" /></span> : <span className={playerUiStyles.dateBox}><Newspaper size={16} /></span>}
                     <div className={styles.newsHomeContent}>
                       <span className={styles.newsHomeDate}>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}</span>
                       <b>{news.title}</b>
@@ -1997,12 +1634,12 @@ export default function PlayerHomePage() {
                     <ArrowRight size={16} />
                   </Link>)}
                 </div>
-              ) : <div className={coachStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
+              ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
             </section>
 
-            <section className={`${coachStyles.panel} ${styles.attentionCard}`}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
-              {upcomingLoading || insightsLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : (
+            <section className={`${playerUiStyles.panel} ${styles.attentionCard}`}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
+              {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
                 <div className={overviewStyles.attentionList}>
                   {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete">
                     <span><ClipboardCheck size={17} /></span>
@@ -2018,7 +1655,7 @@ export default function PlayerHomePage() {
                     <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
                   ) : null}
                   {!insightsError && !pendingTrainings.length && !attentionEvents.length && !(trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20) ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
-                  {insightsError ? <div className={coachStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
+                  {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
               )}
             </section>
@@ -2028,10 +1665,10 @@ export default function PlayerHomePage() {
           <section className={styles.learningSection}>
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mon parcours d’apprentissage", "My learning journey")}</h2><p>{pickLocaleText(locale, "Progresser dans mon jeu et enrichir mes connaissances.", "Improve my game and grow my knowledge.")}</p></div></div>
             <div className={styles.learningGrid}>
-              <section className={`${coachStyles.panel} ${styles.homeValidationCard}`}>
-                <div className={`${coachStyles.panelHeader} ${styles.learningCardHeader}`}><div><h2>{pickLocaleText(locale, "Mes prochaines validations", "My next validations")}</h2><p>{pickLocaleText(locale, "Les prochains objectifs de chaque section.", "The next goal in each section.")}</p></div><Link className={coachStyles.textLink} href="/player/validations" aria-label={pickLocaleText(locale, "Toutes mes validations", "All my validations")}><ArrowRight size={16} /></Link></div>
-                {insightsLoading ? <div className={`${coachStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /><span /><span /></div> : validationHighlights.length ? (
-                  <div className={`${coachStyles.eventList} ${styles.alignedCardContent}`}>
+              <section className={`${playerUiStyles.panel} ${styles.homeValidationCard}`}>
+                <div className={`${playerUiStyles.panelHeader} ${styles.learningCardHeader}`}><div><h2>{pickLocaleText(locale, "Mes prochaines validations", "My next validations")}</h2><p>{pickLocaleText(locale, "Les prochains objectifs de chaque section.", "The next goal in each section.")}</p></div><Link className={playerUiStyles.textLink} href="/player/validations" aria-label={pickLocaleText(locale, "Toutes mes validations", "All my validations")}><ArrowRight size={16} /></Link></div>
+                {insightsLoading ? <div className={`${playerUiStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /><span /><span /></div> : validationHighlights.length ? (
+                  <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                     {validationHighlights.map(({ section, next }) => {
                       const attempts = next?.attempts.length ?? 0;
                       const href = `/player/validations?section_id=${encodeURIComponent(section.id)}${next ? `&exercise_id=${encodeURIComponent(next.id)}` : ""}`;
@@ -2059,7 +1696,7 @@ export default function PlayerHomePage() {
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
             {insightsLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
               <article className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
+                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
                   <strong className={styles.attendanceValue}>{attendanceInsight.rate} %</strong>
                   <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
@@ -2075,7 +1712,7 @@ export default function PlayerHomePage() {
                 </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
               </article>
               <article className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={coachStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
+                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
                 {meritInsight ? <>
                   <div className={styles.rankLine}>
                     <strong className={styles.rankValue}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
@@ -2093,51 +1730,42 @@ export default function PlayerHomePage() {
           </section>
 
           <div id="player-training-volume" className={styles.volumeRow}>
-            <section className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
-              {loading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
-                {trainingsSummary.objective > 0 ? <Donut percent={trainingsSummary.percent} /> : <div className={coachStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
+            <section className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
+              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
+                {trainingsSummary.objective > 0 ? <Donut percent={trainingsSummary.percent} /> : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
                 <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
                 {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")}</span> : null}
                 {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
               </div>}
             </section>
-            <section className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{pickLocaleText(locale, "Réalisé et objectif FTEM pour chaque semaine du mois.", "Actual volume and FTEM goal for each week of the month.")}</p></div></div>
-              {loading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{pickLocaleText(locale, "Objectif FTEM complet pour chaque semaine, y compris celles à cheval sur deux mois.", "Full FTEM goal for every week, including weeks spanning two months.")}</small> : null}</>}
+            <section className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{pickLocaleText(locale, "Réalisé et objectif FTEM pour chaque semaine du mois.", "Actual volume and FTEM goal for each week of the month.")}</p></div></div>
+              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{pickLocaleText(locale, "Objectif FTEM complet pour chaque semaine, y compris celles à cheval sur deux mois.", "Full FTEM goal for every week, including weeks spanning two months.")}</small> : null}</>}
             </section>
           </div>
 
           <section className={styles.marketplaceSection}>
             <div className={styles.benchmarksHeader}><div><h2>{t("nav.marketplace")}</h2><p>{pickLocaleText(locale, "Acheter, vendre et échanger au sein de vos clubs.", "Buy, sell and exchange within your clubs.")}</p></div></div>
-            <section className={coachStyles.panel}>
-              <div className={coachStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Dernières annonces", "Latest listings")}</h2><p>{pickLocaleText(locale, "Les dernières annonces de vos clubs.", "Latest listings from your clubs.")}</p></div><Link className={coachStyles.textLink} href="/player/marketplace">{pickLocaleText(locale, "Toutes les annonces", "All listings")} <ArrowRight size={14} /></Link></div>
-              {marketplaceLoading ? <div className={coachStyles.skeleton}><span /><span /><span /></div> : latestItems.length ? (
+            <section className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Dernières annonces", "Latest listings")}</h2><p>{pickLocaleText(locale, "Les dernières annonces de vos clubs.", "Latest listings from your clubs.")}</p></div><Link className={playerUiStyles.textLink} href="/player/marketplace">{pickLocaleText(locale, "Toutes les annonces", "All listings")} <ArrowRight size={14} /></Link></div>
+              {marketplaceLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : latestItems.length ? (
                 <div className={"marketplace-list " + styles.marketplaceGrid}>
                   {latestItems.map((item) => <Link key={item.id} href={"/player/marketplace/" + item.id} className="marketplace-link"><div className="marketplace-item"><div className="marketplace-row">
                     <div className="marketplace-thumb">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={thumbByItemId[item.id] || placeholderThumb} alt={item.title} loading="lazy" />
                     </div>
                     <div className="marketplace-body"><div className="marketplace-item-title">{truncate(item.title, 80)}</div>{compactMeta(item, locale) ? <div className="marketplace-meta">{compactMeta(item, locale)}</div> : null}<div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(item, t)}</div></div></div>
                   </div></div></Link>)}
                 </div>
-              ) : <div className={coachStyles.empty}>{t("marketplace.none")}</div>}
+              ) : <div className={playerUiStyles.empty}>{t("marketplace.none")}</div>}
             </section>
           </section>
         </div>
       </div>
       {showProfilePhotoPrompt ? (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1400,
-            background: "rgba(15, 23, 42, 0.38)",
-            display: "grid",
-            placeItems: "center",
-            padding: 16,
-          }}
+          className={styles.photoPromptOverlay}
           onClick={() => {
             if (typeof window !== "undefined" && viewerUserId) {
               window.localStorage.setItem(`player:photo-prompt:dismissed:${viewerUserId}`, "1");
@@ -2146,97 +1774,44 @@ export default function PlayerHomePage() {
           }}
         >
           <div
-            className="glass-card"
-            style={{
-              width: "min(520px, 100%)",
-              background: "#fff",
-              border: "1px solid rgba(0,0,0,0.10)",
-              boxShadow: "0 28px 80px rgba(15,23,42,0.22)",
-              padding: 22,
-              display: "grid",
-              gap: 16,
-            }}
+            className={styles.photoPrompt}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="player-photo-prompt-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div
-                  style={{
-                    width: 68,
-                    height: 68,
-                    borderRadius: "50%",
-                    display: "grid",
-                    placeItems: "center",
-                    background: "linear-gradient(135deg, #166534 0%, #15803d 100%)",
-                    color: "#fff",
-                    fontSize: 24,
-                    fontWeight: 900,
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18)",
-                  }}
-                >
+            <div className={styles.photoPromptIntro}>
+              <div className={styles.photoPromptPreview}>
+                <div className={styles.photoPromptInitials}>
                   {getInitials(profile)}
                 </div>
-                <div
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: "50%",
-                    display: "grid",
-                    placeItems: "center",
-                    background: "#f8fafc",
-                    color: "#64748b",
-                    border: "1px solid #e5e7eb",
-                    flexShrink: 0,
-                  }}
-                >
+                <div className={styles.photoPromptArrow}>
                   <ArrowRight size={18} />
                 </div>
-                <div
-                  style={{
-                    width: 68,
-                    height: 68,
-                    borderRadius: "50%",
-                    overflow: "hidden",
-                    border: "2px solid #e5e7eb",
-                    background: "#fff",
-                    flexShrink: 0,
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                <div className={styles.photoPromptExample}>
                   <img
                     src="https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&w=160&q=80"
                     alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   />
                 </div>
               </div>
-              <div style={{ fontSize: 24, fontWeight: 900, color: "#1f2937" }}>Ajoute ta photo de profil</div>
-              <div style={{ color: "#475569", fontSize: 15, lineHeight: 1.6 }}>
-                Une photo rend ton profil plus sympa et permet aux coachs de t’identifier plus facilement dans l’application.
-              </div>
+              <h2 id="player-photo-prompt-title">{t("playerPhoto.title")}</h2>
+              <p>{t("playerPhoto.description")}</p>
             </div>
 
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                color: "#475569",
-                fontSize: 14,
-              }}
-            >
+            <label className={styles.photoPromptCheck}>
               <input
                 type="checkbox"
                 checked={hidePhotoPromptForever}
                 onChange={(e) => setHidePhotoPromptForever(e.target.checked)}
               />
-              <span>Ne plus afficher</span>
+              <span>{t("playerPhoto.hide")}</span>
             </label>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            <div className={styles.photoPromptActions}>
               <button
                 type="button"
-                className="btn"
+                className={playerUiStyles.secondary}
                 onClick={() => {
                   if (typeof window !== "undefined" && viewerUserId && hidePhotoPromptForever) {
                     window.localStorage.setItem(`player:photo-prompt:dismissed:${viewerUserId}`, "1");
@@ -2244,11 +1819,11 @@ export default function PlayerHomePage() {
                   setShowProfilePhotoPrompt(false);
                 }}
               >
-                Plus tard
+                {t("playerPhoto.later")}
               </button>
               <button
                 type="button"
-                className="btn"
+                className={playerUiStyles.primary}
                 onClick={() => {
                   if (typeof window !== "undefined") {
                     if (viewerUserId && hidePhotoPromptForever) {
@@ -2261,7 +1836,7 @@ export default function PlayerHomePage() {
                   router.push("/player/profile");
                 }}
               >
-                Ajouter ma photo
+                {t("playerPhoto.add")}
               </button>
             </div>
           </div>

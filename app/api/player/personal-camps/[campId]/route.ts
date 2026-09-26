@@ -15,6 +15,30 @@ type DraftDay = {
   items?: DraftItem[] | null;
 };
 
+type CampRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  coach_name: string | null;
+  notes: string | null;
+  status: string;
+};
+
+type CampDayRow = {
+  session_id: string | null;
+  day_index: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_text: string | null;
+};
+
+type SessionItemRow = {
+  session_id: string | null;
+  category: string | null;
+  minutes: number | null;
+  note: string | null;
+};
+
 async function assertCampOwnership(supabaseAdmin: ReturnType<typeof createAdminClient>, campId: string, userId: string) {
   const campRes = await supabaseAdmin
     .from("player_camps")
@@ -24,7 +48,7 @@ async function assertCampOwnership(supabaseAdmin: ReturnType<typeof createAdminC
     .maybeSingle();
   if (campRes.error) return { error: campRes.error.message, status: 400 as const };
   if (!campRes.data?.id) return { error: "Not found", status: 404 as const };
-  return { camp: campRes.data as any };
+  return { camp: campRes.data as CampRow };
 }
 
 async function deleteSessionDeep(supabaseAdmin: ReturnType<typeof createAdminClient>, sessionId: string) {
@@ -67,7 +91,8 @@ export async function GET(
       .order("day_index", { ascending: true });
     if (daysRes.error) return NextResponse.json({ error: daysRes.error.message }, { status: 400 });
 
-    const sessionIds = (daysRes.data ?? []).map((row: any) => String(row.session_id ?? "").trim()).filter(Boolean);
+    const dayRows = (daysRes.data ?? []) as CampDayRow[];
+    const sessionIds = dayRows.map((row) => String(row.session_id ?? "").trim()).filter(Boolean);
     const itemsRes = sessionIds.length
       ? await supabaseAdmin
           .from("training_session_items")
@@ -78,7 +103,7 @@ export async function GET(
     if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 400 });
 
     const itemsBySessionId: Record<string, Array<{ category: string; minutes: number; note: string | null }>> = {};
-    (itemsRes.data ?? []).forEach((row: any) => {
+    ((itemsRes.data ?? []) as SessionItemRow[]).forEach((row) => {
       const sessionId = String(row.session_id ?? "").trim();
       if (!sessionId) return;
       if (!itemsBySessionId[sessionId]) itemsBySessionId[sessionId] = [];
@@ -92,7 +117,7 @@ export async function GET(
     return NextResponse.json({
       camp: {
         ...owned.camp,
-        days: (daysRes.data ?? []).map((row: any) => ({
+        days: dayRows.map((row) => ({
           session_id: String(row.session_id ?? "").trim(),
           day_index: Number(row.day_index ?? 0),
           starts_at: row.starts_at,
@@ -102,8 +127,8 @@ export async function GET(
         })),
       },
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 
@@ -164,7 +189,11 @@ export async function PATCH(
       .order("day_index", { ascending: true });
     if (existingDaysRes.error) return NextResponse.json({ error: existingDaysRes.error.message }, { status: 400 });
 
-    const existingSessionIds = new Set((existingDaysRes.data ?? []).map((row: any) => String(row.session_id ?? "").trim()).filter(Boolean));
+    const existingSessionIds = new Set(
+      ((existingDaysRes.data ?? []) as Array<Pick<CampDayRow, "session_id">>)
+        .map((row) => String(row.session_id ?? "").trim())
+        .filter(Boolean)
+    );
     const nextSessionIds = new Set(days.map((day) => normalizeText(day.session_id)).filter(Boolean));
 
     for (const sessionId of existingSessionIds) {
@@ -267,7 +296,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({ ok: true, campId });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }

@@ -12,6 +12,7 @@ import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -430,13 +431,18 @@ export default function CoachEventPlayerFeedbackEditPage() {
       const prepareJson = await prepareRes.json().catch(() => ({}));
       if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
 
+      const uploadBucket = String(prepareJson?.bucket ?? "").trim();
       const uploadPath = String(prepareJson?.path ?? "").trim();
       const uploadToken = String(prepareJson?.token ?? "").trim();
-      if (!uploadPath || !uploadToken) throw new Error("Upload initialization failed");
+      const reservationToken = String(prepareJson?.reservation_token ?? "").trim();
+      const normalizedMimeType = String(prepareJson?.mime_type ?? "").trim();
+      if (!uploadBucket || !uploadPath || !uploadToken || !reservationToken || !normalizedMimeType) {
+        throw new Error("Upload initialization failed");
+      }
 
-      const uploadRes = await supabase.storage.from("marketplace").uploadToSignedUrl(uploadPath, uploadToken, uploadFile, {
+      const uploadRes = await supabase.storage.from(uploadBucket).uploadToSignedUrl(uploadPath, uploadToken, uploadFile, {
         upsert: false,
-        contentType: uploadFile.type || "application/octet-stream",
+        contentType: normalizedMimeType,
       });
       if (uploadRes.error) throw new Error(uploadRes.error.message);
 
@@ -452,9 +458,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
           coach_only: docCoachOnly,
           club_event_id: eventId,
           storage_path: uploadPath,
+          reservation_token: reservationToken,
           original_name: uploadFile.name,
           file_name: finalDocName,
-          mime_type: uploadFile.type,
+          mime_type: normalizedMimeType,
           size_bytes: uploadFile.size,
         }),
       });
@@ -833,6 +840,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
                 <input
                   ref={docFileInputRef}
                   type="file"
+                  accept={PLAYER_DOCUMENT_ACCEPT}
                   onChange={onPickDocument}
                   style={{ display: "none" }}
                 />

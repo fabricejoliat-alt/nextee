@@ -19,7 +19,7 @@ import {
 import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 import { ArrowLeft, ClipboardCheck, Eye, MapPin } from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
-import corporateStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import activityStyles from "../PlayerActivities.module.css";
 import styles from "./PlayerTrainingNew.module.css";
@@ -923,14 +923,14 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           <>
             <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: clubEventId ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
             <div className={clubEventId ? styles.evaluationHero : "glass-section"}>
-          <header className={clubEventId ? corporateStyles.topline : "marketplace-header"}>
+          <header className={clubEventId ? playerUiStyles.topline : "marketplace-header"}>
             <div style={{ display: "grid", gap: 10 }}>
               <h1 className={clubEventId ? undefined : "section-title"} style={{ marginBottom: 0 }}>
                 {clubEventId
                   ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity")
                   : pickLocaleText(locale, "Ajouter un entraînement", "Add training")}
               </h1>
-              <p className={clubEventId ? corporateStyles.lead : "section-subtitle"}>
+              <p className={clubEventId ? playerUiStyles.lead : "section-subtitle"}>
                 {clubEventId
                   ? viewOnly ? pickLocaleText(locale, "Consultez les informations et le contenu de cette activité.", "Review this activity’s information and content.") : linkedEvent?.requires_evaluation === false ? pickLocaleText(locale, "Cette évaluation est facultative et n’alimente aucune tâche en retard.", "This evaluation is optional and does not create an overdue task.") : pickLocaleText(locale, "Complétez la structure réalisée et partagez votre ressenti.", "Complete the activity structure and share your feedback.")
                   : pickLocaleText(locale, "Renseigne la structure réalisée et ton ressenti.", "Enter the completed structure and your feedback.")}
@@ -938,7 +938,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
             </div>
 
             <div className={clubEventId ? styles.heroActions : "marketplace-actions"} style={{ marginTop: 2 }}>
-              <Link className={clubEventId ? `${corporateStyles.secondary} ${styles.backButton}` : "btn"} href={clubEventId ? "/player/golf/trainings?type=all" : "/player/golf/trainings?type=training"}>
+              <Link className={clubEventId ? `${playerUiStyles.secondary} ${styles.backButton}` : "btn"} href={clubEventId ? "/player/golf/trainings?type=all" : "/player/golf/trainings?type=training"}>
                 {clubEventId ? <ArrowLeft size={15} aria-hidden="true" /> : null}
                 {clubEventId ? pickLocaleText(locale, "Retour aux activités", "Back to activities") : t("common.back")}
               </Link>

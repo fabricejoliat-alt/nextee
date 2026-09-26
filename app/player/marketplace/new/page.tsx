@@ -9,6 +9,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { MARKETPLACE_CONDITIONS, marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 
 const CATEGORIES = [
   "Driver",
@@ -30,8 +31,6 @@ const CATEGORIES = [
   "Divers",
 ] as const;
 
-const CONDITIONS = ["New", "Like new", "Good condition", "To repair"] as const;
-
 function MarketplaceFormSkeleton() {
   return <div className="marketplace-form-skeleton" aria-hidden="true">
     <span className="marketplace-form-skeleton-field marketplace-form-skeleton-wide" />
@@ -47,18 +46,9 @@ export default function MarketplaceNew() {
   const router = useRouter();
   const conditionOptions = useMemo(
     () =>
-      CONDITIONS.map((value) => ({
+      MARKETPLACE_CONDITIONS.map((value) => ({
         value,
-        label:
-          locale === "fr"
-            ? value === "New"
-              ? "Neuf"
-              : value === "Like new"
-              ? "Comme neuf"
-              : value === "Good condition"
-              ? "Bon état"
-              : "À réparer"
-            : value,
+        label: marketplaceConditionLabel(locale, value),
       })),
     [locale]
   );
@@ -357,7 +347,7 @@ export default function MarketplaceNew() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Ajouter une annonce" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("player.newListing") }]} />
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">

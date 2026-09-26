@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isOrgMemberActive, isOrgStaffMember, requireCaller } from "@/app/api/messages/_lib";
+import { ensurePlayerTeamThread } from "@/app/api/messages/teamThread";
 
 type NewThreadBody = {
   organization_id: string;
@@ -49,52 +50,9 @@ async function ensureDefaultPlayerStaffThreads(
     new Set(staffMembers.map((r) => String(r.user_id ?? "").trim()).filter(Boolean))
   );
   if (staffIds.length === 0) return;
-  const coachIds: string[] = Array.from(
-    new Set(
-      staffMembers
-        .filter((r) => String(r.role ?? "") === "coach")
-        .map((r) => String(r.user_id ?? "").trim())
-        .filter(Boolean)
-    )
-  );
-
   const guardianIds: string[] = Array.from(
     new Set((guardianRes.data ?? []).map((r: any) => String((r as any).guardian_user_id ?? "").trim()).filter(Boolean))
   );
-
-  const playerGroupsRes = await supabaseAdmin
-    .from("coach_group_players")
-    .select("group_id")
-    .eq("player_user_id", callerId);
-  if (playerGroupsRes.error) return;
-  const rawGroupIds = Array.from(
-    new Set((playerGroupsRes.data ?? []).map((r: any) => String(r.group_id ?? "").trim()).filter(Boolean))
-  );
-  let teamCoachIds: string[] = [];
-  if (rawGroupIds.length > 0) {
-    const [groupCoachesRes, activeCoachMembersRes] = await Promise.all([
-      supabaseAdmin
-        .from("coach_group_coaches")
-        .select("group_id,coach_user_id")
-        .in("group_id", rawGroupIds),
-      supabaseAdmin
-        .from("club_members")
-        .select("user_id")
-        .eq("is_active", true)
-        .eq("role", "coach"),
-    ]);
-    if (groupCoachesRes.error || activeCoachMembersRes.error) return;
-    const activeCoachIds = new Set(
-      (activeCoachMembersRes.data ?? []).map((r: any) => String(r.user_id ?? "").trim()).filter(Boolean)
-    );
-    teamCoachIds = Array.from(
-      new Set(
-        (groupCoachesRes.data ?? [])
-          .map((r: any) => String(r.coach_user_id ?? "").trim())
-          .filter((id: string) => Boolean(id) && activeCoachIds.has(id))
-      )
-    );
-  }
 
   const threadSelect =
     "id,organization_id,thread_type,title,group_id,event_id,player_id,created_by,is_locked,is_active,created_at,updated_at";
@@ -152,78 +110,12 @@ async function ensureDefaultPlayerStaffThreads(
     await supabaseAdmin.from("thread_participants").upsert(participantRows, { onConflict: "thread_id,user_id" });
   }
 
-  // Ensure one staff-only team thread for this player in this organization.
-  const existingTeamThreadRes = await supabaseAdmin
-    .from("message_threads")
-    .select(`${threadSelect},player_thread_scope`)
-    .eq("organization_id", organizationId)
-    .eq("thread_type", "player")
-    .eq("player_id", callerId)
-    .eq("is_active", true)
-    .eq("player_thread_scope", "team")
-    .limit(1)
-    .maybeSingle();
-  if (existingTeamThreadRes.error) return;
-
-  let teamThreadId = String((existingTeamThreadRes.data as any)?.id ?? "");
-  if (!teamThreadId && teamCoachIds.length > 0) {
-    const preferredActor = teamCoachIds[0] ?? callerId;
-    const insTeamRes = await supabaseAdmin
-      .from("message_threads")
-      .insert({
-        organization_id: organizationId,
-        thread_type: "player",
-        title: "Fil équipe coachs + joueur + parent(s)",
-        player_id: callerId,
-        player_thread_scope: "team",
-        created_by: preferredActor,
-        is_locked: false,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-    if (insTeamRes.error) return;
-    teamThreadId = String((insTeamRes.data as any)?.id ?? "");
-  }
-  if (!teamThreadId) return;
-
-  const teamParticipantRows: Array<{ thread_id: string; user_id: string; can_post: boolean }> = [
-    ...teamCoachIds.map((sid) => ({
-      thread_id: teamThreadId,
-      user_id: sid,
-      can_post: true,
-    })),
-    { thread_id: teamThreadId, user_id: callerId, can_post: true },
-    ...guardianIds.map((gid) => ({
-      thread_id: teamThreadId,
-      user_id: gid,
-      can_post: true,
-    })),
-  ];
-  if (teamParticipantRows.length > 0) {
-    await supabaseAdmin.from("thread_participants").upsert(teamParticipantRows, { onConflict: "thread_id,user_id" });
-  }
-  const existingTeamParticipantsRes = await supabaseAdmin
-    .from("thread_participants")
-    .select("user_id")
-    .eq("thread_id", teamThreadId);
-  if (!existingTeamParticipantsRes.error) {
-    const allowed = new Set([...teamCoachIds, callerId, ...guardianIds]);
-    const toRemove = Array.from(
-      new Set(
-        (existingTeamParticipantsRes.data ?? [])
-          .map((r: any) => String(r.user_id ?? "").trim())
-          .filter((uid: string) => Boolean(uid) && !allowed.has(uid))
-      )
-    );
-    if (toRemove.length > 0) {
-      await supabaseAdmin
-        .from("thread_participants")
-        .delete()
-        .eq("thread_id", teamThreadId)
-        .in("user_id", toRemove);
-    }
-  }
+  await ensurePlayerTeamThread({
+    supabaseAdmin,
+    organizationId,
+    playerId: callerId,
+    createdBy: callerId,
+  });
 }
 
 export async function GET(req: NextRequest) {

@@ -13,7 +13,7 @@ import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
-import managerStyles from "@/app/manager/camps/Camps.module.css";
+import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import PlayerTrainingNewClient from "./new/PlayerTrainingNewClient";
 import styles from "./PlayerActivities.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
@@ -84,7 +84,7 @@ export default function PlayerActivitiesPage(){
 
   return <div className={`player-dashboard-bg ${styles.page}`}><div className={`app-shell ${styles.shell}`}>
     <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:tr("Mes activités","My activities")}]} />
-    <header className={managerStyles.topline}><div><h1>{tr("Mes activités","My activities")}</h1><p className={managerStyles.lead}>{tr("Retrouvez votre programme, confirmez vos présences et complétez vos évaluations.","Review your schedule, confirm attendance and complete your evaluations.")}</p></div></header>
+    <header className={playerUiStyles.topline}><div><h1>{tr("Mes activités","My activities")}</h1><p className={playerUiStyles.lead}>{tr("Retrouvez votre programme, confirmez vos présences et complétez vos évaluations.","Review your schedule, confirm attendance and complete your evaluations.")}</p></div></header>
     {error?<div className={styles.error} role="alert">{error}</div>:null}
     <section aria-label={tr("Vue d’ensemble","Overview")}><div className={styles.statsGrid}>
       <AttendanceStat icon={<Users size={18}/>} label={tr("Assiduité du mois","Monthly attendance")} rate={stats.attendance} present={stats.attendancePresent} expected={stats.attendanceExpected} trend={stats.trend} locale={locale}/>

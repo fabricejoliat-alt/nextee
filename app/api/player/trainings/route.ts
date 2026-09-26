@@ -1,11 +1,80 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
+type AttendanceStatus = "expected" | "present" | "absent" | "excused" | "not_registered";
+
+type AttendeeRow = {
+  event_id: string | null;
+  status: AttendanceStatus | null;
+};
+
+type TrainingSessionRow = {
+  id: string | null;
+  start_at: string | null;
+  location_text: string | null;
+  session_type: string | null;
+  club_id: string | null;
+  total_minutes: number | null;
+  motivation: number | null;
+  difficulty: number | null;
+  satisfaction: number | null;
+  created_at: string | null;
+  club_event_id: string | null;
+};
+
+type ClubEventRow = {
+  id: string | null;
+  event_type: string | null;
+  title: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  duration_minutes: number | null;
+  location_text: string | null;
+  club_id: string | null;
+  group_id: string | null;
+  series_id: string | null;
+  status: string | null;
+  requires_evaluation: boolean | null;
+  competition_level: string | null;
+  competition_category: string | null;
+  external_registration_url: string | null;
+  competition_note: string | null;
+};
+
+type CampDayRow = {
+  session_id: string | null;
+  camp_id: string | null;
+  day_index: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_text: string | null;
+};
+
+type CampRow = {
+  id: string | null;
+  title: string | null;
+  coach_name: string | null;
+  notes: string | null;
+  status: string | null;
+};
+
+type SessionCampMeta = {
+  player_camp_id: string;
+  player_camp_title: string | null;
+  player_camp_coach_name: string | null;
+  player_camp_notes: string | null;
+  player_camp_day_index: number;
+  player_camp_starts_at: string | null;
+  player_camp_ends_at: string | null;
+  player_camp_location_text: string | null;
+};
+
+type NamedRow = { id: string | null; name: string | null };
+type MembershipRow = { club_id: string | null };
 
 function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
@@ -13,52 +82,15 @@ function uniq(values: Array<string | null | undefined>) {
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const viewerUserId = callerData.user.id;
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
-
-    const membershipsRes = await supabaseAdmin
-      .from("club_members")
-      .select("role")
-      .eq("user_id", viewerUserId)
-      .eq("is_active", true);
-    if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
-
-    const roles = new Set(((membershipsRes.data ?? []) as Array<{ role: string | null }>).map((r) => String(r.role ?? "")));
-    const isParent = roles.has("parent");
-
-    let effectiveUserId = viewerUserId;
-    if (isParent && childId) {
-      const linkRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", viewerUserId)
-        .eq("player_id", childId)
-        .or("can_view.is.null,can_view.eq.true")
-        .maybeSingle();
-      if (linkRes.error) return NextResponse.json({ error: linkRes.error.message }, { status: 400 });
-      if (linkRes.data?.player_id) {
-        effectiveUserId = String(linkRes.data.player_id);
-      }
-    }
-    if (isParent && effectiveUserId === viewerUserId) {
-      const childrenRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,is_primary")
-        .eq("guardian_user_id", viewerUserId)
-        .or("can_view.is.null,can_view.eq.true")
-        .order("is_primary", { ascending: false })
-        .limit(1);
-      if (childrenRes.error) return NextResponse.json({ error: childrenRes.error.message }, { status: 400 });
-      const fallbackChildId = String(childrenRes.data?.[0]?.player_id ?? "").trim();
-      if (fallbackChildId) effectiveUserId = fallbackChildId;
-    }
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
+    const viewerUserId = access.actorUserId;
+    const effectiveUserId = access.subjectPlayerId;
 
     const [perfRes, profileRes, activeMembershipsRes, sessionsRes, attendeeRes, competitionRes] = await Promise.all([
       supabaseAdmin
@@ -102,12 +134,12 @@ export async function GET(req: NextRequest) {
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (competitionRes.error) return NextResponse.json({ error: competitionRes.error.message }, { status: 400 });
 
-    const sessions = sessionsRes.data ?? [];
-    const attendeeRows = attendeeRes.data ?? [];
-    const eventIds = uniq(attendeeRows.map((r: any) => r.event_id));
-    const attendeeStatusByEventId: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null> = {};
-    attendeeRows.forEach((r: any) => {
-      attendeeStatusByEventId[String(r.event_id)] = (r.status ?? null) as any;
+    const sessions = (sessionsRes.data ?? []) as TrainingSessionRow[];
+    const attendeeRows = (attendeeRes.data ?? []) as AttendeeRow[];
+    const eventIds = uniq(attendeeRows.map((row) => row.event_id));
+    const attendeeStatusByEventId: Record<string, AttendanceStatus | null> = {};
+    attendeeRows.forEach((row) => {
+      attendeeStatusByEventId[String(row.event_id)] = row.status ?? null;
     });
 
     const eventsRes = eventIds.length
@@ -116,33 +148,35 @@ export async function GET(req: NextRequest) {
           .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status,requires_evaluation,competition_level,competition_category,external_registration_url,competition_note")
           .in("id", eventIds)
           .order("starts_at", { ascending: false })
-      : ({ data: [], error: null } as any);
+      : { data: [] as ClubEventRow[], error: null };
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
-    const attendeeEvents = eventsRes.data ?? [];
+    const attendeeEvents = (eventsRes.data ?? []) as ClubEventRow[];
 
-    const sessionIds = uniq((sessions as any[]).map((row: any) => row.id));
+    const sessionIds = uniq(sessions.map((row) => row.id));
     const campDaysRes = sessionIds.length
       ? await supabaseAdmin
           .from("player_camp_days")
           .select("session_id,camp_id,day_index,starts_at,ends_at,location_text")
           .in("session_id", sessionIds)
-      : ({ data: [], error: null } as any);
+      : { data: [] as CampDayRow[], error: null };
     if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+    const campDays = (campDaysRes.data ?? []) as CampDayRow[];
 
-    const campIds = uniq((campDaysRes.data ?? []).map((row: any) => row.camp_id));
+    const campIds = uniq(campDays.map((row) => row.camp_id));
     const campsRes = campIds.length
       ? await supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status").in("id", campIds)
-      : ({ data: [], error: null } as any);
+      : { data: [] as CampRow[], error: null };
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
+    const camps = (campsRes.data ?? []) as CampRow[];
 
-    const campById: Record<string, any> = {};
-    (campsRes.data ?? []).forEach((row: any) => {
+    const campById: Record<string, CampRow> = {};
+    camps.forEach((row) => {
       const id = String(row.id ?? "").trim();
       if (id) campById[id] = row;
     });
 
-    const sessionCampMetaBySessionId: Record<string, any> = {};
-    (campDaysRes.data ?? []).forEach((row: any) => {
+    const sessionCampMetaBySessionId: Record<string, SessionCampMeta> = {};
+    campDays.forEach((row) => {
       const sessionId = String(row.session_id ?? "").trim();
       const campId = String(row.camp_id ?? "").trim();
       if (!sessionId || !campId) return;
@@ -159,36 +193,36 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const enrichedSessions = (sessions as any[]).map((session: any) => ({
+    const enrichedSessions = sessions.map((session) => ({
       ...session,
       ...(sessionCampMetaBySessionId[String(session.id ?? "").trim()] ?? {}),
     }));
 
     const clubIds = uniq([
-      ...enrichedSessions.map((s: any) => s.club_id),
-      ...attendeeEvents.map((e: any) => e.club_id),
+      ...enrichedSessions.map((session) => session.club_id),
+      ...attendeeEvents.map((event) => event.club_id),
     ]);
-    const groupIds = uniq(attendeeEvents.map((e: any) => e.group_id));
+    const groupIds = uniq(attendeeEvents.map((event) => event.group_id));
 
     const [clubsRes, groupsRes] = await Promise.all([
       clubIds.length
         ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds)
-        : ({ data: [], error: null } as any),
+        : { data: [] as NamedRow[], error: null },
       groupIds.length
         ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds)
-        : ({ data: [], error: null } as any),
+        : { data: [] as NamedRow[], error: null },
     ]);
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
 
     const clubNameById: Record<string, string> = {};
-    (clubsRes.data ?? []).forEach((c: any) => {
-      clubNameById[String(c.id)] = String(c.name ?? "Club");
+    ((clubsRes.data ?? []) as NamedRow[]).forEach((club) => {
+      clubNameById[String(club.id)] = String(club.name ?? "Club");
     });
 
     const groupNameById: Record<string, string> = {};
-    (groupsRes.data ?? []).forEach((g: any) => {
-      groupNameById[String(g.id)] = String(g.name ?? "Groupe");
+    ((groupsRes.data ?? []) as NamedRow[]).forEach((group) => {
+      groupNameById[String(group.id)] = String(group.name ?? "Groupe");
     });
 
     const fullName = `${String(profileRes.data?.first_name ?? "").trim()} ${String(profileRes.data?.last_name ?? "").trim()}`.trim();
@@ -202,11 +236,14 @@ export async function GET(req: NextRequest) {
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents: competitionRes.data ?? [],
-      activeClubCount: uniq((activeMembershipsRes.data ?? []).map((row: any) => row.club_id)).length,
+      activeClubCount: uniq(((activeMembershipsRes.data ?? []) as MembershipRow[]).map((row) => row.club_id)).length,
       clubNameById,
       groupNameById,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

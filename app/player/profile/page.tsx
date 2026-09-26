@@ -590,7 +590,6 @@ export default function PlayerProfilePage() {
     };
 
     if (viewerRole === "player") {
-      upsertPayload.birth_date = birthDate.trim() || null;
       upsertPayload.sex = sex.trim() || null;
       upsertPayload.handedness = handedness || null;
       upsertPayload.avs_no = avsNo.trim() || null;
@@ -1021,14 +1020,7 @@ export default function PlayerProfilePage() {
 
                   {viewerRole === "player" && (
                     <>
-                      <Field label={t("playerProfile.birthDate")}>
-                        <input
-                          type="date"
-                          value={birthDate}
-                          onChange={(e) => setBirthDate(e.target.value)}
-                          style={{ width: "100%", maxWidth: "100%", minWidth: 0, display: "block" }}
-                        />
-                      </Field>
+                      <StaticField label={t("playerProfile.birthDate")} value={birthDate} />
 
                       <StaticField label={t("playerProfile.category")} value={juniorCategory} />
 

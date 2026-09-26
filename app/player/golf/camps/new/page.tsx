@@ -47,6 +47,30 @@ type DayDraft = {
   items: DayItemDraft[];
 };
 
+type CampApiItem = {
+  category?: unknown;
+  minutes?: unknown;
+  note?: unknown;
+};
+
+type CampApiDay = {
+  session_id?: unknown;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  location_text?: unknown;
+  items?: CampApiItem[] | null;
+};
+
+type CampApiResponse = {
+  error?: unknown;
+  camp?: {
+    title?: unknown;
+    coach_name?: unknown;
+    notes?: unknown;
+    days?: CampApiDay[] | null;
+  } | null;
+};
+
 function nextLocalDateTime(daysOffset: number, hour: number, minute = 0) {
   const d = new Date();
   d.setDate(d.getDate() + daysOffset);
@@ -121,7 +145,7 @@ export default function PlayerCampNewPage() {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
-        const json = await res.json().catch(() => ({}));
+        const json = (await res.json().catch(() => ({}))) as CampApiResponse;
         if (!res.ok) throw new Error(String(json?.error ?? "Load failed"));
         if (cancelled) return;
 
@@ -131,14 +155,14 @@ export default function PlayerCampNewPage() {
         setNotes(String(camp?.notes ?? ""));
         setDays(
           (Array.isArray(camp?.days) && camp.days.length > 0
-            ? camp.days.map((day: any) => ({
+            ? camp.days.map((day) => ({
                 session_id: String(day?.session_id ?? "").trim() || null,
                 starts_at: toLocalInputValue(day?.starts_at),
                 ends_at: toLocalInputValue(day?.ends_at),
                 location_text: String(day?.location_text ?? ""),
                 items:
                   Array.isArray(day?.items) && day.items.length > 0
-                    ? day.items.map((item: any) => ({
+                    ? day.items.map((item) => ({
                         category: String(item?.category ?? ""),
                         minutes: String(item?.minutes ?? ""),
                         note: String(item?.note ?? ""),
@@ -147,8 +171,10 @@ export default function PlayerCampNewPage() {
               }))
             : [newDay(0)]) as DayDraft[]
         );
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? pickLocaleText(locale, "Chargement impossible.", "Load failed."));
+      } catch (cause: unknown) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : pickLocaleText(locale, "Chargement impossible.", "Load failed."));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -261,8 +287,16 @@ export default function PlayerCampNewPage() {
       invalidateClientPageCacheByPrefix("page-cache:player-home:");
       invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
       router.push("/player/golf/trainings?type=camp");
-    } catch (e: any) {
-      setError(e?.message ?? pickLocaleText(locale, isEditing ? "Mise à jour impossible." : "Création impossible.", isEditing ? "Update failed." : "Creation failed."));
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : pickLocaleText(
+              locale,
+              isEditing ? "Mise à jour impossible." : "Création impossible.",
+              isEditing ? "Update failed." : "Creation failed."
+            )
+      );
       setBusy(false);
       return;
     }
@@ -271,7 +305,7 @@ export default function PlayerCampNewPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Stages/camps", href: "/player/camps" }, { label: "Ajouter" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("player.camps"), href: "/player/camps" }, { label: t("common.add") }]} />
         {loading ? (
           <div className="glass-section">
             <div className="glass-card" style={{ fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>

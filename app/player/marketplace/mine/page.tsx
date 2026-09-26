@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -8,6 +8,8 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
+import type { AppLocale } from "@/lib/i18n/messages";
 
 type Item = {
   id: string;
@@ -34,10 +36,11 @@ function truncate(s: string, max: number) {
   return t.slice(0, max - 1) + "…";
 }
 
-function compactMeta(it: Item) {
+function compactMeta(it: Item, locale: AppLocale) {
   const parts: string[] = [];
   if (it.category) parts.push(it.category);
-  if (it.condition) parts.push(it.condition);
+  const conditionLabel = marketplaceConditionLabel(locale, it.condition);
+  if (conditionLabel) parts.push(conditionLabel);
   const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
   if (bm) parts.push(bm);
   return parts.join(" • ");
@@ -50,16 +53,13 @@ function priceLabel(it: Item, t: (key: string) => string) {
 }
 
 export default function MarketplaceMine() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [clubId, setClubId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [mainImageByItemId, setMainImageByItemId] = useState<Record<string, string>>({});
-
-  const bucket = "marketplace";
 
   const placeholderSvg = useMemo(() => {
     const svg = `
@@ -72,7 +72,7 @@ export default function MarketplaceMine() {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -98,18 +98,18 @@ export default function MarketplaceMine() {
       return;
     }
 
-    setClubId(String(json?.preferredClubId ?? ""));
-
     const list = (json?.items ?? []) as Item[];
     setItems(list);
     setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
 
     setLoading(false);
-  }
+  }, [t]);
 
   useEffect(() => {
-    load();
-  }, []);
+    // Remote data loading is the synchronization performed by this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [load]);
 
   async function toggleActive(it: Item) {
     if (busy) return;
@@ -145,7 +145,7 @@ export default function MarketplaceMine() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Marketplace", href: "/player/marketplace" }, { label: "Mes annonces" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("player.myListings") }]} />
 
         {/* Header */}
         <div className="glass-section">
@@ -186,7 +186,7 @@ export default function MarketplaceMine() {
             <div className="marketplace-list">
               {items.map((it) => {
                 const img = mainImageByItemId[it.id] || placeholderSvg;
-                const meta = compactMeta(it);
+                const meta = compactMeta(it, locale);
 
                 return (
                   <div key={it.id} className="marketplace-item" style={{ opacity: it.is_active ? 1 : 0.75 }}>

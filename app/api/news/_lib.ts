@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { ageBandKeyFromBirthDate, type NewsTargetInput, type NewsTargetType } from "@/app/api/manager/news/_lib";
+import { loadPlayerActorAuthorization, resolvePlayerAccessContext } from "@/app/api/player/access";
 
 export type VisibleNewsRow = {
   id: string;
@@ -226,24 +227,16 @@ export async function resolvePlayerNewsContext(args: {
   callerId: string;
   requestedChildId: string | null;
 }) {
-  const linksRes = await args.supabaseAdmin
-    .from("player_guardians")
-    .select("player_id,is_primary")
-    .eq("guardian_user_id", args.callerId);
-  if (linksRes.error) throw new Error(linksRes.error.message);
-
-  const links = (linksRes.data ?? []) as Array<{ player_id: string | null; is_primary?: boolean | null }>;
-  const linkedPlayerIds = links.map((row) => String(row.player_id ?? "").trim()).filter(Boolean);
-  const isParentViewer = linkedPlayerIds.length > 0;
-
-  let effectivePlayerId = args.callerId;
-  if (isParentViewer) {
-    effectivePlayerId =
-      (args.requestedChildId && linkedPlayerIds.includes(args.requestedChildId) && args.requestedChildId) ||
-      String(links.find((row) => Boolean(row.is_primary))?.player_id ?? "").trim() ||
-      linkedPlayerIds[0] ||
-      args.callerId;
-  }
+  const actor = await loadPlayerActorAuthorization(args.supabaseAdmin, args.callerId);
+  const access = await resolvePlayerAccessContext({
+    supabaseAdmin: args.supabaseAdmin,
+    actorUserId: args.callerId,
+    actorRoles: actor.actorRoles,
+    guardianLinks: actor.guardianLinks,
+    requestedPlayerId: args.requestedChildId,
+    mode: "view",
+  });
+  const effectivePlayerId = access.subjectPlayerId;
 
   const [profileRes, membershipsRes, groupsRes] = await Promise.all([
     args.supabaseAdmin
@@ -280,7 +273,7 @@ export async function resolvePlayerNewsContext(args: {
   const profile = profileRes.data as { first_name?: string | null; last_name?: string | null; birth_date?: string | null } | null;
 
   return {
-    viewerRole: isParentViewer ? ("parent" as const) : ("player" as const),
+    viewerRole: access.viewerRole,
     actorUserId: args.callerId,
     effectivePlayerId,
     effectivePlayerName: fullName(profile?.first_name ?? null, profile?.last_name ?? null),

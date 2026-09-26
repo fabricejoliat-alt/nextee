@@ -1,40 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-
-    const callerId = String(callerData.user.id ?? "").trim();
     const url = new URL(req.url);
     const eventId = String(url.searchParams.get("event_id") ?? "").trim();
     const childId = String(url.searchParams.get("child_id") ?? "").trim();
     if (!eventId) return NextResponse.json({ attendees: [] });
-
-    let effectivePlayerId = callerId;
-    if (childId && childId !== callerId) {
-      const guardianRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", callerId)
-        .eq("player_id", childId)
-        .eq("can_view", true)
-        .maybeSingle();
-      if (guardianRes.error) return NextResponse.json({ error: guardianRes.error.message }, { status: 400 });
-      if (!guardianRes.data?.player_id) return NextResponse.json({ attendees: [] });
-      effectivePlayerId = String(guardianRes.data.player_id);
-    }
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "view",
+    });
+    const { supabaseAdmin } = access;
+    const effectivePlayerId = access.subjectPlayerId;
 
     const accessCheck = await supabaseAdmin
       .from("club_event_attendees")
@@ -186,6 +169,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ attendees });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: playerAccessErrorStatus(e) });
   }
 }

@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { isOwnedPlayerDocumentPath } from "@/lib/playerDocumentUpload";
+import {
+  playerDocumentStorageBucket,
+  removePlayerDocumentObject,
+  validatePlayerDocumentEventLink,
+} from "@/lib/playerDocumentStorage";
 
 export async function DELETE(
   req: NextRequest,
@@ -17,7 +23,7 @@ export async function DELETE(
 
     const docRes = await supabaseAdmin
       .from("player_dashboard_documents")
-      .select("id,organization_id,storage_path,uploaded_by,club_event_id")
+      .select("id,organization_id,storage_bucket,storage_path,uploaded_by,club_event_id")
       .eq("id", documentId)
       .eq("player_id", playerId)
       .maybeSingle();
@@ -44,7 +50,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Only uploader can delete this document" }, { status: 403 });
     }
 
-    await supabaseAdmin.storage.from("marketplace").remove([String(docRes.data.storage_path ?? "")]);
+    const storagePath = String(docRes.data.storage_path ?? "").trim();
+    const organizationId = String(docRes.data.organization_id ?? "").trim();
+    const storageBucket = playerDocumentStorageBucket(docRes.data.storage_bucket);
+    if (!isOwnedPlayerDocumentPath(storagePath, organizationId, playerId)) {
+      return NextResponse.json({ error: "Invalid document storage path" }, { status: 409 });
+    }
+
+    const storageError = await removePlayerDocumentObject(supabaseAdmin, storageBucket, storagePath);
+    if (storageError) return NextResponse.json({ error: storageError }, { status: 502 });
     const delRes = await supabaseAdmin.from("player_dashboard_documents").delete().eq("id", documentId);
     if (delRes.error) return NextResponse.json({ error: delRes.error.message }, { status: 400 });
 
@@ -110,6 +124,15 @@ export async function PATCH(
     }
     if (String((docRes.data as any).uploaded_by ?? "") !== callerId) {
       return NextResponse.json({ error: "Only uploader can rename this document" }, { status: 403 });
+    }
+    if (hasClubEventId) {
+      const eventError = await validatePlayerDocumentEventLink(
+        supabaseAdmin,
+        String(docRes.data.organization_id ?? ""),
+        playerId,
+        nextClubEventId || null
+      );
+      if (eventError) return NextResponse.json({ error: eventError }, { status: 400 });
     }
 
     const patch: Record<string, unknown> = {};

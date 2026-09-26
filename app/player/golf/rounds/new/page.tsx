@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./NewRound.module.css";
 
@@ -38,8 +39,15 @@ type OmCompetitionLevelSelect = OmCompetitionLevel | "exceptional";
 type OmCompetitionFormat = "stroke_play_individual" | "match_play_individual";
 type ExceptionalTournamentRow = { id: string; name: string };
 type OmMatchResult = "won" | "lost";
+type UnknownRecord = Record<string, unknown>;
 
-function safeStr(v: any) {
+function asRecord(value: unknown): UnknownRecord | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : null;
+}
+
+function safeStr(v: unknown) {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
@@ -51,19 +59,26 @@ function norm(s: string) {
     .trim();
 }
 
-function normalizeCourses(payload: any): ApiCourseLite[] {
-  const arr = payload?.courses ?? payload?.data ?? payload?.results ?? payload ?? [];
+function normalizeCourses(payload: unknown): ApiCourseLite[] {
+  const root = asRecord(payload);
+  const arr = root?.courses ?? root?.data ?? root?.results ?? payload ?? [];
   if (!Array.isArray(arr)) return [];
 
-  return arr
-    .map((c: any) => ({
-      id: c.id ?? c.course_id ?? c.uuid ?? c._id,
-      course_name: c.course_name ?? c.name ?? "",
-      club_name: c.club_name ?? "",
-      city: c.location?.city ?? "",
-      country: c.location?.country ?? "",
-    }))
-    .filter((x: any) => x.id != null && x.course_name);
+  return arr.flatMap((value): ApiCourseLite[] => {
+    const course = asRecord(value);
+    if (!course) return [];
+    const id = course.id ?? course.course_id ?? course.uuid ?? course._id;
+    const courseName = safeStr(course.course_name ?? course.name).trim();
+    if ((typeof id !== "string" && typeof id !== "number") || !courseName) return [];
+    const location = asRecord(course.location);
+    return [{
+      id,
+      course_name: courseName,
+      club_name: safeStr(course.club_name),
+      city: safeStr(location?.city),
+      country: safeStr(location?.country),
+    }];
+  });
 }
 
 function wantedTee(teeName: string, gender: "male" | "female") {
@@ -78,40 +93,45 @@ function wantedTee(teeName: string, gender: "male" | "female") {
   return null;
 }
 
-function normalizeTees(courseDetail: any): ApiTee[] {
-  const root = courseDetail?.course ?? courseDetail?.data ?? courseDetail;
-  const teesObj = root?.tees;
+function normalizeTees(courseDetail: unknown): ApiTee[] {
+  const response = asRecord(courseDetail);
+  const root = asRecord(response?.course ?? response?.data ?? courseDetail);
+  const teesObj = asRecord(root?.tees);
 
   const female = Array.isArray(teesObj?.female) ? teesObj.female : [];
   const male = Array.isArray(teesObj?.male) ? teesObj.male : [];
 
   const out: ApiTee[] = [];
 
-  female.forEach((t: any, idx: number) => {
-    const tee_name = safeStr(t?.tee_name ?? t?.name ?? "");
+  female.forEach((value, idx) => {
+    const tee = asRecord(value);
+    if (!tee) return;
+    const tee_name = safeStr(tee.tee_name ?? tee.name);
     if (!wantedTee(tee_name, "female")) return;
 
     out.push({
       id: `female-${idx}-${tee_name}`,
       gender: "female",
       tee_name,
-      slope_rating: typeof t?.slope_rating === "number" ? t.slope_rating : null,
-      course_rating: typeof t?.course_rating === "number" ? t.course_rating : null,
-      holes: Array.isArray(t?.holes) ? t.holes : [],
+      slope_rating: typeof tee.slope_rating === "number" ? tee.slope_rating : null,
+      course_rating: typeof tee.course_rating === "number" ? tee.course_rating : null,
+      holes: normalizeTeeHoles(tee.holes),
     });
   });
 
-  male.forEach((t: any, idx: number) => {
-    const tee_name = safeStr(t?.tee_name ?? t?.name ?? "");
+  male.forEach((value, idx) => {
+    const tee = asRecord(value);
+    if (!tee) return;
+    const tee_name = safeStr(tee.tee_name ?? tee.name);
     if (!wantedTee(tee_name, "male")) return;
 
     out.push({
       id: `male-${idx}-${tee_name}`,
       gender: "male",
       tee_name,
-      slope_rating: typeof t?.slope_rating === "number" ? t.slope_rating : null,
-      course_rating: typeof t?.course_rating === "number" ? t.course_rating : null,
-      holes: Array.isArray(t?.holes) ? t.holes : [],
+      slope_rating: typeof tee.slope_rating === "number" ? tee.slope_rating : null,
+      course_rating: typeof tee.course_rating === "number" ? tee.course_rating : null,
+      holes: normalizeTeeHoles(tee.holes),
     });
   });
 
@@ -125,6 +145,18 @@ function normalizeTees(courseDetail: any): ApiTee[] {
   };
 
   return out.sort((a, b) => orderKey(a) - orderKey(b));
+}
+
+function normalizeTeeHoles(value: unknown): ApiTee["holes"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((rawHole): ApiTee["holes"] => {
+    const hole = asRecord(rawHole);
+    if (!hole) return [];
+    return [{
+      par: typeof hole.par === "number" ? hole.par : undefined,
+      handicap: typeof hole.handicap === "number" ? hole.handicap : undefined,
+    }];
+  });
 }
 
 function teeLabel(t: ApiTee) {
@@ -155,7 +187,7 @@ function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string, playMode: PlayHo
   const holes = t?.holes;
   if (!t || !Array.isArray(holes) || holes.length === 0) return null;
 
-  const base = holes.slice(0, 18).map((h: any, i: number) => ({
+  const base = holes.slice(0, 18).map((h, i) => ({
     hole_no: i + 1,
     par: h?.par == null ? null : Number(h.par),
     stroke_index: h?.handicap == null ? null : Number(h.handicap),
@@ -199,7 +231,7 @@ function addDaysToYmd(ymd: string, days: number) {
 export default function NewRoundPage() {
   const { t, locale } = useI18n();
   const router = useRouter();
-  const debounceRef = useRef<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +259,6 @@ export default function NewRoundPage() {
   const [omRounds18Count, setOmRounds18Count] = useState<1 | 2 | 3 | 4>(1);
   const [omSingleNine, setOmSingleNine] = useState(false);
   const [omScoreEntryMode, setOmScoreEntryMode] = useState<"full" | "hole_only">("full");
-  const [omMatchPlayWins, setOmMatchPlayWins] = useState<string>("0");
   const [omMatchResult, setOmMatchResult] = useState<OmMatchResult>("won");
   const [opponentHandicap, setOpponentHandicap] = useState<string>("");
   const [matchScoreText, setMatchScoreText] = useState<string>("");
@@ -246,7 +277,7 @@ export default function NewRoundPage() {
   const [manualSlope, setManualSlope] = useState<string>("");
   const [manualCourseRating, setManualCourseRating] = useState<string>("");
 
-  const [courseDetail, setCourseDetail] = useState<any | null>(null);
+  const [courseDetail, setCourseDetail] = useState<unknown | null>(null);
   const [tees, setTees] = useState<ApiTee[]>([]);
   const [selectedTeeId, setSelectedTeeId] = useState("");
   const [playHolesMode, setPlayHolesMode] = useState<PlayHolesMode>("18");
@@ -400,9 +431,9 @@ export default function NewRoundPage() {
 
       const final = localContainsFilter(list, s);
       setResults(final);
-    } catch (e: any) {
+    } catch (cause: unknown) {
       setResults([]);
-      setError(e?.message ?? t("roundsNew.error.search"));
+      setError(cause instanceof Error ? cause.message : t("roundsNew.error.search"));
     } finally {
       setSearching(false);
     }
@@ -435,8 +466,8 @@ export default function NewRoundPage() {
       const teeList = normalizeTees(j);
       setTees(teeList);
       setSelectedTeeId("");
-    } catch (e: any) {
-      setError(e?.message ?? t("roundsNew.error.course"));
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : t("roundsNew.error.course"));
     }
   }
 
@@ -485,9 +516,6 @@ export default function NewRoundPage() {
     }
 
     if (roundType === "competition") {
-      const wins = Number(omMatchPlayWins);
-      if (!Number.isFinite(wins) || wins < 0 || Math.floor(wins) !== wins) return false;
-      if (omCompetitionFormat === "match_play_individual" && wins < 0) return false;
       if (omIsExceptional && !omExceptionalTournamentId) return false;
     }
 
@@ -521,7 +549,6 @@ export default function NewRoundPage() {
     omCompetitionLevel,
     omCompetitionFormat,
     omRounds18Count,
-    omMatchPlayWins,
     omIsExceptional,
     omExceptionalTournamentId,
     selectedCourse,
@@ -538,6 +565,7 @@ export default function NewRoundPage() {
     matchScoreText,
     omMatchResult,
     opponentHandicap,
+    omScoreEntryMode,
   ]);
 
   async function createRound(e: React.FormEvent) {
@@ -640,10 +668,9 @@ export default function NewRoundPage() {
       }
     }
 
-    const matchPlayWins = Number(omMatchPlayWins);
     const parsedOpponentHandicap = opponentHandicap.trim() ? Number(opponentHandicap) : null;
 
-    const payloadBase: any = {
+    const payloadBase: Record<string, unknown> = {
       user_id: uid,
       location: isMatchPlayCompetition ? matchCourseName.trim() : manualCourseOpen ? manualLocation.trim() : null,
       round_type: roundType,
@@ -676,8 +703,6 @@ export default function NewRoundPage() {
             ? omMatchResult === "won"
               ? 1
               : 0
-            : Number.isFinite(matchPlayWins)
-            ? matchPlayWins
             : 0
           : 0,
       om_is_exceptional: roundType === "competition" ? (isMatchPlayCompetition ? false : omIsExceptional) : false,
@@ -688,7 +713,7 @@ export default function NewRoundPage() {
 
     const roundDatesToCreate =
       isMultiRoundStrokePlay ? multiRoundDates.slice(0, omRounds18Count) : [startAt];
-    const createdRoundIds: string[] = [];
+    const roundDates: string[] = [];
     for (const roundDate of roundDatesToCreate) {
       const roundDt = new Date(`${roundDate}T00:00:00`);
       if (Number.isNaN(roundDt.getTime())) {
@@ -696,23 +721,7 @@ export default function NewRoundPage() {
         setBusy(false);
         return;
       }
-      const ins = await supabase
-        .from("golf_rounds")
-        .insert({ ...payloadBase, start_at: roundDt.toISOString() })
-        .select("id")
-        .maybeSingle();
-      if (ins.error) {
-        setError(ins.error.message);
-        setBusy(false);
-        return;
-      }
-      const id = String(ins.data?.id ?? "").trim();
-      if (!id) {
-        setError(t("roundsNew.error.createFailed"));
-        setBusy(false);
-        return;
-      }
-      createdRoundIds.push(id);
+      roundDates.push(roundDt.toISOString());
     }
 
     const shouldSaveNineHoles = !isMatchPlayCompetition && (isSingleNineCompetition || playHolesMode === "9");
@@ -725,21 +734,25 @@ export default function NewRoundPage() {
           stroke_index: null,
         }))
       : teeHolesPrefill(tees, selectedTeeId, playHolesMode);
-    if (holes) {
-      for (const id of createdRoundIds) {
-        const rows = holes.map((h) => ({
-          round_id: id,
-          hole_no: h.hole_no,
-          par: h.par,
-          stroke_index: h.stroke_index,
-          score: null,
-          putts: null,
-          fairway_hit: null,
-          note: null,
-        }));
-        const up = await supabase.from("golf_round_holes").upsert(rows, { onConflict: "round_id,hole_no" });
-        if (up.error) console.warn("holes prefill failed:", up.error.message);
-      }
+    const created = await supabase.rpc("create_player_golf_rounds_transactional", {
+      p_player_id: uid,
+      p_round_payload: payloadBase,
+      p_round_dates: roundDates,
+      p_holes: holes ?? [],
+    });
+    if (created.error) {
+      setError(mapPlayerTransactionError(created.error, t("roundsNew.error.createFailed")).error);
+      setBusy(false);
+      return;
+    }
+
+    const createdRoundIds = Array.isArray(created.data)
+      ? created.data.map((id) => String(id ?? "").trim()).filter(Boolean)
+      : [];
+    if (createdRoundIds.length !== roundDates.length) {
+      setError(t("roundsNew.error.createFailed"));
+      setBusy(false);
+      return;
     }
 
     if (isMatchPlayCompetition) {
@@ -760,7 +773,7 @@ export default function NewRoundPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf?section=rounds" }, { label: "Ajouter" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf?section=rounds" }, { label: t("common.add") }]} />
         <div className="glass-section">
           <div className={`marketplace-header ${styles.heroHeader}`}>
             <div style={{ display: "grid", gap: 10 }}>
@@ -1025,6 +1038,26 @@ export default function NewRoundPage() {
                 ) : !selectedCourse ? (
                   <>
                     <div style={fieldLabelStyle}>{pickLocaleText(locale, "Parcours", "Course")}</div>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>
+                        {pickLocaleText(locale, "Rechercher un parcours", "Search for a course")}
+                      </span>
+                      <input
+                        type="search"
+                        value={q}
+                        onChange={(event) => setQ(event.target.value)}
+                        disabled={busy}
+                        aria-busy={searching}
+                        placeholder={pickLocaleText(locale, "Nom du parcours ou du club", "Course or club name")}
+                        autoComplete="off"
+                      />
+                      {searching ? (
+                        <span role="status" style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
+                          {pickLocaleText(locale, "Recherche…", "Searching…")}
+                        </span>
+                      ) : null}
+                    </label>
 
                     {results.length > 0 && (
                       <div style={{ display: "grid", gap: 10 }}>

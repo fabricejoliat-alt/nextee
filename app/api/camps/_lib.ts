@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from "@supabase/supabase-js";
+import {
+  PlayerAccessError,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 export const MAX_DB_EVENT_DURATION_MINUTES = 300;
 
@@ -369,59 +373,21 @@ export async function resolvePlayerAccess(
   | { error: string; status: 401 | 400 | 403 }
   | { viewerUserId: string; effectiveUserId: string; isParent: boolean; clubIds: string[] }
 > {
-  const caller = await getCaller(supabaseAdmin, accessToken);
-  if ("error" in caller) return { error: caller.error, status: caller.status };
-
-  const viewerUserId = caller.userId;
-  const childId = String(childIdRaw ?? "").trim();
-  const membershipsRes = await supabaseAdmin
-    .from("club_members")
-    .select("role")
-    .eq("user_id", viewerUserId)
-    .eq("is_active", true);
-  if (membershipsRes.error) return { error: membershipsRes.error.message, status: 400 as const };
-
-  const roles = new Set(((membershipsRes.data ?? []) as Array<{ role: string | null }>).map((row) => String(row.role ?? "")));
-  const isParent = roles.has("parent");
-
-  let effectiveUserId = viewerUserId;
-  if (isParent && childId) {
-    const guardianRes = await supabaseAdmin
-      .from("player_guardians")
-      .select("player_id")
-      .eq("guardian_user_id", viewerUserId)
-      .eq("player_id", childId)
-      .or(mode === "edit" ? "can_edit.eq.true" : "can_view.is.null,can_view.eq.true")
-      .maybeSingle();
-    if (guardianRes.error) return { error: guardianRes.error.message, status: 400 as const };
-    if (!guardianRes.data?.player_id) return { error: "Forbidden", status: 403 as const };
-    effectiveUserId = String(guardianRes.data.player_id ?? "").trim();
-  } else if (isParent) {
-    const childRes = await supabaseAdmin
-      .from("player_guardians")
-      .select("player_id,is_primary")
-      .eq("guardian_user_id", viewerUserId)
-      .or(mode === "edit" ? "can_edit.eq.true" : "can_view.is.null,can_view.eq.true")
-      .order("is_primary", { ascending: false })
-      .order("created_at", { ascending: true })
-      .limit(1);
-    if (childRes.error) return { error: childRes.error.message, status: 400 as const };
-    const fallback = String(childRes.data?.[0]?.player_id ?? "").trim();
-    if (!fallback) return { error: "Forbidden", status: 403 as const };
-    effectiveUserId = fallback;
+  try {
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken,
+      requestedPlayerId: childIdRaw,
+      mode,
+      supabaseAdmin,
+    });
+    return {
+      viewerUserId: access.actorUserId,
+      effectiveUserId: access.subjectPlayerId,
+      isParent: access.isGuardianContext,
+      clubIds: access.organizationIds,
+    };
+  } catch (error: unknown) {
+    if (error instanceof PlayerAccessError) return { error: error.message, status: error.status };
+    throw error;
   }
-
-  const membershipsByClubRes = await supabaseAdmin
-    .from("club_members")
-    .select("club_id")
-    .eq("user_id", effectiveUserId)
-    .eq("is_active", true);
-  if (membershipsByClubRes.error) return { error: membershipsByClubRes.error.message, status: 400 as const };
-
-  return {
-    viewerUserId,
-    effectiveUserId,
-    isParent,
-    clubIds: uniq((membershipsByClubRes.data ?? []).map((row: any) => row.club_id)),
-  };
 }

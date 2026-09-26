@@ -1,41 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireCaller } from "@/app/api/messages/_lib";
+import {
+  bearerTokenFromRequest,
+  playerAccessErrorStatus,
+  resolveAuthenticatedPlayerAccess,
+} from "@/app/api/player/access";
 
 export async function GET(req: NextRequest) {
   try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const url = new URL(req.url);
     const childId = String(url.searchParams.get("child_id") ?? "").trim();
-
-    let effectivePlayerId = callerId;
-    if (childId && childId !== callerId) {
-      const guardianRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id")
-        .eq("guardian_user_id", callerId)
-        .eq("player_id", childId)
-        .eq("can_view", true)
-        .maybeSingle();
-      if (guardianRes.error) return NextResponse.json({ error: guardianRes.error.message }, { status: 400 });
-      if (!guardianRes.data?.player_id) return NextResponse.json({ staff: [] });
-      effectivePlayerId = String(guardianRes.data.player_id);
-    }
-
-    const playerMembershipsRes = await supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", effectivePlayerId)
-      .eq("is_active", true)
-      .eq("role", "player");
-    if (playerMembershipsRes.error) return NextResponse.json({ error: playerMembershipsRes.error.message }, { status: 400 });
-
-    const orgIds = Array.from(
-      new Set((playerMembershipsRes.data ?? []).map((r: any) => String(r.club_id ?? "").trim()).filter(Boolean))
-    );
-    if (orgIds.length === 0) return NextResponse.json({ staff: [] });
+    const access = await resolveAuthenticatedPlayerAccess({
+      accessToken: bearerTokenFromRequest(req),
+      requestedPlayerId: childId,
+      mode: "communication",
+    });
+    const { supabaseAdmin } = access;
+    const effectivePlayerId = access.subjectPlayerId;
+    const orgIds = access.organizationIds;
 
     const [staffRes, clubsRes] = await Promise.all([
       supabaseAdmin
@@ -171,7 +152,10 @@ export async function GET(req: NextRequest) {
       });
 
     return NextResponse.json({ staff });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Server error" },
+      { status: playerAccessErrorStatus(error) }
+    );
   }
 }

@@ -16,7 +16,7 @@ html, body {
 }
 
 html{
-  background-image: url("/background.png");
+  background-image: url("/hero-golf.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -184,7 +184,9 @@ a { color: inherit; text-decoration: none; }
 .icon-btn{
   background: transparent;
   border: none;
-  padding: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
 
   display: inline-flex;
   align-items: center;
@@ -229,7 +231,7 @@ a { color: inherit; text-decoration: none; }
 
 .lang-toggle{
   min-width: 40px;
-  height: 32px;
+  height: 44px;
   padding: 0 8px;
   border: 1px solid rgba(255,255,255,0.24);
   border-radius: 10px;
@@ -241,6 +243,7 @@ a { color: inherit; text-decoration: none; }
 /* Brand */
 .brand{
   display: inline-flex;
+  min-height: 44px;
   align-items: center;            /* ✅ plus fiable qu'align-baseline */
   gap: 0;
 
@@ -369,7 +372,7 @@ a { color: inherit; text-decoration: none; }
   }
 
   .app-header-grid{
-    grid-template-columns: 48px 1fr 72px;
+    grid-template-columns: 48px minmax(0,1fr) 120px;
   }
 
   .mobile-nav{
@@ -2008,7 +2011,8 @@ input[type="radio"]{
 }
 
 /* Manager shell: same desktop framing as admin, no photo background */
-.manager-page{
+.manager-page,
+.player-page{
   min-height: 100dvh;
   background: #f5f6f8;
 }
@@ -2023,12 +2027,24 @@ input[type="radio"]{
   padding-bottom: 16px;
 }
 
-.manager-page .player-dashboard-bg{
+.player-shell{
+  width: min(1400px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: calc(var(--header-h) + var(--safe-top) + 24px);
+  padding-left: clamp(16px, 3.2vw, 44px);
+  padding-right: clamp(16px, 3.2vw, 44px);
+  padding-bottom: 16px;
+}
+
+.manager-page .player-dashboard-bg,
+.player-page .player-dashboard-bg{
   background: transparent !important;
   min-height: auto !important;
 }
 
-.manager-page .player-dashboard-bg .app-shell{
+.manager-page .player-dashboard-bg .app-shell,
+.player-page .player-dashboard-bg .app-shell{
   width: min(1400px, 100%) !important;
   max-width: 1400px !important;
   margin-left: auto !important;
@@ -2037,11 +2053,13 @@ input[type="radio"]{
   padding-right: clamp(16px, 3.2vw, 44px) !important;
 }
 
-.manager-page .player-dashboard-bg::before{
+.manager-page .player-dashboard-bg::before,
+.player-page .player-dashboard-bg::before{
   display: none !important;
 }
 
-.manager-page .player-dashboard-bg > *{
+.manager-page .player-dashboard-bg > *,
+.player-page .player-dashboard-bg > *{
   position: static !important;
   z-index: auto !important;
 }
@@ -2584,6 +2602,10 @@ nav[aria-label="Fil d’Ariane"]:not([style]){
   color: #111827 !important;
 }
 
+.player-page :is(.section-title,.card-title,.hero-title,.hero-sub,.hero-club,h1,h2,h3){
+  color:#111827 !important;
+}
+
 .admin-page{
   min-height: 100vh;
   background: #f5f6f8;
@@ -2593,13 +2615,16 @@ nav[aria-label="Fil d’Ariane"]:not([style]){
 html:has(.admin-page),
 body:has(.admin-page),
 html:has(.manager-page),
-body:has(.manager-page){
+body:has(.manager-page),
+html:has(.player-page),
+body:has(.player-page){
   background: #f5f6f8 !important;
   background-image: none !important;
 }
 
 body:has(.admin-page)::before,
-body:has(.manager-page)::before{
+body:has(.manager-page)::before,
+body:has(.player-page)::before{
   display: none !important;
   background-image: none !important;
 }
@@ -2615,18 +2640,21 @@ body:has(.manager-page)::before{
   display: none !important;
 }
 
-.manager-page main[aria-busy="true"]{
+.manager-page main[aria-busy="true"],
+.player-page main[aria-busy="true"]{
   min-height: 100vh;
   background: #f5f6f8;
 }
 
-.manager-page main[aria-busy="true"] > .card{
+.manager-page main[aria-busy="true"] > .card,
+.player-page main[aria-busy="true"] > .card{
   display: none !important;
 }
 
 /* Keep fixed headers above all scrolling page layers. */
 .admin-page .app-header,
-.manager-page .app-header{
+.manager-page .app-header,
+.player-page .app-header{
   z-index: 3000;
   isolation: isolate;
   transform: translateZ(0);
@@ -2636,7 +2664,9 @@ body:has(.manager-page)::before{
 html:has(.admin-page-root),
 body:has(.admin-page-root),
 html:has(.manager-page-root),
-body:has(.manager-page-root){
+body:has(.manager-page-root),
+html:has(.player-page-root),
+body:has(.player-page-root){
   height: 100%;
   overflow: hidden;
 }
@@ -2649,13 +2679,15 @@ body:has([data-design-system]){
 
 .admin-page-root,
 .admin-page-root > .admin-page,
-.manager-page-root{
+.manager-page-root,
+.player-page-root{
   height: 100dvh;
   overflow: hidden;
 }
 
 .admin-scroll-area,
-.manager-scroll-area{
+.manager-scroll-area,
+.player-scroll-area{
   position: fixed;
   top: calc(var(--header-h) + var(--safe-top));
   right: 0;
@@ -2677,9 +2709,14 @@ body:has([data-design-system]){
   padding-top: 24px;
 }
 
+.player-scroll-area .player-shell{
+  min-height:100%;
+  padding-top:24px;
+}
+
 /* Player uses the same isolated scrolling surface as Manager and Coach.  This
    keeps the fixed header visible while the page body remains scrollable. */
-.manager-scroll-area.player-scroll-area{
+.player-scroll-area{
   background:
     linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
     url("/hero-golf.png") center / cover fixed !important;
@@ -2687,7 +2724,7 @@ body:has([data-design-system]){
 
 /* The Player home image belongs to the whole viewport surface, rather than to
    the centered content column. */
-.manager-scroll-area.player-scroll-area--home{
+.player-scroll-area--home{
   background:
     linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
     url("/hero-golf.png") center / cover fixed !important;
@@ -2862,10 +2899,10 @@ body:has([data-design-system]){
 .player-page-root .marketplace-page>.glass-section:first-of-type .marketplace-filter-label{
   color:rgba(255,255,255,.88)!important;
 }
-.player-page-root .manager-shell [class*="topline"] > div > h1{
+.player-page-root .player-shell [class*="topline"] > div > h1{
   color:#fff!important;
 }
-.player-page-root .manager-shell [class*="topline"] > div > [class*="lead"]{
+.player-page-root .player-shell [class*="topline"] > div > [class*="lead"]{
   color:rgba(255,255,255,.88)!important;
 }
 .player-page-root .marketplace-page>.glass-section:first-of-type .marketplace-actions{margin:0!important}
@@ -3029,6 +3066,11 @@ body:has([data-design-system]){
 
 .role-guard-inline{display:grid;gap:12px;padding:20px;border:1px solid #e3e9e2;border-radius:16px;background:#fff}.role-guard-inline span{height:52px;border-radius:10px;background:linear-gradient(90deg,#f0f3ef 25%,#f8faf7 50%,#f0f3ef 75%);background-size:200% 100%;animation:roleGuardShimmer 1.1s linear infinite}
 
+.role-guard-loading-line{height:12px;width:100%;border-radius:8px;background:linear-gradient(90deg,rgba(0,0,0,.06) 0%,rgba(0,0,0,.12) 50%,rgba(0,0,0,.06) 100%);background-size:200% 100%;animation:roleGuardShimmer 1.1s linear infinite}.role-guard-loading-line--short{height:18px;width:42%}.role-guard-loading-line--medium{width:88%}
+.role-guard-error{min-height:60vh;padding:24px;display:grid;place-items:center}.role-guard-error--inline{min-height:calc(100vh - var(--header-h, 64px))}.role-guard-error-card{width:min(520px,100%);padding:24px;display:grid;gap:12px}.role-guard-error-title{font-size:20px;font-weight:900;color:#243329}.role-guard-error-card p{margin:0;color:#5e6b61;line-height:1.5}.role-guard-error-card .btn{justify-self:start;min-height:44px}
+.player-connectivity{position:relative;z-index:30;min-height:40px;padding:9px max(16px,env(safe-area-inset-left)) 9px max(16px,env(safe-area-inset-right));display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;font-size:13px;font-weight:800}.player-connectivity--offline{background:#8a3d32;color:#fff}.player-connectivity--restored{background:#dcebdc;color:#27442d}
+@keyframes roleGuardShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
 @media(max-width:760px){
   .coach-page-root .glass-section{padding:16px !important}
 }
@@ -3102,7 +3144,7 @@ body:has([data-design-system]){
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image: url("/background.png");
+    background-image: url("/hero-golf.png");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -3132,7 +3174,7 @@ body:has([data-design-system]){
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image: url("/background.png");
+    background-image: url("/hero-golf.png");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;

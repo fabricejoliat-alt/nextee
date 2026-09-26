@@ -9,6 +9,7 @@ type ParentChildConsent = {
   lastName: string | null;
   birthDate: string | null;
   isPrimary: boolean;
+  canEdit: boolean;
   consentStatus: "granted" | "pending" | "refused" | "adult";
   pending: boolean;
 };
@@ -46,7 +47,6 @@ export default function PlayerConsentGate() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
@@ -54,16 +54,36 @@ export default function PlayerConsentGate() {
         setData(null);
         return;
       }
-      const res = await fetch("/api/player/consent", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Erreur de chargement du consentement"));
-      setData(json as ConsentPayload);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur de chargement du consentement");
+      const explicitChildId = (() => {
+        try {
+          return new URL(window.location.href).searchParams.get("child_id")?.trim() ?? "";
+        } catch {
+          return "";
+        }
+      })();
+      const storedChildId = window.localStorage.getItem(SELECTED_CHILD_KEY)?.trim() ?? "";
+
+      async function fetchConsent(childId: string) {
+        const query = childId ? `?child_id=${encodeURIComponent(childId)}` : "";
+        const response = await fetch(`/api/player/consent${query}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+      }
+
+      let { response, payload } = await fetchConsent(explicitChildId || storedChildId);
+      if (!explicitChildId && storedChildId && response.status === 403) {
+        window.localStorage.removeItem(SELECTED_CHILD_KEY);
+        ({ response, payload } = await fetchConsent(""));
+      }
+      if (!response.ok) throw new Error(String(payload?.error ?? "Erreur de chargement du consentement"));
+      setData(payload as ConsentPayload);
+      setError(null);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur de chargement du consentement");
       setData(null);
     } finally {
       setLoading(false);
@@ -82,16 +102,18 @@ export default function PlayerConsentGate() {
       if (document.visibilityState === "visible") void load();
     };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [load]);
 
   const selectedPendingChild = useMemo(() => {
     if (!data || data.viewerRole !== "parent") return null;
-    const pendingChildren = data.children.filter((child) => child.pending);
+    const pendingChildren = data.children.filter((child) => child.pending && child.canEdit);
     if (pendingChildren.length === 0) return null;
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(SELECTED_CHILD_KEY) : null;
     return (
@@ -124,17 +146,18 @@ export default function PlayerConsentGate() {
       if (!res.ok) throw new Error(String(json?.error ?? "Impossible d'enregistrer le consentement"));
       setParentConsentChecked(false);
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Impossible d'enregistrer le consentement");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Impossible d’enregistrer le consentement");
     } finally {
       setBusy(false);
     }
   }
 
   const showParentModal = !loading && data?.viewerRole === "parent" && Boolean(selectedPendingChild);
+  const showBlockingModal = showParentModal || (!loading && !data && Boolean(error));
 
   useEffect(() => {
-    if (!showParentModal) return;
+    if (!showBlockingModal) return;
     const previousHtmlOverflow = document.documentElement.style.overflow;
     const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
     const previousOverflow = document.body.style.overflow;
@@ -149,9 +172,46 @@ export default function PlayerConsentGate() {
       document.body.style.overflow = previousOverflow;
       document.body.style.overscrollBehavior = previousOverscroll;
     };
-  }, [showParentModal]);
+  }, [showBlockingModal]);
 
-  if (loading || !data) return null;
+  if (loading && !data && !error) return null;
+
+  if (!data && error) {
+    return (
+      <div
+        role="alert"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1200,
+          padding: 16,
+          display: "grid",
+          placeItems: "center",
+          background: "rgba(17, 24, 39, 0.48)",
+        }}
+      >
+        <div
+          style={{
+            width: "min(520px, 100%)",
+            padding: 22,
+            borderRadius: 22,
+            background: "#fffdf7",
+            boxShadow: "0 28px 70px rgba(17,24,39,0.28)",
+            display: "grid",
+            gap: 14,
+          }}
+        >
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#2b2517" }}>Vérification temporairement indisponible</div>
+          <p style={{ margin: 0, color: "#6c6354", lineHeight: 1.55 }}>{error}</p>
+          <button type="button" className="btn btn-primary" onClick={() => void load()} disabled={loading}>
+            {loading ? "Vérification…" : "Réessayer"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
 
   return (
     <>
@@ -182,7 +242,7 @@ export default function PlayerConsentGate() {
             }}
           >
             <div style={{ display: "grid", gap: 6, padding: 22, borderBottom: "1px solid rgba(124, 98, 42, 0.12)" }}>
-              <div style={{ fontSize: 22, fontWeight: 900, color: "#2b2517" }}>Consentement à l'utilisation d'ActiviTee</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#2b2517" }}>Consentement à l’utilisation d’ActiviTee</div>
               <div style={{ color: "#6c6354", fontSize: 14 }}>
                 Enfant concerné : <b>{fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)}</b>
               </div>
@@ -191,22 +251,22 @@ export default function PlayerConsentGate() {
             <div style={{ overflow: "auto", padding: 22, display: "grid", gap: 16, overscrollBehavior: "contain" }}>
               <div style={{ color: "#413829", fontSize: 15, lineHeight: 1.7, display: "grid", gap: 12 }}>
                 <p style={{ margin: 0 }}>
-                  En qualité de représentant légal, j'autorise {fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)} à
-                  utiliser l'application ActiviTee dans le cadre de son suivi sportif.
+                  En qualité de représentant légal, j’autorise {fullName(selectedPendingChild.firstName, selectedPendingChild.lastName)} à
+                  utiliser l’application ActiviTee dans le cadre de son suivi sportif.
                 </p>
                 <p style={{ margin: 0 }}>
                   Cette application permet notamment à mon enfant de consulter son planning, suivre ses entraînements et compétitions,
-                  enregistrer ses résultats, communiquer avec ses coachs et recevoir les informations utiles à l'organisation de son
+                  enregistrer ses résultats, communiquer avec ses coachs et recevoir les informations utiles à l’organisation de son
                   activité sportive.
                 </p>
                 <p style={{ margin: 0 }}>
-                  Les données utilisées dans l'application peuvent inclure son identité, sa date de naissance, ses informations sportives,
-                  ses évaluations et les documents déposés par l'encadrement sportif lorsqu'ils
+                  Les données utilisées dans l’application peuvent inclure son identité, sa date de naissance, ses informations sportives,
+                  ses évaluations et les documents déposés par l’encadrement sportif lorsqu’ils
                   sont nécessaires à son accompagnement.
                 </p>
                 <p style={{ margin: 0 }}>
-                  En validant ce consentement, je confirme être habilité à autoriser l'utilisation d'ActiviTee pour mon enfant et je
-                  comprends que ce consentement pourra être réévalué ou retiré en contactant le club ou l'équipe encadrante.
+                  En validant ce consentement, je confirme être habilité à autoriser l’utilisation d’ActiviTee pour mon enfant et je
+                  comprends que ce consentement pourra être réévalué ou retiré en contactant le club ou l’équipe encadrante.
                 </p>
               </div>
 
@@ -228,7 +288,7 @@ export default function PlayerConsentGate() {
                   style={{ marginTop: 4 }}
                 />
                 <span style={{ fontSize: 14, lineHeight: 1.55, color: "#2b2517" }}>
-                  Je consens à ce que mon enfant utilise l'application ActiviTee.
+                  Je consens à ce que mon enfant utilise l’application ActiviTee.
                 </span>
               </label>
 
@@ -247,7 +307,7 @@ export default function PlayerConsentGate() {
               }}
             >
               <div style={{ color: "#6c6354", fontSize: 13 }}>
-                Cette demande restera affichée tant qu'un enfant lié à votre compte est en attente de consentement.
+                Cette demande restera affichée tant qu’un enfant lié à votre compte est en attente de consentement.
               </div>
               <button className="btn" type="button" onClick={submitParentConsent} disabled={!parentConsentChecked || busy}>
                 {busy ? "Validation…" : "Valider"}

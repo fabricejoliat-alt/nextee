@@ -76,6 +76,7 @@ export default function LanguageToggle() {
                 style={{
                   border: "1px solid transparent",
                   borderRadius: 10,
+                  minHeight: 44,
                   padding: "8px 10px",
                   textAlign: "left",
                   fontWeight: active ? 900 : 700,

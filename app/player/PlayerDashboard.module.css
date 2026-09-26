@@ -66,3 +66,18 @@
 .monthVolume :global(.donut-bg){stroke:#e9eee7}
 @media(max-width:1080px){.firstRow,.learningGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.attentionCard{grid-column:1/-1}}
 @media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard{grid-column:1/-1}.rulesVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
+
+.photoPromptOverlay{position:fixed;z-index:1400;inset:0;display:grid;place-items:center;padding:16px;background:rgba(15,23,42,.52)}
+.photoPrompt{box-sizing:border-box;display:grid;width:min(520px,100%);gap:16px;padding:22px;border:1px solid rgba(0,0,0,.1);border-radius:16px;background:#fff;box-shadow:0 28px 80px rgba(15,23,42,.22)}
+.photoPromptIntro{display:grid;gap:8px}
+.photoPromptPreview{display:flex;align-items:center;gap:14px}
+.photoPromptInitials,.photoPromptExample{display:grid;width:68px;height:68px;flex:0 0 68px;place-items:center;overflow:hidden;border-radius:50%}
+.photoPromptInitials{background:linear-gradient(135deg,#166534,#15803d);color:#fff;font-size:24px;font-weight:900;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.photoPromptArrow{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid #e5e7eb;border-radius:50%;background:#f8fafc;color:#64748b}
+.photoPromptExample{border:2px solid #e5e7eb;background:#fff}
+.photoPromptExample img{display:block;width:100%;height:100%;object-fit:cover}
+.photoPromptIntro h2{margin:0;color:#1f2937!important;font:800 24px/1.2 var(--font-inter-tight),var(--font-inter),sans-serif}
+.photoPromptIntro p{margin:0;color:#475569;font-size:15px;line-height:1.6}
+.photoPromptCheck{display:flex;align-items:center;gap:10px;color:#475569;font-size:14px}
+.photoPromptActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:520px){.photoPrompt{padding:18px}.photoPromptActions{display:grid;grid-template-columns:1fr}.photoPromptActions button{width:100%}}

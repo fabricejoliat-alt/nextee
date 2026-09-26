@@ -9,6 +9,9 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { calculateGolfRoundMetrics, scoreToParLabel, validateGolfHoles } from "@/lib/golfRoundMetrics";
+import { VersionedAutosaveQueue, type AutosaveSnapshot } from "@/lib/versionedAutosaveQueue";
+import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
+import { getRouteParam } from "@/lib/routeParams";
 import styles from "./RoundScoreEntry.module.css";
 
 type Round = {
@@ -48,12 +51,67 @@ type TournamentRoundMeta = {
   om_miss_cut: boolean;
 };
 
-type OmCompetitionLevel = "club_internal" | "club_official" | "regional" | "national" | "international";
+type TournamentRoundRow = TournamentRoundMeta & {
+  competition_name: string | null;
+  start_at: string;
+};
 
-function getParamString(p: any): string | null {
-  if (typeof p === "string") return p;
-  if (Array.isArray(p) && typeof p[0] === "string") return p[0];
-  return null;
+type OmCompetitionLevel = "club_internal" | "club_official" | "regional" | "national" | "international";
+type HoleAutosaveValue = { roundId: string; hole: Hole };
+type RoundDraft = {
+  version: 1;
+  roundId: string;
+  playerId: string;
+  updatedAt: number;
+  holeDirty: boolean;
+  metaDirty: boolean;
+  entryView: "guided" | "grid";
+  holes: Hole[];
+  meta: {
+    roundDate: string;
+    notes: string;
+    competitionLevel: OmCompetitionLevel;
+    roundsFormatValue: string;
+    teeName: string;
+    slopeRating: string;
+    courseRating: string;
+  };
+};
+
+const CLEAN_AUTOSAVE: AutosaveSnapshot = {
+  status: "clean",
+  revision: 0,
+  acknowledgedRevision: 0,
+  error: null,
+};
+const ROUND_DRAFT_PREFIX = "activitee:player-golf-round-draft:";
+const ROUND_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function roundDraftKey(roundId: string) {
+  return `${ROUND_DRAFT_PREFIX}${roundId}`;
+}
+
+function readRoundDraft(roundId: string, playerId: string): RoundDraft | null {
+  try {
+    const raw = window.sessionStorage.getItem(roundDraftKey(roundId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<RoundDraft>;
+    if (
+      parsed.version !== 1
+      || parsed.roundId !== roundId
+      || parsed.playerId !== playerId
+      || typeof parsed.updatedAt !== "number"
+      || Date.now() - parsed.updatedAt > ROUND_DRAFT_MAX_AGE_MS
+      || !Array.isArray(parsed.holes)
+      || !parsed.meta
+    ) {
+      window.sessionStorage.removeItem(roundDraftKey(roundId));
+      return null;
+    }
+    return parsed as RoundDraft;
+  } catch {
+    return null;
+  }
 }
 
 function clampInt(v: number, min: number, max: number) {
@@ -76,6 +134,13 @@ function replaceIsoDateKeepingTime(currentIso: string, nextYmd: string) {
   const next = new Date(current);
   next.setFullYear(year, (month || 1) - 1, day || 1);
   return next.toISOString();
+}
+
+function golfSaveErrorMessage(cause: unknown, fallback: string) {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return "Vous êtes hors ligne. La saisie reste en attente sur cet écran.";
+  }
+  return mapPlayerTransactionError(cause, fallback).error;
 }
 
 function applyConstraints(base: Hole, patch: Partial<Hole>): Hole {
@@ -118,14 +183,15 @@ function duplicateNineHoleTemplate(source: Hole[]) {
 
 export default function EditRoundWizardPage() {
   const { t } = useI18n();
-  const params = useParams();
+  const params = useParams<{ roundId: string | string[] }>();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const roundId = useMemo(() => getParamString((params as any)?.roundId), [params]);
+  const roundId = useMemo(() => getRouteParam(params?.roundId), [params]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autosave, setAutosave] = useState<AutosaveSnapshot>(CLEAN_AUTOSAVE);
   const [error, setError] = useState<string | null>(null);
   const [uxError, setUxError] = useState<string | null>(null);
   const [nextRoundId, setNextRoundId] = useState<string | null>(null);
@@ -155,6 +221,9 @@ export default function EditRoundWizardPage() {
   const [holeIdx, setHoleIdx] = useState(0);
   const [entryView, setEntryView] = useState<"guided" | "grid">(() => searchParams.get("mode") === "grid" ? "grid" : "guided");
   const [gridDirty, setGridDirty] = useState(false);
+  const [metaDirty, setMetaDirty] = useState(false);
+  const autosaveDirty = autosave.status !== "clean";
+  const hasUnsavedChanges = autosaveDirty || gridDirty || metaDirty;
 
   const scorecardHref = useMemo(() => {
     const id = roundId ?? "";
@@ -171,16 +240,14 @@ export default function EditRoundWizardPage() {
 
   const didInitHoleRef = useRef(false);
 
-  // --- autosave queue (single-hole upsert, debounced) ---
-  const saveTimerRef = useRef<any>(null);
-  const inFlightRef = useRef<Promise<void> | null>(null);
-  const latestHoleRef = useRef<Hole | null>(null);
+  // --- autosave queue (single-hole upsert, debounced and versioned) ---
+  const mountedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveHoleRequestRef = useRef<(value: HoleAutosaveValue) => Promise<void>>(async () => undefined);
+  const autosaveQueueRef = useRef<VersionedAutosaveQueue<HoleAutosaveValue> | null>(null);
 
-  async function upsertHole(h: Hole) {
-    if (!roundId) return;
-
-    const payload: any = {
-      round_id: roundId,
+  async function upsertHole({ roundId: targetRoundId, hole: h }: HoleAutosaveValue) {
+    const payload = {
       hole_no: h.hole_no,
       par: h.par,
       stroke_index: h.stroke_index,
@@ -190,66 +257,41 @@ export default function EditRoundWizardPage() {
       note: h.note?.trim() || null,
     };
 
-    // ✅ IMPORTANT: never send id if missing
-    if (typeof h.id === "string" && h.id.length > 0) payload.id = h.id;
-
-    const res = await supabase
-      .from("golf_round_holes")
-      .upsert([payload], { onConflict: "round_id,hole_no" });
-
+    const res = await supabase.rpc("save_player_golf_hole_transactional", {
+      p_round_id: targetRoundId,
+      p_hole: payload,
+    });
     if (res.error) throw new Error(res.error.message);
 
-    // If we didn't have id yet, fetch it once
-    if (!payload.id) {
-      const readBack = await supabase
-        .from("golf_round_holes")
-        .select("id")
-        .eq("round_id", roundId)
-        .eq("hole_no", h.hole_no)
-        .maybeSingle();
-
-      if (!readBack.error && readBack.data?.id) {
-        const newId = readBack.data.id as string;
-        setHoles((prev) => prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x)));
-        latestHoleRef.current = { ...h, id: newId };
-      }
-    }
-
-    // Keep OM points in sync with hole-by-hole editing.
-    const rec = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
-    if (rec.error) {
-      // Do not block hole save UX on OM side-effects.
-      console.warn("om_recompute_round failed:", rec.error.message);
+    const result = res.data as { hole_id?: unknown } | null;
+    if (typeof result?.hole_id === "string" && targetRoundId === roundId) {
+      const newId = result.hole_id;
+      setHoles((prev) => prev.map((x) => (x.hole_no === h.hole_no ? { ...x, id: newId } : x)));
     }
   }
 
+  saveHoleRequestRef.current = upsertHole;
+  if (!autosaveQueueRef.current) {
+    autosaveQueueRef.current = new VersionedAutosaveQueue<HoleAutosaveValue>(
+      (value) => saveHoleRequestRef.current(value),
+      (snapshot) => {
+        if (mountedRef.current) setAutosave(snapshot);
+      },
+    );
+  }
+
   function scheduleSave(h: Hole) {
-    latestHoleRef.current = h;
+    if (!roundId) return;
+    autosaveQueueRef.current?.enqueue({ roundId, hole: h });
+    setError(null);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    saveTimerRef.current = setTimeout(async () => {
-      // serialize saves
-      if (inFlightRef.current) return;
-
-      const toSave = latestHoleRef.current;
-      if (!toSave) return;
-
-      setSaving(true);
-      setError(null);
-
-      const p = (async () => {
-        try {
-          await upsertHole(toSave);
-        } catch (e: any) {
-          setError(e?.message ?? t("trainingNew.saving"));
-        } finally {
-          setSaving(false);
-          inFlightRef.current = null;
-        }
-      })();
-
-      inFlightRef.current = p;
-      await p;
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void autosaveQueueRef.current?.flush().catch((cause: unknown) => {
+        if (!mountedRef.current) return;
+        setError(golfSaveErrorMessage(cause, "La saisie n’a pas pu être synchronisée."));
+      });
     }, 180);
   }
 
@@ -259,31 +301,22 @@ export default function EditRoundWizardPage() {
       saveTimerRef.current = null;
     }
 
-    // ✅ always save the CURRENT hole from state (fresh)
-    const toSave = holes[holeIdx];
-    if (!toSave) return;
-
-    // wait current flight
-    if (inFlightRef.current) {
-      await inFlightRef.current;
+    try {
+      await autosaveQueueRef.current?.flush();
+      return true;
+    } catch (cause: unknown) {
+      setError(golfSaveErrorMessage(cause, "La saisie n’a pas pu être synchronisée."));
+      return false;
     }
+  }
 
-    setSaving(true);
-    setError(null);
-
-    const p = (async () => {
-      try {
-        await upsertHole(toSave);
-      } catch (e: any) {
-          setError(e?.message ?? t("trainingNew.saving"));
-      } finally {
-        setSaving(false);
-        inFlightRef.current = null;
-      }
-    })();
-
-    inFlightRef.current = p;
-    await p;
+  function clearRoundDraft() {
+    if (!roundId) return;
+    try {
+      window.sessionStorage.removeItem(roundDraftKey(roundId));
+    } catch {
+      // Ignore unavailable session storage.
+    }
   }
 
   // --- load ---
@@ -354,22 +387,23 @@ export default function EditRoundWizardPage() {
 
       if (!sameTournamentRes.error) {
         const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
-        const sameTournament = (sameTournamentRes.data ?? []).filter((r: any) => {
+        const tournamentRows = (sameTournamentRes.data ?? []) as TournamentRoundRow[];
+        const sameTournament = tournamentRows.filter((r) => {
           const normName = (r.competition_name ?? "").trim().toLowerCase();
           return normName === normCurrentName;
         });
-        const idx = sameTournament.findIndex((r: any) => r.id === loadedRound.id);
+        const idx = sameTournament.findIndex((r) => r.id === loadedRound.id);
         if (idx >= 0) {
           setTournamentRoundIndex(idx);
           setTournamentRounds(
-            sameTournament.map((r: any) => ({
+            sameTournament.map((r) => ({
               id: String(r.id),
               om_miss_cut: Boolean(r.om_miss_cut),
             }))
           );
         }
         if (idx >= 0 && idx < sameTournament.length - 1) {
-          const nextPlayable = sameTournament.slice(idx + 1).find((r: any) => !r.om_miss_cut);
+          const nextPlayable = sameTournament.slice(idx + 1).find((r) => !r.om_miss_cut);
           if (nextPlayable?.id) setNextRoundId(String(nextPlayable.id));
         }
       }
@@ -387,10 +421,11 @@ export default function EditRoundWizardPage() {
       return;
     }
 
-    const map = new Map<number, any>();
-    (hRes.data ?? []).forEach((x: any) => map.set(x.hole_no, x));
+    const serverRows = (hRes.data ?? []) as Hole[];
+    const map = new Map<number, Hole>();
+    serverRows.forEach((hole) => map.set(hole.hole_no, hole));
 
-    const maxHoleNo = Math.max(0, ...(hRes.data ?? []).map((x: any) => Number(x.hole_no) || 0));
+    const maxHoleNo = Math.max(0, ...serverRows.map((hole) => Number(hole.hole_no) || 0));
     const holeCount = maxHoleNo > 0 && maxHoleNo <= 9 ? 9 : 18;
     if (
       loadedRound.round_type === "competition" &&
@@ -404,8 +439,7 @@ export default function EditRoundWizardPage() {
     }
 
     // ✅ IMPORTANT: set real defaults in STATE (score = par, putts = 2) if null
-    setHoles(
-      Array.from({ length: holeCount }, (_, i) => {
+    const serverHoles = Array.from({ length: holeCount }, (_, i) => {
         const holeNo = i + 1;
         const existing = map.get(holeNo);
 
@@ -433,16 +467,47 @@ export default function EditRoundWizardPage() {
         );
 
         return constrained;
-      })
-    );
+      });
 
+    const draft = readRoundDraft(roundId, loadedRound.user_id);
+    const recoveredHoles =
+      draft?.holeDirty && draft.holes.length === serverHoles.length
+        ? draft.holes.map((item, index) => applyConstraints(serverHoles[index], item))
+        : null;
+    setHoles(recoveredHoles ?? serverHoles);
+    setGridDirty(Boolean(recoveredHoles));
+    if (draft?.metaDirty) {
+      setRoundDate(draft.meta.roundDate);
+      setNotes(draft.meta.notes);
+      setCompetitionLevel(draft.meta.competitionLevel);
+      setRoundsFormatValue(draft.meta.roundsFormatValue);
+      setTeeName(draft.meta.teeName);
+      setSlopeRating(draft.meta.slopeRating);
+      setCourseRating(draft.meta.courseRating);
+      setMetaDirty(true);
+    } else {
+      setMetaDirty(false);
+    }
+    if (draft) setEntryView(draft.entryView);
+    if (recoveredHoles || draft?.metaDirty) {
+      setUxError("Une saisie non synchronisée a été restaurée sur cet appareil.");
+    }
     setLoading(false);
   }
 
   useEffect(() => {
     load();
+    // `load` is intentionally scoped to the current round id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   // ✅ after first load, jump to requested hole (?hole=)
   useEffect(() => {
@@ -455,20 +520,87 @@ export default function EditRoundWizardPage() {
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!gridDirty) return;
+      if (!hasUnsavedChanges) return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [gridDirty]);
+  }, [hasUnsavedChanges]);
 
-  // Keep latest hole pointer updated whenever current hole changes
   useEffect(() => {
-    const h = holes[holeIdx];
-    if (h) latestHoleRef.current = h;
+    if (loading || !roundId || !round) return;
+    const key = roundDraftKey(roundId);
+    try {
+      if (!hasUnsavedChanges) {
+        window.sessionStorage.removeItem(key);
+        return;
+      }
+
+      const draft: RoundDraft = {
+        version: 1,
+        roundId,
+        playerId: round.user_id,
+        updatedAt: Date.now(),
+        holeDirty: autosaveDirty || gridDirty,
+        metaDirty,
+        entryView,
+        holes,
+        meta: {
+          roundDate,
+          notes,
+          competitionLevel,
+          roundsFormatValue,
+          teeName,
+          slopeRating,
+          courseRating,
+        },
+      };
+      window.sessionStorage.setItem(key, JSON.stringify(draft));
+    } catch {
+      // Session storage can be unavailable in hardened/private browser modes.
+      // The in-memory queue and beforeunload guard remain active in that case.
+    }
+  }, [
+    autosaveDirty,
+    competitionLevel,
+    courseRating,
+    entryView,
+    gridDirty,
+    hasUnsavedChanges,
+    holes,
+    loading,
+    metaDirty,
+    notes,
+    round,
+    roundDate,
+    roundId,
+    roundsFormatValue,
+    slopeRating,
+    teeName,
+  ]);
+
+  useEffect(() => {
     setUxError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holeIdx, holes.length]);
+
+  useEffect(() => {
+    const retryPendingSave = () => {
+      if (!autosaveQueueRef.current?.hasPendingChanges()) return;
+      void flushSave();
+    };
+    const flushWhenHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      retryPendingSave();
+    };
+    window.addEventListener("online", retryPendingSave);
+    window.addEventListener("pagehide", retryPendingSave);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("online", retryPendingSave);
+      window.removeEventListener("pagehide", retryPendingSave);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, []);
 
   // --- actions (ALL autosave) ---
   const hole = holes[holeIdx];
@@ -498,27 +630,31 @@ export default function EditRoundWizardPage() {
   }
 
   async function saveGrid() {
-    if (!roundId) return;
+    if (!roundId) return false;
     const validation = validateGolfHoles(holes, holes.length > 9 ? 18 : 9);
     if (Object.keys(validation).length) {
       setUxError(`Vérifiez les trous ${Object.keys(validation).join(", ")}.`);
-      return;
+      return false;
     }
     setSaving(true);
     setError(null);
     try {
+      if (!(await flushSave())) return false;
       const rows = holes.map((item) => ({
-        round_id: roundId, hole_no: item.hole_no, par: item.par, stroke_index: item.stroke_index,
+        hole_no: item.hole_no, par: item.par, stroke_index: item.stroke_index,
         score: item.score, putts: useStats ? item.putts : null,
         fairway_hit: useStats ? item.fairway_hit : null, note: item.note?.trim() || null,
       }));
-      const result = await supabase.from("golf_round_holes").upsert(rows, { onConflict: "round_id,hole_no" });
+      const result = await supabase.rpc("save_player_golf_holes_transactional", {
+        p_round_id: roundId,
+        p_holes: rows,
+      });
       if (result.error) throw result.error;
-      const recompute = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
-      if (recompute.error) console.warn("om_recompute_round failed:", recompute.error.message);
       setGridDirty(false);
+      return true;
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "La grille n’a pas pu être enregistrée.");
+      setError(golfSaveErrorMessage(cause, "La grille n’a pas pu être enregistrée."));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -533,8 +669,13 @@ export default function EditRoundWizardPage() {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
-    await flushSave();
-    if (holeIdx > 0) setHoleIdx(holeIdx - 1);
+    setSaving(true);
+    try {
+      if (!(await flushSave())) return;
+      if (holeIdx > 0) setHoleIdx(holeIdx - 1);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function goNextHole() {
@@ -546,8 +687,13 @@ export default function EditRoundWizardPage() {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
-    await flushSave();
-    if (holeIdx < holes.length - 1) setHoleIdx(holeIdx + 1);
+    setSaving(true);
+    try {
+      if (!(await flushSave())) return;
+      if (holeIdx < holes.length - 1) setHoleIdx(holeIdx + 1);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function finishAndGoScorecard() {
@@ -559,8 +705,19 @@ export default function EditRoundWizardPage() {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
-    await flushSave();
-    router.push(scorecardHref);
+    setSaving(true);
+    try {
+      if (gridDirty) {
+        if (!(await saveGrid())) return;
+      } else if (!(await flushSave())) {
+        return;
+      }
+      if (metaDirty && !(await saveRoundMeta())) return;
+      clearRoundDraft();
+      router.push(scorecardHref);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function finishAndGoNextRound() {
@@ -576,8 +733,19 @@ export default function EditRoundWizardPage() {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
-    await flushSave();
-    router.push(`/player/golf/rounds/${nextRoundId}/edit`);
+    setSaving(true);
+    try {
+      if (gridDirty) {
+        if (!(await saveGrid())) return;
+      } else if (!(await flushSave())) {
+        return;
+      }
+      if (metaDirty && !(await saveRoundMeta())) return;
+      clearRoundDraft();
+      router.push(`/player/golf/rounds/${nextRoundId}/edit`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function setMissCutOnRemainingRounds(checked: boolean) {
@@ -589,6 +757,12 @@ export default function EditRoundWizardPage() {
     setSaving(true);
     setError(null);
     try {
+      if (gridDirty) {
+        if (!(await saveGrid())) return;
+      } else if (!(await flushSave())) {
+        return;
+      }
+      if (metaDirty && !(await saveRoundMeta())) return;
       if (checked) {
         const upd = await supabase
           .from("golf_rounds")
@@ -615,9 +789,10 @@ export default function EditRoundWizardPage() {
         }
       }
 
+      clearRoundDraft();
       await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur lors du Miss cut.");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Erreur lors du Miss cut.");
     } finally {
       setSaving(false);
     }
@@ -627,15 +802,23 @@ export default function EditRoundWizardPage() {
     if (!roundId) return;
     if (!confirm(t("roundsEdit.confirmDelete"))) return;
 
-    const del = await supabase.from("golf_rounds").delete().eq("id", roundId);
-    if (del.error) {
-      setError(del.error.message);
-      return;
+    setSaving(true);
+    try {
+      // Wait for any in-flight upsert so it cannot finish after the round is removed.
+      if (!(await flushSave())) return;
+      const del = await supabase.from("golf_rounds").delete().eq("id", roundId);
+      if (del.error) {
+        setError(del.error.message);
+        return;
+      }
+      clearRoundDraft();
+      router.push("/player/golf/rounds");
+    } finally {
+      setSaving(false);
     }
-    router.push("/player/golf/rounds");
   }
 
-  async function syncHoleTemplateForCompetition(nextRoundId: string, targetFormat: string) {
+  function buildHoleTemplateForCompetition(targetFormat: string) {
     const wantsSingleNine = targetFormat === "1x9";
     const targetHoleCount = wantsSingleNine ? 9 : 18;
     const currentHoles = [...holes].sort((a, b) => a.hole_no - b.hole_no);
@@ -648,111 +831,136 @@ export default function EditRoundWizardPage() {
     } else {
       nextHoles = currentHoles.slice(0, 18).map((hole, index) => ({ ...hole, hole_no: index + 1 }));
     }
-
-    const deleteQuery = supabase.from("golf_round_holes").delete().eq("round_id", nextRoundId);
-    if (targetHoleCount === 9) {
-      deleteQuery.gt("hole_no", 9);
-    } else {
-      deleteQuery.gt("hole_no", 18);
-    }
-    const delRes = await deleteQuery;
-    if (delRes.error) throw new Error(delRes.error.message);
-
-    const upsertRows = nextHoles.map((hole) => ({
-      round_id: nextRoundId,
-      hole_no: hole.hole_no,
-      par: hole.par,
-      stroke_index: hole.stroke_index,
-      score: hole.score,
-      putts: hole.putts,
-      fairway_hit: hole.fairway_hit,
-      note: hole.note?.trim() || null,
-    }));
-    const upsertRes = await supabase.from("golf_round_holes").upsert(upsertRows, { onConflict: "round_id,hole_no" });
-    if (upsertRes.error) throw new Error(upsertRes.error.message);
-
-    const refreshed = await supabase
-      .from("golf_round_holes")
-      .select("id,hole_no,par,stroke_index,score,putts,fairway_hit,note")
-      .eq("round_id", nextRoundId)
-      .order("hole_no", { ascending: true });
-    if (refreshed.error) throw new Error(refreshed.error.message);
-    const refreshedRows = (refreshed.data ?? []) as Hole[];
-    setHoles(refreshedRows);
-    setHoleIdx((prev) => Math.min(prev, Math.max(0, refreshedRows.length - 1)));
+    return { targetHoleCount, nextHoles };
   }
 
   async function saveRoundMeta() {
-    if (!roundId || !round) return;
+    if (!roundId || !round) return false;
     setSaving(true);
     setError(null);
     try {
-      await flushSave();
+      if (!(await flushSave())) return false;
       const nextStartAt = replaceIsoDateKeepingTime(round.start_at, roundDate);
       const parsedSlope = slopeRating.trim() === "" ? null : Number(slopeRating);
       const parsedCourseRating = courseRating.trim() === "" ? null : Number(courseRating);
-      if (parsedSlope !== null && !Number.isFinite(parsedSlope)) throw new Error("Slope invalide.");
+      if (parsedSlope !== null && (!Number.isFinite(parsedSlope) || !Number.isInteger(parsedSlope))) throw new Error("Slope invalide.");
       if (parsedCourseRating !== null && !Number.isFinite(parsedCourseRating)) throw new Error("Course rating invalide.");
       const nextRounds18Count = roundsFormatValue === "1x9" ? 1 : Number(roundsFormatValue);
       if (!Number.isFinite(nextRounds18Count) || nextRounds18Count < 1 || nextRounds18Count > 4) {
         throw new Error("Nombre de tours invalide.");
       }
-      const upd = await supabase
-        .from("golf_rounds")
-        .update({
-          start_at: nextStartAt,
-          notes: notes.trim() || null,
-          om_competition_level:
-            round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
-              ? competitionLevel
-              : round.om_competition_level,
-          om_rounds_18_count:
-            round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
-              ? nextRounds18Count
-              : round.om_rounds_18_count,
-          tee_name: teeName.trim() || null,
-          slope_rating: parsedSlope,
-          course_rating: parsedCourseRating,
-        })
-        .eq("id", roundId);
-      if (upd.error) throw new Error(upd.error.message);
-      if (round.round_type === "competition" && round.om_competition_format === "stroke_play_individual") {
-        await syncHoleTemplateForCompetition(roundId, roundsFormatValue);
-      }
-      const recompute = await supabase.rpc("om_recompute_round", { p_round_id: roundId });
-      if (recompute.error) throw new Error(recompute.error.message);
+      const isStrokeCompetition =
+        round.round_type === "competition" && round.om_competition_format === "stroke_play_individual";
+      const template = isStrokeCompetition
+        ? buildHoleTemplateForCompetition(roundsFormatValue)
+        : {
+            targetHoleCount: holes.length > 9 ? 18 : 9,
+            nextHoles: [...holes].sort((left, right) => left.hole_no - right.hole_no),
+          };
+      const nextCompetitionLevel = isStrokeCompetition ? competitionLevel : round.om_competition_level;
+      const nextRoundCount = isStrokeCompetition ? nextRounds18Count : round.om_rounds_18_count;
+      const updateResult = await supabase.rpc("update_player_golf_round_transactional", {
+        p_round_id: roundId,
+        p_start_at: nextStartAt,
+        p_notes: notes.trim() || null,
+        p_competition_level: nextCompetitionLevel,
+        p_rounds_18_count: nextRoundCount,
+        p_tee_name: teeName.trim() || null,
+        p_slope_rating: parsedSlope,
+        p_course_rating: parsedCourseRating,
+        p_target_hole_count: template.targetHoleCount,
+        p_holes: template.nextHoles.map((item) => ({
+          hole_no: item.hole_no,
+          par: item.par,
+          stroke_index: item.stroke_index,
+          score: item.score,
+          putts: item.putts,
+          fairway_hit: item.fairway_hit,
+          note: item.note?.trim() || null,
+        })),
+      });
+      if (updateResult.error) throw new Error(updateResult.error.message);
+
+      const refreshed = await supabase
+        .from("golf_round_holes")
+        .select("id,hole_no,par,stroke_index,score,putts,fairway_hit,note")
+        .eq("round_id", roundId)
+        .order("hole_no", { ascending: true });
+      if (refreshed.error) throw new Error(refreshed.error.message);
+      const refreshedRows = (refreshed.data ?? []) as Hole[];
+      setHoles(refreshedRows);
+      setHoleIdx((previous) => Math.min(previous, Math.max(0, refreshedRows.length - 1)));
       setRound((prev) =>
         prev
           ? {
               ...prev,
               start_at: nextStartAt,
               notes: notes.trim() || null,
-              om_competition_level:
-                round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
-                  ? competitionLevel
-                  : prev.om_competition_level,
-              om_rounds_18_count:
-                round.round_type === "competition" && round.om_competition_format === "stroke_play_individual"
-                  ? nextRounds18Count
-                  : prev.om_rounds_18_count,
+              om_competition_level: nextCompetitionLevel,
+              om_rounds_18_count: nextRoundCount,
               tee_name: teeName.trim() || null,
               slope_rating: parsedSlope,
               course_rating: parsedCourseRating,
             }
           : prev
       );
-    } catch (e: any) {
-      setError(e?.message ?? t("common.errorLoading"));
+      setMetaDirty(false);
+      return true;
+    } catch (cause: unknown) {
+      setError(golfSaveErrorMessage(cause, t("common.errorLoading")));
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const protectClientNavigation = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const element = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(element instanceof HTMLAnchorElement) || element.target === "_blank" || element.hasAttribute("download")) return;
+
+      const destination = new URL(element.href, window.location.href);
+      if (destination.origin !== window.location.origin) return;
+      const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const next = `${destination.pathname}${destination.search}${destination.hash}`;
+      if (current === next || (destination.pathname === window.location.pathname && destination.search === window.location.search)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      void (async () => {
+        let saved = true;
+        if (gridDirty) saved = await saveGrid();
+        else {
+          setSaving(true);
+          try {
+            saved = await flushSave();
+          } finally {
+            setSaving(false);
+          }
+        }
+        if (saved && metaDirty) saved = await saveRoundMeta();
+        if (saved) {
+          clearRoundDraft();
+          router.push(next);
+        }
+      })();
+    };
+
+    document.addEventListener("click", protectClientNavigation, true);
+    return () => document.removeEventListener("click", protectClientNavigation, true);
+    // The handler must always close over the current form and dirty states.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridDirty, hasUnsavedChanges, metaDirty, router]);
+
   if (loading) {
     return (
       <div className="player-dashboard-bg">
         <div className="app-shell marketplace-page">
-          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Modifier" }]} />
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("common.edit") }]} />
           <div className="glass-section">
             <div className="marketplace-header">
               <div>
@@ -803,7 +1011,7 @@ export default function EditRoundWizardPage() {
   return (
     <div className="player-dashboard-bg">
       <div className="app-shell marketplace-page">
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: "Parcours", href: "/player/golf/rounds" }, { label: "Modifier" }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("common.edit") }]} />
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 10 }}>
@@ -815,6 +1023,39 @@ export default function EditRoundWizardPage() {
 
           {error && <div className="marketplace-error">{error}</div>}
           {uxError && <div className="marketplace-error">{uxError}</div>}
+          {entryView === "guided" && autosave.status !== "clean" ? (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                marginTop: 10,
+                minHeight: 42,
+                padding: "9px 12px",
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                background: autosave.status === "error" ? "#fff0ef" : "#eef3ed",
+                color: autosave.status === "error" ? "#8b302a" : "#35483b",
+                fontSize: 13,
+                fontWeight: 850,
+              }}
+            >
+              <span>
+                {autosave.status === "saving"
+                  ? "Synchronisation de la saisie…"
+                  : autosave.status === "error"
+                    ? "Saisie non synchronisée. Elle reste sur cet écran."
+                    : "Saisie en attente de synchronisation…"}
+              </span>
+              {autosave.status === "error" ? (
+                <button type="button" className="btn" onClick={() => void flushSave()} disabled={saving}>
+                  Réessayer
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <section className={`glass-section ${styles.sectionCard}`}>
@@ -1193,7 +1434,10 @@ export default function EditRoundWizardPage() {
                   className="input"
                   type="date"
                   value={roundDate}
-                  onChange={(e) => setRoundDate(e.target.value)}
+                  onChange={(e) => {
+                    setRoundDate(e.target.value);
+                    setMetaDirty(true);
+                  }}
                   disabled={saving}
                   style={{ maxWidth: 220 }}
                 />
@@ -1206,7 +1450,10 @@ export default function EditRoundWizardPage() {
                   <select
                     className="input"
                     value={competitionLevel}
-                    onChange={(e) => setCompetitionLevel(e.target.value as OmCompetitionLevel)}
+                    onChange={(e) => {
+                      setCompetitionLevel(e.target.value as OmCompetitionLevel);
+                      setMetaDirty(true);
+                    }}
                     disabled={saving}
                   >
                     <option value="club_internal">Tournoi interne</option>
@@ -1222,7 +1469,10 @@ export default function EditRoundWizardPage() {
                   <select
                     className="input"
                     value={roundsFormatValue}
-                    onChange={(e) => setRoundsFormatValue(e.target.value)}
+                    onChange={(e) => {
+                      setRoundsFormatValue(e.target.value);
+                      setMetaDirty(true);
+                    }}
                     disabled={saving}
                   >
                     <option value="1x9">1 x 9</option>
@@ -1241,7 +1491,10 @@ export default function EditRoundWizardPage() {
                   <input
                     className="input"
                     value={teeName}
-                    onChange={(e) => setTeeName(e.target.value)}
+                    onChange={(e) => {
+                      setTeeName(e.target.value);
+                      setMetaDirty(true);
+                    }}
                     disabled={saving}
                     placeholder="Ex: Tee jaune"
                   />
@@ -1253,7 +1506,10 @@ export default function EditRoundWizardPage() {
                         className="input"
                         inputMode="numeric"
                         value={slopeRating}
-                        onChange={(e) => setSlopeRating(e.target.value)}
+                        onChange={(e) => {
+                          setSlopeRating(e.target.value);
+                          setMetaDirty(true);
+                        }}
                         disabled={saving}
                         placeholder="Ex: 125"
                       />
@@ -1264,7 +1520,10 @@ export default function EditRoundWizardPage() {
                         className="input"
                         inputMode="decimal"
                         value={courseRating}
-                        onChange={(e) => setCourseRating(e.target.value)}
+                        onChange={(e) => {
+                          setCourseRating(e.target.value);
+                          setMetaDirty(true);
+                        }}
                         disabled={saving}
                         placeholder="Ex: 71.4"
                       />
@@ -1279,7 +1538,10 @@ export default function EditRoundWizardPage() {
                 className="input"
                 rows={4}
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setMetaDirty(true);
+                }}
                 disabled={saving}
                 placeholder="Hydratation, alimentation, sensations, remarques..."
               />
@@ -1295,9 +1557,9 @@ export default function EditRoundWizardPage() {
         </section>
 
         <div className={styles.footerActions}>
-          <Link className={`${styles.actionButton} ${styles.primaryAction}`} href={scorecardHref}>
+          <button type="button" className={`${styles.actionButton} ${styles.primaryAction}`} onClick={finishAndGoScorecard} disabled={saving}>
             {t("roundsEdit.showScorecard")}
-          </Link>
+          </button>
 
           <button type="button" className={`${styles.actionButton} ${styles.dangerAction}`} onClick={deleteRound} disabled={saving}>
             {t("roundsEdit.deleteRound")}
