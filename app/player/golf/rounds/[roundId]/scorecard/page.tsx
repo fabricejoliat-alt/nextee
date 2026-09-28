@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { ArrowLeft, Check, Pencil, X } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import { HorizontalScorecard, RoundPerformanceInsights } from "@/components/golf/GolfRoundsWorkspace";
 import { getRouteParam } from "@/lib/routeParams";
 
 type Round = {
@@ -75,97 +75,6 @@ function isGIR(par: number | null, score: number | null, putts: number | null) {
   if (typeof putts !== "number") return false;
   return score - putts <= par - 2;
 }
-
-type ScoreMark = "none" | "birdie" | "eagle" | "bogey" | "double" | "tripleplus";
-
-function scoreMark(par: number | null, score: number | null): ScoreMark {
-  if (typeof par !== "number" || typeof score !== "number") return "none";
-  const d = score - par;
-  if (d <= -2) return "eagle";
-  if (d === -1) return "birdie";
-  if (d === 1) return "bogey";
-  if (d === 2) return "double";
-  if (d >= 3) return "tripleplus";
-  return "none";
-}
-
-function ScoreShape({ value, mark, triplePlusTitle }: { value: number | null; mark: ScoreMark; triplePlusTitle: string }) {
-  const txt = value == null ? "—" : String(value);
-
-  const innerText = (
-    <div style={{ fontWeight: 1100, fontSize: 22, lineHeight: 1, minWidth: 22, textAlign: "center" }}>{txt}</div>
-  );
-
-  if (mark === "none") return <div style={{ padding: "6px 10px" }}>{innerText}</div>;
-
-  if (mark === "birdie") {
-    return (
-      <div style={{ ...shapeOuter, borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)" }}>
-        {innerText}
-      </div>
-    );
-  }
-
-  if (mark === "eagle") {
-    return (
-      <div style={{ ...shapeOuter, borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)", padding: 4 }}>
-        <div style={{ borderRadius: 999, border: "2px solid rgba(0,0,0,0.78)", padding: "6px 10px" }}>
-          {innerText}
-        </div>
-      </div>
-    );
-  }
-
-  if (mark === "bogey") {
-    return (
-      <div style={{ ...shapeOuter, borderRadius: 8, border: "2px solid rgba(0,0,0,0.78)" }}>
-        {innerText}
-      </div>
-    );
-  }
-
-  if (mark === "double") {
-    return (
-      <div style={{ ...shapeOuter, borderRadius: 10, border: "2px solid rgba(0,0,0,0.78)", padding: 4 }}>
-        <div style={{ borderRadius: 8, border: "2px solid rgba(0,0,0,0.78)", padding: "6px 10px" }}>
-          {innerText}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        ...shapeOuter,
-        borderRadius: 10,
-        border: "2px solid rgba(0,0,0,0.78)",
-        padding: 4,
-        backgroundImage:
-          "repeating-linear-gradient(45deg, rgba(0,0,0,0.38) 0px, rgba(0,0,0,0.38) 3px, rgba(0,0,0,0.00) 3px, rgba(0,0,0,0.00) 8px)",
-      }}
-      title={triplePlusTitle}
-    >
-      <div
-        style={{
-          borderRadius: 8,
-          border: "2px solid rgba(0,0,0,0.78)",
-          padding: "6px 10px",
-          background: "rgba(255,255,255,0.88)",
-        }}
-      >
-        {innerText}
-      </div>
-    </div>
-  );
-}
-
-const shapeOuter: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "6px 10px",
-};
 
 export default function ScorecardPage() {
   const { t, locale } = useI18n();
@@ -487,126 +396,12 @@ export default function ScorecardPage() {
         </div>
 
         <div className="glass-section">
-          <div className="glass-card player-scorecard-panel">
-            <div className="player-scorecard-wrap">
-              <table className="player-scorecard">
-                <thead>
-                  <tr>
-                    <th scope="col">{t("roundsEdit.hole")}</th>
-                    {holes.map((hole) => <th key={hole.id ?? `hole-${hole.hole_no}`} scope="col">{hole.hole_no}</th>)}
-                    <th scope="col">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <th scope="row">Par</th>
-                    {holes.map((hole) => <td key={`par-${hole.id}`}>{hole.par ?? "—"}</td>)}
-                    <td className="player-scorecard-total">{computed.parTotal ?? "—"}</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Score</th>
-                    {holes.map((hole) => <td key={`score-${hole.id}`}><Link href={`/player/golf/rounds/${round.id}/edit?hole=${hole.hole_no}`} className="player-scorecard-score"><ScoreShape value={hole.score} mark={scoreMark(hole.par, hole.score)} triplePlusTitle={t("roundsScorecard.tripleBogeyOrMore")} /></Link></td>)}
-                    <td className="player-scorecard-total">{computed.scoreTotal ?? "—"}</td>
-                  </tr>
-                  {round.score_entry_mode !== "hole_only" ? <>
-                    <tr>
-                      <th scope="row">Fairway</th>
-                      {holes.map((hole) => <td key={`fairway-${hole.id}`}>{hole.fairway_hit == null ? "—" : hole.fairway_hit ? <Check className="player-scorecard-success" size={15} aria-label={t("roundsScorecard.hit")} /> : <X className="player-scorecard-failure" size={15} aria-label={t("roundsScorecard.miss")} />}</td>)}
-                      <td className="player-scorecard-total">—</td>
-                    </tr>
-                    <tr>
-                      <th scope="row">GIR</th>
-                      {holes.map((hole) => {
-                        const known = hole.par != null && hole.score != null && hole.putts != null;
-                        const gir = isGIR(hole.par, hole.score, hole.putts);
-                        return <td key={`gir-${hole.id}`}>{!known ? "—" : gir ? <Check className="player-scorecard-success" size={15} aria-label={t("roundsScorecard.yes")} /> : <X className="player-scorecard-failure" size={15} aria-label={t("roundsScorecard.no")} />}</td>;
-                      })}
-                      <td className="player-scorecard-total">{computed.gir ?? "—"}</td>
-                    </tr>
-                    <tr>
-                      <th scope="row">Putts</th>
-                      {holes.map((hole) => <td key={`putts-${hole.id}`}>{hole.putts ?? "—"}</td>)}
-                      <td className="player-scorecard-total">{computed.putts ?? "—"}</td>
-                    </tr>
-                  </> : null}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <HorizontalScorecard holes={holes} />
         </div>
 
-        {/* Stats */}
-        {round.score_entry_mode !== "hole_only" ? (
-          <div className="glass-section">
-            <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-              <div style={{ fontWeight: 1000, fontSize: 16 }}>{t("roundsScorecard.statistics")}</div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={statBox}>
-                <div style={statLabel}>Eagles</div>
-                <div style={statValue}>{computed.eagles ?? 0}</div>
-              </div>
-              <div style={statBox}>
-                <div style={statLabel}>Birdies</div>
-                <div style={statValue}>{computed.birdies ?? 0}</div>
-              </div>
-              <div style={statBox}>
-                <div style={statLabel}>Pars</div>
-                <div style={statValue}>{computed.pars ?? 0}</div>
-              </div>
-              <div style={statBox}>
-                <div style={statLabel}>Bogeys</div>
-                <div style={statValue}>{computed.bogeys ?? 0}</div>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={statBox}>
-                <div style={statLabel}>Autre score</div>
-                <div style={statValue}>{computed.doublesPlus ?? 0}</div>
-              </div>
-
-              <div style={statBox}>
-                <div style={statLabel}>Double bogey</div>
-                <div style={statValue}>{computed.doubleBogeys ?? 0}</div>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div style={statBox}>
-                <div style={statLabel}>GIR</div>
-                <div style={statValue}>{typeof computed.gir === "number" ? computed.gir : "—"}</div>
-              </div>
-
-              <div style={statBox}>
-                <div style={statLabel}>Putts</div>
-                <div style={statValue}>{typeof computed.putts === "number" ? computed.putts : "—"}</div>
-              </div>
-            </div>
-
-            <div style={statBox}>
-              <div style={statLabel}>Scrambling</div>
-              <div style={statValue}>
-                {computed.scramblingPct == null
-                  ? "—"
-                  : `${computed.scramblingPct}% (${computed.scramblingSuccesses}/${computed.scramblingOpportunities})`}
-              </div>
-            </div>
-
-            {typeof computed.scoreTotal === "number" && (
-              <div style={statBox}>
-                <div style={statLabel}>{t("roundsScorecard.totalScore")}</div>
-                <div style={statValue}>{computed.scoreTotal}</div>
-              </div>
-            )}
-
-            <div style={statBox}>
-              <div style={statLabel}>{pickLocaleText(locale, "Trous joués", "Holes played")}</div>
-              <div style={statValue}>{computed.holesPlayed ?? 0}</div>
-            </div>
-            </div>
-          </div>
-        ) : null}
+        <div className="glass-section">
+          <RoundPerformanceInsights roundId={round.id} holes={holes} />
+        </div>
       </div>
     </div>
   );
@@ -632,25 +427,4 @@ const kvVal: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 1100,
   color: "rgba(0,0,0,0.82)",
-};
-
-const statBox: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.10)",
-  borderRadius: 16,
-  background: "rgba(255,255,255,0.65)",
-  padding: 12,
-  display: "grid",
-  gap: 6,
-};
-
-const statLabel: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.62)",
-};
-
-const statValue: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 1000,
-  color: "rgba(0,0,0,0.85)",
 };

@@ -1589,9 +1589,11 @@ export default function PlayerHomePage() {
                         : (competition?.title?.trim() || pickLocaleText(locale, "Compétition", "Competition"));
                     const location = event?.location_text || session?.location_text || competition?.location_text;
                     const href = event
-                      ? (event.event_type === "training" || event.event_type === "session" || event.event_type === "camp"
-                        ? "/player/golf/trainings/new?club_event_id=" + encodeURIComponent(event.id)
-                        : "/player/golf/trainings?type=all")
+                      ? (event.event_type === "competition" || event.event_type === "interclub"
+                        ? "/player/golf/competitions/" + encodeURIComponent(event.id)
+                        : event.event_type === "training" || event.event_type === "session" || event.event_type === "camp"
+                          ? "/player/golf/trainings/new?club_event_id=" + encodeURIComponent(event.id)
+                          : "/player/golf/trainings?type=all")
                       : session
                         ? "/player/golf/trainings/" + session.id
                         : "/player/golf/trainings?type=all";

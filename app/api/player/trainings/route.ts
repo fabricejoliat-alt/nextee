@@ -62,6 +62,16 @@ type CampRow = {
   status: string | null;
 };
 
+type ClubCampDayLinkRow = {
+  event_id: string | null;
+  camp_id: string | null;
+};
+
+type ClubCampStatusRow = {
+  id: string | null;
+  status: string | null;
+};
+
 type SessionCampMeta = {
   player_camp_id: string;
   player_camp_title: string | null;
@@ -150,7 +160,42 @@ export async function GET(req: NextRequest) {
           .order("starts_at", { ascending: false })
       : { data: [] as ClubEventRow[], error: null };
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
-    const attendeeEvents = (eventsRes.data ?? []) as ClubEventRow[];
+    const rawAttendeeEvents = (eventsRes.data ?? []) as ClubEventRow[];
+    const campEventIds = uniq(
+      rawAttendeeEvents
+        .filter((event) => event.event_type === "camp")
+        .map((event) => event.id),
+    );
+    const clubCampDaysRes = campEventIds.length
+      ? await supabaseAdmin
+          .from("club_camp_days")
+          .select("event_id,camp_id")
+          .in("event_id", campEventIds)
+      : { data: [] as ClubCampDayLinkRow[], error: null };
+    if (clubCampDaysRes.error) return NextResponse.json({ error: clubCampDaysRes.error.message }, { status: 400 });
+
+    const clubCampDayLinks = (clubCampDaysRes.data ?? []) as ClubCampDayLinkRow[];
+    const linkedClubCampIds = uniq(clubCampDayLinks.map((row) => row.camp_id));
+    const clubCampStatusesRes = linkedClubCampIds.length
+      ? await supabaseAdmin.from("club_camps").select("id,status").in("id", linkedClubCampIds)
+      : { data: [] as ClubCampStatusRow[], error: null };
+    if (clubCampStatusesRes.error) return NextResponse.json({ error: clubCampStatusesRes.error.message }, { status: 400 });
+
+    const visibleClubCampIds = new Set(
+      ((clubCampStatusesRes.data ?? []) as ClubCampStatusRow[])
+        .filter((camp) => camp.status === "scheduled")
+        .map((camp) => String(camp.id ?? "").trim())
+        .filter(Boolean),
+    );
+    const hiddenCampEventIds = new Set(
+      clubCampDayLinks
+        .filter((row) => !visibleClubCampIds.has(String(row.camp_id ?? "").trim()))
+        .map((row) => String(row.event_id ?? "").trim())
+        .filter(Boolean),
+    );
+    const attendeeEvents = rawAttendeeEvents.filter(
+      (event) => event.event_type !== "camp" || !hiddenCampEventIds.has(String(event.id ?? "").trim()),
+    );
 
     const sessionIds = uniq(sessions.map((row) => row.id));
     const campDaysRes = sessionIds.length

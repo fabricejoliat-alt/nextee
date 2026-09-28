@@ -486,6 +486,10 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           setError(String(plannedJson?.error ?? "Impossible de charger l'entraînement planifié."));
         } else if (plannedJson?.event) {
           const ev = plannedJson.event as ClubEventRow;
+          if (["competition", "interclub"].includes(String(ev.event_type))) {
+            router.replace(`/player/golf/competitions/${encodeURIComponent(ev.id)}`);
+            return;
+          }
           setLinkedEvent(ev);
           setLinkedGroupName(String(plannedJson?.groupName ?? "").trim());
           setLinkedCampTitle(String(plannedJson?.campTitle ?? "").trim());
@@ -989,13 +993,13 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       <span className={styles.sectionIcon}><UsersRound size={18} aria-hidden="true" /></span>
                       <div>
                         <h2>{pickLocaleText(locale, "Participants", "Participants")}</h2>
-                        <p>{pickLocaleText(locale, "Les coachs et les joueurs présents à l’activité.", "Coaches and players attending the activity.")}</p>
+                        <p>{pickLocaleText(locale, "Les coachs assignés et les joueurs attendus à l’activité.", "Assigned coaches and players expected at the activity.")}</p>
                       </div>
                     </div>
 
                     <section className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
-                        {pickLocaleText(locale, "Coachs assignés", "Assigned coaches")}
+                        {pickLocaleText(locale, "Coachs assignés", "Assigned coaches")} ({coachOptions.length})
                       </div>
                       {coachOptions.length === 0 ? (
                         <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.55)" }}>{t("trainingNew.noCoachOnSession")}</div>
@@ -1004,7 +1008,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                           {coachOptions.map((c) => (
                             <div
                               key={`coach-top-${c.id}`}
-                              className={styles.personRow}
+                              className={`${styles.personRow} ${styles.participantRow}`}
                               style={{
                                 border: "1px solid rgba(0,0,0,0.10)",
                                 borderRadius: 12,
@@ -1054,7 +1058,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
                     <section className={`glass-card ${styles.sectionCard}`} style={{ padding: 14, display: "grid", gap: 10 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
-                        {pickLocaleText(locale, "Joueurs présents", "Present players")} ({eventAttendees.length})
+                        {pickLocaleText(locale, "Joueurs attendus", "Expected players")} ({eventAttendees.length})
                       </div>
                       {loadingEventAttendees ? (
                         <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
@@ -1087,7 +1091,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                             return (
                               <div
                                 key={`evt-att-top-${a.player_id}`}
-                                className={styles.personRow}
+                                className={`${styles.personRow} ${styles.participantRow}`}
                                 style={{
                                   border: "1px solid rgba(0,0,0,0.10)",
                                   borderRadius: 12,
@@ -1564,7 +1568,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
                 {performanceEnabled ? (
                 <div className={`glass-card ${linkedEvent ? styles.sectionCard : ""}`} style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div className={styles.cardTitleRow} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <div className="card-title" style={{ marginBottom: 0 }}>{t("trainingNew.trainingStructure")}</div>
                     {plannedStructureItems.length > 0 ? (
                       <button
@@ -1706,7 +1710,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                   </button>
                 ) : null}
 
-                {linkedEvent ? (
+                {linkedEvent && !plannedEventLocked && (coachFeedback.length > 0 || customCriteria.length > 0 || showSensationsCard) ? (
                   <div className={styles.sectionHeading}>
                     <span className={styles.sectionIcon}><MessageSquareText size={18} aria-hidden="true" /></span>
                     <div>

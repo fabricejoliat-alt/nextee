@@ -19,7 +19,8 @@ type Round = {
   tee_name: string | null; total_score: number | null; total_putts: number | null; fairways_hit: number | null;
   fairways_total: number | null; gir: number | null; score_entry_mode: string | null;
 };
-type Hole = GolfHoleInput & { round_id: string; id?: string; stroke_index?: number | null; note?: string | null };
+export type WorkspaceScorecardHole = GolfHoleInput & { round_id?: string; id?: string; stroke_index?: number | null; note?: string | null };
+type Hole = WorkspaceScorecardHole;
 type Period = "3m" | "year" | "all";
 
 const locale = "fr-CH";
@@ -28,7 +29,7 @@ const scoreClass = (hole: Hole) => {
   return category === "eagleOrBetter" ? styles.eagle : category === "birdie" ? styles.birdie : category === "bogey" ? styles.bogey : category === "doubleOrWorse" ? styles.double : "";
 };
 
-function HorizontalScorecard({ holes }: { holes: Hole[] }) {
+export function HorizontalScorecard({ holes }: { holes: WorkspaceScorecardHole[] }) {
   const rows = [...holes].sort((a, b) => a.hole_no - b.hole_no);
   const isEighteen = rows.some((hole) => hole.hole_no > 9);
   const front = rows.filter((hole) => hole.hole_no <= 9);
@@ -84,7 +85,7 @@ function HorizontalScorecard({ holes }: { holes: Hole[] }) {
   );
 }
 
-function RoundDetail({ round, holes }: { round: Round; holes: Hole[] }) {
+export function RoundPerformanceInsights({ roundId, holes }: { roundId: string; holes: WorkspaceScorecardHole[] }) {
   const expected = holes.some((hole) => hole.hole_no > 9) ? 18 : 9;
   const metrics = calculateGolfRoundMetrics(holes, expected);
   const comparable = [...holes].filter((hole) => hole.par != null && hole.score != null).sort((a, b) => a.hole_no - b.hole_no);
@@ -115,11 +116,10 @@ function RoundDetail({ round, holes }: { round: Round; holes: Hole[] }) {
     xAxis: { type: "category", data: holes.filter(h => h.putts != null).map(h => String(h.hole_no)) }, yAxis: { type: "value", minInterval: 1 },
     series: [{ type: "bar", data: holes.filter(h => h.putts != null).map(h => h.putts), itemStyle: { color: MANAGEMENT_CHART_COLORS[1] }, markLine: { symbol: "none", lineStyle: { color: MANAGEMENT_CHART_COLORS[2] }, data: [{ yAxis: 2, name: "2 putts" }] } }],
   }), [holes]);
-  const rows = [...holes].sort((a,b) => a.hole_no-b.hole_no);
-  return <div className={styles.detail} onClick={(event) => event.stopPropagation()}>
+  return <div className={styles.insights}>
     <div className={styles.detailTop}>
-      <section className={`${trainingStyles.panel} ${styles.performance}`} aria-labelledby={`perf-${round.id}`}>
-        <h3 id={`perf-${round.id}`}>Synthèse de performance</h3>
+      <section className={`${trainingStyles.panel} ${styles.performance}`} aria-labelledby={`perf-${roundId}`}>
+        <h3 id={`perf-${roundId}`}>Synthèse de performance</h3>
         <div className={styles.metricGrid}>
           <div className={styles.metric}><span>Score</span><strong>{metrics.score ?? "—"} <small>{scoreToParLabel(metrics.toPar)}</small></strong></div>
           <div className={styles.metric}><span>Aller</span><strong>{metrics.front.score ?? "—"} <small>{scoreToParLabel(metrics.front.toPar)}</small></strong></div>
@@ -138,12 +138,19 @@ function RoundDetail({ round, holes }: { round: Round; holes: Hole[] }) {
         </div>
       </section>
     </div>
-    <HorizontalScorecard holes={rows} />
     <div className={styles.charts}>
       {comparable.length >= 3 ? <section className={`${trainingStyles.panel} ${styles.chartCard}`}><h3>Évolution du score sur {expected} trous</h3><ActiviteeEChart option={scoreOption} ariaLabel={`Courbe du score cumulé au fil des ${expected} trous`} height={230} /></section> : null}
       {comparable.length >= 3 ? <section className={`${trainingStyles.panel} ${styles.chartCard}`}><h3>Répartition des résultats</h3><ActiviteeEChart option={distributionOption} ariaLabel={`Répartition: ${metrics.distribution.eagleOrBetter} eagle ou mieux, ${metrics.distribution.birdie} birdies, ${metrics.distribution.par} pars, ${metrics.distribution.bogey} bogeys, ${metrics.distribution.doubleOrWorse} doubles ou plus`} height={230} /></section> : null}
       {completePutts ? <section className={`${trainingStyles.panel} ${styles.chartCard}`}><h3>Putting par trou</h3><ActiviteeEChart option={puttingOption} ariaLabel="Nombre de putts par trou avec référence à deux putts" height={230} /></section> : <section className={`${trainingStyles.panel} ${styles.chartCard}`}><h3>Putting</h3><p>Données insuffisantes pour afficher ce graphique.</p></section>}
     </div>
+  </div>;
+}
+
+function RoundDetail({ round, holes }: { round: Round; holes: Hole[] }) {
+  const rows = [...holes].sort((a,b) => a.hole_no-b.hole_no);
+  return <div className={styles.detail} onClick={(event) => event.stopPropagation()}>
+    <RoundPerformanceInsights roundId={round.id} holes={rows} />
+    <HorizontalScorecard holes={rows} />
     <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}><Link className="btn" href={`/player/golf/rounds/${round.id}/edit`}>Modifier</Link><Link className="btn" href={`/player/golf/rounds/${round.id}/scorecard`}>Scorecard complète</Link></div>
   </div>;
 }

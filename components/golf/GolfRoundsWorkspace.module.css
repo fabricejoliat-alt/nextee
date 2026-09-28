@@ -28,6 +28,7 @@
 .chevron svg { transition: transform .18s ease; }
 .expanded .chevron svg { transform: rotate(180deg); }
 .detail { display: grid; gap: 14px; margin-top: 8px; padding: 17px; border: 1px solid #dfe7dd; border-radius: 15px; background: #fff; box-shadow: 0 8px 22px rgba(35,54,41,.045); }
+.insights { display: grid; gap: 14px; min-width: 0; }
 .detailTop { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; }
 .performance, .chartCard { min-width: 0; }
 .performance h3, .chartCard h3 { margin: 0 0 13px; color: #35483b; font: 750 16px/1.2 var(--font-inter-tight),var(--font-inter),sans-serif; }

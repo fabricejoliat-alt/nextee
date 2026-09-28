@@ -7,6 +7,14 @@ const migration = readFileSync(
   new URL("../supabase/migrations/20260926_transactional_player_mutations_batch4.sql", import.meta.url),
   "utf8",
 );
+const roundTypeFixMigration = readFileSync(
+  new URL("../supabase/migrations/20260928_fix_player_golf_round_type_trim.sql", import.meta.url),
+  "utf8",
+);
+const newRoundPage = readFileSync(
+  new URL("../app/player/golf/rounds/new/page.tsx", import.meta.url),
+  "utf8",
+);
 
 test("maps transactional capacity and authorization failures to stable API responses", () => {
   assert.deepEqual(mapPlayerTransactionError({ message: "P0001: CAMP_CAPACITY_EXCEEDED" }), {
@@ -62,4 +70,15 @@ test("does not expose server-only transactional mutations to authenticated clien
     migration,
     /grant execute on function public\.create_player_golf_rounds_transactional\(uuid, jsonb, timestamptz\[\], jsonb\) to authenticated;/,
   );
+});
+
+test("creates player rounds without applying trim directly to the round type enum", () => {
+  assert.match(roundTypeFixMigration, /trim\(v_round\.round_type::text\)/);
+  assert.doesNotMatch(roundTypeFixMigration, /trim\(v_round\.round_type\)/);
+});
+
+test("the new round form only uses manually entered courses", () => {
+  assert.doesNotMatch(newRoundPage, /\/api\/golfcourse/);
+  assert.doesNotMatch(newRoundPage, /golfcourseapi/);
+  assert.match(newRoundPage, /course_source: "manual"/);
 });

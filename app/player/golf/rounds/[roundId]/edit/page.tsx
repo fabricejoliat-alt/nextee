@@ -460,7 +460,7 @@ export default function EditRoundWizardPage() {
             stroke_index: existing?.stroke_index ?? null,
             score,
             putts: puttsRaw,
-            fairway_hit: useStats ? existing?.fairway_hit ?? null : null,
+            fairway_hit: useStats ? existing?.fairway_hit ?? true : null,
             note: existing?.note ?? null,
           },
           {}
@@ -472,7 +472,15 @@ export default function EditRoundWizardPage() {
     const draft = readRoundDraft(roundId, loadedRound.user_id);
     const recoveredHoles =
       draft?.holeDirty && draft.holes.length === serverHoles.length
-        ? draft.holes.map((item, index) => applyConstraints(serverHoles[index], item))
+        ? draft.holes.map((item, index) => {
+            const recovered = applyConstraints(serverHoles[index], item);
+            return {
+              ...recovered,
+              fairway_hit: loadedRound.score_entry_mode !== "hole_only"
+                ? recovered.fairway_hit ?? true
+                : null,
+            };
+          })
         : null;
     setHoles(recoveredHoles ?? serverHoles);
     setGridDirty(Boolean(recoveredHoles));
@@ -627,6 +635,18 @@ export default function EditRoundWizardPage() {
     setHoles((current) => current.map((item, itemIndex) => itemIndex === index ? applyConstraints(item, patch) : item));
     setGridDirty(true);
     setUxError(null);
+  }
+
+  function patchGridPar(index: number, rawValue: string) {
+    patchGridHole(index, { par: rawValue === "" ? null : Number(rawValue) });
+    if (rawValue === "" || !Number.isFinite(Number(rawValue))) return;
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>(`[data-grid-score="${index}"]`)?.focus();
+    });
+  }
+
+  function toggleGridFairway(index: number, currentValue: boolean | null) {
+    patchGridHole(index, { fairway_hit: currentValue === true ? false : true });
   }
 
   async function saveGrid() {
@@ -1076,21 +1096,21 @@ export default function EditRoundWizardPage() {
                 <div><h2 style={{ margin: 0, fontSize: 20 }}>Saisie globale</h2><span style={{ color: "rgba(0,0,0,.58)", fontSize: 12, fontWeight: 700 }}>{holes.length} trous · sauvegarde groupée</span></div>
                 <div style={{ fontWeight: 900 }}>{gridDirty ? "Modifications non enregistrées" : "À jour"}</div>
               </div>
-              <div style={{ overflowX: "auto", border: "1px solid rgba(0,0,0,.1)", borderRadius: 14 }} tabIndex={0} aria-label="Grille de saisie, défilement horizontal disponible">
-                <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", textAlign: "center", fontSize: 13 }}>
-                  <thead style={{ position: "sticky", top: 0, zIndex: 2, background: "#eef2ed" }}><tr>{["Trou","Par","Score","Putts","Fairway / GIR","Écart"].map(label => <th key={label} style={gridCellStyle}>{label}</th>)}</tr></thead>
+              <div className={styles.gridScroller} tabIndex={0} aria-label="Grille de saisie des trous">
+                <table className={styles.scoreGrid}>
+                  <thead><tr><th className={styles.gridCell}>Trou</th><th className={styles.gridCell}>Par</th><th className={styles.gridCell}>Score</th><th className={styles.gridCell}>Putts</th><th className={`${styles.gridCell} ${styles.fairwayCell}`}>Fairway / GIR</th><th className={`${styles.gridCell} ${styles.gridDifference}`}>Écart</th></tr></thead>
                   <tbody>{holes.map((item, index) => {
                     const gir = item.score != null && item.par != null && item.putts != null ? item.score - item.putts <= item.par - 2 : null;
                     const subtotal = item.hole_no === 9 || item.hole_no === holes.length;
                     const partial = calculateGolfRoundMetrics(holes.filter(value => value.hole_no <= item.hole_no), item.hole_no <= 9 ? 9 : 18);
                     return <Fragment key={item.hole_no}><tr>
-                      <th scope="row" style={{ ...gridCellStyle, position: "sticky", left: 0, background: "#fff" }}>{item.hole_no}</th>
-                      <td style={gridCellStyle}><input aria-label={`Par trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.par ?? ""} onChange={e=>patchGridHole(index,{par:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={!isManualCourse || saving}/></td>
-                      <td style={gridCellStyle}><input aria-label={`Score trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.score ?? ""} onChange={e=>patchGridHole(index,{score:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={saving}/></td>
-                      <td style={gridCellStyle}><input aria-label={`Putts trou ${item.hole_no}`} className="input" inputMode="numeric" value={item.putts ?? ""} onChange={e=>patchGridHole(index,{putts:e.target.value===""?null:Number(e.target.value)})} style={gridInputStyle} disabled={!useStats || saving}/></td>
-                      <td style={gridCellStyle}>{useStats ? <select aria-label={`Fairway trou ${item.hole_no}`} className="input" value={item.fairway_hit == null ? "" : item.fairway_hit ? "hit" : "miss"} onChange={e=>patchGridHole(index,{fairway_hit:e.target.value===""?null:e.target.value==="hit"})} style={{ ...gridInputStyle, minWidth: 105 }} disabled={saving}><option value="">—</option><option value="hit">{item.par===3?"GIR oui":"Touché"}</option><option value="miss">{item.par===3?"GIR non":"Manqué"}</option></select> : "—"}{item.par !== 3 && gir != null ? <small style={{ display: "block" }}>GIR {gir?"oui":"non"}</small>:null}</td>
-                      <td style={gridCellStyle}>{item.score != null && item.par != null ? scoreToParLabel(item.score-item.par) : "—"}</td>
-                    </tr>{subtotal ? <tr style={{ background: "#f3f5f2", fontWeight: 900 }}><td colSpan={2} style={gridCellStyle}>{item.hole_no===9?"TOTAL ALLER":"TOTAL"}</td><td style={gridCellStyle}>{partial.score ?? "—"}</td><td style={gridCellStyle}>{partial.putts.total ?? "—"}</td><td style={gridCellStyle}>{partial.playedHoles} trous saisis</td><td style={gridCellStyle}>{scoreToParLabel(partial.toPar)}</td></tr>:null}</Fragment>;
+                      <th scope="row" className={`${styles.gridCell} ${styles.holeCell}`}>{item.hole_no}</th>
+                      <td className={styles.gridCell}><input aria-label={`Par trou ${item.hole_no}`} className={`${styles.gridInput} input`} inputMode="numeric" value={item.par ?? ""} onChange={e=>patchGridPar(index,e.target.value)} disabled={!isManualCourse || saving}/></td>
+                      <td className={styles.gridCell}><input data-grid-score={index} aria-label={`Score trou ${item.hole_no}`} className={`${styles.gridInput} input`} inputMode="numeric" value={item.score ?? ""} onChange={e=>patchGridHole(index,{score:e.target.value===""?null:Number(e.target.value)})} disabled={saving}/></td>
+                      <td className={styles.gridCell}><input aria-label={`Putts trou ${item.hole_no}`} className={`${styles.gridInput} input`} inputMode="numeric" value={item.putts ?? ""} onChange={e=>patchGridHole(index,{putts:e.target.value===""?null:Number(e.target.value)})} disabled={!useStats || saving}/></td>
+                      <td className={`${styles.gridCell} ${styles.fairwayCell}`}>{useStats ? <button type="button" aria-label={`${item.par===3?"GIR":"Fairway"} trou ${item.hole_no} : ${item.fairway_hit===false?"non":"oui"}`} aria-pressed={item.fairway_hit!==false} className={`${styles.fairwayToggle} ${item.fairway_hit===false?styles.fairwayToggleOff:styles.fairwayToggleOn}`} onClick={()=>toggleGridFairway(index,item.fairway_hit??true)} disabled={saving}><span aria-hidden="true"/></button> : "—"}{item.par !== 3 && gir != null ? <small className={styles.gridGir}>GIR {gir?"oui":"non"}</small>:null}</td>
+                      <td className={`${styles.gridCell} ${styles.gridDifference}`}>{item.score != null && item.par != null ? scoreToParLabel(item.score-item.par) : "—"}</td>
+                    </tr>{subtotal ? <tr className={styles.gridSubtotal}><td colSpan={2} className={styles.gridCell}>{item.hole_no===9?"TOTAL ALLER":"TOTAL"}</td><td className={styles.gridCell}>{partial.score ?? "—"}</td><td className={styles.gridCell}>{partial.putts.total ?? "—"}</td><td className={`${styles.gridCell} ${styles.fairwayCell}`}>{partial.playedHoles} trous saisis</td><td className={`${styles.gridCell} ${styles.gridDifference}`}>{scoreToParLabel(partial.toPar)}</td></tr>:null}</Fragment>;
                   })}</tbody>
                 </table>
               </div>
@@ -1574,19 +1594,6 @@ const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 950,
   color: "rgba(0,0,0,0.70)",
-};
-
-const gridCellStyle: React.CSSProperties = {
-  padding: "8px 7px",
-  borderBottom: "1px solid rgba(0,0,0,.07)",
-};
-
-const gridInputStyle: React.CSSProperties = {
-  width: 68,
-  minHeight: 42,
-  padding: "6px",
-  textAlign: "center",
-  fontWeight: 900,
 };
 
 const pillStyle: React.CSSProperties = {

@@ -30,6 +30,12 @@
   border-bottom: 1px solid #e9eee7;
 }
 
+.cardTitleRow {
+  margin-bottom: 6px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e9eee7;
+}
+
 .evaluationForm :global(.card-title) {
   color: var(--primary) !important;
   font-family: var(--font-inter-tight), var(--font-inter), sans-serif !important;
@@ -83,9 +89,10 @@
 .sectionIcon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border: 1px solid #d9e4d7; border-radius: 11px; background: #eaf1e7; color: #35483b; }
 .evaluationPage .sectionHeading h2 { margin: 0; color: #fff !important; font: 780 20px/1.15 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.02em; text-shadow: 0 1px 5px rgba(20, 37, 25, .35); }
 .evaluationPage .sectionHeading p { margin: 4px 0 0; color: rgba(255, 255, 255, .92) !important; font: 600 12px/1.4 var(--font-inter), sans-serif; text-shadow: 0 1px 5px rgba(20, 37, 25, .35); }
-.sectionCard { align-self: stretch; height: 100%; }
+.sectionCard { align-self: stretch; align-content: start; height: 100%; }
 
 .personRow { min-height: 54px; padding: 7px 10px !important; border: 1px solid #e4eae2 !important; border-radius: 11px !important; background: #fbfcfa !important; }
+.participantRow { box-sizing: border-box; }
 .person { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .avatar { display: grid !important; place-items: center !important; width: 40px !important; height: 40px !important; flex: 0 0 40px !important; overflow: hidden !important; border: 1px solid #dce5da !important; border-radius: 50% !important; background: #edf3eb !important; color: var(--primary) !important; font: 750 11px var(--font-inter), sans-serif !important; }
 .avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -140,6 +147,10 @@
   .evaluationForm > .activitySummary,
   .evaluationForm > .sectionHeading,
   .evaluationForm > .evaluationFooter { grid-column: 1; }
+}
+
+@media (min-width: 900px) {
+  .participantRow { height: 56px; }
 }
 
 @media (max-width: 640px) {

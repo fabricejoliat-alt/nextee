@@ -70,6 +70,22 @@
 
 .gridSaveButton,
 .saveMetaButton { justify-self: end; min-width: 190px; }
+.gridScroller { overflow-x: auto; border: 1px solid rgba(0, 0, 0, .1); border-radius: 14px; }
+.scoreGrid { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13px; text-align: center; }
+.scoreGrid thead { position: sticky; z-index: 2; top: 0; background: #eef2ed; }
+.gridCell { padding: 8px 7px; border-bottom: 1px solid rgba(0, 0, 0, .07); }
+.holeCell { position: sticky; left: 0; background: #fff; }
+.gridInput { box-sizing: border-box; width: 68px; min-height: 42px; padding: 6px; text-align: center; font-weight: 900; }
+.gridSubtotal { background: #f3f5f2; font-weight: 900; }
+.fairwayToggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.fairwayToggle > span { position: relative; width: 30px; height: 18px; flex: 0 0 auto; border-radius: 999px; background: #dbe2d9; transition: background .16s ease; }
+.fairwayToggle > span::after { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .24); content: ""; transition: transform .16s ease; }
+.fairwayToggleOn > span { background: #5d7858; }
+.fairwayToggleOn > span::after { transform: translateX(12px); }
+.fairwayToggleOff > span { background: #b87869; }
+.fairwayToggle:focus-visible { outline: 2px solid #82977a; outline-offset: 2px; }
+.fairwayToggle:disabled { cursor: not-allowed; opacity: .55; }
+.gridGir { display: block; margin-top: 3px; }
 .footerActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .footerActions .actionButton { min-width: 190px; }
 .dangerAction { border: 1px solid #e9c4c0; background: #fff0ef; color: #ad3d35; }
@@ -80,6 +96,17 @@
   .scoreField:only-child { grid-column: auto; }
   .holeNavigationThree { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .holeNavigationThree > :last-child { grid-column: 1 / -1; }
+  .gridScroller { overflow-x: hidden; }
+  .scoreGrid { min-width: 0; table-layout: fixed; font-size: 11px; }
+  .gridCell { padding: 6px 2px; }
+  .holeCell { width: 30px; }
+  .gridInput { width: 100%; min-width: 0; min-height: 40px; padding: 4px 1px; font-size: 16px; }
+  .fairwayCell { width: 54px; }
+  .fairwayToggle { width: 44px; }
+  .fairwayToggle > span { width: 28px; }
+  .fairwayToggleOn > span::after { transform: translateX(10px); }
+  .gridDifference { display: none; }
+  .gridGir { display: none; }
 }
 
 @media (max-width: 480px) {

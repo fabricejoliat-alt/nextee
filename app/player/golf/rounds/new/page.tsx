@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -11,23 +11,6 @@ import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./NewRound.module.css";
-
-type ApiCourseLite = {
-  id: string | number;
-  course_name: string;
-  club_name?: string;
-  city?: string;
-  country?: string;
-};
-
-type ApiTee = {
-  id: string;
-  gender: "male" | "female";
-  tee_name: string;
-  slope_rating: number | null;
-  course_rating: number | null;
-  holes: Array<{ par?: number; handicap?: number }>;
-};
 
 type ProfileRow = {
   handicap: number | null;
@@ -39,185 +22,11 @@ type OmCompetitionLevelSelect = OmCompetitionLevel | "exceptional";
 type OmCompetitionFormat = "stroke_play_individual" | "match_play_individual";
 type ExceptionalTournamentRow = { id: string; name: string };
 type OmMatchResult = "won" | "lost";
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): UnknownRecord | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as UnknownRecord)
-    : null;
-}
-
-function safeStr(v: unknown) {
-  return typeof v === "string" ? v : v == null ? "" : String(v);
-}
-
-function norm(s: string) {
-  return (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .trim();
-}
-
-function normalizeCourses(payload: unknown): ApiCourseLite[] {
-  const root = asRecord(payload);
-  const arr = root?.courses ?? root?.data ?? root?.results ?? payload ?? [];
-  if (!Array.isArray(arr)) return [];
-
-  return arr.flatMap((value): ApiCourseLite[] => {
-    const course = asRecord(value);
-    if (!course) return [];
-    const id = course.id ?? course.course_id ?? course.uuid ?? course._id;
-    const courseName = safeStr(course.course_name ?? course.name).trim();
-    if ((typeof id !== "string" && typeof id !== "number") || !courseName) return [];
-    const location = asRecord(course.location);
-    return [{
-      id,
-      course_name: courseName,
-      club_name: safeStr(course.club_name),
-      city: safeStr(location?.city),
-      country: safeStr(location?.country),
-    }];
-  });
-}
-
-function wantedTee(teeName: string, gender: "male" | "female") {
-  const n = norm(teeName);
-  if (gender === "male") {
-    if (n.includes("white") || n.includes("blanc")) return "blanc-h";
-    if (n.includes("yellow") || n.includes("jaune")) return "jaune-h";
-  } else {
-    if (n.includes("blue") || n.includes("bleu")) return "bleu-f";
-    if (n.includes("red") || n.includes("rouge")) return "rouge-f";
-  }
-  return null;
-}
-
-function normalizeTees(courseDetail: unknown): ApiTee[] {
-  const response = asRecord(courseDetail);
-  const root = asRecord(response?.course ?? response?.data ?? courseDetail);
-  const teesObj = asRecord(root?.tees);
-
-  const female = Array.isArray(teesObj?.female) ? teesObj.female : [];
-  const male = Array.isArray(teesObj?.male) ? teesObj.male : [];
-
-  const out: ApiTee[] = [];
-
-  female.forEach((value, idx) => {
-    const tee = asRecord(value);
-    if (!tee) return;
-    const tee_name = safeStr(tee.tee_name ?? tee.name);
-    if (!wantedTee(tee_name, "female")) return;
-
-    out.push({
-      id: `female-${idx}-${tee_name}`,
-      gender: "female",
-      tee_name,
-      slope_rating: typeof tee.slope_rating === "number" ? tee.slope_rating : null,
-      course_rating: typeof tee.course_rating === "number" ? tee.course_rating : null,
-      holes: normalizeTeeHoles(tee.holes),
-    });
-  });
-
-  male.forEach((value, idx) => {
-    const tee = asRecord(value);
-    if (!tee) return;
-    const tee_name = safeStr(tee.tee_name ?? tee.name);
-    if (!wantedTee(tee_name, "male")) return;
-
-    out.push({
-      id: `male-${idx}-${tee_name}`,
-      gender: "male",
-      tee_name,
-      slope_rating: typeof tee.slope_rating === "number" ? tee.slope_rating : null,
-      course_rating: typeof tee.course_rating === "number" ? tee.course_rating : null,
-      holes: normalizeTeeHoles(tee.holes),
-    });
-  });
-
-  const orderKey = (t: ApiTee) => {
-    const n = norm(t.tee_name);
-    if (t.gender === "male" && (n.includes("white") || n.includes("blanc"))) return 1;
-    if (t.gender === "male" && (n.includes("yellow") || n.includes("jaune"))) return 2;
-    if (t.gender === "female" && (n.includes("blue") || n.includes("bleu"))) return 3;
-    if (t.gender === "female" && (n.includes("red") || n.includes("rouge"))) return 4;
-    return 99;
-  };
-
-  return out.sort((a, b) => orderKey(a) - orderKey(b));
-}
-
-function normalizeTeeHoles(value: unknown): ApiTee["holes"] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((rawHole): ApiTee["holes"] => {
-    const hole = asRecord(rawHole);
-    if (!hole) return [];
-    return [{
-      par: typeof hole.par === "number" ? hole.par : undefined,
-      handicap: typeof hole.handicap === "number" ? hole.handicap : undefined,
-    }];
-  });
-}
-
-function teeLabel(t: ApiTee) {
-  const n = norm(t.tee_name);
-  let color = t.tee_name;
-
-  if (n.includes("white") || n.includes("blanc")) color = "Tee blanc";
-  else if (n.includes("yellow") || n.includes("jaune")) color = "Tee jaune";
-  else if (n.includes("blue") || n.includes("bleu")) color = "Tee bleu";
-  else if (n.includes("red") || n.includes("rouge")) color = "Tee rouge";
-
-  const gender = t.gender === "male" ? "Homme" : "Femme";
-  const parts = [`${color} (${gender})`];
-  if (typeof t.slope_rating === "number") parts.push(`Slope ${t.slope_rating}`);
-  if (typeof t.course_rating === "number") parts.push(`CR ${t.course_rating}`);
-  return parts.join(" • ");
-}
-
 function manualTeeLabel(color: ManualTeeColor) {
   if (color === "white") return "Tee blanc";
   if (color === "yellow") return "Tee jaune";
   if (color === "blue") return "Tee bleu";
   return "Tee rouge";
-}
-
-function teeHolesPrefill(tees: ApiTee[], selectedTeeId: string, playMode: PlayHolesMode) {
-  const t = tees.find((x) => x.id === selectedTeeId);
-  const holes = t?.holes;
-  if (!t || !Array.isArray(holes) || holes.length === 0) return null;
-
-  const base = holes.slice(0, 18).map((h, i) => ({
-    hole_no: i + 1,
-    par: h?.par == null ? null : Number(h.par),
-    stroke_index: h?.handicap == null ? null : Number(h.handicap),
-  }));
-
-  if (playMode === "9") return base.slice(0, 9);
-
-  if (base.length === 9 && playMode === "18") {
-    const back9 = base.map((h, i) => ({ ...h, hole_no: i + 10 }));
-    return [...base, ...back9];
-  }
-
-  return base;
-}
-
-function localContainsFilter(list: ApiCourseLite[], query: string) {
-  const nq = norm(query);
-  if (!nq) return list;
-
-  const scored = list
-    .map((c) => {
-      const hay = norm(`${c.course_name} ${c.club_name ?? ""} ${c.city ?? ""} ${c.country ?? ""}`);
-      const idx = hay.indexOf(nq);
-      return { c, idx };
-    })
-    .filter((x) => x.idx >= 0)
-    .sort((a, b) => a.idx - b.idx);
-
-  const filtered = scored.map((x) => x.c);
-  return filtered.length ? filtered : list;
 }
 
 function addDaysToYmd(ymd: string, days: number) {
@@ -231,8 +40,6 @@ function addDaysToYmd(ymd: string, days: number) {
 export default function NewRoundPage() {
   const { t, locale } = useI18n();
   const router = useRouter();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -267,40 +74,13 @@ export default function NewRoundPage() {
   const [omExceptionalTournamentId, setOmExceptionalTournamentId] = useState<string>("");
   const [exceptionalTournaments, setExceptionalTournaments] = useState<ExceptionalTournamentRow[]>([]);
 
-  const [q, setQ] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState<ApiCourseLite[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<ApiCourseLite | null>(null);
-  const [manualCourseOpen, setManualCourseOpen] = useState(false);
   const [manualLocation, setManualLocation] = useState("");
   const [manualTeeColor, setManualTeeColor] = useState<ManualTeeColor>("yellow");
   const [manualSlope, setManualSlope] = useState<string>("");
   const [manualCourseRating, setManualCourseRating] = useState<string>("");
 
-  const [courseDetail, setCourseDetail] = useState<unknown | null>(null);
-  const [tees, setTees] = useState<ApiTee[]>([]);
-  const [selectedTeeId, setSelectedTeeId] = useState("");
   const [playHolesMode, setPlayHolesMode] = useState<PlayHolesMode>("18");
   const [inputMode, setInputMode] = useState<"guided" | "grid">("guided");
-
-  const selectedTee = useMemo(() => tees.find((t) => t.id === selectedTeeId) ?? null, [tees, selectedTeeId]);
-  const selectedTeeHolesCount = selectedTee?.holes?.length ?? 0;
-  const selectedTeeIsNineHoles = selectedTeeHolesCount === 9;
-
-  useEffect(() => {
-    if (roundType === "competition" && omCompetitionFormat !== "match_play_individual" && omSingleNine && omRounds18Count === 1) {
-      setPlayHolesMode("9");
-      return;
-    }
-    if (roundType === "competition") {
-      if (selectedTeeIsNineHoles) {
-        setPlayHolesMode("9");
-        return;
-      }
-      setPlayHolesMode("18");
-      return;
-    }
-  }, [selectedTeeIsNineHoles, roundType, omCompetitionFormat, omSingleNine, omRounds18Count]);
 
   useEffect(() => {
     (async () => {
@@ -402,79 +182,6 @@ export default function NewRoundPage() {
     })();
   }, [roundType, canUseExceptional, omOrganizationId]);
 
-  async function fetchSearch(query: string): Promise<ApiCourseLite[]> {
-    const r = await fetch(`/api/golfcourse/search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
-    const j = await r.json().catch(() => null);
-    if (!r.ok) throw new Error(j?.error ?? t("roundsNew.error.searchApi"));
-    return normalizeCourses(j);
-  }
-
-  async function doSearch(query: string) {
-    const s = query.trim();
-    if (s.length < 2) {
-      setResults([]);
-      return;
-    }
-
-    setSearching(true);
-    setError(null);
-
-    try {
-      let list = await fetchSearch(s);
-
-      if (list.length < 3 && s.length >= 3) {
-        const fallback = await fetchSearch(s.slice(0, 2));
-        const map = new Map<string, ApiCourseLite>();
-        [...list, ...fallback].forEach((c) => map.set(String(c.id), c));
-        list = Array.from(map.values());
-      }
-
-      const final = localContainsFilter(list, s);
-      setResults(final);
-    } catch (cause: unknown) {
-      setResults([]);
-      setError(cause instanceof Error ? cause.message : t("roundsNew.error.search"));
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(q), 220);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
-
-  async function selectCourse(c: ApiCourseLite) {
-    setError(null);
-    setSelectedCourse(c);
-    setCourseDetail(null);
-    setTees([]);
-    setSelectedTeeId("");
-    setResults([]);
-
-    try {
-      const r = await fetch(`/api/golfcourse/course/${encodeURIComponent(String(c.id))}`, { cache: "no-store" });
-      const j = await r.json().catch(() => null);
-      if (!r.ok) throw new Error(j?.error ?? t("roundsNew.error.courseApi"));
-
-      setCourseDetail(j);
-      const teeList = normalizeTees(j);
-      setTees(teeList);
-      setSelectedTeeId("");
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : t("roundsNew.error.course"));
-    }
-  }
-
-  function applyTee(teeId: string) {
-    setSelectedTeeId(teeId);
-  }
-
   const canSave = useMemo(() => {
     if (busy) return false;
     if (!startAt) return false;
@@ -497,9 +204,7 @@ export default function NewRoundPage() {
       }
     }
     if (!isMatchPlayCompetition) {
-      if (!selectedCourse && !manualCourseOpen) return false;
-      if (selectedCourse && !selectedTeeId) return false;
-      if (manualCourseOpen && !manualLocation.trim()) return false;
+      if (!manualLocation.trim()) return false;
     } else {
       if (!matchCourseName.trim()) return false;
       if (!matchScoreText.trim()) return false;
@@ -519,7 +224,7 @@ export default function NewRoundPage() {
       if (omIsExceptional && !omExceptionalTournamentId) return false;
     }
 
-    if (!isMatchPlayCompetition && manualCourseOpen) {
+    if (!isMatchPlayCompetition) {
       if (manualSlope.trim()) {
         const s = Number(manualSlope);
         if (!Number.isFinite(s)) return false;
@@ -532,11 +237,7 @@ export default function NewRoundPage() {
 
     // Competition requires CR/SR to compute OM.
     if (roundType === "competition" && !isMatchPlayCompetition) {
-      if (manualCourseOpen) {
-        if (manualSlope.trim() === "" || manualCourseRating.trim() === "") return false;
-      } else {
-        if (!selectedTeeId) return false;
-      }
+      if (manualSlope.trim() === "" || manualCourseRating.trim() === "") return false;
     }
 
     return true;
@@ -551,10 +252,7 @@ export default function NewRoundPage() {
     omRounds18Count,
     omIsExceptional,
     omExceptionalTournamentId,
-    selectedCourse,
-    selectedTeeId,
     handicapStart,
-    manualCourseOpen,
     manualLocation,
     manualSlope,
     manualCourseRating,
@@ -584,15 +282,8 @@ export default function NewRoundPage() {
 
     const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
 
-    if (!isMatchPlayCompetition && !selectedCourse && !manualCourseOpen) {
+    if (!isMatchPlayCompetition && !manualLocation.trim()) {
       setError(t("roundsNew.error.chooseCourse"));
-      setBusy(false);
-      return;
-    }
-
-    const selectedTeeObj = !isMatchPlayCompetition && selectedCourse ? tees.find((t) => t.id === selectedTeeId) ?? null : null;
-    if (!isMatchPlayCompetition && selectedCourse && !selectedTeeObj) {
-      setError(t("roundsNew.error.chooseTee"));
       setBusy(false);
       return;
     }
@@ -604,14 +295,14 @@ export default function NewRoundPage() {
       return;
     }
 
-    const slopeManual = !isMatchPlayCompetition && manualCourseOpen && manualSlope.trim() !== "" ? Number(manualSlope) : null;
-    const courseRatingManual = !isMatchPlayCompetition && manualCourseOpen && manualCourseRating.trim() !== "" ? Number(manualCourseRating) : null;
-    if (!isMatchPlayCompetition && manualCourseOpen && slopeManual !== null && Number.isNaN(slopeManual)) {
+    const slopeManual = !isMatchPlayCompetition && manualSlope.trim() !== "" ? Number(manualSlope) : null;
+    const courseRatingManual = !isMatchPlayCompetition && manualCourseRating.trim() !== "" ? Number(manualCourseRating) : null;
+    if (!isMatchPlayCompetition && slopeManual !== null && Number.isNaN(slopeManual)) {
       setError("Slope invalide");
       setBusy(false);
       return;
     }
-    if (!isMatchPlayCompetition && manualCourseOpen && courseRatingManual !== null && Number.isNaN(courseRatingManual)) {
+    if (!isMatchPlayCompetition && courseRatingManual !== null && Number.isNaN(courseRatingManual)) {
       setError("Course Rating invalide");
       setBusy(false);
       return;
@@ -633,23 +324,12 @@ export default function NewRoundPage() {
         setBusy(false);
         return;
       }
-      if (!isMatchPlayCompetition && manualCourseOpen && (slopeManual == null || courseRatingManual == null)) {
+      if (!isMatchPlayCompetition && (slopeManual == null || courseRatingManual == null)) {
         setError(
           pickLocaleText(
             locale,
             "Course Rating et Slope Rating sont obligatoires pour une competition.",
             "Course Rating and Slope Rating are required for a competition."
-          )
-        );
-        setBusy(false);
-        return;
-      }
-      if (!isMatchPlayCompetition && !manualCourseOpen && (!selectedTeeObj || selectedTeeObj.slope_rating == null || selectedTeeObj.course_rating == null)) {
-        setError(
-          pickLocaleText(
-            locale,
-            "Le tee selectionne doit fournir Course Rating et Slope Rating pour une competition.",
-            "Selected tee must provide Course Rating and Slope Rating for a competition."
           )
         );
         setBusy(false);
@@ -672,22 +352,16 @@ export default function NewRoundPage() {
 
     const payloadBase: Record<string, unknown> = {
       user_id: uid,
-      location: isMatchPlayCompetition ? matchCourseName.trim() : manualCourseOpen ? manualLocation.trim() : null,
+      location: isMatchPlayCompetition ? matchCourseName.trim() : manualLocation.trim(),
       round_type: roundType,
       competition_name: roundType === "competition" ? competitionName.trim() : null,
       handicap_start,
-      course_source: isMatchPlayCompetition ? "manual" : manualCourseOpen ? "manual" : "golfcourseapi",
-      course_name: isMatchPlayCompetition ? matchCourseName.trim() : manualCourseOpen ? manualLocation.trim() : selectedCourse?.course_name?.trim() || null,
-      external_course_id: isMatchPlayCompetition || manualCourseOpen ? null : safeStr(selectedCourse?.id),
-      tee_name: isMatchPlayCompetition ? null : manualCourseOpen ? manualTeeLabel(manualTeeColor) : selectedTeeObj?.tee_name?.trim() || null,
-      slope_rating: isMatchPlayCompetition ? null : manualCourseOpen ? slopeManual : typeof selectedTeeObj?.slope_rating === "number" ? selectedTeeObj.slope_rating : null,
-      course_rating: isMatchPlayCompetition
-        ? null
-        : manualCourseOpen
-        ? courseRatingManual
-        : typeof selectedTeeObj?.course_rating === "number"
-        ? selectedTeeObj.course_rating
-        : null,
+      course_source: "manual",
+      course_name: isMatchPlayCompetition ? matchCourseName.trim() : manualLocation.trim(),
+      external_course_id: null,
+      tee_name: isMatchPlayCompetition ? null : manualTeeLabel(manualTeeColor),
+      slope_rating: isMatchPlayCompetition ? null : slopeManual,
+      course_rating: isMatchPlayCompetition ? null : courseRatingManual,
       match_opponent_handicap: roundType === "competition" && isMatchPlayCompetition ? parsedOpponentHandicap : null,
       om_match_result: roundType === "competition" && isMatchPlayCompetition ? omMatchResult : null,
       match_score_text: roundType === "competition" && isMatchPlayCompetition ? matchScoreText.trim() : null,
@@ -724,16 +398,15 @@ export default function NewRoundPage() {
       roundDates.push(roundDt.toISOString());
     }
 
-    const shouldSaveNineHoles = !isMatchPlayCompetition && (isSingleNineCompetition || playHolesMode === "9");
+    const shouldSaveNineHoles = !isMatchPlayCompetition
+      && (roundType === "competition" ? isSingleNineCompetition : playHolesMode === "9");
     const holes = isMatchPlayCompetition
       ? null
-      : manualCourseOpen
-      ? Array.from({ length: shouldSaveNineHoles ? 9 : 18 }, (_, i) => ({
+      : Array.from({ length: shouldSaveNineHoles ? 9 : 18 }, (_, i) => ({
           hole_no: i + 1,
           par: null,
           stroke_index: null,
-        }))
-      : teeHolesPrefill(tees, selectedTeeId, playHolesMode);
+        }));
     const created = await supabase.rpc("create_player_golf_rounds_transactional", {
       p_player_id: uid,
       p_round_payload: payloadBase,
@@ -760,14 +433,6 @@ export default function NewRoundPage() {
     } else {
       router.push(`/player/golf/rounds/${createdRoundIds[0]}/edit?mode=${inputMode}`);
     }
-  }
-
-  function resetCourse() {
-    setSelectedCourse(null);
-    setCourseDetail(null);
-    setTees([]);
-    setSelectedTeeId("");
-    setManualCourseOpen(false);
   }
 
   return (
@@ -1035,173 +700,6 @@ export default function NewRoundPage() {
                       "Match-play mode: no course search and no scorecard to complete."
                     )}
                   </div>
-                ) : !selectedCourse ? (
-                  <>
-                    <div style={fieldLabelStyle}>{pickLocaleText(locale, "Parcours", "Course")}</div>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>
-                        {pickLocaleText(locale, "Rechercher un parcours", "Search for a course")}
-                      </span>
-                      <input
-                        type="search"
-                        value={q}
-                        onChange={(event) => setQ(event.target.value)}
-                        disabled={busy}
-                        aria-busy={searching}
-                        placeholder={pickLocaleText(locale, "Nom du parcours ou du club", "Course or club name")}
-                        autoComplete="off"
-                      />
-                      {searching ? (
-                        <span role="status" style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          {pickLocaleText(locale, "Recherche…", "Searching…")}
-                        </span>
-                      ) : null}
-                    </label>
-
-                    {results.length > 0 && (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {results.slice(0, 10).map((c) => {
-                          const loc = [c.club_name, c.city, c.country].filter(Boolean).join(" • ");
-
-                          return (
-                            <button
-                              key={safeStr(c.id)}
-                              type="button"
-                              className="btn"
-                              onClick={() => selectCourse(c)}
-                              disabled={busy}
-                              style={{
-                                display: "grid",
-                                gridTemplateRows: "auto auto",
-                                justifyItems: "center",
-                                alignItems: "center",
-                                textAlign: "center",
-                                gap: 4,
-                                padding: "12px 12px",
-                                width: "100%",
-                                maxWidth: "100%",
-                                overflow: "hidden",
-                                borderRadius: 14,
-                                border: "1px solid rgba(0,0,0,0.10)",
-                                background: "rgba(255,255,255,0.65)",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  fontWeight: 950,
-                                  lineHeight: 1.15,
-                                  maxWidth: "100%",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  overflowWrap: "anywhere",
-                                }}
-                              >
-                                {c.course_name}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                  color: "rgba(0,0,0,0.55)",
-                                  maxWidth: "100%",
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                  overflowWrap: "anywhere",
-                                  display: "-webkit-box",
-                                  WebkitBoxOrient: "vertical",
-                                  WebkitLineClamp: 2,
-                                  overflow: "hidden",
-                                }}
-                                title={loc}
-                              >
-                                {loc || " "}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      className={`${styles.actionButton} ${styles.secondaryAction} ${styles.courseAction}`}
-                      onClick={() => {
-                        setManualCourseOpen((v) => !v);
-                        setSelectedCourse(null);
-                        setCourseDetail(null);
-                        setTees([]);
-                        setSelectedTeeId("");
-                      }}
-                      disabled={busy}
-                    >
-                      <Plus size={15} aria-hidden="true" />
-                      Ajouter un parcours
-                    </button>
-
-                    {manualCourseOpen && (
-                      <div
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          borderRadius: 16,
-                          background: "rgba(255,255,255,0.65)",
-                          padding: 12,
-                          display: "grid",
-                          gap: 10,
-                        }}
-                      >
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Lieu</span>
-                          <input value={manualLocation} onChange={(e) => setManualLocation(e.target.value)} disabled={busy} />
-                        </label>
-
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Tee de départ</span>
-                          <select value={manualTeeColor} onChange={(e) => setManualTeeColor(e.target.value as ManualTeeColor)} disabled={busy}>
-                            <option value="white">{pickLocaleText(locale, "Blanc", "White")}</option>
-                            <option value="yellow">{pickLocaleText(locale, "Jaune", "Yellow")}</option>
-                            <option value="blue">{pickLocaleText(locale, "Bleu", "Blue")}</option>
-                            <option value="red">{pickLocaleText(locale, "Rouge", "Red")}</option>
-                          </select>
-                        </label>
-
-                        {roundType === "training" && (
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de trous", "Number of holes")}</span>
-                            <select value={playHolesMode} onChange={(e) => setPlayHolesMode(e.target.value as PlayHolesMode)} disabled={busy}>
-                              <option value="9">{pickLocaleText(locale, "9 trous", "9 holes")}</option>
-                              <option value="18">{pickLocaleText(locale, "18 trous", "18 holes")}</option>
-                            </select>
-                          </label>
-                        )}
-
-                        <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Slope (optionnel)</span>
-                            <input
-                              inputMode="numeric"
-                              value={manualSlope}
-                              onChange={(e) => setManualSlope(e.target.value)}
-                              disabled={busy}
-                              placeholder="ex: 125"
-                            />
-                          </label>
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Course Rating (optionnel)</span>
-                            <input
-                              inputMode="decimal"
-                              value={manualCourseRating}
-                              onChange={(e) => setManualCourseRating(e.target.value)}
-                              disabled={busy}
-                              placeholder="ex: 71.4"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
-
-                  </>
                 ) : (
                   <div
                     style={{
@@ -1213,75 +711,41 @@ export default function NewRoundPage() {
                       gap: 10,
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 950 }} className="truncate">
-                          {selectedCourse.course_name}
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }} className="truncate">
-                          {selectedCourse.club_name ?? ""}
-                          {selectedCourse.city ? ` • ${selectedCourse.city}` : ""}
-                          {selectedCourse.country ? ` • ${selectedCourse.country}` : ""}
-                        </div>
-                      </div>
-
-                      <button type="button" className={`${styles.actionButton} ${styles.secondaryAction} ${styles.courseAction}`} onClick={resetCourse} disabled={busy}>
-                        {t("common.change")}
-                      </button>
-                    </div>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nom du parcours", "Course name")}</span>
+                      <input value={manualLocation} onChange={(e) => setManualLocation(e.target.value)} disabled={busy} />
+                    </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>{t("roundsNew.startTee")}</span>
-                      <select value={selectedTeeId} onChange={(e) => applyTee(e.target.value)} disabled={busy}>
-                        <option value="">{t("common.choose")}</option>
-                        {tees.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {teeLabel(t)}
-                          </option>
-                        ))}
+                      <select value={manualTeeColor} onChange={(e) => setManualTeeColor(e.target.value as ManualTeeColor)} disabled={busy}>
+                        <option value="white">{pickLocaleText(locale, "Blanc", "White")}</option>
+                        <option value="yellow">{pickLocaleText(locale, "Jaune", "Yellow")}</option>
+                        <option value="blue">{pickLocaleText(locale, "Bleu", "Blue")}</option>
+                        <option value="red">{pickLocaleText(locale, "Rouge", "Red")}</option>
                       </select>
-
-                      {!courseDetail && (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          {t("common.loading")}
-                        </div>
-                      )}
-
-                      {courseDetail && tees.length === 0 && (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          {t("roundsNew.noRequiredTees")}
-                        </div>
-                      )}
                     </label>
 
-                    {roundType === "training" && selectedTeeId && (
+                    {roundType === "training" && (
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={fieldLabelStyle}>{pickLocaleText(locale, "Nombre de trous", "Number of holes")}</span>
                         <select value={playHolesMode} onChange={(e) => setPlayHolesMode(e.target.value as PlayHolesMode)} disabled={busy}>
                           <option value="9">{pickLocaleText(locale, "9 trous", "9 holes")}</option>
                           <option value="18">{pickLocaleText(locale, "18 trous", "18 holes")}</option>
                         </select>
-                        {selectedTeeIsNineHoles ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                            {pickLocaleText(locale, "Sur un parcours 9 trous, 18 trous joue 2 x 9.", "On a 9-hole course, 18 holes plays 2 x 9.")}
-                          </div>
-                        ) : null}
                       </label>
                     )}
 
                     <div className="grid-2">
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Slope</span>
-                        <div style={readOnlyPillStyle}>{selectedTee?.slope_rating ?? "—"}</div>
-                      </div>
-
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("roundsNew.courseRating")}</span>
-                        <div style={readOnlyPillStyle}>{selectedTee?.course_rating ?? "—"}</div>
-                      </div>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{roundType === "competition" ? "Slope" : pickLocaleText(locale, "Slope (optionnel)", "Slope (optional)")}</span>
+                        <input inputMode="numeric" value={manualSlope} onChange={(e) => setManualSlope(e.target.value)} disabled={busy} placeholder="ex: 125" />
+                      </label>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={fieldLabelStyle}>{roundType === "competition" ? t("roundsNew.courseRating") : pickLocaleText(locale, "Course Rating (optionnel)", "Course Rating (optional)")}</span>
+                        <input inputMode="decimal" value={manualCourseRating} onChange={(e) => setManualCourseRating(e.target.value)} disabled={busy} placeholder="ex: 71.4" />
+                      </label>
                     </div>
-
-                    
                   </div>
                 )}
               </div>
@@ -1368,16 +832,4 @@ const chipRadioStyle: React.CSSProperties = {
 const chipRadioActive: React.CSSProperties = {
   borderColor: "rgba(53,72,59,0.35)",
   background: "rgba(53,72,59,0.10)",
-};
-
-const readOnlyPillStyle: React.CSSProperties = {
-  height: 42,
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(255,255,255,0.65)",
-  display: "flex",
-  alignItems: "center",
-  padding: "0 12px",
-  fontWeight: 950,
-  color: "rgba(0,0,0,0.78)",
 };

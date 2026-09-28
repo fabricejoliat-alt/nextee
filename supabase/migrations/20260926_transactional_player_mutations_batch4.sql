@@ -608,7 +608,7 @@ begin
 
   v_round := jsonb_populate_record(null::public.golf_rounds, p_round_payload);
 
-  if coalesce(trim(v_round.round_type), '') not in ('training', 'competition')
+  if coalesce(trim(v_round.round_type::text), '') not in ('training', 'competition')
     or (
       v_round.round_type = 'competition'
       and v_round.om_competition_format = 'stroke_play_individual'
