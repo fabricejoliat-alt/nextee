@@ -1642,7 +1642,7 @@ export default function PlayerHomePage() {
             <section className={`${playerUiStyles.panel} ${styles.attentionCard}`}>
               <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
               {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
-                <div className={overviewStyles.attentionList}>
+                <div className={`${overviewStyles.attentionList} ${styles.attentionListCompact}`}>
                   {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete">
                     <span><ClipboardCheck size={17} /></span>
                     <div><b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div>

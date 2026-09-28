@@ -1,6 +1,7 @@
 .firstRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
 .firstRow>*{min-width:0}
 .attentionCard{grid-column:3}
+.attentionListCompact{padding-top:0!important}
 .learningSection{display:grid;gap:12px}
 .learningGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
 .learningGrid>*{min-width:0}
