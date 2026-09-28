@@ -1098,7 +1098,7 @@ export default function EditRoundWizardPage() {
               </div>
               <div className={styles.gridScroller} tabIndex={0} aria-label="Grille de saisie des trous">
                 <table className={styles.scoreGrid}>
-                  <thead><tr><th className={styles.gridCell}>Trou</th><th className={styles.gridCell}>Par</th><th className={styles.gridCell}>Score</th><th className={styles.gridCell}>Putts</th><th className={`${styles.gridCell} ${styles.fairwayCell}`}>Fairway / GIR</th><th className={`${styles.gridCell} ${styles.gridDifference}`}>Écart</th></tr></thead>
+                  <thead><tr><th className={styles.gridCell}>Trou</th><th className={styles.gridCell}>Par</th><th className={styles.gridCell}>Score</th><th className={styles.gridCell}>Putts</th><th className={`${styles.gridCell} ${styles.fairwayCell}`}>Fairway</th><th className={`${styles.gridCell} ${styles.gridDifference}`}>Écart</th></tr></thead>
                   <tbody>{holes.map((item, index) => {
                     const gir = item.score != null && item.par != null && item.putts != null ? item.score - item.putts <= item.par - 2 : null;
                     const subtotal = item.hole_no === 9 || item.hole_no === holes.length;
