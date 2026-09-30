@@ -181,8 +181,9 @@ export default function ClubNewsFeed({ scope, titleFr, titleEn, titleDe, titleIt
   function resolveOpenHref(item: NewsItem) {
     if (item.linked_camp_id) {
       if (scope === "coach") return "/coach/camps";
-      const childParam = viewerRole === "parent" && effectivePlayerId ? `?child_id=${encodeURIComponent(effectivePlayerId)}` : "";
-      return `/player/camps${childParam}`;
+      const params = new URLSearchParams({ camp_id: item.linked_camp_id });
+      if (viewerRole === "parent" && effectivePlayerId) params.set("child_id", effectivePlayerId);
+      return `/player/camps?${params.toString()}`;
     }
 
     if (item.linked_club_event_id) {

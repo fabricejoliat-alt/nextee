@@ -23,6 +23,7 @@ type Round = {
   om_competition_level: string | null;
   om_competition_format: string | null;
   om_rounds_18_count: number | null;
+  tournament_group_id: string | null;
   score_entry_mode: "full" | "hole_only" | null;
   course_name: string | null;
   tee_name: string | null;
@@ -101,7 +102,7 @@ export default function ScorecardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select("id,user_id,start_at,round_type,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus")
+      .select("id,user_id,start_at,round_type,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,tournament_group_id,score_entry_mode,course_name,tee_name,slope_rating,course_rating,total_score,total_putts,gir,eagles,birdies,pars,bogeys,doubles_plus")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -125,35 +126,18 @@ export default function ScorecardPage() {
     setNextRoundId(null);
     if (
       loadedRound.round_type === "competition" &&
-      (loadedRound.om_rounds_18_count ?? 1) > 1 &&
-      loadedRound.om_organization_id &&
-      loadedRound.om_competition_format
+      loadedRound.tournament_group_id
     ) {
-      const year = new Date(loadedRound.start_at).getFullYear();
-      const yearStart = `${year}-01-01T00:00:00.000Z`;
-      const nextYearStart = `${year + 1}-01-01T00:00:00.000Z`;
-
       const sameTournamentRes = await supabase
         .from("golf_rounds")
         .select("id,competition_name")
-        .eq("round_type", "competition")
-        .eq("user_id", loadedRound.user_id)
-        .eq("om_organization_id", loadedRound.om_organization_id)
-        .eq("om_competition_format", loadedRound.om_competition_format)
-        .eq("om_competition_level", loadedRound.om_competition_level)
-        .eq("om_rounds_18_count", loadedRound.om_rounds_18_count)
-        .gte("start_at", yearStart)
-        .lt("start_at", nextYearStart)
+        .eq("tournament_group_id", loadedRound.tournament_group_id)
         .order("start_at", { ascending: true })
         .order("id", { ascending: true });
 
       if (!sameTournamentRes.error) {
-        const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
         const tournamentRows = (sameTournamentRes.data ?? []) as TournamentRoundRow[];
-        const sameTournament = tournamentRows.filter((r) => {
-          const normName = (r.competition_name ?? "").trim().toLowerCase();
-          return normName === normCurrentName;
-        });
+        const sameTournament = tournamentRows;
         const idx = sameTournament.findIndex((r) => r.id === loadedRound.id);
         if (idx >= 0) {
           setRoundPositionLabel(`Tour ${idx + 1}/${sameTournament.length}`);

@@ -118,6 +118,7 @@ export default function PlayerCampsPage() {
   const [camps, setCamps] = useState<CampRow[]>([]);
   const [participantsDay, setParticipantsDay] = useState<CampDay | null>(null);
   const childId = useMemo(() => String(searchParams.get("child_id") ?? "").trim(), [searchParams]);
+  const linkedCampId = useMemo(() => String(searchParams.get("camp_id") ?? "").trim(), [searchParams]);
 
   const headers = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
@@ -142,6 +143,14 @@ export default function PlayerCampsPage() {
   }, [childId, headers]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (loading || !linkedCampId || !camps.some((camp) => camp.id === linkedCampId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`camp-${linkedCampId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [camps, linkedCampId, loading]);
 
   useEffect(() => {
     if (!participantsDay) return;
@@ -283,7 +292,7 @@ export default function PlayerCampsPage() {
             const registrationKey = `${registered ? "unregister" : "register"}-${camp.id}`;
             const stageOptions = camp.options.filter((option) => option.applies_to_all_days || option.day_indexes.length === 0);
             return (
-              <article className={styles.campCard} key={camp.id}>
+              <article className={styles.campCard} id={`camp-${camp.id}`} key={camp.id}>
                 <div className={styles.hero}>
                   {camp.image_url ? <img src={camp.image_url} alt={`Stage ${camp.title}`} /> : <div className={styles.heroFallback}><TentTree size={40} aria-hidden="true" /></div>}
                 </div>

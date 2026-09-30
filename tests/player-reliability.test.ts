@@ -75,6 +75,18 @@ test("registered camp events are flattened from the Supabase relationship before
   assert.doesNotMatch(source, /\.map\(\(row\) => row\.club_events \?\? null\)/);
 });
 
+test("future activities on the Player home open an information view instead of evaluation", () => {
+  const home = readFileSync(new URL("../app/player/page.tsx", import.meta.url), "utf8");
+  const activityDetail = readFileSync(
+    new URL("../app/player/golf/trainings/new/PlayerTrainingNewClient.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(home, /club_event_id=" \+ encodeURIComponent\(event\.id\) \+ "&mode=view"/);
+  assert.match(activityDetail, /const viewOnly = sp\.get\("mode"\) === "view"/);
+  assert.match(activityDetail, /viewOnly \? pickLocaleText\(locale, "Détail de l’activité", "Activity details"\)/);
+});
+
 test("golf hole, grid and round-format saves are transactional and ownership checked", () => {
   for (const functionName of [
     "save_player_golf_hole_transactional",

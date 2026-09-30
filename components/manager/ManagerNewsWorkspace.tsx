@@ -263,6 +263,7 @@ export default function ManagerNewsWorkspace() {
   const [groupCategories, setGroupCategories] = useState<string[]>([]);
   const [ageBands, setAgeBands] = useState<AgeBandOption[]>([]);
   const [linkedEvents, setLinkedEvents] = useState<LinkedEventOption[]>([]);
+  const [linkedCamps, setLinkedCamps] = useState<LinkedCampOption[]>([]);
   const [groupPlayerUserIdsByGroupId, setGroupPlayerUserIdsByGroupId] = useState<Record<string, string[]>>({});
   const [groupCoachUserIdsByGroupId, setGroupCoachUserIdsByGroupId] = useState<Record<string, string[]>>({});
   const [groupIdsByCategory, setGroupIdsByCategory] = useState<Record<string, string[]>>({});
@@ -301,6 +302,7 @@ export default function ManagerNewsWorkspace() {
       setGroupCategories(Array.isArray(json.target_options?.group_categories) ? json.target_options.group_categories : []);
       setAgeBands(Array.isArray(json.target_options?.age_bands) ? json.target_options.age_bands : []);
       setLinkedEvents(Array.isArray(json.target_options?.club_events) ? json.target_options.club_events : []);
+      setLinkedCamps(Array.isArray(json.target_options?.camps) ? json.target_options.camps : []);
       setGroupPlayerUserIdsByGroupId(json.target_options?.group_player_user_ids_by_group_id ?? {});
       setGroupCoachUserIdsByGroupId(json.target_options?.group_coach_user_ids_by_group_id ?? {});
       setGroupIdsByCategory(json.target_options?.group_ids_by_category ?? {});
@@ -312,6 +314,7 @@ export default function ManagerNewsWorkspace() {
       setGroupCategories([]);
       setAgeBands([]);
       setLinkedEvents([]);
+      setLinkedCamps([]);
       setGroupPlayerUserIdsByGroupId({});
       setGroupCoachUserIdsByGroupId({});
       setGroupIdsByCategory({});
@@ -386,13 +389,25 @@ export default function ManagerNewsWorkspace() {
     [form.linked_club_event_id, linkedEvents]
   );
   const targetsLockedByActivity = Boolean(linkedActivity);
+  const linkedContentValue = form.linked_camp_id
+    ? `camp:${form.linked_camp_id}`
+    : form.linked_club_event_id
+      ? `event:${form.linked_club_event_id}`
+      : "";
+  const selectableEvents = useMemo(
+    () => linkedEvents.filter((event) => event.event_type !== "camp"),
+    [linkedEvents]
+  );
 
-  function linkActivity(eventId: string) {
+  function linkActivity(value: string) {
+    const [kind, id = ""] = value.split(":", 2);
+    const eventId = kind === "event" ? id : "";
+    const campId = kind === "camp" ? id : "";
     const activity = linkedEvents.find((item) => item.id === eventId);
     setForm((previous) => ({
       ...previous,
       linked_club_event_id: eventId,
-      linked_camp_id: "",
+      linked_camp_id: campId,
       targets: activity
         ? activity.target_user_ids.map((userId) => ({ target_type: "user" as const, target_value: userId }))
         : previous.targets,
@@ -595,15 +610,26 @@ export default function ManagerNewsWorkspace() {
                 <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à une activité planifiée</span>
                 <select
                   className="input"
-                  value={form.linked_club_event_id}
+                  value={linkedContentValue}
                   onChange={(event) => linkActivity(event.target.value)}
                 >
                   <option value="">Aucun</option>
-                  {linkedEvents.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {linkedEventOptionLabel(row)}
-                    </option>
-                  ))}
+                  {linkedCamps.length ? (
+                    <optgroup label="Stages">
+                      {linkedCamps.map((camp) => (
+                        <option key={camp.id} value={`camp:${camp.id}`}>{camp.title}</option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {selectableEvents.length ? (
+                    <optgroup label="Autres activités">
+                      {selectableEvents.map((row) => (
+                        <option key={row.id} value={`event:${row.id}`}>
+                          {linkedEventOptionLabel(row)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
             </div>

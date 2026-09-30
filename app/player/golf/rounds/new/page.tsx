@@ -470,7 +470,11 @@ export default function NewRoundPage() {
             <form onSubmit={createRound} className={styles.roundForm}>
               <div className={styles.detailsGrid}>
                 <label style={{ display: "grid", gap: 6, width: "100%", minWidth: 0 }}>
-                  <span style={fieldLabelStyle}>{t("common.date")}</span>
+                  <span style={fieldLabelStyle}>
+                    {isMultiRoundStrokePlay
+                      ? pickLocaleText(locale, "Date de la partie 1", "Round 1 date")
+                      : t("common.date")}
+                  </span>
                   <input
                     type="date"
                     value={startAt}
@@ -589,8 +593,8 @@ export default function NewRoundPage() {
 
                     {isMultiRoundStrokePlay ? (
                       <div style={{ display: "grid", gap: 8 }}>
-                        <div style={fieldLabelStyle}>{pickLocaleText(locale, "Dates des parties", "Round dates")}</div>
-                        {Array.from({ length: omRounds18Count }).map((_, idx) => (
+                        <div style={fieldLabelStyle}>{pickLocaleText(locale, "Dates des parties suivantes", "Next round dates")}</div>
+                        {Array.from({ length: omRounds18Count - 1 }, (_, offset) => offset + 1).map((idx) => (
                           <label key={`round-date-${idx}`} style={{ display: "grid", gap: 6 }}>
                             <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
                               {pickLocaleText(locale, `Partie ${idx + 1}`, `Round ${idx + 1}`)}

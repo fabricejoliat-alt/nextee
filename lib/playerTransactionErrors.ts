@@ -25,6 +25,9 @@ const TRANSACTION_ERRORS: Record<string, PlayerTransactionError> = {
   INVALID_ATTENDANCE_STATUS: { error: "Statut de présence invalide.", status: 400 },
   INVALID_ROUND_PAYLOAD: { error: "Les données de la partie sont invalides.", status: 400 },
   INVALID_ROUND_DATES: { error: "Les dates des tours sont invalides.", status: 400 },
+  INVALID_TOURNAMENT_ROUND_COUNT: { error: "Le nombre de parties doit être modifié pour toute la compétition.", status: 409 },
+  TOURNAMENT_GROUP_IMMUTABLE: { error: "Cette partie ne peut pas être déplacée vers une autre compétition.", status: 409 },
+  ROUND_CREATION_FAILED: { error: "La création complète de la compétition a échoué.", status: 409 },
   INVALID_HOLES_PAYLOAD: { error: "Les données des trous sont invalides.", status: 400 },
   INVALID_HOLE_PAYLOAD: { error: "Les données du trou sont invalides.", status: 400 },
 };

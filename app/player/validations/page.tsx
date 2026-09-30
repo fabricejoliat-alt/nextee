@@ -217,7 +217,7 @@ export default function PlayerValidationsPage() {
     }
   }
 
-  return <div className="player-dashboard-bg">
+  return <div className={`player-dashboard-bg ${styles.page}`}>
     <div className="app-shell marketplace-page">
       <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: txt.title }]} />
       <section className="glass-section">

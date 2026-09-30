@@ -1591,9 +1591,7 @@ export default function PlayerHomePage() {
                     const href = event
                       ? (event.event_type === "competition" || event.event_type === "interclub"
                         ? "/player/golf/competitions/" + encodeURIComponent(event.id)
-                        : event.event_type === "training" || event.event_type === "session" || event.event_type === "camp"
-                          ? "/player/golf/trainings/new?club_event_id=" + encodeURIComponent(event.id)
-                          : "/player/golf/trainings?type=all")
+                        : "/player/golf/trainings/new?club_event_id=" + encodeURIComponent(event.id) + "&mode=view")
                       : session
                         ? "/player/golf/trainings/" + session.id
                         : "/player/golf/trainings?type=all";

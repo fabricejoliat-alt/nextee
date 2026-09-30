@@ -91,7 +91,11 @@ export default function PlayerNewsFeed() {
   }, [selectedNews]);
 
   function openHref(item: NewsItem) {
-    if (item.linked_camp_id) return `/player/camps${parentChildId ? `?child_id=${encodeURIComponent(parentChildId)}` : ""}`;
+    if (item.linked_camp_id) {
+      const params = new URLSearchParams({ camp_id: item.linked_camp_id });
+      if (parentChildId) params.set("child_id", parentChildId);
+      return `/player/camps?${params.toString()}`;
+    }
     if (item.linked_club_event_id) {
       const params = new URLSearchParams({ club_event_id: item.linked_club_event_id });
       if (parentChildId) params.set("child_id", parentChildId);

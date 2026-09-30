@@ -435,7 +435,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
         if (homeHref.startsWith("/manager")) return `/manager/camps/new?campId=${encodeURIComponent(linkedCampId)}`;
         if (homeHref.startsWith("/coach")) return "/coach/camps";
         const childId = String(data.child_id ?? "").trim();
-        return childId ? `/player/camps?child_id=${encodeURIComponent(childId)}` : "/player/camps";
+        const params = new URLSearchParams({ camp_id: linkedCampId });
+        if (childId) params.set("child_id", childId);
+        return `/player/camps?${params.toString()}`;
       }
 
       if (linkedClubEventId) {

@@ -27,6 +27,7 @@ type Round = {
   om_competition_level: string | null;
   om_competition_format: string | null;
   om_rounds_18_count: number | null;
+  tournament_group_id: string | null;
   score_entry_mode: "full" | "hole_only" | null;
   om_miss_cut: boolean | null;
   course_name: string | null;
@@ -332,7 +333,7 @@ export default function EditRoundWizardPage() {
 
     const rRes = await supabase
       .from("golf_rounds")
-      .select("id,user_id,start_at,round_type,course_source,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,score_entry_mode,om_miss_cut,course_name,tee_name,slope_rating,course_rating")
+      .select("id,user_id,start_at,round_type,course_source,competition_name,notes,om_organization_id,om_competition_level,om_competition_format,om_rounds_18_count,tournament_group_id,score_entry_mode,om_miss_cut,course_name,tee_name,slope_rating,course_rating")
       .eq("id", roundId)
       .maybeSingle();
 
@@ -363,35 +364,18 @@ export default function EditRoundWizardPage() {
     setTournamentRoundIndex(null);
     if (
       loadedRound.round_type === "competition" &&
-      (loadedRound.om_rounds_18_count ?? 1) > 1 &&
-      loadedRound.om_organization_id &&
-      loadedRound.om_competition_format
+      loadedRound.tournament_group_id
     ) {
-      const year = new Date(loadedRound.start_at).getFullYear();
-      const yearStart = `${year}-01-01T00:00:00.000Z`;
-      const nextYearStart = `${year + 1}-01-01T00:00:00.000Z`;
-
       const sameTournamentRes = await supabase
         .from("golf_rounds")
         .select("id,start_at,competition_name,om_miss_cut")
-        .eq("round_type", "competition")
-        .eq("user_id", loadedRound.user_id)
-        .eq("om_organization_id", loadedRound.om_organization_id)
-        .eq("om_competition_format", loadedRound.om_competition_format)
-        .eq("om_competition_level", loadedRound.om_competition_level)
-        .eq("om_rounds_18_count", loadedRound.om_rounds_18_count)
-        .gte("start_at", yearStart)
-        .lt("start_at", nextYearStart)
+        .eq("tournament_group_id", loadedRound.tournament_group_id)
         .order("start_at", { ascending: true })
         .order("id", { ascending: true });
 
       if (!sameTournamentRes.error) {
-        const normCurrentName = (loadedRound.competition_name ?? "").trim().toLowerCase();
         const tournamentRows = (sameTournamentRes.data ?? []) as TournamentRoundRow[];
-        const sameTournament = tournamentRows.filter((r) => {
-          const normName = (r.competition_name ?? "").trim().toLowerCase();
-          return normName === normCurrentName;
-        });
+        const sameTournament = tournamentRows;
         const idx = sameTournament.findIndex((r) => r.id === loadedRound.id);
         if (idx >= 0) {
           setTournamentRoundIndex(idx);
@@ -768,6 +752,25 @@ export default function EditRoundWizardPage() {
     }
   }
 
+  async function openTournamentRound(targetRoundId: string) {
+    if (!roundId || targetRoundId === roundId) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      if (gridDirty) {
+        if (!(await saveGrid())) return;
+      } else if (!(await flushSave())) {
+        return;
+      }
+      if (metaDirty && !(await saveRoundMeta())) return;
+      clearRoundDraft();
+      router.push(`/player/golf/rounds/${targetRoundId}/edit?mode=${entryView}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function setMissCutOnRemainingRounds(checked: boolean) {
     if (!round || tournamentRoundIndex == null || tournamentRounds.length === 0) return;
 
@@ -1090,6 +1093,28 @@ export default function EditRoundWizardPage() {
         </section>
 
         <section className={`glass-section ${styles.sectionCard}`}>
+          {tournamentRounds.length > 1 && tournamentRoundIndex != null ? (
+            <div className={styles.tournamentRoundPicker}>
+              <span>Carte à saisir</span>
+              <div role="group" aria-label="Choisir la journée de compétition">
+                {tournamentRounds.map((tournamentRound, index) => {
+                  const active = tournamentRound.id === roundId;
+                  return (
+                    <button
+                      key={tournamentRound.id}
+                      type="button"
+                      className={`${styles.tournamentRoundButton} ${active ? styles.tournamentRoundButtonActive : ""}`}
+                      aria-pressed={active}
+                      onClick={() => void openTournamentRound(tournamentRound.id)}
+                      disabled={saving}
+                    >
+                      Jour {index + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           {entryView === "grid" ? (
             <div className={styles.gridCard}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -1486,23 +1511,26 @@ export default function EditRoundWizardPage() {
                   <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
                     Nombre de trous / tours
                   </div>
-                  <select
-                    className="input"
-                    value={roundsFormatValue}
-                    onChange={(e) => {
-                      setRoundsFormatValue(e.target.value);
-                      setMetaDirty(true);
-                    }}
-                    disabled={saving}
-                  >
-                    <option value="1x9">1 x 9</option>
-                    <option value="1">1 x 18</option>
-                    <option value="2">2 x 18</option>
-                    <option value="3">3 x 18</option>
-                    <option value="4">4 x 18</option>
-                  </select>
+                  {tournamentRounds.length > 1 ? (
+                    <div className={styles.readonlyRoundFormat}>{tournamentRounds.length} x 18</div>
+                  ) : (
+                    <select
+                      className="input"
+                      value={roundsFormatValue}
+                      onChange={(e) => {
+                        setRoundsFormatValue(e.target.value);
+                        setMetaDirty(true);
+                      }}
+                      disabled={saving}
+                    >
+                      <option value="1x9">1 x 9</option>
+                      <option value="1">1 x 18</option>
+                    </select>
+                  )}
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Si le parcours est un 9 trous et que tu choisis 18 trous, la carte sera automatiquement creee sur 18 trous (2 x 9).
+                    {tournamentRounds.length > 1
+                      ? "Le nombre de parties est défini pour toute la compétition."
+                      : "Si le parcours est un 9 trous et que tu choisis 18 trous, la carte sera automatiquement créée sur 18 trous (2 x 9)."}
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>

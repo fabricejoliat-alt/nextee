@@ -70,6 +70,15 @@
 
 .gridSaveButton,
 .saveMetaButton { justify-self: end; min-width: 190px; }
+.tournamentRoundPicker { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #dfe7dd; border-radius: 12px; background: #f7faf6; }
+.tournamentRoundPicker > span { color: #607067; font-size: 11px; font-weight: 800; }
+.tournamentRoundPicker > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.tournamentRoundButton { min-height: 38px; padding: 0 13px; border: 1px solid #d5dfd2; border-radius: 9px; background: #fff; color: #526158; font: 750 11px var(--font-inter), sans-serif; cursor: pointer; }
+.tournamentRoundButton:hover:not(:disabled):not(.tournamentRoundButtonActive) { background: #edf3ea; }
+.tournamentRoundButtonActive { border-color: #35483b; background: #35483b; color: #fff; box-shadow: 0 5px 12px rgba(53, 72, 59, .14); }
+.tournamentRoundButton:disabled { cursor: not-allowed; opacity: .55; }
+.tournamentRoundButton:focus-visible { outline: 2px solid #82977a; outline-offset: 2px; }
+.readonlyRoundFormat { display: flex; min-height: 44px; align-items: center; padding: 0 12px; border: 1px solid #dce4da; border-radius: 10px; background: #f4f7f3; color: #35483b; font-size: 12px; font-weight: 800; }
 .gridScroller { overflow-x: auto; border: 1px solid rgba(0, 0, 0, .1); border-radius: 14px; }
 .scoreGrid { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13px; text-align: center; }
 .scoreGrid thead { position: sticky; z-index: 2; top: 0; background: #eef2ed; }
@@ -107,6 +116,9 @@
   .fairwayToggleOn > span::after { transform: translateX(10px); }
   .gridDifference { display: none; }
   .gridGir { display: none; }
+  .tournamentRoundPicker { align-items: stretch; flex-direction: column; }
+  .tournamentRoundPicker > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tournamentRoundButton { width: 100%; }
 }
 
 @media (max-width: 480px) {

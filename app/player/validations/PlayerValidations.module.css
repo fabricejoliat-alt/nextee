@@ -1,3 +1,5 @@
+.page :global(.section-title){color:#fff!important}
+.page :global(.section-subtitle){color:rgba(255,255,255,.88)!important}
 .content{display:grid;gap:18px;min-width:0}
 .summary{display:grid;gap:11px;padding:17px 20px;border:1px solid #e3e9e2;border-radius:15px;background:#fff;box-shadow:0 12px 30px rgba(27,45,33,.035)}
 .summaryTop{display:flex;align-items:end;justify-content:space-between;gap:12px}
@@ -20,8 +22,8 @@
 .sectorHeading{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:0 1px 2px;border-bottom:1px solid rgba(255,255,255,.32)}
 .sectorTitleLine{display:flex;align-items:center;gap:10px;min-width:0}
 .sectorIcon{display:grid;width:36px;height:36px;flex:0 0 36px;place-items:center;border-radius:10px;background:#edf3ea;color:#526d50}
-.sectorHeading h2{margin:0;color:#fff!important;font:750 20px/1.2 var(--font-inter-tight),var(--font-inter),sans-serif;letter-spacing:-.02em}
-.sectorHeading p{margin:3px 0 0;color:rgba(255,255,255,.8);font-size:11px;font-weight:650}
+.page .sectorHeading h2{margin:0;color:#fff!important;font:750 20px/1.2 var(--font-inter-tight),var(--font-inter),sans-serif;letter-spacing:-.02em}
+.page .sectorHeading p{margin:3px 0 0;color:rgba(255,255,255,.8)!important;font-size:11px;font-weight:650}
 .sectorProgress{width:140px;padding-bottom:7px}
 .sectorProgress .progress{background:rgba(255,255,255,.3)}
 .sectorProgress .progress span{background:#c4d5bb}
