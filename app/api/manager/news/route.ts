@@ -14,6 +14,7 @@ import {
   resolveLinkedEventTargets,
   validateLinkedNewsContent,
 } from "@/app/api/manager/news/_lib";
+import { fetchPublishedPlatformNewsForClubs } from "@/app/api/news/_lib";
 
 export async function GET(req: NextRequest) {
   try {
@@ -44,12 +45,14 @@ export async function GET(req: NextRequest) {
           group_ids_by_category: {},
         },
         news: [],
+        platform_news: [],
       });
     }
 
-    const [targetOptions, news] = await Promise.all([
+    const [targetOptions, news, platformNews] = await Promise.all([
       fetchNewsTargetOptions(supabaseAdmin, ctx.managedClubs, selectedClubId),
       fetchClubNewsList(supabaseAdmin, selectedClubId),
+      fetchPublishedPlatformNewsForClubs(supabaseAdmin, [selectedClubId], "manager", new URL(req.url).searchParams.get("locale"), { includeArchived: true }),
     ]);
 
     return NextResponse.json({
@@ -57,6 +60,7 @@ export async function GET(req: NextRequest) {
       selected_club_id: selectedClubId,
       target_options: targetOptions,
       news,
+      platform_news: platformNews,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";

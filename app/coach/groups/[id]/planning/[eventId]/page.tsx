@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { coachPlanningTitle } from "@/lib/coachPlanning";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
@@ -529,14 +530,14 @@ export default function CoachEventDetailPage() {
   const eventCardTitle = useMemo(() => {
     if (!event) return pickLocaleText(locale, "Événement", "Event");
     if (event.event_type === "camp") {
-      const campTitle = String(event.title ?? "").trim() || eventTypeLabelLocalized(event.event_type, locale);
+      const campTitle = coachPlanningTitle(event.title, eventTypeLabelLocalized(event.event_type, locale));
       const dayLabel =
         campDay && Number.isFinite(campDay.day_index)
           ? `${pickLocaleText(locale, "Jour", "Day")} ${campDay.day_index + 1}`
           : null;
       return dayLabel ? `${campTitle} • ${dayLabel}` : campTitle;
     }
-    return `${eventTypeLabelLocalized(event.event_type, locale)} — ${groupName || pickLocaleText(locale, "Groupe", "Group")}`;
+    return coachPlanningTitle(event.title, `${eventTypeLabelLocalized(event.event_type, locale)} — ${groupName || pickLocaleText(locale, "Groupe", "Group")}`);
   }, [campDay, event, groupName, locale]);
 
   async function addCoach(coachId: string) {
@@ -655,7 +656,7 @@ export default function CoachEventDetailPage() {
 
   return (
     <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+      <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>
         <Link href="/coach/groups">{tr("Mes groupes", "My groups")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
         <Link href={`/coach/groups/${groupId}`}>{groupName}</Link>
@@ -741,11 +742,13 @@ export default function CoachEventDetailPage() {
           {selectedCoaches.length === 0 ? <p className={eventStyles.emptyState}>{tr("Aucun coach assigné.", "No coach assigned.")}</p> : null}
         </div>
         {canManageActivity && candidateCoaches.length ? (
-          <div className="user-mgmt-table-wrap">
-            <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-              <thead><tr><th>{tr("Ajouter un coach", "Add coach")}</th><th aria-label="Actions" /></tr></thead>
-              <tbody>{candidateCoaches.map((coach) => <tr key={coach.id}><td><b>{nameOf(coach.first_name, coach.last_name)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => addCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={tr("Ajouter le coach", "Add coach")} title={tr("Ajouter le coach", "Add coach")}><PlusCircle size={16} aria-hidden="true" /></button></td></tr>)}</tbody>
-            </table>
+          <div className={eventStyles.coachList} role="group" aria-label={tr("Ajouter un coach", "Add coach")}>
+            {candidateCoaches.map((coach) => (
+              <div key={coach.id} className={eventStyles.coachRow}>
+                <b>{nameOf(coach.first_name, coach.last_name)}</b>
+                <button type="button" className={eventStyles.iconButton} onClick={() => addCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={`${tr("Ajouter le coach", "Add coach")} ${nameOf(coach.first_name, coach.last_name)}`} title={tr("Ajouter le coach", "Add coach")}><PlusCircle size={16} aria-hidden="true" /></button>
+              </div>
+            ))}
           </div>
         ) : null}
       </section>

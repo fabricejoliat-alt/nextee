@@ -607,7 +607,7 @@ export default function CoachOrderOfMeritPage() {
   }, [organizationId, selectedPlayerId, rankingFrom, rankingTo]);
 
   return <main className={styles.page}>
-    <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><a href="/coach">Coach</a><ChevronRight size={13} aria-hidden="true" /><span>Suivi</span><ChevronRight size={13} aria-hidden="true" /><span>{txt.title}</span></nav>
+    <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label="Fil d’Ariane"><a href="/coach">Coach</a><ChevronRight size={13} aria-hidden="true" /><span>Suivi</span><ChevronRight size={13} aria-hidden="true" /><span>{txt.title}</span></nav>
     <header className={styles.topline}><div><h1>{txt.title}</h1><p className={styles.lead}>Suivez les points de vos juniors sur la période sélectionnée.</p></div></header>
     {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
     <section className={styles.panel}>

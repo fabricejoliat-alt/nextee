@@ -1,154 +1,68 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { canCoachAccessEvent, resolveCoachAssignments } from "@/lib/coachAccess";
+
 type CoachPlayerAccessResult = {
   sharedClubIds: string[];
+  sensitiveClubIds: string[];
   isManagerForSharedClub: boolean;
   canAccessSensitiveSections: boolean;
   sharedGroupIds: string[];
   sharedEventIds: string[];
 };
 
-type CampCoachPlayerAccessResult = {
-  allowed: boolean;
-  clubId: string | null;
-};
+type CampCoachPlayerAccessResult = { allowed: boolean; clubId: string | null };
 
 export async function resolveCoachPlayerAccess(
-  supabaseAdmin: any,
-  callerId: string,
-  playerId: string
+  supabaseAdmin: SupabaseClient, callerId: string, playerId: string
 ): Promise<CoachPlayerAccessResult> {
-  const [staffRes, playerRes] = await Promise.all([
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id,role")
-      .eq("user_id", callerId)
-      .eq("is_active", true)
-      .in("role", ["coach", "manager"]),
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", playerId)
-      .eq("is_active", true),
+  const [scope, playerRes] = await Promise.all([
+    resolveCoachAssignments(supabaseAdmin, callerId),
+    supabaseAdmin.from("club_members").select("club_id")
+      .eq("user_id", playerId).eq("role", "player").eq("is_active", true),
   ]);
-
-  if (staffRes.error) throw new Error(staffRes.error.message);
   if (playerRes.error) throw new Error(playerRes.error.message);
+  const playerClubIds = new Set((playerRes.data ?? []).map((row) => String(row.club_id)));
+  const sharedClubIds = scope.clubIds.filter((id) => playerClubIds.has(id));
+  const empty = { sharedClubIds, sensitiveClubIds: [], isManagerForSharedClub: false,
+    canAccessSensitiveSections: false, sharedGroupIds: [], sharedEventIds: [] };
+  if (!sharedClubIds.length) return empty;
 
-  const staffRows = (staffRes.data ?? []) as Array<{ club_id: string | null; role: string | null }>;
-  const playerClubIds = new Set(
-    ((playerRes.data ?? []) as Array<{ club_id: string | null }>)
-      .map((row) => String(row.club_id ?? ""))
-      .filter(Boolean)
-  );
-  const sharedClubIds = Array.from(
-    new Set(
-      staffRows
-        .map((row) => String(row.club_id ?? ""))
-        .filter((clubId) => Boolean(clubId) && playerClubIds.has(clubId))
-    )
-  );
-
-  if (sharedClubIds.length === 0) {
-    return {
-      sharedClubIds: [],
-      isManagerForSharedClub: false,
-      canAccessSensitiveSections: false,
-      sharedGroupIds: [],
-      sharedEventIds: [],
-    };
-  }
-
-  const isManagerForSharedClub = staffRows.some(
-    (row) => String(row.role ?? "") === "manager" && sharedClubIds.includes(String(row.club_id ?? ""))
-  );
-  if (isManagerForSharedClub) {
-    return {
-      sharedClubIds,
-      isManagerForSharedClub: true,
-      canAccessSensitiveSections: true,
-      sharedGroupIds: [],
-      sharedEventIds: [],
-    };
-  }
-
-  let sharedGroupIds: string[] = [];
-  const coachGroupsRes = await supabaseAdmin
-    .from("coach_group_coaches")
-    .select("group_id")
-    .eq("coach_user_id", callerId)
-    .limit(200);
-  if (coachGroupsRes.error) throw new Error(coachGroupsRes.error.message);
-
-  const coachGroupIds = Array.from(
-    new Set(
-      ((coachGroupsRes.data ?? []) as Array<{ group_id: string | null }>)
-        .map((row) => String(row.group_id ?? ""))
-        .filter(Boolean)
-    )
-  );
-  if (coachGroupIds.length > 0) {
-    const playerSharedGroupRes = await supabaseAdmin
-      .from("coach_group_players")
-      .select("group_id")
-      .eq("player_user_id", playerId)
-      .in("group_id", coachGroupIds)
-      .limit(20);
-    if (playerSharedGroupRes.error) throw new Error(playerSharedGroupRes.error.message);
-    sharedGroupIds = Array.from(
-      new Set(
-        ((playerSharedGroupRes.data ?? []) as Array<{ group_id: string | null }>)
-          .map((row) => String(row.group_id ?? ""))
-          .filter(Boolean)
-      )
-    );
-  }
-
-  let sharedEventIds: string[] = [];
-  if (sharedGroupIds.length === 0) {
-    const coachEventsRes = await supabaseAdmin
-      .from("club_event_coaches")
-      .select("event_id")
-      .eq("coach_id", callerId)
-      .limit(500);
-    if (coachEventsRes.error) throw new Error(coachEventsRes.error.message);
-
-    const coachEventIds = Array.from(
-      new Set(
-        ((coachEventsRes.data ?? []) as Array<{ event_id: string | null }>)
-          .map((row) => String(row.event_id ?? ""))
-          .filter(Boolean)
-      )
-    );
-    if (coachEventIds.length > 0) {
-      const playerSharedEventRes = await supabaseAdmin
-        .from("club_event_attendees")
-        .select("event_id")
-        .eq("player_id", playerId)
-        .in("event_id", coachEventIds)
-        .limit(20);
-      if (playerSharedEventRes.error) throw new Error(playerSharedEventRes.error.message);
-      sharedEventIds = Array.from(
-        new Set(
-          ((playerSharedEventRes.data ?? []) as Array<{ event_id: string | null }>)
-            .map((row) => String(row.event_id ?? ""))
-            .filter(Boolean)
-        )
-      );
-    }
-  }
-
+  const managerClubIds = scope.memberships
+    .filter((row) => row.role === "manager" && sharedClubIds.includes(row.club_id))
+    .map((row) => row.club_id);
+  const assignedGroupIds = scope.groups.filter((row) => sharedClubIds.includes(row.club_id)).map((row) => row.id);
+  const groupRes = assignedGroupIds.length
+    ? await supabaseAdmin.from("coach_groups").select("id,club_id").in("id", assignedGroupIds).eq("is_active", true)
+    : { data: [], error: null };
+  if (groupRes.error) throw new Error(groupRes.error.message);
+  const groups = groupRes.data ?? [];
+  const activeGroupIds = groups.map((row) => String(row.id));
+  const [playerGroups, playerEvents] = await Promise.all([
+    activeGroupIds.length
+      ? supabaseAdmin.from("coach_group_players").select("group_id").eq("player_user_id", playerId).in("group_id", activeGroupIds)
+      : Promise.resolve({ data: [], error: null }),
+    scope.eventIds.length
+      ? supabaseAdmin.from("club_event_attendees").select("event_id").eq("player_id", playerId).in("event_id", scope.eventIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  for (const result of [playerGroups, playerEvents]) if (result.error) throw new Error(result.error.message);
+  const sharedGroupIds = [...new Set((playerGroups.data ?? []).map((row) => String(row.group_id)))];
+  // A relationship in club A must never unlock club B's private material.
+  const sensitiveClubIds = [...new Set([
+    ...managerClubIds,
+    ...groups.filter((row) => sharedGroupIds.includes(String(row.id))).map((row) => String(row.club_id)),
+  ])];
   return {
-    sharedClubIds,
-    isManagerForSharedClub: false,
-    // Sensitive player-wide sections are reserved to coaches who actually
-    // coach the player via a shared group, not just a shared historical event.
-    canAccessSensitiveSections: sharedGroupIds.length > 0,
+    sharedClubIds, sensitiveClubIds,
+    isManagerForSharedClub: managerClubIds.length > 0,
+    canAccessSensitiveSections: sensitiveClubIds.length > 0,
     sharedGroupIds,
-    sharedEventIds,
+    sharedEventIds: [...new Set((playerEvents.data ?? []).map((row) => String(row.event_id)))],
   };
 }
 
 export async function resolveCampCoachPlayerAccess(
-  supabaseAdmin: any,
+  supabaseAdmin: SupabaseClient,
   callerId: string,
   playerId: string,
   clubEventId: string
@@ -160,37 +74,23 @@ export async function resolveCampCoachPlayerAccess(
 
   const eventRes = await supabaseAdmin
     .from("club_events")
-    .select("id,club_id,event_type")
+    .select("id,club_id,group_id,event_type")
     .eq("id", normalizedEventId)
     .maybeSingle();
   if (eventRes.error) throw new Error(eventRes.error.message);
 
-  const event = eventRes.data as { id?: string | null; club_id?: string | null; event_type?: string | null } | null;
+  const event = eventRes.data as { id?: string | null; club_id?: string | null; group_id?: string | null; event_type?: string | null } | null;
   const clubId = String(event?.club_id ?? "").trim() || null;
   if (!event?.id || event?.event_type !== "camp" || !clubId) {
     return { allowed: false, clubId };
   }
-
-  const [staffRes, dayRes] = await Promise.all([
-    supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", callerId)
-      .eq("club_id", clubId)
-      .eq("is_active", true)
-      .in("role", ["coach", "manager"])
-      .maybeSingle(),
-    supabaseAdmin
-      .from("club_camp_days")
-      .select("camp_id")
-      .eq("event_id", normalizedEventId)
-      .maybeSingle(),
-  ]);
-  if (staffRes.error) throw new Error(staffRes.error.message);
-  if (dayRes.error) throw new Error(dayRes.error.message);
-  if (!staffRes.data) {
+  if (!(await canCoachAccessEvent(supabaseAdmin, callerId, normalizedEventId, event.group_id ?? null, clubId))) {
     return { allowed: false, clubId };
   }
+
+  const dayRes = await supabaseAdmin.from("club_camp_days").select("camp_id")
+    .eq("event_id", normalizedEventId).maybeSingle();
+  if (dayRes.error) throw new Error(dayRes.error.message);
 
   const campId = String((dayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
   if (!campId) {

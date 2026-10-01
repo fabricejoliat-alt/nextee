@@ -3,30 +3,113 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { coachText } from "@/lib/i18n/coachMessages";
+import { coachCaughtErrorKey, coachUiErrorKey } from "@/lib/coachUiErrors";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import CoachListSkeleton from "./CoachListSkeleton";
 import styles from "./CoachPlayerTransferDialog.module.css";
 
 type Group = { id: string; name: string };
 
-export default function CoachPlayerTransferDialog({ playerId, playerName, sourceGroupId, onTransferred }: { playerId: string; playerName: string; sourceGroupId: string; onTransferred: () => void }) {
-  const [open, setOpen] = useState(false); const [groups, setGroups] = useState<Group[]>([]); const [sourceName, setSourceName] = useState(""); const [destinationId, setDestinationId] = useState(""); const [futureCount, setFutureCount] = useState(0); const [action, setAction] = useState<"keep" | "remove_old" | "move">("keep"); const [loading, setLoading] = useState(false); const [saving, setSaving] = useState(false); const [error, setError] = useState(""); const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (!open) return; const key = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false); window.addEventListener("keydown", key); closeRef.current?.focus(); return () => window.removeEventListener("keydown", key); }, [open]);
-  async function headers() { const session = await supabase.auth.getSession(); return { Authorization: `Bearer ${session.data.session?.access_token ?? ""}` }; }
-  async function show(event: React.MouseEvent) { event.stopPropagation(); setOpen(true); setLoading(true); setError(""); try { const response = await fetch(`/api/coach/players/${playerId}/transfer-group?sourceGroupId=${encodeURIComponent(sourceGroupId)}`, { headers: await headers(), cache: "no-store" }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setGroups(json.destinationGroups ?? []); setSourceName(json.sourceGroup?.name ?? "Groupe actuel"); setFutureCount(json.futureSourceEventsCount ?? 0); setDestinationId(json.destinationGroups?.[0]?.id ?? ""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Chargement impossible."); } finally { setLoading(false); } }
-  async function confirm() { if (!destinationId) return; setSaving(true); setError(""); try { const response = await fetch(`/api/coach/players/${playerId}/transfer-group`, { method: "POST", headers: { "Content-Type": "application/json", ...(await headers()) }, body: JSON.stringify({ sourceGroupId, destinationGroupId: destinationId, futureEventsAction: action }) }); const json = await response.json(); if (!response.ok) throw new Error(json.error); setOpen(false); onTransferred(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Déplacement impossible."); } finally { setSaving(false); } }
+async function headers() {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error("coach.error.session");
+  return { Authorization: `Bearer ${token}` };
+}
+
+export default function CoachPlayerTransferDialog({ playerId, playerName, sourceGroupId, onTransferred }: {
+  playerId: string; playerName: string; sourceGroupId: string; onTransferred: () => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [sourceName, setSourceName] = useState("");
+  const [destinationId, setDestinationId] = useState("");
+  const [futureCount, setFutureCount] = useState(0);
+  const [action, setAction] = useState<"keep" | "remove_old" | "move">("keep");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
+  const saveInFlight = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setGroups([]);
+    setDestinationId("");
+    setSourceName("");
+    setFutureCount(0);
+    setAction("keep");
+    setError("");
+    void (async () => {
+      try {
+        const response = await fetch(`/api/coach/players/${playerId}/transfer-group?sourceGroupId=${encodeURIComponent(sourceGroupId)}`, {
+          headers: await headers(), cache: "no-store", signal: controller.signal,
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(coachUiErrorKey(response.status, json, "coach.error.load"));
+        if (!active) return;
+        setGroups(json.destinationGroups ?? []);
+        setSourceName(json.sourceGroup?.name ?? "");
+        setFutureCount(json.futureSourceEventsCount ?? 0);
+        setDestinationId(json.destinationGroups?.[0]?.id ?? "");
+      } catch (cause) {
+        if (active) setError(coachCaughtErrorKey(cause, "coach.error.load"));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [open, playerId, sourceGroupId, reload]);
+
+  function close() {
+    if (!saveInFlight.current) setOpen(false);
+  }
+
+  async function confirm() {
+    if (!destinationId || loading || saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/coach/players/${playerId}/transfer-group`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...(await headers()) },
+        body: JSON.stringify({ sourceGroupId, destinationGroupId: destinationId, futureEventsAction: action }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(coachUiErrorKey(response.status, json, "coach.error.transfer"));
+      setOpen(false);
+      onTransferred();
+    } catch (cause) {
+      setError(coachCaughtErrorKey(cause, "coach.error.transfer"));
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
+  }
+
   return <>
-    <button type="button" className={styles.trigger} onClick={show} title="Déplacer vers un groupe" aria-label={`Déplacer ${playerName} vers un autre groupe`}><ArrowRightLeft size={17} /></button>
-    {open ? <div className={styles.backdrop} role="presentation" onMouseDown={() => setOpen(false)}><section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={`transfer-${playerId}`} onMouseDown={(event) => event.stopPropagation()}>
-      <header><div><h2 id={`transfer-${playerId}`}>Déplacer vers un groupe</h2><p>{playerName} · {sourceName}</p></div><button ref={closeRef} type="button" onClick={() => setOpen(false)} aria-label="Fermer"><X size={19} /></button></header>
-      {loading ? <div className={styles.loading}>Chargement des groupes…</div> : <div className={styles.body}>
-        {error ? <div className={styles.error}>{error}</div> : null}
-        <label><span>Groupe de destination</span><select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">Choisir un groupe</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-        <fieldset><legend>Activités futures de l’ancien groupe ({futureCount})</legend>
-          <label><input type="radio" name={`future-${playerId}`} checked={action === "keep"} onChange={() => setAction("keep")} /><span><b>Conserver les invitations existantes</b><small>Aucune activité passée n’est modifiée.</small></span></label>
-          <label><input type="radio" name={`future-${playerId}`} checked={action === "remove_old"} onChange={() => setAction("remove_old")} /><span><b>Retirer des activités futures de l’ancien groupe</b><small>L’historique reste intact.</small></span></label>
-          <label><input type="radio" name={`future-${playerId}`} checked={action === "move"} onChange={() => setAction("move")} /><span><b>Transférer les invitations futures</b><small>Retire celles de l’ancien groupe et ajoute celles du nouveau.</small></span></label>
-        </fieldset>
-      </div>}
-      <footer><button type="button" className={styles.cancel} onClick={() => setOpen(false)}>Annuler</button><button type="button" className={styles.confirm} onClick={confirm} disabled={loading || saving || !destinationId}>{saving ? "Déplacement…" : "Confirmer le déplacement"}</button></footer>
-    </section></div> : null}
+    <button type="button" className={styles.trigger} onClick={(event) => { event.stopPropagation(); setLoading(true); setOpen(true); }} title={t("coach.transfer.title")} aria-label={coachText(t, "coach.transfer.named", { name: playerName })} aria-haspopup="dialog"><ArrowRightLeft size={17} aria-hidden="true"/></button>
+    {open ? <AccessibleDialog className={styles.dialog} labelledBy={`transfer-${playerId}`} onClose={close}>
+      <header><div><h2 id={`transfer-${playerId}`}>{t("coach.transfer.title")}</h2><p>{playerName} · {sourceName || t("coach.transfer.source")}</p></div><button type="button" onClick={close} disabled={saving} aria-label={t("common.close")}><X size={19} aria-hidden="true"/></button></header>
+      {loading ? <div className={styles.body}><CoachListSkeleton label={t("coach.groups.loading")}/></div> :
+        <fieldset className={styles.body} disabled={saving} aria-busy={saving}>
+          {error ? <div className={styles.error} role="alert">{t(error)}{groups.length === 0 ? <button type="button" className={styles.cancel} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button> : null}</div> : null}
+          {!error && groups.length === 0 ? <p role="status">{t("coach.transfer.noDestinations")}</p> : null}
+          <label><span>{t("coach.transfer.destination")}</span><select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">{t("coach.transfer.choose")}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          <fieldset><legend>{coachText(t, "coach.transfer.future", { count: futureCount })}</legend>
+            {(["keep", "remove_old", "move"] as const).map((value) => {
+              const key = value === "remove_old" ? "remove" : value;
+              return <label key={value}><input type="radio" name={`future-${playerId}`} checked={action === value} onChange={() => setAction(value)}/><span><b>{t(`coach.transfer.${key}`)}</b><small>{t(`coach.transfer.${key}Hint`)}</small></span></label>;
+            })}
+          </fieldset>
+        </fieldset>}
+      <footer><button type="button" className={styles.cancel} onClick={close} disabled={saving}>{t("coach.directory.cancel")}</button><button type="button" className={styles.confirm} onClick={() => void confirm()} disabled={loading || saving || !destinationId}>{saving ? t("coach.transfer.saving") : t("coach.transfer.confirm")}</button></footer>
+    </AccessibleDialog> : null}
   </>;
 }

@@ -9,6 +9,8 @@ import {
 function httpError(message: string) {
   if (message === "event_not_found") return { status: 404, message: "Training not found." };
   if (message === "forbidden") return { status: 403, message: "Forbidden" };
+  if (message === "evaluation_conflict") return { status: 409, message: "Cette évaluation a été modifiée depuis son ouverture. Rechargez la page avant de la modifier." };
+  if (message === "required_criteria_missing") return { status: 400, message: "Complétez les critères personnalisés obligatoires." };
   return { status: 400, message };
 }
 
@@ -27,7 +29,12 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       return NextResponse.json({ error: "Only training sessions can be evaluated." }, { status: 400 });
     }
 
-    const normalized = normalizeCoachPlayerEvaluationInput(await req.json().catch(() => ({})));
+    const body = await req.json().catch(() => ({}));
+    const normalized = normalizeCoachPlayerEvaluationInput(body);
+    if (!("expected_recorded_at" in body) || (body.expected_recorded_at !== null &&
+      (typeof body.expected_recorded_at !== "string" || !Number.isFinite(Date.parse(body.expected_recorded_at))))) {
+      return NextResponse.json({ error: "Reload the evaluation before saving." }, { status: 400 });
+    }
     const attendeeRes = await supabaseAdmin
       .from("club_event_attendees")
       .select("player_id")
@@ -36,10 +43,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       .maybeSingle();
     if (attendeeRes.error) throw new Error(attendeeRes.error.message);
     if (!attendeeRes.data) {
-      return NextResponse.json({ error: "Player is not part of this session." }, { status: 400 });
+      return NextResponse.json({ error: "Player is not part of this session.", code: "unknown_attendee" }, { status: 400 });
     }
 
-    const saveRes = await supabaseAdmin.rpc("save_coach_training_player_evaluation_v1", {
+    const saveRes = await supabaseAdmin.rpc("save_coach_training_player_evaluation_v2", {
       p_event_id: eventId,
       p_coach_id: callerId,
       p_player_id: normalized.player_id,
@@ -50,6 +57,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       p_source_text: normalized.player_note,
       p_private_note: normalized.private_note,
       p_update_comment: normalized.status === "present",
+      p_expected_recorded_at: body.expected_recorded_at,
+      p_custom_responses: normalized.status === "present" ? body.custom_responses ?? {} : {},
     });
     if (saveRes.error) throw new Error(saveRes.error.message);
 
@@ -59,6 +68,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       debriefId: result.debrief_id ?? null,
       reportVersion: Number(result.report_version ?? 0) || null,
       noteInserted: result.note_inserted === true,
+      recordedAt: result.recorded_at,
     });
   } catch (error: unknown) {
     if (error instanceof CoachDebriefValidationError) {
@@ -66,6 +76,6 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     }
     const message = error instanceof Error ? error.message : "Server error";
     const mapped = httpError(message);
-    return NextResponse.json({ error: mapped.message }, { status: mapped.status });
+    return NextResponse.json({ error: mapped.message, code: message }, { status: mapped.status });
   }
 }

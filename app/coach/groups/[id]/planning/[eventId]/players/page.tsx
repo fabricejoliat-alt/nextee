@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
 import { ArrowLeft, Pencil } from "lucide-react";
 
 type EventRow = {
@@ -240,13 +241,7 @@ export default function CoachEventPlayerDetailPage() {
       else setPlayerFb(null);
 
       // coach feedback (this coach)
-      const cfRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .eq("coach_id", uRes.user.id)
-        .maybeSingle();
+      const cfRes = await loadCoachEventFeedback(eventId, playerId);
 
       if (!cfRes.error && cfRes.data) setCoachFb(cfRes.data as CoachFeedbackRow);
       else setCoachFb(null);

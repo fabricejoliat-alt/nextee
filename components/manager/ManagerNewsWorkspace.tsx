@@ -88,6 +88,8 @@ type NewsRow = {
   targets: NewsTarget[];
 };
 
+type PlatformNewsRow = Pick<NewsRow, "id" | "title" | "image_url" | "summary" | "body" | "status" | "scheduled_for" | "published_at" | "created_at">;
+
 type BootstrapResponse = {
   clubs: ClubOption[];
   selected_club_id: string;
@@ -104,6 +106,7 @@ type BootstrapResponse = {
     group_ids_by_category: Record<string, string[]>;
   };
   news: NewsRow[];
+  platform_news: PlatformNewsRow[];
 };
 
 type NewsFormState = {
@@ -268,6 +271,7 @@ export default function ManagerNewsWorkspace() {
   const [groupCoachUserIdsByGroupId, setGroupCoachUserIdsByGroupId] = useState<Record<string, string[]>>({});
   const [groupIdsByCategory, setGroupIdsByCategory] = useState<Record<string, string[]>>({});
   const [news, setNews] = useState<NewsRow[]>([]);
+  const [platformNews, setPlatformNews] = useState<PlatformNewsRow[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
   const [deletingNewsId, setDeletingNewsId] = useState<string | null>(null);
@@ -307,6 +311,7 @@ export default function ManagerNewsWorkspace() {
       setGroupCoachUserIdsByGroupId(json.target_options?.group_coach_user_ids_by_group_id ?? {});
       setGroupIdsByCategory(json.target_options?.group_ids_by_category ?? {});
       setNews(Array.isArray(json.news) ? json.news : []);
+      setPlatformNews(Array.isArray(json.platform_news) ? json.platform_news : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Impossible de charger les actualités.");
       setMembers([]);
@@ -319,6 +324,7 @@ export default function ManagerNewsWorkspace() {
       setGroupCoachUserIdsByGroupId({});
       setGroupIdsByCategory({});
       setNews([]);
+      setPlatformNews([]);
     } finally {
       setLoading(false);
     }
@@ -925,6 +931,11 @@ export default function ManagerNewsWorkspace() {
           </section>
         </>
       ) : null}
+
+      {platformNews.length > 0 ? <section className={listStyles.panel} aria-labelledby="activitee-news-title">
+        <div className={listStyles.panelHeader}><div><h2 id="activitee-news-title">Actualités ActiviTee</h2><p>Informations de la plateforme destinées aux managers de ce club.</p></div></div>
+        <div className={newsStyles.platformGrid}>{platformNews.map(row=><article className={newsStyles.platformCard} key={row.id}>{row.image_url?<img src={row.image_url} alt=""/>:null}<div><span>{formatDateTime(row.published_at||row.scheduled_for||row.created_at)}</span><h3>{row.title}</h3>{row.summary?<p>{row.summary}</p>:null}<div dangerouslySetInnerHTML={{__html:normalizeCampRichTextHtml(row.body)}}/></div></article>)}</div>
+      </section>:null}
 
       <section className={listStyles.panel}>
         <div className={listStyles.panelHeader}>

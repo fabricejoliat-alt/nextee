@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Mountain, Smile, Target } from "lucide-react";
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
@@ -246,13 +247,7 @@ export default function CoachEventPlayerDetailPage() {
       setPlayerFb(!pfRes.error && pfRes.data ? (pfRes.data as PlayerFeedbackRow) : null);
 
       // coach feedback (this coach)
-      const cfRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .eq("coach_id", uRes.user.id)
-        .maybeSingle();
+      const cfRes = await loadCoachEventFeedback(eventId, playerId);
       setCoachFb(!cfRes.error && cfRes.data ? (cfRes.data as CoachFeedbackRow) : null);
 
       // ✅ STRUCTURE: training_sessions linked by club_event_id + user_id

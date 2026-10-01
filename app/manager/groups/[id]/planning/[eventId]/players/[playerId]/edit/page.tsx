@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
@@ -218,13 +219,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         setOrderedPlayerIds([playerId]);
       }
 
-      const cfRes = await supabase
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .eq("coach_id", uRes.user.id)
-        .maybeSingle();
+      const cfRes = await loadCoachEventFeedback(eventId, playerId);
 
       if (!cfRes.error && cfRes.data) {
         const row = cfRes.data as CoachFeedbackRow;
@@ -351,11 +346,10 @@ export default function CoachEventPlayerFeedbackEditPage() {
       }
     }
 
-    const up = await supabase.from("club_event_coach_feedback").upsert(
-      {
-        event_id: eventId,
-        player_id: playerId,
-        coach_id: meId,
+    const up = await supabase.rpc("save_manager_event_feedback_v1", {
+      p_event_id: eventId,
+      p_player_id: playerId,
+      p_feedback: {
         engagement: attendanceStatus === "absent" ? null : draft.engagement,
         attitude: attendanceStatus === "absent" ? null : draft.attitude,
         performance: attendanceStatus === "absent" ? null : draft.performance,
@@ -363,8 +357,7 @@ export default function CoachEventPlayerFeedbackEditPage() {
         private_note: draft.private_note?.trim() || null,
         player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
       },
-      { onConflict: "event_id,player_id,coach_id" }
-    );
+    });
 
     if (up.error) {
       setError(up.error.message);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, CheckCircle2, ChevronRight, CircleAlert, Clock3, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -25,12 +25,27 @@ type Payload = { season:{ title_i18n:Record<string,string>; status:string }|null
 export default function RulesWorkspace({ scope }: { scope: Scope }) {
   const searchParams = useSearchParams();
   const requestedSeriesId = searchParams.get("series_id") ?? "";
-  const { locale } = useI18n(); const tr=useCallback((fr:string,en:string)=>pickLocaleText(locale,fr,en),[locale]);
+  const { locale, t } = useI18n(); const tr=useCallback((fr:string,en:string)=>pickLocaleText(locale,fr,en),[locale]);
   const [data,setData]=useState<Payload|null>(null); const [error,setError]=useState(""); const [selected,setSelected]=useState<Card|null>(null);
-  const load=useCallback(async()=>{ const { data:session }=await supabase.auth.getSession(); setError(""); const token=session.session?.access_token; if(!token){setError(tr("Session expirée.","Session expired."));return;} const query=requestedSeriesId?`?series_id=${encodeURIComponent(requestedSeriesId)}`:""; const res=await fetch(`/api/rules/overview${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}); const json=await res.json().catch(()=>({})); if(!res.ok){setError(String(json.error??tr("Chargement impossible.","Unable to load.")));return;} setData(json); },[requestedSeriesId,tr]);
-  // Loading is an external synchronization; state updates occur after the auth promise resolves.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(()=>{void load();},[load]);
+  const requestId = useRef(0);
+  const load = useCallback(async () => {
+    const request = ++requestId.current;
+    setError("");
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) throw new Error("Missing session");
+      const query = requestedSeriesId ? `?series_id=${encodeURIComponent(requestedSeriesId)}` : "";
+      const res = await fetch(`/api/rules/overview${query}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok || !Array.isArray(json.series) || !Array.isArray(json.cards) || !Array.isArray(json.progress)) throw new Error("Invalid rules overview");
+      if (request === requestId.current) setData(json);
+    } catch {
+      if (request === requestId.current) setError(tr("Chargement impossible. Réessayez.", "Unable to load. Try again."));
+    }
+  }, [requestedSeriesId, tr]);
+  // Synchronize remote data and ignore responses after unmount or a newer request.
+  useEffect(()=>{const requests = requestId; void load(); return () => { requests.current++; };},[load]);
   const current=useMemo(()=>data?.series.find(s=>s.id===data.currentSeriesId)??null,[data]);
   const phase=current?rulesPhase(new Date(),{discoveryStartsAt:new Date(current.discovery_starts_at),quizOpensAt:new Date(current.quiz_opens_at),quizClosesAt:new Date(current.quiz_closes_at),resultsPublishedAt:current.results_published_at?new Date(current.results_published_at):null,archivedAt:current.archived_at?new Date(current.archived_at):null}):null;
   const read=new Set(data?.progress.map(p=>p.card_version_id)??[]);
@@ -39,7 +54,7 @@ export default function RulesWorkspace({ scope }: { scope: Scope }) {
   if(!data.season)return scope==="coach"?<CoachRulesLoading empty/>:<main className={styles.page}><section className={styles.state}><BookOpen/><h1>{tr("Règles de golf","Rules of golf")}</h1><p>{scope==="admin"?tr("La migration est prête. Créez ou publiez une saison après validation éditoriale.","The migration is ready. Create or publish a season after editorial review."):tr("Aucune saison n’est publiée pour le moment.","No season is published yet.")}</p></section></main>;
   const phaseLabel=phase?tr({upcoming:"À venir",learning:"Apprentissage",quiz_soon:"Quiz bientôt",quiz_open:"Quiz ouvert",quiz_closed:"Quiz terminé",results:"Résultats publiés",archived:"Archivé"}[phase],phase):tr("Préparation","Preparing");
   if(scope==="player")return <PlayerRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phase={phase} phaseLabel={phaseLabel} quizAvailable={data.quizAvailable} quizAttempt={data.quizAttempt} leaderboard={data.leaderboard} />;
-  if(scope==="coach")return <CoachRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phaseLabel={phaseLabel} />;
+  if(scope==="coach")return <CoachRulesWorkspace series={data.series} current={current} cards={data.cards} read={read} phaseLabel={t(`coach.rules.phase.${phase ?? "preparing"}`)} />;
   return <main className={`${styles.page} ${scope==="admin"?styles.adminPage:""}`}>
     {scope==="admin"?<>
       <nav className={styles.adminBreadcrumb} aria-label={tr("Fil d’Ariane","Breadcrumb")}><Link href="/admin">{tr("Administration","Administration")}</Link><ChevronRight size={14} aria-hidden="true"/><span>{tr("Règles de golf","Rules of golf")}</span></nav>

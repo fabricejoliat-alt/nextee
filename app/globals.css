@@ -1835,7 +1835,7 @@ input[type="radio"]{
    ========================================================= */
 
 .coach-shell{
-  font-family: var(--font-ibm-plex-sans), var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 .coach-shell .section-title{
@@ -1847,8 +1847,8 @@ input[type="radio"]{
 .coach-shell .card-title{
   font-size: 14px;
   font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: 0.55px;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--green-dark);
 }
 
@@ -1869,14 +1869,15 @@ input[type="radio"]{
 }
 
 .coach-shell .btn{
-  font-size: 13px !important;
-  font-weight: 650 !important;
-  height: 36px;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  min-height: 44px;
+  height: auto;
 }
 
 .coach-shell .cta-green{
   background: var(--green-dark) !important;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+  box-shadow: 0 8px 17px rgba(53,72,59,.2) !important;
 }
 
 .coach-shell .cta-green:hover{
@@ -1888,9 +1889,9 @@ input[type="radio"]{
 }
 
 .coach-shell .cta-green:disabled{
-  opacity: 1;
+  opacity: .5;
   background: var(--green-dark) !important;
-  box-shadow: 0 8px 18px rgba(0,0,0,0.28) !important;
+  box-shadow: none !important;
 }
 
 /* Quand une card parent contient déjà des cards internes, on enlève son "cadre". */
@@ -3002,8 +3003,94 @@ body:has([data-design-system]){
 
 .coach-page-root .section-title{font-size: 18px !important}
 .coach-page-root .card-title{color:#35483b !important;font-size:14px !important;font-weight:750 !important}
-.coach-page-root :is(.cta-green,.btn:not(.btn-danger)){
-  min-height: 42px !important;
+
+/* Coach: reuse the Player golf photo while keeping white cards and controls
+   readable. Only page-level heroes and headings placed on the photo turn white. */
+.coach-page-root .coach-scroll-area{
+  background:
+    linear-gradient(90deg, rgba(12,30,20,.88) 0%, rgba(16,38,25,.74) 42%, rgba(16,38,25,.28) 100%),
+    url("/hero-golf.png") center / cover fixed !important;
+}
+
+/* The access guard is rendered before CoachShell, so it needs its own Coach
+   loading treatment instead of inheriting the generic dark shimmer. */
+.coach-page-root > .role-guard-page-loading{
+  min-height:calc(100vh - var(--header-h, 64px));
+  background:
+    linear-gradient(90deg, rgba(12,30,20,.88) 0%, rgba(16,38,25,.74) 42%, rgba(16,38,25,.28) 100%),
+    url("/hero-golf.png") center / cover fixed;
+}
+
+.coach-page-root > .role-guard-page-loading > .card{
+  border-color:rgba(255,255,255,.22) !important;
+  background:rgba(255,255,255,.1) !important;
+  box-shadow:0 18px 42px rgba(7,20,13,.24) !important;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+
+.coach-page-root > .role-guard-page-loading .role-guard-loading-line{
+  background:linear-gradient(90deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.62) 50%,rgba(255,255,255,.18) 100%);
+  background-size:200% 100%;
+}
+
+.coach-page-root .coach-shell h1,
+.coach-page-root .coach-shell .hero-title,
+.coach-page-root .coach-shell [class*="topline"] h1,
+.coach-page-root .coach-shell [class*="headerBlock"] h1,
+.coach-page-root .coach-shell [class*="heroContent"] h1{
+  color:#fff !important;
+}
+
+.coach-page-root .coach-shell :is(.hero-sub,.hero-club),
+.coach-page-root .coach-shell [class*="topline"] > div > p,
+.coach-page-root .coach-shell [class*="topline"] [class*="lead"],
+.coach-page-root .coach-shell [class*="headerBlock"] h1 + p,
+.coach-page-root .coach-shell [class*="heroContent"] p,
+.coach-page-root .coach-shell [class*="context"]{
+  color:rgba(255,255,255,.88) !important;
+}
+
+/* Explicit marker shared by every Coach breadcrumb, including reused Manager
+   views. Do not depend on generated CSS-module class names or translated labels. */
+.coach-page-root .coach-shell [data-ui="breadcrumb"]{
+  flex-wrap:wrap;
+  overflow-wrap:anywhere;
+}
+.coach-page-root .coach-shell [data-ui="breadcrumb"],
+.coach-page-root .coach-shell [data-ui="breadcrumb"] *{
+  color:#fff !important;
+}
+.coach-page-root .coach-shell [data-ui="breadcrumb"] a:is(:hover,:focus-visible){
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+.coach-page-root .coach-shell [data-ui="breadcrumb"] a:focus-visible{
+  outline:2px solid #fff;
+  outline-offset:3px;
+}
+
+.coach-page-root .coach-shell .marketplace-page>.glass-section:first-of-type:has(.marketplace-header){
+  padding:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+
+.coach-page-root .coach-shell .marketplace-page>.glass-section:first-of-type .section-title{
+  color:#fff !important;
+  font:700 clamp(34px,4vw,54px)/1 var(--font-inter-tight),var(--font-inter),sans-serif !important;
+  letter-spacing:-.04em !important;
+  text-transform:none !important;
+}
+
+.coach-page-root .coach-shell .marketplace-page>.glass-section:first-of-type .section-subtitle{
+  color:rgba(255,255,255,.88) !important;
+}
+
+.coach-page-root :is(.cta-green,.btn[aria-pressed="true"]){
+  min-height: 44px !important;
   border-radius: 10px !important;
   border-color: #35483b !important;
   background: #35483b !important;
@@ -3013,14 +3100,14 @@ body:has([data-design-system]){
   font-weight: 700 !important;
 }
 
-.coach-page-root :is(.glass-btn,.btn.soft){
-  min-height: 38px;
+.coach-page-root :is(.glass-btn,.btn:not(.btn-danger):not([aria-pressed="true"]),.btn.soft){
+  min-height: 44px;
   border: 1px solid #dce5db !important;
-  border-radius: 9px !important;
+  border-radius: 10px !important;
   background: #fff !important;
   color: #35483b !important;
   box-shadow: none !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
 }
 
@@ -3755,6 +3842,29 @@ body:has([data-design-system]){
   outline:0;
   border-radius:9px;
   box-shadow:0 0 0 3px rgba(137,157,125,.17);
+}
+
+/* Coach-wide interaction baseline; Manager form tokens above remain shared.
+   Do not enlarge native checkboxes/radios or recolor headings on white cards. */
+.coach-page-root .coach-shell :is(button,a[class*="Button"],a.btn,a.cta-green){
+  min-height:44px;
+  min-width:44px;
+}
+.coach-page-root .coach-shell :is(button,a):focus-visible{
+  outline:2px solid #899d7d;
+  outline-offset:3px;
+}
+.coach-page-root .coach-shell button:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+  box-shadow:none !important;
+}
+.manager-page.manager-page-root.coach-page-root .coach-scroll-area :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),select){
+  height:44px !important;
+  min-height:44px !important;
+}
+@media (prefers-reduced-motion:reduce){
+  .coach-page-root .coach-shell :is(button,a){transition:none}
 }
 
 .manager-page.manager-page-root .manager-scroll-area .tiptap-field-frame{

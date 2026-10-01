@@ -169,9 +169,9 @@ test("requires ratings but allows an independent private guided note", () => {
   assert.equal(privateOnly.private_note, "Note interne");
 });
 
-test("resume logic never skips an existing absence", () => {
+test("resume logic preserves an explicitly recorded absence", () => {
   assert.equal(needsCoachPlayerEvaluation(null, [null, null, null]), true);
-  assert.equal(needsCoachPlayerEvaluation("absent", [null, null, null]), true);
+  assert.equal(needsCoachPlayerEvaluation("absent", [null, null, null]), false);
   assert.equal(needsCoachPlayerEvaluation("present", [5, 4, 6]), false);
   assert.equal(needsCoachPlayerEvaluation("present", [5, null, 6]), true);
 });
@@ -230,7 +230,7 @@ test("the guided UI and API save exactly one player without exposing collective 
   assert.match(page, /saveAndNext/);
   assert.match(page, /saveAndFinish/);
   assert.match(page, /saveInFlightRef/);
-  assert.match(page, /needsCoachPlayerEvaluation/);
+  assert.match(page, /coachPlayerEvaluationComplete/);
   assert.match(page, /debrief\/analyze-player/);
   assert.match(page, /debrief\/player/);
   assert.match(page, /audience: "junior"/);
@@ -245,7 +245,7 @@ test("the guided UI and API save exactly one player without exposing collective 
   assert.match(playerAnalyzeRoute, /responseLanguage\(body\?\.locale\)/);
   assert.match(playerAnalyzeRoute, /write both the text and rationale only in \$\{outputLanguage\}/);
   assert.doesNotMatch(playerAnalyzeRoute, /collective_source|individual_sources|save_coach_training_debrief/);
-  assert.match(playerSaveRoute, /save_coach_training_player_evaluation_v1/);
+  assert.match(playerSaveRoute, /save_coach_training_player_evaluation_v2/);
   assert.match(playerSaveRoute, /p_player_id: normalized\.player_id/);
   assert.doesNotMatch(playerSaveRoute, /Training assistance is disabled for this coach/);
   assert.match(eventDetailRoute, /player_id,status,coach_recorded_status,coach_recorded_by,coach_recorded_at/);

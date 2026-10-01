@@ -107,8 +107,24 @@
 }
 
 .toggle {
-  position: relative;
+  display: inline-grid;
+  place-items: center;
   flex: 0 0 auto;
+  align-self: center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Keep the Manager switch geometry separate from the 44px touch target.
+   The Coach-wide minimum button size must never stretch this visual track. */
+.toggleTrack {
+  display: block;
   box-sizing: border-box;
   width: 42px;
   height: 24px;
@@ -116,11 +132,10 @@
   border: 1px solid #cfd7cf;
   border-radius: 999px;
   background: #dfe4df;
-  cursor: pointer;
   transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
 
-.toggle span {
+.toggleThumb {
   display: block;
   width: 18px;
   height: 18px;
@@ -130,22 +145,29 @@
   transition: transform .18s ease;
 }
 
-.toggleChecked {
+.toggleChecked .toggleTrack {
   border-color: var(--primary);
   background: var(--primary);
 }
 
-.toggleChecked span {
+.toggleChecked .toggleThumb {
   transform: translateX(18px);
 }
 
 .toggle:focus-visible {
-  outline: 0;
-  box-shadow: 0 0 0 3px rgba(137, 157, 125, .24);
+  outline: 2px solid #899d7d;
+  outline-offset: 3px;
 }
 
 .toggle:disabled {
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggleTrack,
+  .toggleThumb {
+    transition: none;
+  }
 }
 
 @media (max-width: 760px) {

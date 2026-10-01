@@ -13,14 +13,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
     const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
-    if (access.sharedClubIds.length === 0 || !access.canAccessSensitiveSections) {
+    if (access.sensitiveClubIds.length === 0 || !access.canAccessSensitiveSections) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const requestedOrganizationId = String(
       new URL(req.url).searchParams.get("organization_id") ?? ""
     ).trim();
-    const allowedOrganizationIds = [...access.sharedClubIds].sort();
+    const allowedOrganizationIds = [...access.sensitiveClubIds].sort();
     if (requestedOrganizationId && !allowedOrganizationIds.includes(requestedOrganizationId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

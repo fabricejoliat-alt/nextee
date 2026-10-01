@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveCoachAssignments } from "@/lib/coachAccess";
+import { coachEventEndMs, coachTrainingEvaluationComplete } from "@/lib/coachCalendar";
+import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -15,22 +18,12 @@ type EventLite = {
   camp_day_index?: number | null;
   starts_at: string;
   ends_at: string | null;
+  duration_minutes: number | null;
   location_text: string | null;
   status: "scheduled" | "cancelled";
   requires_evaluation: boolean;
 };
 
-type EventAttendeeLite = {
-  event_id: string;
-  player_id: string;
-  status: "expected" | "present" | "absent" | "excused" | null;
-};
-
-type EventFeedbackLite = {
-  event_id: string;
-  player_id: string;
-  coach_id: string;
-};
 
 function sortByStartsAtAsc<T extends { starts_at: string }>(items: T[]) {
   return [...items].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
@@ -54,25 +47,9 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
     const me = !meRes.error && meRes.data ? meRes.data : null;
 
-    const [headGroupsRes, extraGroupsRes, eventCoachRes] = await Promise.all([
-      supabaseAdmin.from("coach_groups").select("id").eq("head_coach_user_id", coachId),
-      supabaseAdmin.from("coach_group_coaches").select("group_id").eq("coach_user_id", coachId),
-      supabaseAdmin.from("club_event_coaches").select("event_id").eq("coach_id", coachId),
-    ]);
-
-    if (headGroupsRes.error) return NextResponse.json({ error: headGroupsRes.error.message }, { status: 400 });
-    if (extraGroupsRes.error) return NextResponse.json({ error: extraGroupsRes.error.message }, { status: 400 });
-    if (eventCoachRes.error) return NextResponse.json({ error: eventCoachRes.error.message }, { status: 400 });
-
-    const groupIds = Array.from(
-      new Set([
-        ...(headGroupsRes.data ?? []).map((r: { id: string | null }) => String(r?.id ?? "").trim()),
-        ...(extraGroupsRes.data ?? []).map((r: { group_id: string | null }) => String(r?.group_id ?? "").trim()),
-      ])
-    ).filter(Boolean);
-    const eventIdsFromAssign = Array.from(
-      new Set((eventCoachRes.data ?? []).map((r: { event_id: string | null }) => String(r?.event_id ?? "").trim()))
-    ).filter(Boolean);
+    const scope = await resolveCoachAssignments(supabaseAdmin, coachId);
+    const groupIds = scope.groups.map((group) => group.id);
+    const eventIdsFromAssign = scope.eventIds;
 
     if (groupIds.length === 0 && eventIdsFromAssign.length === 0) {
       return NextResponse.json({
@@ -102,15 +79,17 @@ export async function GET(req: NextRequest) {
       const [groupUpcomingRes, groupPastRes, groupsRes] = await Promise.all([
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
+          .select("id,group_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,status,requires_evaluation")
           .in("group_id", groupIds)
+          .in("club_id", scope.clubIds)
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
           .limit(80),
         supabaseAdmin
           .from("club_events")
-          .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
+          .select("id,group_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,status,requires_evaluation")
           .in("group_id", groupIds)
+          .in("club_id", scope.clubIds)
           .lt("starts_at", nowIso)
           .order("starts_at", { ascending: false })
           .limit(120),
@@ -139,8 +118,9 @@ export async function GET(req: NextRequest) {
     if (eventIdsFromAssign.length > 0) {
       const assignedEventsRes = await supabaseAdmin
         .from("club_events")
-        .select("id,group_id,event_type,title,starts_at,ends_at,location_text,status,requires_evaluation")
+        .select("id,group_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,status,requires_evaluation")
         .in("id", eventIdsFromAssign)
+        .in("club_id", scope.clubIds)
         .order("starts_at", { ascending: false });
       if (assignedEventsRes.error) return NextResponse.json({ error: assignedEventsRes.error.message }, { status: 400 });
 
@@ -190,7 +170,7 @@ export async function GET(req: NextRequest) {
         .select("event_id,day_index")
         .in("event_id", campEventIds);
       if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
-      campDayIndexByEventId = (campDaysRes.data ?? []).reduce<Record<string, number>>((acc, row: any) => {
+      campDayIndexByEventId = (campDaysRes.data ?? []).reduce<Record<string, number>>((acc, row: { event_id: string | null; day_index: number | null }) => {
         const eventId = String(row?.event_id ?? "").trim();
         if (!eventId) return acc;
         acc[eventId] = typeof row?.day_index === "number" ? row.day_index : 0;
@@ -205,10 +185,10 @@ export async function GET(req: NextRequest) {
     }));
     const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 80);
     const pastEvents = allEventsWithCampDay
-      .filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() < new Date(nowIso).getTime())
+      .filter((e) => e.status === "scheduled" && coachEventEndMs(e) <= new Date(nowIso).getTime())
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
       .slice(0, 120);
-    const evaluationEvents = pastEvents.filter((event) => Boolean(event.requires_evaluation));
+    const evaluationEvents = pastEvents.filter((event) => event.event_type === "training" && event.requires_evaluation !== false);
 
     const groupPlayersRes = groupIds.length > 0
       ? await supabaseAdmin.from("coach_group_players").select("player_user_id").in("group_id", groupIds)
@@ -233,45 +213,14 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const pastIds = pastEvents.map((e) => e.id);
-    const [attendeesRes, feedbackRes] = await Promise.all([
-      supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", pastIds),
-      supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id,coach_id").in("event_id", pastIds).eq("coach_id", coachId),
-    ]);
-    if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
-    if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
-
-    const presentByEvent: Record<string, Set<string>> = {};
-    ((attendeesRes.data ?? []) as EventAttendeeLite[]).forEach((r) => {
-      if (r.status !== "present") return;
-      if (!presentByEvent[r.event_id]) presentByEvent[r.event_id] = new Set<string>();
-      presentByEvent[r.event_id].add(r.player_id);
-    });
-
-    const evaluatedByEvent: Record<string, Set<string>> = {};
-    ((feedbackRes.data ?? []) as EventFeedbackLite[]).forEach((r) => {
-      if (!evaluatedByEvent[r.event_id]) evaluatedByEvent[r.event_id] = new Set<string>();
-      evaluatedByEvent[r.event_id].add(r.player_id);
-    });
-
-    const pendingEvalEvents = evaluationEvents.filter((e) => {
-      const present = presentByEvent[e.id] ?? new Set<string>();
-      if (present.size === 0) return false;
-      const evaluated = evaluatedByEvent[e.id] ?? new Set<string>();
-      for (const pid of present) {
-        if (!evaluated.has(pid)) return true;
-      }
-      return false;
-    });
-
-    const pendingAttendanceCount = ((attendeesRes.data ?? []) as EventAttendeeLite[]).filter(
-      (row) => row.status == null || row.status === "expected"
-    ).length;
-    const pendingEvaluationCount = pendingEvalEvents.reduce((total, event) => {
-      const present = presentByEvent[event.id] ?? new Set<string>();
-      const evaluated = evaluatedByEvent[event.id] ?? new Set<string>();
-      return total + Array.from(present).filter((playerId) => !evaluated.has(playerId)).length;
-    }, 0);
+    const evaluationState = await loadCoachEvaluationState(supabaseAdmin, evaluationEvents.map((event) => event.id));
+    const pendingEvalEvents = evaluationEvents.filter((event) =>
+      evaluationState.attendees.some((attendee) => attendee.event_id === event.id)
+      && !evaluationState.completeByEvent[event.id]);
+    const pendingAttendanceCount = evaluationState.attendees.filter((row) => row.coach_recorded_status == null).length;
+    const pendingEvaluationCount = evaluationState.attendees.filter((attendee) =>
+      !coachTrainingEvaluationComplete([attendee], evaluationState.feedback.filter((row) => row.event_id === attendee.event_id),
+        evaluationState.criteria, evaluationState.responses)).length;
 
     return NextResponse.json({
       me,

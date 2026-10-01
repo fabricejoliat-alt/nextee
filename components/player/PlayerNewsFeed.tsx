@@ -64,6 +64,7 @@ export default function PlayerNewsFeed() {
         const context = await resolveEffectivePlayerContext();
         const childId = context.role === "parent" ? context.effectiveUserId : null;
         const params = new URLSearchParams({ include_archived: "1" });
+        params.set("locale", locale);
         if (childId) params.set("child_id", childId);
         const response = await fetch(`/api/player/news?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const payload = await response.json().catch(() => ({}));

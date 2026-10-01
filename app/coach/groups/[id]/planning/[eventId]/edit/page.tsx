@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { loadCoachPlanningRoster } from "@/lib/coachPlanningRoster";
+import { coachEventEditSnapshot, coachEventSaveErrorKey, type CoachEventEditSnapshot } from "@/lib/coachEventEditor";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Repeat, Trash2, PlusCircle, Search, Users } from "lucide-react";
-import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
+import { ArrowLeft, Trash2, PlusCircle, Search, Users } from "lucide-react";
+import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
+import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import formStyles from "@/components/coach/CoachActivityForm.module.css";
+import layoutStyles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 
@@ -131,6 +138,8 @@ function initials(p?: { first_name: string | null; last_name: string | null } | 
 function avatarNode(p?: ProfileLite | null) {
   if (p?.avatar_url) {
     return (
+      // Profile avatars use arbitrary signed URLs; keep the existing native image rendering.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={p.avatar_url}
         alt=""
@@ -141,29 +150,8 @@ function avatarNode(p?: ProfileLite | null) {
   return initials(p);
 }
 
-function weekdayFromDate(d: Date) {
-  // JS: 0=Sun..6=Sat
-  return d.getDay();
-}
 
-function nextWeekdayOnOrAfter(start: Date, targetWeekday: number) {
-  const d = new Date(start);
-  const w = weekdayFromDate(d);
-  const diff = (targetWeekday - w + 7) % 7;
-  d.setDate(d.getDate() + diff);
-  return d;
-}
 
-function combineDateAndTime(localYMD: string, hhmm: string) {
-  const t = hhmm.length === 5 ? `${hhmm}:00` : hhmm;
-  return new Date(`${localYMD}T${t}`);
-}
-
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
 const TRAINING_CATEGORY_VALUES = [
   "warmup_mobility",
   "long_game",
@@ -178,20 +166,6 @@ const TRAINING_CATEGORY_VALUES = [
   "fitness",
   "other",
 ] as const;
-const TRAINING_CATEGORY_LABELS: Record<string, string> = {
-  warmup_mobility: "Échauffement / mobilité",
-  long_game: "Long jeu",
-  short_game_all: "Petit jeu (tout secteur)",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Mental",
-  fitness: "Fitness",
-  other: "Autre",
-};
 function buildMinuteOptions() {
   const out: number[] = [];
   for (let m = 5; m <= 300; m += 5) out.push(m);
@@ -215,32 +189,9 @@ function buildQuarterHourOptions() {
 }
 const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
 
-function memberRoleLabel(role: string | null | undefined) {
-  switch (role) {
-    case "owner":
-      return "Propriétaire";
-    case "admin":
-      return "Admin";
-    case "manager":
-      return "Manager";
-    case "coach":
-      return "Coach";
-    case "player":
-      return "Joueur";
-    case "parent":
-      return "Parent";
-    case "captain":
-      return "Capitaine";
-    case "staff":
-      return "Staff";
-    default:
-      return "Membre";
-  }
-}
-
 function fmtDateTime(iso: string, locale: string) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US", {
+  return new Intl.DateTimeFormat(coachDateLocale(locale), {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -255,7 +206,7 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
   const start = new Date(startIso);
   const end = new Date(endIso);
   const sameDay = start.toDateString() === end.toDateString();
-  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  const localeTag = coachDateLocale(locale);
 
   if (sameDay) {
     const datePart = new Intl.DateTimeFormat(localeTag, {
@@ -270,41 +221,27 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
   return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
 }
 
-function fmtTrainingMoment(iso: string, locale: string) {
-  const d = new Date(iso);
-  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
-  const datePart = new Intl.DateTimeFormat(localeTag, {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(d);
-  const timePart = new Intl.DateTimeFormat(localeTag, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  })
-    .format(d)
-    .replace(":", "h");
-  return `${datePart} à ${timePart}`;
-}
-
-function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
-  if (v === "training") return pickLocaleText(locale, "Entraînement", "Training");
-  if (v === "interclub") return pickLocaleText(locale, "Interclub", "Interclub");
-  if (v === "camp") return pickLocaleText(locale, "Stage/Camp", "Camp");
-  if (v === "session") return pickLocaleText(locale, "Séance", "Session");
-  return pickLocaleText(locale, "Événement", "Event");
-}
-
 export default function CoachEventEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string }>();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
+  const memberRoleLabel = useCallback((role: string | null | undefined) => t(`coach.form.role.${["owner","admin","manager","coach","player","parent","captain","staff"].includes(role ?? "") ? role : "member"}`), [t]);
+  const eventTypeLabelLocalized = (value: string | null | undefined) => t(`coach.activity.${["training","interclub","camp","session","event"].includes(value ?? "") ? value : "event"}`);
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
 
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [saving, setBusy] = useState(false);
+  const [saveCommitted, setSaveCommitted] = useState(false);
+  const [confirmation, setConfirmation] = useState<"series" | "deleteOccurrence" | "deleteSeries" | null>(null);
+  const [mutationUncertain, setMutationUncertain] = useState(false);
+  const busy = saving || saveCommitted || mutationUncertain;
+  const mutationInFlight = useRef(false);
+  const loadVersion = useRef(0);
+  const currentRoute = useRef("");
+  const routeKey = `${groupId}/${eventId}`;
+  currentRoute.current = routeKey;
+  const [editSnapshot, setEditSnapshot] = useState<CoachEventEditSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [meId, setMeId] = useState("");
@@ -347,7 +284,6 @@ export default function CoachEventEditPage() {
   const [selectedPlayers, setSelectedPlayers] = useState<Record<string, ProfileLite>>({});
   const [queryGuests, setQueryGuests] = useState("");
   const [selectedGuests, setSelectedGuests] = useState<Record<string, ClubMemberLite>>({});
-  const [initialSelectedAttendeeIds, setInitialSelectedAttendeeIds] = useState<string[]>([]);
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
   const isDurationOnlyOccurrenceType = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training";
   const showsStructureEditor = (v: "training" | "interclub" | "camp" | "session" | "event") => v === "training" || v === "camp";
@@ -419,122 +355,12 @@ export default function CoachEventEditPage() {
     setStructureItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
-  async function replaceStructureForEvent(targetEventId: string) {
-    const del = await supabase.from("club_event_structure_items").delete().eq("event_id", targetEventId);
-    if (del.error) throw new Error(del.error.message);
-
-    const payload = structureItems
-      .map((it, idx) => {
-        const minutes = Number(it.minutes);
-        if (!it.category || !Number.isFinite(minutes) || minutes <= 0) return null;
-        return {
-          event_id: targetEventId,
-          category: it.category,
-          minutes,
-          note: it.note?.trim() || null,
-          position: idx,
-        };
-      })
-      .filter(
-        (x): x is { event_id: string; category: string; minutes: number; note: string | null; position: number } =>
-          Boolean(x)
-      );
-
-    if (payload.length === 0) return;
-    const ins = await supabase.from("club_event_structure_items").insert(payload);
-    if (ins.error) throw new Error(ins.error.message);
-  }
-
-  async function applyStructureForEvents(eventIds: string[]) {
-    if (eventIds.length === 0) return;
-    for (const eid of eventIds) {
-      await replaceStructureForEvent(eid);
-    }
-  }
-
-  async function syncAssignmentsForEvents(eventIds: string[]) {
-    if (eventIds.length === 0) return;
-
-    const delCoaches = await supabase.from("club_event_coaches").delete().in("event_id", eventIds);
-    if (delCoaches.error) throw new Error(delCoaches.error.message);
-
-    if (coachIdsSelected.length > 0) {
-      const coachRows = eventIds.flatMap((eid) =>
-        coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid }))
-      );
-      const insCoaches = await supabase
-        .from("club_event_coaches")
-        .upsert(coachRows, { onConflict: "event_id,coach_id", ignoreDuplicates: true });
-      if (insCoaches.error) throw new Error(insCoaches.error.message);
-    }
-
-    if (!participantsManagedElsewhere) {
-      const delAttendees = await supabase.from("club_event_attendees").delete().in("event_id", eventIds);
-      if (delAttendees.error) throw new Error(delAttendees.error.message);
-
-      if (attendeeIdsSelected.length > 0) {
-        const attendeeRows = eventIds.flatMap((eid) =>
-          attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-        );
-        const insAttendees = await supabase
-          .from("club_event_attendees")
-          .upsert(attendeeRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-        if (insAttendees.error) throw new Error(insAttendees.error.message);
-      }
-    }
-  }
-
-  async function updateFutureSeriesOccurrencesInPlace() {
-    if (!event?.series_id) return [] as string[];
-
-    const nowIso = new Date().toISOString();
-    const futureRes = await supabase
-      .from("club_events")
-      .select("id,starts_at")
-      .eq("series_id", event.series_id)
-      .gte("starts_at", nowIso)
-      .order("starts_at", { ascending: true });
-    if (futureRes.error) throw new Error(futureRes.error.message);
-
-    const futureEvents = (futureRes.data ?? []) as Array<{ id: string; starts_at: string }>;
-    const updatedIds: string[] = [];
-
-    for (const futureEvent of futureEvents) {
-      const localDate = toYMD(new Date(futureEvent.starts_at));
-      const startDt = combineDateAndTime(localDate, timeOfDay);
-      const endDt = new Date(startDt);
-      endDt.setMinutes(endDt.getMinutes() + durationMinutes);
-
-      const upd = await supabase
-        .from("club_events")
-        .update({
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          starts_at: startDt.toISOString(),
-          ends_at: endDt.toISOString(),
-          duration_minutes: durationMinutes,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-        })
-        .eq("id", futureEvent.id);
-      if (upd.error) throw new Error(upd.error.message);
-      updatedIds.push(futureEvent.id);
-    }
-
-    if (updatedIds.length > 0) {
-      await syncAssignmentsForEvents(updatedIds);
-      await applyStructureForEvents(updatedIds);
-    }
-
-    return updatedIds;
-  }
-
   const selectedPlayersList = useMemo(
     () =>
       Object.values(selectedPlayers).sort((a, b) =>
-        fullName(a).localeCompare(fullName(b), "fr")
+        fullName(a).localeCompare(fullName(b), locale)
       ),
-    [selectedPlayers]
+    [selectedPlayers, locale]
   );
 
   const candidatesPlayers = useMemo(() => {
@@ -562,16 +388,16 @@ export default function CoachEventEditPage() {
     () =>
       coaches
         .filter((c) => coachIdsSelected.includes(c.id))
-        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), locale)),
+    [coaches, coachIdsSelected, locale]
   );
 
   const candidateCoaches = useMemo(
     () =>
       coaches
         .filter((c) => !coachIdsSelected.includes(c.id))
-        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), locale)),
+    [coaches, coachIdsSelected, locale]
   );
 
   const allCoachesSelected = useMemo(() => {
@@ -588,8 +414,8 @@ export default function CoachEventEditPage() {
   }, [players, coaches]);
 
   const selectedGuestsList = useMemo(
-    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedGuests]
+    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), locale)),
+    [selectedGuests, locale]
   );
 
   const candidateGuests = useMemo(() => {
@@ -603,7 +429,7 @@ export default function CoachEventEditPage() {
         return n.includes(q) || role.includes(q);
       })
       .slice(0, 30);
-  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests]);
+  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests, memberRoleLabel]);
 
   useEffect(() => {
     setSelectedGuests((prev) => {
@@ -616,6 +442,7 @@ export default function CoachEventEditPage() {
   }, [guestBlockedIds]);
 
   async function load() {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
 
@@ -623,8 +450,10 @@ export default function CoachEventEditPage() {
       if (!groupId || !eventId) throw new Error("Missing parameters.");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
+      if (version !== loadVersion.current) return;
       if (uErr || !uRes.user) throw new Error("Session invalide.");
       const sessionRes = await supabase.auth.getSession();
+      if (version !== loadVersion.current) return;
       const accessToken = sessionRes.data.session?.access_token;
       if (!accessToken) throw new Error("Session invalide.");
 
@@ -634,6 +463,7 @@ export default function CoachEventEditPage() {
         },
       });
       const detailJson = await detailRes.json().catch(() => ({}));
+      if (version !== loadVersion.current) return;
       if (!detailRes.ok) {
         throw new Error(
           typeof detailJson?.error === "string" && detailJson.error.trim()
@@ -643,9 +473,11 @@ export default function CoachEventEditPage() {
       }
 
       const ev = (detailJson?.event ?? null) as EventRow | null;
-      if (!ev) throw new Error("Événement introuvable.");
-      const permissionRes = await supabase.rpc("can_manage_assigned_group", { p_group_id: groupId, p_user_id: uRes.user.id, p_permission: "planning" });
-      if (permissionRes.error || permissionRes.data !== true) throw new Error("Vous n’avez pas l’autorisation de modifier cette activité.");
+      if (!ev || ev.id !== eventId || ev.group_id !== groupId) throw new Error("event_not_found");
+      if (String(ev.event_type) === "competition") throw new Error("forbidden");
+      const roster = await loadCoachPlanningRoster(supabase, groupId, uRes.user.id);
+      if (version !== loadVersion.current) return;
+      if (roster.group.club_id !== ev.club_id) throw new Error("forbidden");
 
       setMeId(String(detailJson?.meId ?? uRes.user.id));
       setReadonlyParticipants(
@@ -674,45 +506,9 @@ export default function CoachEventEditPage() {
       setLocationText(effectiveLocationText);
       setCoachNote(ev.coach_note ?? "");
 
-      const groupRow: GroupRow = {
-        id: groupId,
-        name: String(detailJson?.groupName ?? "").trim() || "Groupe",
-        club_id: ev.club_id,
-      };
-      setGroup(groupRow);
-      setClubName(String(detailJson?.clubName ?? "").trim() || "Club");
-
-      // all active club members (for guests)
-      const cmRes = await supabase
-        .from("club_members")
-        .select("user_id, role")
-        .eq("club_id", groupRow.club_id)
-        .eq("is_active", true);
-      if (cmRes.error) throw new Error(cmRes.error.message);
-      const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
-      const memberIds = Array.from(new Set(cmRows.map((r) => r.user_id).filter(Boolean)));
-      const profilesById = new Map<
-        string,
-        { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
-      >();
-      if (memberIds.length > 0) {
-        const profRes = await supabase.from("profiles").select("id, first_name, last_name, avatar_url").in("id", memberIds);
-        if (profRes.error) throw new Error(profRes.error.message);
-        ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>).forEach((p) => {
-          profilesById.set(p.id, p);
-        });
-      }
-      const cmList: ClubMemberLite[] = cmRows.map((r) => {
-        const p = profilesById.get(r.user_id);
-        return {
-          id: r.user_id,
-          first_name: p?.first_name ?? null,
-          last_name: p?.last_name ?? null,
-          avatar_url: p?.avatar_url ?? null,
-          role: r.role ?? null,
-        };
-      });
-      cmList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      setGroup(roster.group);
+      setClubName(roster.clubName);
+      const cmList: ClubMemberLite[] = roster.members;
       setClubMembers(cmList);
 
       // series
@@ -725,8 +521,10 @@ export default function CoachEventEditPage() {
           .eq("id", ev.series_id)
           .maybeSingle();
 
+        if (version !== loadVersion.current) return;
         if (sRes.error) throw new Error(sRes.error.message);
         const s = (sRes.data ?? null) as SeriesRow | null;
+        if (s && (s.group_id !== groupId || s.club_id !== ev.club_id)) throw new Error("forbidden");
         setSeries(s);
 
         if (s) {
@@ -737,9 +535,7 @@ export default function CoachEventEditPage() {
           setStartDate(s.start_date ?? ymdToday());
           setEndDate(s.end_date ?? toYMD(addDays(new Date(), 60)));
           setSeriesActive(!!s.is_active);
-          setEventType(s.event_type ?? ev.event_type ?? "training");
-          setEventTitle(s.title ?? ev.title ?? "");
-          setCoachNote(s.coach_note ?? ev.coach_note ?? "");
+          // The default scope is one occurrence: keep its own title/type/note.
         } else {
           setEditScope("occurrence");
         }
@@ -748,48 +544,20 @@ export default function CoachEventEditPage() {
         setEditScope("occurrence");
       }
 
-      // ✅ group coaches (BD: coach_group_coaches.coach_user_id)
-      const coRes = await supabase
-        .from("coach_group_coaches")
-        .select("coach_user_id, profiles:coach_user_id ( id, first_name, last_name )")
-        .eq("group_id", groupId);
-
-      if (coRes.error) throw new Error(coRes.error.message);
-
-      let coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
-        id: r.coach_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
-      }));
-
-      // ✅ group players (BD: coach_group_players.player_user_id)
-      const plRes = await supabase
-        .from("coach_group_players")
-        .select("player_user_id, profiles:player_user_id ( id, first_name, last_name, handicap, avatar_url )")
-        .eq("group_id", groupId);
-
-      if (plRes.error) throw new Error(plRes.error.message);
-
-      const plList: ProfileLite[] = (plRes.data ?? []).map((r: any) => ({
-        id: r.profiles?.id ?? r.player_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        handicap: r.profiles?.handicap ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
-      }));
-      plList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      let coList: CoachLite[] = roster.coaches;
+      const plList: ProfileLite[] = roster.players;
       setPlayers(plList);
 
       const selectedCoachIds = Array.isArray(detailJson?.selectedCoachIds)
         ? (detailJson.selectedCoachIds as string[])
         : [];
       const missingCoachIds = selectedCoachIds.filter((id) => !coList.some((c) => c.id === id));
-      if (missingCoachIds.length > 0) {
+      for (let offset = 0; offset < missingCoachIds.length; offset += 150) {
         const missingCoachProfiles = await supabase
           .from("profiles")
           .select("id,first_name,last_name,avatar_url")
-          .in("id", missingCoachIds);
+          .in("id", missingCoachIds.slice(offset, offset + 150));
+        if (version !== loadVersion.current) return;
         if (missingCoachProfiles.error) throw new Error(missingCoachProfiles.error.message);
         coList = [
           ...coList,
@@ -806,7 +574,7 @@ export default function CoachEventEditPage() {
           })),
         ];
       }
-      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr"));
+      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), locale));
       setCoaches(coList);
       setCoachIdsSelected(selectedCoachIds);
 
@@ -815,7 +583,6 @@ export default function CoachEventEditPage() {
             .map((row) => String(row.player_id ?? "").trim())
             .filter(Boolean)
         : [];
-      setInitialSelectedAttendeeIds(selectedIds);
 
       const defaultSelected: Record<string, ProfileLite> = {};
       plList.forEach((p) => {
@@ -829,6 +596,14 @@ export default function CoachEventEditPage() {
           guestsSelected[m.id] = m;
         }
       });
+      // An attendee may since have left the group/club. Keep them visible and
+      // selected instead of dropping their invitation on an unrelated edit.
+      for (const row of (detailJson.attendees ?? []) as EventAttendeeLite[]) {
+        if (!defaultSelected[row.player_id] && !guestsSelected[row.player_id] && !coList.some((c) => c.id === row.player_id)) {
+          guestsSelected[row.player_id] = { id: row.player_id, first_name: row.profile?.first_name ?? null,
+            last_name: row.profile?.last_name ?? null, avatar_url: row.profile?.avatar_url ?? null, role: null };
+        }
+      }
       setSelectedGuests(guestsSelected);
 
       const structureRows = Array.isArray(detailJson?.structureItems)
@@ -842,9 +617,12 @@ export default function CoachEventEditPage() {
         }))
       );
 
+      setEditSnapshot(coachEventEditSnapshot(detailJson));
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+    } catch (e: unknown) {
+      if (version !== loadVersion.current) return;
+      setEditSnapshot(null);
+      setError(e instanceof Error && e.message === "forbidden" ? "coach.error.forbidden" : "coach.error.load");
       setGroup(null);
       setClubName("");
       setEvent(null);
@@ -856,81 +634,32 @@ export default function CoachEventEditPage() {
       setCoachIdsSelected([]);
       setSelectedPlayers({});
       setSelectedGuests({});
-      setInitialSelectedAttendeeIds([]);
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    setEvent(null); setEditSnapshot(null); setSaveCommitted(false); setBusy(false); setConfirmation(null); setMutationUncertain(false);
+    mutationInFlight.current = false;
+    void load();
+    return () => { loadVersion.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [eventId, groupId]);
 
   const attendeeIdsSelected = useMemo(
-    () => Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)])),
-    [selectedPlayers, selectedGuests]
+    () => Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests),
+      ...(editSnapshot?.player_ids.filter((id) => coaches.some((coach) => coach.id === id)) ?? [])])),
+    [selectedPlayers, selectedGuests, editSnapshot, coaches]
   );
 
-  const attendeesAddedOnSave = useMemo(() => {
-    const initial = new Set(initialSelectedAttendeeIds);
-    return attendeeIdsSelected.filter((id) => !initial.has(id));
-  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
-
-  const attendeesRemovedOnSave = useMemo(() => {
-    const current = new Set(attendeeIdsSelected);
-    return initialSelectedAttendeeIds.filter((id) => !current.has(id));
-  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
-
-  async function syncPlayerChangesOnFuturePlannedEvents() {
-    if (participantsManagedElsewhere) return;
-    if (!groupId) return;
-    if (attendeesAddedOnSave.length === 0 && attendeesRemovedOnSave.length === 0) return;
-
-    const nowIso = new Date().toISOString();
-    const futureRes = await supabase
-      .from("club_events")
-      .select("id")
-      .eq("group_id", groupId)
-      .eq("status", "scheduled")
-      .gte("starts_at", nowIso);
-
-    if (futureRes.error) throw new Error(futureRes.error.message);
-
-    const futureEventIds = ((futureRes.data ?? []) as Array<{ id: string }>)
-      .map((r) => String(r.id ?? ""))
-      .filter(Boolean);
-    if (futureEventIds.length === 0) return;
-
-    if (attendeesAddedOnSave.length > 0) {
-      const addRows = futureEventIds.flatMap((eid) =>
-        attendeesAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-      );
-
-      const addRes = await supabase
-        .from("club_event_attendees")
-        .upsert(addRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-
-      if (addRes.error) throw new Error(addRes.error.message);
-    }
-
-    if (attendeesRemovedOnSave.length > 0) {
-      const delRes = await supabase
-        .from("club_event_attendees")
-        .delete()
-        .in("event_id", futureEventIds)
-        .in("player_id", attendeesRemovedOnSave);
-
-      if (delRes.error) throw new Error(delRes.error.message);
-    }
-  }
 
   const canSaveOccurrence = useMemo(() => {
     if (busy || loading) return false;
-    if (!event) return false;
+    if (!event || !editSnapshot) return false;
     if (!startsAtLocal) return false;
     if (eventType !== "training" && !endsAtLocal) return false;
     return true;
-  }, [busy, loading, event, startsAtLocal, endsAtLocal, eventType]);
+  }, [busy, loading, event, editSnapshot, startsAtLocal, endsAtLocal, eventType]);
 
   const canSaveSeries = useMemo(() => {
     if (busy || loading) return false;
@@ -944,38 +673,19 @@ export default function CoachEventEditPage() {
   }, [busy, loading, event?.series_id, series, startDate, endDate, timeOfDay, intervalWeeks]);
 
   async function saveOccurrenceOnly() {
-    if (!event) return;
+    if (!event || !editSnapshot || busy || loading || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    const savedRoute = routeKey;
+    let dataSaved = false;
     setBusy(true);
     setError(null);
 
     try {
       if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(
-          eventType === "session"
-            ? "Nom de la séance requis."
-            : eventType === "camp"
-            ? "Nom du stage/camp requis."
-            : "Nom de l’événement requis."
-        );
+        throw new Error("title_required");
       }
-      const attendeeStatusRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id,status")
-        .eq("event_id", eventId);
-      if (attendeeStatusRes.error) throw new Error(attendeeStatusRes.error.message);
-      const statusRows = (attendeeStatusRes.data ?? []) as Array<{
-        player_id: string | null;
-        status: string | null;
-      }>;
-      const absentBeforeSave = new Set(
-        statusRows
-          .filter((r) => String(r.status ?? "expected") === "absent")
-          .map((r) => String(r.player_id ?? "").trim())
-          .filter(Boolean)
-      );
-
       const startDt = new Date(startsAtLocal);
-      if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
+      if (Number.isNaN(startDt.getTime())) throw new Error("invalid_event");
       let endDt = new Date(endsAtLocal);
       let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       if (isDurationOnlyOccurrenceType(eventType)) {
@@ -983,8 +693,8 @@ export default function CoachEventEditPage() {
         endDt = new Date(startDt);
         endDt.setMinutes(endDt.getMinutes() + computedDuration);
       } else {
-        if (Number.isNaN(endDt.getTime())) throw new Error("Date/heure invalide.");
-        if (endDt <= startDt) throw new Error("La fin doit être après le début.");
+        if (Number.isNaN(endDt.getTime())) throw new Error("invalid_event");
+        if (endDt <= startDt) throw new Error("invalid_event");
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
       const durationForDb = isDurationOnlyOccurrenceType(eventType)
@@ -1012,305 +722,88 @@ export default function CoachEventEditPage() {
         prevLocRaw !== nextLocRaw ||
         prevNote !== nextNote;
 
-      const upd = await supabase
-        .from("club_events")
-        .update({
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          starts_at: nextStartIso,
-          ends_at: nextEndIso,
-          duration_minutes: durationForDb,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-        })
-        .eq("id", eventId);
-
-      if (upd.error) throw new Error(upd.error.message);
-
-      if ((event.event_type ?? eventType) === "camp") {
-        const campDayUpd = await supabase
-          .from("club_camp_days")
-          .update({
-            starts_at: nextStartIso,
-            ends_at: nextEndIso,
-            location_text: locationText.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("event_id", eventId);
-        if (campDayUpd.error) throw new Error(campDayUpd.error.message);
-        setCampDay((prev) =>
-          prev
-            ? {
-                ...prev,
-                starts_at: nextStartIso,
-                ends_at: nextEndIso,
-                location_text: locationText.trim() || null,
-              }
-            : prev
-        );
-      }
-
-      // replace coaches
-      const delC = await supabase.from("club_event_coaches").delete().eq("event_id", eventId);
-      if (delC.error) throw new Error(delC.error.message);
-      if (coachIdsSelected.length > 0) {
-        const insC = await supabase
-          .from("club_event_coaches")
-          .insert(coachIdsSelected.map((cid) => ({ event_id: eventId, coach_id: cid })));
-        if (insC.error) throw new Error(insC.error.message);
-      }
-
-      // replace attendees
-      if (!participantsManagedElsewhere) {
-        const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
-        if (delA.error) throw new Error(delA.error.message);
-        if (attendeeIdsSelected.length > 0) {
-          const insA = await supabase
-            .from("club_event_attendees")
-            .upsert(
-              attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })),
-              { onConflict: "event_id,player_id", ignoreDuplicates: true }
-            );
-          if (insA.error) throw new Error(insA.error.message);
-        }
-      }
-
-      await replaceStructureForEvent(eventId);
+      const saved = await supabase.rpc("update_coach_event_occurrence_v1", {
+        p_event_id: eventId,
+        p_expected: editSnapshot,
+        p_changes: { event_type: eventType, title: eventTitle.trim() || null, starts_at: nextStartIso,
+          ends_at: nextEndIso, duration_minutes: durationForDb, location_text: locationText.trim() || null,
+          coach_note: coachNote.trim() || null },
+        p_coach_ids: coachIdsSelected,
+        p_player_ids: participantsManagedElsewhere ? null : attendeeIdsSelected,
+        p_structure: structureItems.map((item) => ({
+          category: item.category, minutes: Number(item.minutes), note: item.note.trim() || null,
+        })),
+      });
+      if (saved.error) throw saved.error;
+      if (saved.data?.ok !== true) throw new Error("unconfirmed_save");
+      dataSaved = true;
+      if (savedRoute !== currentRoute.current) return;
+      setSaveCommitted(true);
 
       if (hasPlayerVisibleChange && meId) {
-        const recipientIds = participantsManagedElsewhere
-          ? Array.from(
-              new Set(
-                readonlyParticipants
-                  .filter((row) => row.status !== "absent")
-                  .map((row) => row.player_id)
-                  .filter(Boolean)
-              )
-            )
-          : attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
+        const recipientIds: string[] = Array.isArray(saved.data.recipient_ids) ? saved.data.recipient_ids : [];
         if (recipientIds.length > 0) {
-          const oldStart = new Date(event.starts_at);
-          const oldEnd = event.ends_at
-            ? new Date(event.ends_at)
-            : new Date(new Date(event.starts_at).getTime() + Math.max(0, event.duration_minutes || 0) * 60_000);
-          const oldRange = fmtDateTimeRange(oldStart.toISOString(), oldEnd.toISOString(), locale);
-          const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
-          const oldLocRaw = prevLocRaw;
-          const newLocRaw = nextLocRaw;
-          const oldLoc = oldLocRaw || "Lieu à définir";
-          const newLoc = newLocRaw || "Lieu à définir";
-
-          const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
-          if (isTrainingOrInterclub) {
-            const changePieces: string[] = [];
-            if (prevTitle !== nextTitle) {
-              changePieces.push(`Nom: ${prevTitle || "Sans titre"} -> ${nextTitle || "Sans titre"}`);
-            }
-            if (event.starts_at !== nextStartIso) {
-              changePieces.push(`Horaire: ${fmtTrainingMoment(event.starts_at, locale)} -> ${fmtTrainingMoment(nextStartIso, locale)}`);
-            }
-            if (oldDuration !== newDuration) {
-              changePieces.push(`Durée: ${oldDuration} min -> ${newDuration} min`);
-            }
-            if (oldLocRaw !== newLocRaw) {
-              changePieces.push(`Lieu: ${oldLoc} -> ${newLoc}`);
-            }
-            if (prevNote !== nextNote) {
-              changePieces.push(`Note coach: ${prevNote || "Aucune"} -> ${nextNote || "Aucune"}`);
-            }
-            const title =
-              eventType === "interclub"
-                ? `L'interclub du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`
-                : `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
-            const body = changePieces.length > 0 ? changePieces.join(" • ") : undefined;
-            await createAppNotification({
-              actorUserId: meId,
-              kind: "coach_event_updated",
-              title,
-              body,
-              data: {
-                event_id: eventId,
-                group_id: groupId,
-                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-              },
-              recipientUserIds: recipientIds,
-            });
-          } else {
-            const pieces =
-              locale === "fr"
-                ? [
-                    `Date/heure: ${oldRange} -> ${newRange}`,
-                    `Durée: ${oldDuration} min -> ${newDuration} min`,
-                    `Lieu: ${oldLoc} -> ${newLoc}`,
-                  ]
-                : [
-                    `Date/time: ${oldRange} -> ${newRange}`,
-                    `Duration: ${oldDuration} min -> ${newDuration} min`,
-                    `Location: ${oldLoc} -> ${newLoc}`,
-                  ];
-            const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
-              changesSummary: pieces.join(" · "),
-            });
-            await createAppNotification({
-              actorUserId: meId,
-              kind: "coach_event_updated",
-              title: msg.title,
-              body: msg.body,
-              data: {
-                event_id: eventId,
-                group_id: groupId,
-                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-              },
-              recipientUserIds: recipientIds,
-            });
-          }
+          const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
+            changesSummary: coachText(t, "coach.form.updatedSummary", {
+              type: eventTypeLabelLocalized(eventType), when: fmtDateTimeRange(nextStartIso, nextEndIso, locale),
+              minutes: durationForDb, place: locationText.trim() || t("coach.activity.noPlace"),
+            }),
+          });
+          await createAppNotification({ actorUserId: meId, kind: "coach_event_updated", title: msg.title, body: msg.body,
+            data: { event_id: eventId, group_id: groupId, url: `/player/golf/trainings/new?club_event_id=${eventId}` },
+            recipientUserIds: recipientIds });
         }
       }
 
-      setBusy(false);
-      router.push(`/coach/groups/${groupId}/planning/${eventId}`);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur sauvegarde.");
-      setBusy(false);
+      if (savedRoute === currentRoute.current) router.push(`/coach/groups/${groupId}/planning/${eventId}`);
+    } catch (e: unknown) {
+      if (savedRoute === currentRoute.current) {
+        setError(dataSaved ? "coach.error.planningNotification" : coachEventSaveErrorKey(e));
+      }
+    } finally {
+      if (savedRoute === currentRoute.current) {
+        if (!dataSaved) mutationInFlight.current = false;
+        setBusy(false);
+      }
     }
   }
 
   async function saveSeriesAndRegenerateFuture() {
-    if (!event?.series_id || !series || !group) return;
+    let dataSaved = false;
+    if (!event?.series_id || !series || !group || busy || mutationInFlight.current) return;
 
-    const structureChanged =
-      series.weekday !== weekday ||
-      (series.start_date ?? "") !== startDate ||
-      (series.end_date ?? "") !== endDate ||
-      Number(series.interval_weeks ?? 1) !== Number(intervalWeeks) ||
-      Boolean(series.is_active) !== Boolean(seriesActive);
-
-    const ok = window.confirm(
-      structureChanged
-        ? "Mettre à jour la récurrence ?\n\n⚠️ Comme la structure de la récurrence change, toutes les occurrences FUTURES (à partir d’aujourd’hui) seront supprimées puis recréées avec les nouveaux paramètres."
-        : "Mettre à jour la récurrence ?\n\nLes occurrences futures existantes seront mises à jour avec les nouveaux paramètres, sans être supprimées."
-    );
-    if (!ok) return;
-
+    mutationInFlight.current = true;
+    const savedRoute = routeKey;
     setBusy(true);
     setError(null);
 
     try {
-      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(
-          eventType === "session"
-            ? "Nom de la séance requis."
-            : eventType === "camp"
-            ? "Nom du stage/camp requis."
-            : "Nom de l’événement requis."
-        );
-      }
-      if (!startDate || !endDate) throw new Error("Dates de récurrence manquantes.");
-      if (endDate < startDate) throw new Error("La date de fin doit être postérieure à la date de début.");
-
-      // 1) update series template
-      const updS = await supabase
-        .from("club_event_series")
-        .update({
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          weekday,
-          time_of_day: timeOfDay.length === 5 ? `${timeOfDay}:00` : timeOfDay,
-          interval_weeks: intervalWeeks,
-          start_date: startDate,
-          end_date: endDate,
-          duration_minutes: durationMinutes,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-          is_active: seriesActive,
-        })
-        .eq("id", event.series_id);
-
-      if (updS.error) throw new Error(updS.error.message);
-
-      let affectedEventIds: string[] = [];
-      if (!structureChanged && seriesActive) {
-        affectedEventIds = await updateFutureSeriesOccurrencesInPlace();
-      } else {
-        // delete + regenerate occurrences only when recurrence structure changes
-        const nowIso = new Date().toISOString();
-        const futureEventsRes = await supabase
-          .from("club_events")
-          .select("id")
-          .eq("series_id", event.series_id)
-          .gte("starts_at", nowIso);
-        if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
-        const futureEventIds = (futureEventsRes.data ?? [])
-          .map((r: any) => String(r.id ?? "").trim())
-          .filter(Boolean);
-
-        if (futureEventIds.length > 0) {
-          const delThreads = await supabase.from("message_threads").delete().in("event_id", futureEventIds);
-          if (delThreads.error) throw new Error(delThreads.error.message);
-        }
-
-        const delFuture = await supabase
-          .from("club_events")
-          .delete()
-          .eq("series_id", event.series_id)
-          .gte("starts_at", nowIso);
-        if (delFuture.error) throw new Error(delFuture.error.message);
-
-        const startLocal = new Date(`${startDate}T00:00:00`);
-        const endLocal = new Date(`${endDate}T23:59:59`);
-        let cursor = nextWeekdayOnOrAfter(startLocal, weekday);
-        let count = 0;
-        const occurrences: any[] = [];
-
-        while (cursor <= endLocal) {
-          const dt = combineDateAndTime(toYMD(cursor), timeOfDay);
-          const startsIso = dt.toISOString();
-
-          if (startsIso >= nowIso) {
-            const endDt = new Date(dt);
-            endDt.setMinutes(endDt.getMinutes() + durationMinutes);
-            occurrences.push({
-              group_id: group.id,
-              club_id: group.club_id,
-              event_type: eventType,
-              title: eventTitle.trim() || null,
-              starts_at: startsIso,
-              ends_at: endDt.toISOString(),
-              duration_minutes: durationMinutes,
-              location_text: locationText.trim() || null,
-              coach_note: coachNote.trim() || null,
-              series_id: event.series_id,
-              created_by: meId || series.created_by,
-            });
-
-            count += 1;
-            if (count >= 80) break;
-          }
-
-          cursor = addDays(cursor, intervalWeeks * 7);
-        }
-
-        if (seriesActive && occurrences.length === 0) {
-          throw new Error("Aucune occurrence future n’a été générée. Vérifie les dates, le jour et l’heure.");
-        }
-
-        if (seriesActive && occurrences.length > 0) {
-          const eIns = await supabase.from("club_events").insert(occurrences).select("id");
-          if (eIns.error) throw new Error(eIns.error.message);
-          affectedEventIds = (eIns.data ?? []).map((r: any) => r.id as string);
-          await syncAssignmentsForEvents(affectedEventIds);
-          await applyStructureForEvents(affectedEventIds);
-        }
-      }
-
-      await syncPlayerChangesOnFuturePlannedEvents();
+      if (["session","event","camp"].includes(eventType) && !eventTitle.trim()) throw new Error("title_required");
+      if (!startDate || !endDate || endDate < startDate) throw new Error("invalid_recurrence");
+      const saved = await supabase.rpc("update_coach_event_series_v1", {
+        p_source_event_id: eventId,
+        p_template: {
+          event_type: eventType, title: eventTitle.trim() || null, weekday,
+          time_of_day: timeOfDay, interval_weeks: intervalWeeks, start_date: startDate, end_date: endDate,
+          duration_minutes: durationMinutes, location_text: locationText.trim() || null,
+          coach_note: coachNote.trim() || null, is_active: seriesActive,
+        },
+        p_coach_ids: coachIdsSelected,
+        p_player_ids: attendeeIdsSelected,
+        p_structure: structureItems.map((item) => ({
+          category: item.category, minutes: Number(item.minutes), note: item.note.trim() || null,
+        })),
+      });
+      if (saved.error) throw saved.error;
+      if (saved.data?.ok !== true) throw new Error("unconfirmed_save");
+      dataSaved = true;
+      if (savedRoute !== currentRoute.current) return;
+      setSaveCommitted(true); setConfirmation(null);
 
       if (!participantsManagedElsewhere && attendeeIdsSelected.length > 0 && meId) {
         const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
-        const summary =
-          locale === "fr"
-            ? `${structureChanged ? "Récurrence reconstruite" : "Récurrence mise à jour"}: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "sans lieu"}`
-            : `${structureChanged ? "Recurrence rebuilt" : "Recurrence updated"}: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "no location"}`;
+        const summary = coachText(t, "coach.form.updatedSummary", { type: eventTypeLabelLocalized(eventType),
+          when: `${startDate} → ${endDate} · ${seriesTime}`, minutes: durationMinutes, place: locationText.trim() || t("coach.activity.noPlace") });
         const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale, {
           changesSummary: summary,
         });
@@ -1324,216 +817,88 @@ export default function CoachEventEditPage() {
         });
       }
 
-      setBusy(false);
-      router.push(`/coach/groups/${groupId}/planning`);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur lors de la mise à jour de la récurrence.");
-      setBusy(false);
+      if (savedRoute === currentRoute.current) router.push(`/coach/groups/${groupId}/planning`);
+    } catch (cause) {
+      if (savedRoute === currentRoute.current) setError(dataSaved ? "coach.error.planningNotification" : coachEventSaveErrorKey(cause));
+    } finally {
+      if (savedRoute === currentRoute.current) { mutationInFlight.current = false; setBusy(false); }
     }
   }
 
-  async function removeThisEvent() {
-    const ok = window.confirm("Supprimer CET événement planifié ? (irréversible)");
-    if (!ok) return;
-
-    setBusy(true);
-    setError(null);
-
-    let recipients: string[] = [];
+  async function removeActivity(scope: "occurrence" | "series") {
+    if (!event || busy || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    const savedRoute = routeKey;
+    setBusy(true); setError(null);
     try {
-      recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) throw new Error("forbidden");
+      const path = scope === "series" && event.series_id
+        ? `/api/coach/events/series/${encodeURIComponent(event.series_id)}`
+        : `/api/coach/events/${encodeURIComponent(eventId)}?scope=occurrence`;
+      const response = await fetch(path, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true) throw new Error("unconfirmed_delete");
+      if (savedRoute !== currentRoute.current) return;
+      if (result.notification_warning) {
+        setError("coach.error.deletionNotification"); setMutationUncertain(true);
+        return;
+      }
+      setConfirmation(null); setSaveCommitted(true);
+      router.push(`/coach/groups/${groupId}/planning`);
     } catch {
-      recipients = [];
-    }
-
-    const delThreads = await supabase.from("message_threads").delete().eq("event_id", eventId);
-    if (delThreads.error) {
-      setError(delThreads.error.message);
-      setBusy(false);
-      return;
-    }
-
-    const del = await supabase.from("club_events").delete().eq("id", eventId);
-    if (del.error) setError(del.error.message);
-    if (!del.error && recipients.length > 0 && meId) {
-      const eventStart = event?.starts_at ?? new Date().toISOString();
-      const eventEnd =
-        event?.ends_at ??
-        new Date(new Date(eventStart).getTime() + Math.max(0, Number(event?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const kind = String(event?.event_type ?? "training");
-      const isTraining = kind === "training";
-      const isInterclub = kind === "interclub";
-      const msg = isTraining || isInterclub
-        ? {
-            title: isInterclub
-              ? `L'interclub du ${fmtTrainingMoment(eventStart, locale)} a été annulé`
-              : `L'entrainement du ${fmtTrainingMoment(eventStart, locale)} a été annulé`,
-            body: "",
-          }
-        : await getNotificationMessage("notif.coachEventDeleted", locale, {
-            eventType: eventTypeLabelLocalized(event?.event_type ?? "training", locale),
-            dateTime: fmtDateTimeRange(eventStart, eventEnd, locale),
-            locationPart: event?.location_text ? ` · ${event.location_text}` : "",
-          });
-      await createAppNotification({
-        actorUserId: meId,
-        kind: "coach_event_deleted",
-        title: msg.title,
-        body: msg.body,
-        data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
-        recipientUserIds: recipients,
-      });
-    }
-
-    setBusy(false);
-    router.push(`/coach/groups/${groupId}/planning`);
-  }
-
-  async function removeWholeSeries() {
-    if (!event?.series_id) return;
-
-    const ok = window.confirm(
-      "Supprimer toute la récurrence ?\n\n⚠️ La série et toutes ses occurrences, passées et futures, seront supprimées."
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setError(null);
-
-    try {
-      const seriesEventsRes = await supabase.from("club_events").select("id").eq("series_id", event.series_id);
-      if (seriesEventsRes.error) throw new Error(seriesEventsRes.error.message);
-      const seriesEventIds = (seriesEventsRes.data ?? [])
-        .map((r) => String(r.id ?? "").trim())
-        .filter(Boolean);
-
-      if (seriesEventIds.length > 0) {
-        const delThreads = await supabase.from("message_threads").delete().in("event_id", seriesEventIds);
-        if (delThreads.error) throw new Error(delThreads.error.message);
-      }
-
-      let recipients: string[] = [];
-      if (seriesEventIds.length > 0) {
-        const attRes = await supabase
-          .from("club_event_attendees")
-          .select("player_id,event_id,status")
-          .in("event_id", seriesEventIds);
-        if (attRes.error) throw new Error(attRes.error.message);
-        const attendeeRows = (attRes.data ?? []) as Array<{
-          player_id: string | null;
-          status: string | null;
-        }>;
-        recipients = Array.from(
-          new Set(
-            attendeeRows
-              .filter((r) => String(r.status ?? "expected") !== "absent")
-              .map((r) => String(r.player_id ?? "").trim())
-              .filter(Boolean)
-          )
-        );
-      }
-
-      const delEvents = await supabase.from("club_events").delete().eq("series_id", event.series_id);
-      if (delEvents.error) throw new Error(delEvents.error.message);
-
-      const delSeries = await supabase.from("club_event_series").delete().eq("id", event.series_id);
-      if (delSeries.error) throw new Error(delSeries.error.message);
-
-      if (recipients.length > 0 && meId) {
-        const summary =
-          locale === "fr"
-            ? `Récurrence supprimée: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`
-            : `Recurrence deleted: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`;
-        const msg = await getNotificationMessage("notif.coachSeriesDeleted", locale, {
-          changesSummary: summary,
-        });
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_deleted",
-          title: msg.title,
-          body: msg.body,
-          data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
-          recipientUserIds: recipients,
-        });
-      }
-
-      setBusy(false);
-      router.push(`/coach/groups/${groupId}/planning`);
-    } catch (e: any) {
-      setError(e?.message ?? "Recurrence deletion error.");
-      setBusy(false);
+      if (savedRoute === currentRoute.current) { setError("coach.error.planningDelete"); setMutationUncertain(true); }
+    } finally {
+      if (savedRoute === currentRoute.current) { mutationInFlight.current = false; setBusy(false); }
     }
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Modifier — {group?.name ?? "Groupe"}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                Club: {clubName || "Club"}
-              </div>
+    <main className={`${layoutStyles.page} ${formStyles.page}`}>
+      <>
+        <>
+          <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>
+            <Link href="/coach/groups">{t("coach.nav.groups")}</Link><span aria-hidden="true">/</span>
+            <Link href={`/coach/groups/${groupId}`}>{group?.name ?? t("coach.groups.group")}</Link><span aria-hidden="true">/</span>
+            <Link href={`/coach/groups/${groupId}/planning`}>{t("coach.group.planning")}</Link><span aria-hidden="true">/</span>
+            <span aria-current="page">{t("common.edit")}</span>
+          </nav>
+          <header className={layoutStyles.topline}>
+            <div><h1>{coachText(t, "coach.form.editTitle", { name: group?.name ?? t("coach.groups.group") })}</h1>
+              <p className={layoutStyles.lead}>{group?.name ?? t("coach.groups.group")} · {clubName || t("common.club")}</p>
             </div>
+            <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}/planning`}>
+              <ArrowLeft size={16} aria-hidden="true"/>{t("coach.form.backPlanning")}
+            </Link>
+          </header>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/coach/groups/${groupId}/planning/${eventId}`}>
-                Retour
-              </Link>
-            </div>
-          </div>
+          {error && <div className={formStyles.alert} role="alert">{t(error)}</div>}
+          {saveCommitted ? <div className={formStyles.notice} role="status">{t("coach.editor.saved")}{" "}
+            <Link href={`/coach/groups/${groupId}/planning/${eventId}`}>{t("coach.editor.viewSaved")}</Link>
+          </div> : null}
+        </>
 
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+        <>
+          <>
             {loading ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Chargement…</div>
+              <CoachListSkeleton label={t("coach.calendar.loading")}/>
             ) : !event ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
+              <div className={formStyles.alert}>{t("coach.error.notFound")}</div>
             ) : (
               <>
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+                <section className={layoutStyles.quickPanel}>
+                  <div className={layoutStyles.sectionHeading}><div><h2>{t("coach.form.information")}</h2><p>{t("coach.form.informationHint")}</p></div></div>
                   {/* Scope switch if recurring */}
                   {event.series_id ? (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => setEditScope("occurrence")}
-                        style={
-                          editScope === "occurrence"
-                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                            : {}
-                        }
-                      >
-                        Cette occurrence
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy || !series}
-                        onClick={() => setEditScope("series")}
-                        style={
-                          editScope === "series"
-                            ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
-                            : {}
-                        }
-                      >
-                        <Repeat size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                        Récurrence
-                      </button>
-
-                      <div style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                        ℹ️ Récurrence = supprime & recrée les occurrences futures
-                      </div>
-                    </div>
+                    <label className={actionStyles.field}>
+                      <span>{t("coach.form.scope")}</span>
+                      <select value={editScope} disabled={busy} onChange={(event) => setEditScope(event.target.value as "occurrence" | "series")}>
+                        <option value="occurrence">{t("coach.form.occurrence")}</option>
+                        <option value="series" disabled={!series}>{t("coach.form.series")}</option>
+                      </select>
+                      <small>{t("coach.form.futureHint")}</small>
+                    </label>
                   ) : null}
 
                   {event.series_id ? <div className="hr-soft" /> : null}
@@ -1557,43 +922,43 @@ export default function CoachEventEditPage() {
                             fontSize: 12,
                           }}
                         >
-                          {`Jour ${campDay.day_index + 1}`}
+                          {coachText(t, "coach.form.dayNumber", { count: campDay.day_index + 1 })}
                         </div>
                       ) : null}
 
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Type d’événement</span>
-                        <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                      <label className={actionStyles.field}>
+                        <span>{t("coach.form.eventType")}</span>
+                        <select value={eventType} onChange={(e) => setEventType(e.target.value as EventRow["event_type"])} disabled={busy}>
                           {EVENT_TYPE_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
-                              {opt.label}
+                              {eventTypeLabelLocalized(opt.value)}
                             </option>
                           ))}
                         </select>
                       </label>
 
                       {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>
-                            {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                        <label className={actionStyles.field}>
+                          <span>
+                            {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                           </span>
                           <input
                             value={eventTitle}
                             onChange={(e) => setEventTitle(e.target.value)}
                             disabled={busy}
-                            placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                            placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                           />
                         </label>
                       ) : null}
 
                       <div className="grid-2">
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Date de début</span>
+                        <label className={actionStyles.field}>
+                          <span>{t("coach.form.startDate")}</span>
                           <input type="date" value={occDate} onChange={(e) => updateOccDate(e.target.value)} disabled={busy} />
                         </label>
 
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Heure de début</span>
+                        <label className={actionStyles.field}>
+                          <span>{t("coach.form.startTime")}</span>
                           <select value={occTime} onChange={(e) => updateOccTime(e.target.value)} disabled={busy}>
                             {QUARTER_HOUR_OPTIONS.map((t) => (
                               <option key={t} value={t}>
@@ -1605,25 +970,25 @@ export default function CoachEventEditPage() {
                       </div>
 
                       {isDurationOnlyOccurrenceType(eventType) ? (
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Durée</span>
+                        <label className={actionStyles.field}>
+                          <span>{t("coach.form.duration")}</span>
                           <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                             {DURATION_OPTIONS.map((m) => (
                               <option key={m} value={m}>
-                                {m} min
+                                {m} {t("common.min")}
                               </option>
                             ))}
                           </select>
                         </label>
                       ) : (
                         <div className="grid-2">
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Date de fin</span>
+                          <label className={actionStyles.field}>
+                            <span>{t("coach.form.endDate")}</span>
                             <input type="date" value={occEndDate} onChange={(e) => updateOccEndDate(e.target.value)} disabled={busy} />
                           </label>
 
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Heure de fin</span>
+                          <label className={actionStyles.field}>
+                            <span>{t("coach.form.endTime")}</span>
                             <select value={occEndTime} onChange={(e) => updateOccEndTime(e.target.value)} disabled={busy}>
                               {QUARTER_HOUR_OPTIONS.map((t) => (
                                 <option key={t} value={t}>
@@ -1635,18 +1000,18 @@ export default function CoachEventEditPage() {
                         </div>
                       )}
 
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                      <label className={actionStyles.field}>
+                        <span>{t("coach.form.location")}</span>
                         <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
                       </label>
 
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                      <label className={actionStyles.field}>
+                        <span>{t("coach.form.notes")}</span>
                         <textarea
                           value={coachNote}
                           onChange={(e) => setCoachNote(e.target.value)}
                           disabled={busy}
-                          placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                          placeholder={t("coach.form.notesExample")}
                           style={{ minHeight: 96 }}
                         />
                       </label>
@@ -1658,51 +1023,51 @@ export default function CoachEventEditPage() {
                     <div style={{ display: "grid", gap: 12 }}>
                       {!series ? (
                         <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                          Série introuvable. Tu peux modifier l’occurrence uniquement.
+                          {t("coach.form.seriesMissing")}
                         </div>
                       ) : (
                         <div style={{ display: "grid", gap: 10 }}>
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Type d’événement</span>
-                            <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                          <label className={actionStyles.field}>
+                            <span>{t("coach.form.eventType")}</span>
+                            <select value={eventType} onChange={(e) => setEventType(e.target.value as EventRow["event_type"])} disabled={busy}>
                               {EVENT_TYPE_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
-                                  {opt.label}
+                                  {eventTypeLabelLocalized(opt.value)}
                                 </option>
                               ))}
                             </select>
                           </label>
 
                           {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>
-                                {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                            <label className={actionStyles.field}>
+                              <span>
+                                {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                               </span>
                               <input
                                 value={eventTitle}
                                 onChange={(e) => setEventTitle(e.target.value)}
                                 disabled={busy}
-                                placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                                placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                               />
                             </label>
                           ) : null}
 
                           <div className="grid-2">
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Jour</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("coach.form.day")}</span>
                               <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                                <option value={1}>{pickLocaleText(locale, "Lundi", "Monday")}</option>
-                                <option value={2}>{pickLocaleText(locale, "Mardi", "Tuesday")}</option>
-                                <option value={3}>{pickLocaleText(locale, "Mercredi", "Wednesday")}</option>
-                                <option value={4}>{pickLocaleText(locale, "Jeudi", "Thursday")}</option>
-                                <option value={5}>{pickLocaleText(locale, "Vendredi", "Friday")}</option>
-                                <option value={6}>{pickLocaleText(locale, "Samedi", "Saturday")}</option>
-                                <option value={0}>{pickLocaleText(locale, "Dimanche", "Sunday")}</option>
+                                <option value={1}>{t("coach.form.monday")}</option>
+                                <option value={2}>{t("coach.form.tuesday")}</option>
+                                <option value={3}>{t("coach.form.wednesday")}</option>
+                                <option value={4}>{t("coach.form.thursday")}</option>
+                                <option value={5}>{t("coach.form.friday")}</option>
+                                <option value={6}>{t("coach.form.saturday")}</option>
+                                <option value={0}>{t("coach.form.sunday")}</option>
                               </select>
                             </label>
 
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Heure</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("coach.form.startTime")}</span>
                               <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy}>
                                 {QUARTER_HOUR_OPTIONS.map((t) => (
                                   <option key={t} value={t}>
@@ -1714,8 +1079,8 @@ export default function CoachEventEditPage() {
                           </div>
 
                           <div className="grid-2">
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Du</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("common.from")}</span>
                               <input
                                 type="date"
                                 value={startDate}
@@ -1724,8 +1089,8 @@ export default function CoachEventEditPage() {
                               />
                             </label>
 
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Au</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("common.to")}</span>
                               <input
                                 type="date"
                                 value={endDate}
@@ -1736,8 +1101,8 @@ export default function CoachEventEditPage() {
                           </div>
 
                           <div className="grid-2">
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Durée</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("coach.form.duration")}</span>
                               <select
                                 value={durationMinutes}
                                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
@@ -1745,14 +1110,14 @@ export default function CoachEventEditPage() {
                               >
                                 {DURATION_OPTIONS.map((m) => (
                                   <option key={m} value={m}>
-                                    {m} min
+                                    {m} {t("common.min")}
                                   </option>
                                 ))}
                               </select>
                             </label>
 
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Rythme</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("coach.form.frequency")}</span>
                               <select
                                 value={intervalWeeks}
                                 onChange={(e) => setIntervalWeeks(Number(e.target.value))}
@@ -1760,25 +1125,25 @@ export default function CoachEventEditPage() {
                               >
                                 {[1, 2, 3, 4].map((w) => (
                                   <option key={w} value={w}>
-                                    Toutes les {w} semaine{w > 1 ? "s" : ""}
+                                    {w === 1 ? t("coach.form.everyWeek") : coachText(t, "coach.form.everyWeeks", { count: w })}
                                   </option>
                                 ))}
                               </select>
                             </label>
                           </div>
 
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                          <label className={actionStyles.field}>
+                            <span>{t("coach.form.location")}</span>
                             <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
                           </label>
 
-                          <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                          <label className={actionStyles.field}>
+                            <span>{t("coach.form.notes")}</span>
                             <textarea
                               value={coachNote}
                               onChange={(e) => setCoachNote(e.target.value)}
                               disabled={busy}
-                              placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                              placeholder={t("coach.form.notesExample")}
                               style={{ minHeight: 96 }}
                             />
                           </label>
@@ -1790,67 +1155,67 @@ export default function CoachEventEditPage() {
                               onChange={(e) => setSeriesActive(e.target.checked)}
                               disabled={busy}
                             />
-                            Récurrence active
+                            {t("coach.form.seriesActive")}
                           </label>
 
                           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                            ⚠️ En enregistrant, on supprime toutes les occurrences futures de cette récurrence et on les recrée (max 80).
+                            {t("coach.form.futureHint")}
                           </div>
                         </div>
                       )}
                     </div>
                   ) : null}
-                </div>
+                </section>
 
                 {showsStructureEditor(eventType) ? (
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    Structure de l'activité (postes)
-                  </div>
+                <section className={layoutStyles.quickPanel}>
+                  <div className={layoutStyles.sectionHeading}><h2 className={formStyles.sectionTitle}>
+                    {t("coach.form.structure")}
+                  </h2></div>
 
                   {structureItems.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Aucun poste configuré pour cet entraînement.
+                      {t("coach.form.emptyStructure")}
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
                       {structureItems.map((it, idx) => (
-                        <div key={idx} style={lightRowCardStyle}>
+                        <div key={idx} className={formStyles.row}>
                           <div style={{ display: "grid", gap: 10, width: "100%" }}>
                             <div className="grid-2">
-                              <label style={{ display: "grid", gap: 6 }}>
-                                <span style={fieldLabelStyle}>Poste</span>
+                              <label className={actionStyles.field}>
+                                <span>{t("coach.form.station")}</span>
                                 <select value={it.category} onChange={(e) => updateStructureLine(idx, { category: e.target.value })} disabled={busy}>
                                   <option value="">-</option>
                                   {TRAINING_CATEGORY_VALUES.map((cat) => (
                                     <option key={cat} value={cat}>
-                                      {TRAINING_CATEGORY_LABELS[cat] ?? cat}
+                                      {t(`coach.form.category.${cat}`)}
                                     </option>
                                   ))}
                                 </select>
                               </label>
 
-                              <label style={{ display: "grid", gap: 6 }}>
-                                <span style={fieldLabelStyle}>Durée</span>
+                              <label className={actionStyles.field}>
+                                <span>{t("coach.form.duration")}</span>
                                 <select value={it.minutes} onChange={(e) => updateStructureLine(idx, { minutes: e.target.value })} disabled={busy}>
                                   <option value="">-</option>
                                   {MINUTE_OPTIONS.map((m) => (
                                     <option key={m} value={String(m)}>
-                                      {m} min
+                                      {m} {t("common.min")}
                                     </option>
                                   ))}
                                 </select>
                               </label>
                             </div>
 
-                            <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Note (optionnel)</span>
+                            <label className={actionStyles.field}>
+                              <span>{t("coach.form.note")}</span>
                               <input value={it.note} onChange={(e) => updateStructureLine(idx, { note: e.target.value })} disabled={busy} />
                             </label>
 
                             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                              <button type="button" className="btn btn-danger soft" onClick={() => removeStructureLine(idx)} disabled={busy}>
-                                Supprimer
+                              <button type="button" className={actionStyles.dangerButton} onClick={() => removeStructureLine(idx)} disabled={busy}>
+                                {t("common.delete")}
                               </button>
                             </div>
                           </div>
@@ -1860,64 +1225,64 @@ export default function CoachEventEditPage() {
                   )}
 
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="button" className="btn" onClick={addStructureLine} disabled={busy}>
-                      + Ajouter un poste
+                    <button type="button" className={actionStyles.secondaryButton} onClick={addStructureLine} disabled={busy}>
+                      {t("coach.form.addStation")}
                     </button>
                   </div>
-                </div>
+                </section>
                 ) : null}
 
                 {/* Coachs attendus */}
-                <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Users size={16} /> Coachs attendus
-                  </div>
+                <section className={layoutStyles.quickPanel}>
+                  <div className={layoutStyles.sectionHeading}><h2 className={formStyles.sectionTitle}>
+                    <Users size={16} /> {t("coach.form.coaches")}
+                  </h2></div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      className="btn"
+                      className={actionStyles.secondaryButton}
                       disabled={busy || coaches.length === 0 || allCoachesSelected}
                       onClick={() => setCoachIdsSelected(coaches.map((c) => c.id))}
                     >
-                      Tout sélectionner
+                      {t("coach.form.selectAll")}
                     </button>
                     <button
                       type="button"
-                      className="btn"
+                      className={actionStyles.secondaryButton}
                       disabled={busy || coaches.length === 0 || coachIdsSelected.length === 0}
                       onClick={() => setCoachIdsSelected([])}
                     >
-                      Tout désélectionner
+                      {t("coach.form.deselectAll")}
                     </button>
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedCoachesList.length})</div>
+                    <div className="pill-soft">{t("coach.form.selection")} ({selectedCoachesList.length})</div>
                     {coaches.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach dans ce groupe.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noCoaches")}</div>
                     ) : selectedCoachesList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach sélectionné.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noSelectedCoaches")}</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
                         {selectedCoachesList.map((c) => (
-                          <div key={c.id} style={lightRowCardStyle}>
+                          <div key={c.id} className={formStyles.row}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(c as any)}
+                              <div className={formStyles.avatar} aria-hidden="true">
+                                {avatarNode(c)}
                               </div>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
+                                <div className={formStyles.personName}>{nameOf(c.first_name, c.last_name)}</div>
                               </div>
                             </div>
                             <button
                               type="button"
-                              className="btn btn-danger soft"
+                              className={actionStyles.dangerButton}
                               onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))}
                               disabled={busy}
                               style={{ padding: "10px 12px" }}
-                              aria-label="Retirer coach"
-                              title="Retirer"
+                              aria-label={coachText(t, "coach.form.removeNamed", { name: fullName(c) })}
+                              title={t("common.delete")}
                             >
                               <Trash2 size={18} />
                             </button>
@@ -1928,37 +1293,29 @@ export default function CoachEventEditPage() {
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Ajouter ({candidateCoaches.length})</div>
+                    <div className="pill-soft">{t("common.add")} ({candidateCoaches.length})</div>
                     {coaches.length > 0 && candidateCoaches.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                     ) : candidateCoaches.length > 0 ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         {candidateCoaches.map((c) => (
-                          <div key={c.id} style={lightRowCardStyle}>
+                          <div key={c.id} className={formStyles.row}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                              <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(c as any)}
+                              <div className={formStyles.avatar} aria-hidden="true">
+                                {avatarNode(c)}
                               </div>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 950 }}>{nameOf(c.first_name, c.last_name)}</div>
+                                <div className={formStyles.personName}>{nameOf(c.first_name, c.last_name)}</div>
                               </div>
                             </div>
                             <button
                               type="button"
-                              className="glass-btn"
+                              className={`${actionStyles.secondaryButton} ${formStyles.iconButton}`}
                               onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])}
                               disabled={busy}
-                              style={{
-                                width: 44,
-                                height: 42,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: "rgba(255,255,255,0.70)",
-                                border: "1px solid rgba(0,0,0,0.08)",
-                              }}
-                              aria-label="Ajouter coach"
-                              title="Ajouter"
+
+                              aria-label={coachText(t, "coach.form.addNamed", { name: fullName(c) })}
+                              title={t("common.add")}
                             >
                               <PlusCircle size={18} />
                             </button>
@@ -1967,34 +1324,34 @@ export default function CoachEventEditPage() {
                       </div>
                     ) : null}
                   </div>
-                </div>
+                </section>
 
                 {participantsManagedElsewhere ? (
-                  <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                    <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <Users size={16} /> Participants
-                    </div>
+                  <section className={layoutStyles.quickPanel}>
+                    <div className={layoutStyles.sectionHeading}><h2 className={formStyles.sectionTitle}>
+                      <Users size={16} /> {t("coach.form.participants")}
+                    </h2></div>
 
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Les participants d’un stage/camp se gèrent depuis le module d’inscription du stage.
+                      {t("coach.form.managedParticipants")}
                     </div>
 
                     {readonlyParticipants.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun participant inscrit.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noParticipants")}</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
                         {readonlyParticipants.map((participant) => {
                           const p = participant.profile ?? null;
                           return (
-                            <div key={participant.player_id} style={lightRowCardStyle}>
+                            <div key={participant.player_id} className={formStyles.row}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                <div style={avatarBoxStyle} aria-hidden="true">
+                                <div className={formStyles.avatar} aria-hidden="true">
                                   {avatarNode(p)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                  <div className={formStyles.personName}>{fullName(p)}</div>
                                   <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                    Handicap {typeof p?.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                    {t("coach.directory.handicap")} {typeof p?.handicap === "number" ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1 }).format(p.handicap) : "—"}
                                   </div>
                                 </div>
                               </div>
@@ -2003,19 +1360,19 @@ export default function CoachEventEditPage() {
                         })}
                       </div>
                     )}
-                  </div>
+                  </section>
                 ) : (
                   <>
                     {/* Joueurs attendus */}
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                      <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <Users size={16} /> Joueurs attendus
-                      </div>
+                    <section className={layoutStyles.quickPanel}>
+                      <div className={layoutStyles.sectionHeading}><h2 className={formStyles.sectionTitle}>
+                        <Users size={16} /> {t("coach.form.players")}
+                      </h2></div>
 
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
                           type="button"
-                          className="btn"
+                          className={actionStyles.secondaryButton}
                           disabled={busy || players.length === 0 || allPlayersSelected}
                           onClick={() => {
                             const map: Record<string, ProfileLite> = {};
@@ -2023,16 +1380,16 @@ export default function CoachEventEditPage() {
                             setSelectedPlayers(map);
                           }}
                         >
-                          Tout sélectionner
+                          {t("coach.form.selectAll")}
                         </button>
 
                         <button
                           type="button"
-                          className="btn"
+                          className={actionStyles.secondaryButton}
                           disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
                           onClick={() => setSelectedPlayers({})}
                         >
-                          Tout désélectionner
+                          {t("coach.form.deselectAll")}
                         </button>
                       </div>
 
@@ -2051,42 +1408,43 @@ export default function CoachEventEditPage() {
                           value={queryPlayers}
                           onChange={(e) => setQueryPlayers(e.target.value)}
                           disabled={busy}
-                          placeholder="Rechercher un joueur (nom, handicap)…"
+                          aria-label={t("coach.form.searchPlayers")}
+                  placeholder={t("coach.form.searchPlayers")}
                           style={{ paddingLeft: 44 }}
                         />
                       </div>
 
                       <div style={{ display: "grid", gap: 10 }}>
-                        <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
+                        <div className="pill-soft">{t("coach.form.selection")} ({selectedPlayersList.length})</div>
 
                         {players.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noPlayers")}</div>
                         ) : selectedPlayersList.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noSelectedPlayers")}</div>
                         ) : (
                           <div style={{ display: "grid", gap: 10 }}>
                             {selectedPlayersList.map((p) => (
-                              <div key={p.id} style={lightRowCardStyle}>
+                              <div key={p.id} className={formStyles.row}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                  <div style={avatarBoxStyle} aria-hidden="true">
+                                  <div className={formStyles.avatar} aria-hidden="true">
                                     {avatarNode(p)}
                                   </div>
                                   <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                    <div className={formStyles.personName}>{fullName(p)}</div>
                                     <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                      Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                      {t("coach.directory.handicap")} {typeof p.handicap === "number" ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1 }).format(p.handicap) : "—"}
                                     </div>
                                   </div>
                                 </div>
 
                                 <button
                                   type="button"
-                                  className="btn btn-danger soft"
+                                  className={actionStyles.dangerButton}
                                   onClick={() => toggleSelectedPlayer(p)}
                                   disabled={busy}
                                   style={{ padding: "10px 12px" }}
-                                  aria-label="Retirer"
-                                  title="Retirer"
+                                  aria-label={coachText(t, "coach.form.removeNamed", { name: fullName(p) })}
+                                  title={t("common.delete")}
                                 >
                                   <Trash2 size={18} />
                                 </button>
@@ -2097,42 +1455,34 @@ export default function CoachEventEditPage() {
                       </div>
 
                       <div style={{ display: "grid", gap: 10 }}>
-                        <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
+                        <div className="pill-soft">{t("common.add")} ({candidatesPlayers.length})</div>
 
                         {players.length > 0 && candidatesPlayers.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                         ) : candidatesPlayers.length > 0 ? (
                           <div style={{ display: "grid", gap: 10 }}>
                             {candidatesPlayers.map((p) => (
-                              <div key={p.id} style={lightRowCardStyle}>
+                              <div key={p.id} className={formStyles.row}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                  <div style={avatarBoxStyle} aria-hidden="true">
+                                  <div className={formStyles.avatar} aria-hidden="true">
                                     {avatarNode(p)}
                                   </div>
                                   <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 950 }}>{fullName(p)}</div>
+                                    <div className={formStyles.personName}>{fullName(p)}</div>
                                     <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                                      Handicap {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
+                                      {t("coach.directory.handicap")} {typeof p.handicap === "number" ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1 }).format(p.handicap) : "—"}
                                     </div>
                                   </div>
                                 </div>
 
                                 <button
                                   type="button"
-                                  className="glass-btn"
+                                  className={`${actionStyles.secondaryButton} ${formStyles.iconButton}`}
                                   onClick={() => toggleSelectedPlayer(p)}
                                   disabled={busy}
-                                  style={{
-                                    width: 44,
-                                    height: 42,
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    background: "rgba(255,255,255,0.70)",
-                                    border: "1px solid rgba(0,0,0,0.08)",
-                                  }}
-                                  aria-label="Ajouter joueur"
-                                  title="Ajouter"
+
+                                  aria-label={coachText(t, "coach.form.addNamed", { name: fullName(p) })}
+                                  title={t("common.add")}
                                 >
                                   <PlusCircle size={18} />
                                 </button>
@@ -2141,13 +1491,13 @@ export default function CoachEventEditPage() {
                           </div>
                         ) : null}
                       </div>
-                    </div>
+                    </section>
 
                     {/* Invités */}
-                    <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                      <div className="card-title" style={{ marginBottom: 0, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        <Users size={16} /> Invités
-                      </div>
+                    <section className={layoutStyles.quickPanel}>
+                      <div className={layoutStyles.sectionHeading}><h2 className={formStyles.sectionTitle}>
+                        <Users size={16} /> {t("coach.form.guests")}
+                      </h2></div>
 
                       <div style={{ position: "relative" }}>
                         <Search
@@ -2164,37 +1514,38 @@ export default function CoachEventEditPage() {
                           value={queryGuests}
                           onChange={(e) => setQueryGuests(e.target.value)}
                           disabled={busy}
-                          placeholder="Rechercher un invité (nom, rôle)…"
+                          aria-label={t("coach.form.searchGuests")}
+                  placeholder={t("coach.form.searchGuests")}
                           style={{ paddingLeft: 44 }}
                         />
                       </div>
 
                       <div style={{ display: "grid", gap: 10 }}>
-                        <div className="pill-soft">Sélection ({selectedGuestsList.length})</div>
+                        <div className="pill-soft">{t("coach.form.selection")} ({selectedGuestsList.length})</div>
                         {selectedGuestsList.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun invité sélectionné.</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noGuests")}</div>
                         ) : (
                           <div style={{ display: "grid", gap: 10 }}>
                             {selectedGuestsList.map((m) => (
-                              <div key={m.id} style={lightRowCardStyle}>
+                              <div key={m.id} className={formStyles.row}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                  <div style={avatarBoxStyle} aria-hidden="true">
-                                    {avatarNode(m as any)}
+                                  <div className={formStyles.avatar} aria-hidden="true">
+                                    {avatarNode(m)}
                                   </div>
                                   <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                    <div className={formStyles.personName}>{fullName(m)}</div>
                                     <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
                                   </div>
                                 </div>
 
                                 <button
                                   type="button"
-                                  className="btn btn-danger soft"
+                                  className={actionStyles.dangerButton}
                                   onClick={() => toggleSelectedGuest(m)}
                                   disabled={busy}
                                   style={{ padding: "10px 12px" }}
-                                  aria-label="Retirer invité"
-                                  title="Retirer"
+                                  aria-label={coachText(t, "coach.form.removeNamed", { name: fullName(m) })}
+                                  title={t("common.delete")}
                                 >
                                   <Trash2 size={18} />
                                 </button>
@@ -2206,39 +1557,31 @@ export default function CoachEventEditPage() {
 
                       {queryGuests.trim().length > 0 ? (
                         <div style={{ display: "grid", gap: 10 }}>
-                          <div className="pill-soft">Ajouter ({candidateGuests.length})</div>
+                          <div className="pill-soft">{t("common.add")} ({candidateGuests.length})</div>
                           {candidateGuests.length === 0 ? (
-                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                           ) : (
                             <div style={{ display: "grid", gap: 10 }}>
                               {candidateGuests.map((m) => (
-                                <div key={m.id} style={lightRowCardStyle}>
+                                <div key={m.id} className={formStyles.row}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                                    <div style={avatarBoxStyle} aria-hidden="true">
-                                      {avatarNode(m as any)}
+                                    <div className={formStyles.avatar} aria-hidden="true">
+                                      {avatarNode(m)}
                                     </div>
                                     <div style={{ minWidth: 0 }}>
-                                      <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
+                                      <div className={formStyles.personName}>{fullName(m)}</div>
                                       <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
                                     </div>
                                   </div>
 
                                   <button
                                     type="button"
-                                    className="glass-btn"
+                                    className={`${actionStyles.secondaryButton} ${formStyles.iconButton}`}
                                     onClick={() => toggleSelectedGuest(m)}
                                     disabled={busy}
-                                    style={{
-                                      width: 44,
-                                      height: 42,
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      background: "rgba(255,255,255,0.70)",
-                                      border: "1px solid rgba(0,0,0,0.08)",
-                                    }}
-                                    aria-label="Ajouter invité"
-                                    title="Ajouter"
+
+                                    aria-label={coachText(t, "coach.form.addNamed", { name: fullName(m) })}
+                                    title={t("common.add")}
                                   >
                                     <PlusCircle size={18} />
                                   </button>
@@ -2249,91 +1592,79 @@ export default function CoachEventEditPage() {
                         </div>
                       ) : (
                         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                          Saisis une recherche pour ajouter des invités.
+                          {t("coach.form.guestsHint")}
                         </div>
                       )}
-                    </div>
+                    </section>
                   </>
                 )}
 
                 {/* Save */}
+                <div className={formStyles.actions}>
+                <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning`}>{t("coach.directory.cancel")}</Link>
                 {editScope === "occurrence" ? (
                   <button
                     type="button"
-                    className="btn"
+                    className={actionStyles.primaryButton}
                     disabled={!canSaveOccurrence}
                     onClick={saveOccurrenceOnly}
-                    style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
                   >
-                    {busy ? "Saving…" : "Enregistrer cette occurrence"}
+                    {saving ? t("coachDebrief.saving") : t("coach.editor.saveOccurrence")}
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="btn"
+                    className={actionStyles.primaryButton}
                     disabled={!canSaveSeries}
-                    onClick={saveSeriesAndRegenerateFuture}
-                    style={{ width: "100%", background: "var(--green-dark)", borderColor: "var(--green-dark)", color: "#fff" }}
+                    onClick={() => { if (!busy && !mutationInFlight.current) { setError(null); setConfirmation("series"); } }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer la récurrence"}
+                    {saving ? t("coachDebrief.saving") : t("coach.editor.saveSeries")}
                   </button>
                 )}
+                </div>
 
                 {/* Delete */}
+                <div className={formStyles.deleteActions}>
                 <button
                   type="button"
-                  className="btn btn-danger soft"
+                  className={actionStyles.dangerButton}
                   disabled={busy}
-                  onClick={removeThisEvent}
-                  style={{ width: "100%" }}
+                  onClick={() => { if (!busy && !mutationInFlight.current) { setError(null); setConfirmation("deleteOccurrence"); } }}
                 >
                   <Trash2 size={16} style={{ marginRight: 8, verticalAlign: "middle" }} />
-                  Supprimer cette occurrence
+                  {t("coach.form.deleteOccurrence")}
                 </button>
 
                 {event.series_id ? (
                   <button
                     type="button"
-                    className="btn btn-danger soft"
+                    className={actionStyles.dangerButton}
                     disabled={busy}
-                    onClick={removeWholeSeries}
-                    style={{ width: "100%" }}
+                    onClick={() => { if (!busy && !mutationInFlight.current) { setError(null); setConfirmation("deleteSeries"); } }}
                   >
                     <Trash2 size={16} style={{ marginRight: 8, verticalAlign: "middle" }} />
-                    Supprimer la récurrence entière
+                    {t("coach.form.deleteSeries")}
                   </button>
                 ) : null}
+                </div>
               </>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
+          </>
+        </>
+      </>
+      {confirmation ? <AccessibleDialog className={formStyles.dialog} labelledBy="coach-activity-confirm" onClose={() => { if (!saving && !mutationInFlight.current) setConfirmation(null); }}>
+        <h2 id="coach-activity-confirm">{t(confirmation === "series" ? "coach.form.seriesConfirm" : "coach.planning.deleteTitle")}</h2>
+        <p>{event?.title || eventTypeLabelLocalized(event?.event_type)}<br/>{event ? fmtDateTimeRange(event.starts_at, event.ends_at, locale) : ""}</p>
+        <p>{t(confirmation === "series" ? "coach.form.seriesConfirmHint" : confirmation === "deleteSeries" ? "coach.planning.deleteSeriesHint" : "coach.planning.deleteOccurrenceHint")}</p>
+        {error ? <p role="alert">{t(error)}</p> : null}
+        {mutationUncertain ? <Link href={`/coach/groups/${groupId}/planning`}>{t("coach.planning.refresh")}</Link> : null}
+        <footer>
+          <button type="button" className={actionStyles.secondaryButton} disabled={saving} onClick={() => { if (!mutationInFlight.current) setConfirmation(null); }}>{t("coach.directory.cancel")}</button>
+          <button type="button" className={confirmation === "series" ? actionStyles.primaryButton : actionStyles.dangerButton} disabled={busy} onClick={() => void (confirmation === "series" ? saveSeriesAndRegenerateFuture() : removeActivity(confirmation === "deleteSeries" ? "series" : "occurrence"))}>
+            {saving ? t("coachDebrief.saving") : t(confirmation === "series" ? "coach.editor.saveSeries" : confirmation === "deleteSeries" ? "coach.planning.deleteConfirmSeries" : "coach.planning.deleteConfirmOccurrence")}
+          </button>
+        </footer>
+      </AccessibleDialog> : null}
+    </main>
   );
 }
-
-const avatarBoxStyle: React.CSSProperties = {
-  width: 42,
-  height: 42,
-  borderRadius: 14,
-  overflow: "hidden",
-  background: "rgba(255,255,255,0.65)",
-  border: "1px solid rgba(0,0,0,0.08)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 950,
-  color: "var(--green-dark)",
-  flexShrink: 0,
-};
-
-const lightRowCardStyle: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.08)",
-  borderRadius: 14,
-  background: "rgba(255,255,255,0.65)",
-  padding: 12,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 12,
-};

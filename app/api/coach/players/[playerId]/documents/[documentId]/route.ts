@@ -35,11 +35,11 @@ export async function DELETE(
       : { allowed: false, clubId: null };
     const allowedSharedClubIds = Array.from(
       new Set([
-        ...access.sharedClubIds,
+        ...access.sensitiveClubIds,
         ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
       ])
     );
-    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
     if (allowedSharedClubIds.length === 0 || !canAccessDocuments) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -105,17 +105,17 @@ export async function PATCH(
     if (!docRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const nextClubEventId = hasClubEventId ? String(body?.club_event_id ?? "").trim() : "";
     const docClubEventId = String((docRes.data as any).club_event_id ?? "").trim();
-    const campCandidateEventId = nextClubEventId || docClubEventId;
-    const campAccess = campCandidateEventId
-      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, campCandidateEventId)
+    // Authorize the existing document first; a proposed destination is not an access grant.
+    const campAccess = docClubEventId
+      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, docClubEventId)
       : { allowed: false, clubId: null };
     const allowedSharedClubIds = Array.from(
       new Set([
-        ...access.sharedClubIds,
+        ...access.sensitiveClubIds,
         ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
       ])
     );
-    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
     if (allowedSharedClubIds.length === 0 || !canAccessDocuments) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -126,6 +126,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Only uploader can rename this document" }, { status: 403 });
     }
     if (hasClubEventId) {
+      if (!access.sensitiveClubIds.includes(String(docRes.data.organization_id ?? ""))) {
+        const destination = nextClubEventId
+          ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, nextClubEventId)
+          : { allowed: false, clubId: null };
+        if (!destination.allowed || destination.clubId !== String(docRes.data.organization_id ?? "")) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
       const eventError = await validatePlayerDocumentEventLink(
         supabaseAdmin,
         String(docRes.data.organization_id ?? ""),

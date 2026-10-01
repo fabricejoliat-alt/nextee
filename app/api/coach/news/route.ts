@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const payload = await fetchVisibleCoachNews({ supabaseAdmin, callerId });
+    const payload = await fetchVisibleCoachNews({ supabaseAdmin, callerId, locale: new URL(req.url).searchParams.get("locale") });
 
     return NextResponse.json(payload);
   } catch (error: unknown) {

@@ -1,9 +1,14 @@
 "use client";
+import { coachCampRegistrationChanges } from "@/lib/coachCampRegistrations";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
+import { coachCaughtErrorKey, coachUiErrorKey } from "@/lib/coachUiErrors";
 import { CalendarDays, ChevronRight, Eye, Search, Users, X } from "lucide-react";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import styles from "@/app/manager/camps/Camps.module.css";
@@ -41,9 +46,9 @@ type CampRow = {
 type CampState = "all" | "upcoming" | "in_progress" | "completed";
 
 const CAMP_STATE_LABELS: Record<Exclude<CampState, "all">, string> = {
-  upcoming: "À venir",
-  in_progress: "En cours",
-  completed: "Terminé",
+  upcoming: "coach.camps.upcoming",
+  in_progress: "coach.camps.inProgress",
+  completed: "coach.camps.completedOne",
 };
 
 function campState(camp: CampRow): Exclude<CampState, "all"> {
@@ -55,10 +60,10 @@ function campState(camp: CampRow): Exclude<CampState, "all"> {
   return "completed";
 }
 
-function campDateRange(camp: CampRow) {
+function campDateRange(camp: CampRow, locale: string, empty: string) {
   const dates = camp.days.map((day) => day.starts_at).filter(Boolean).map((value) => new Date(value as string)).sort((a, b) => a.getTime() - b.getTime());
-  if (!dates.length) return "Dates à définir";
-  const format = new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "short", year: "numeric" });
+  if (!dates.length) return empty;
+  const format = new Intl.DateTimeFormat(coachDateLocale(locale), { day: "2-digit", month: "short", year: "numeric" });
   return dates.length === 1 ? format.format(dates[0]) : `${format.format(dates[0])} – ${format.format(dates[dates.length - 1])}`;
 }
 
@@ -68,21 +73,21 @@ function fullName(profile?: { first_name: string | null; last_name: string | nul
   return `${first} ${last}`.trim() || "—";
 }
 
-function fmtRange(startIso: string | null, endIso: string | null) {
+function fmtRange(startIso: string | null, endIso: string | null, locale: string) {
   if (!startIso) return "—";
   const start = new Date(startIso);
   const end = endIso ? new Date(endIso) : null;
-  const dateLabel = new Intl.DateTimeFormat("fr-CH", {
+  const dateLabel = new Intl.DateTimeFormat(coachDateLocale(locale), {
     weekday: "short",
     day: "2-digit",
     month: "short",
   }).format(start);
-  const startTimeLabel = new Intl.DateTimeFormat("fr-CH", {
+  const startTimeLabel = new Intl.DateTimeFormat(coachDateLocale(locale), {
     hour: "2-digit",
     minute: "2-digit",
   }).format(start);
   if (!end) return `${dateLabel} · ${startTimeLabel}`;
-  const endTimeLabel = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(end);
+  const endTimeLabel = new Intl.DateTimeFormat(coachDateLocale(locale), { hour: "2-digit", minute: "2-digit" }).format(end);
   return `${dateLabel} · ${startTimeLabel} – ${endTimeLabel}`;
 }
 
@@ -97,6 +102,9 @@ function normalizePresenceStatus(value: unknown): "present" | "absent" {
 }
 
 export default function CoachCampsPage() {
+  const { locale, t } = useI18n();
+  const saveInFlight = useRef(false);
+  const loadVersion = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [camps, setCamps] = useState<CampRow[]>([]);
@@ -113,7 +121,8 @@ export default function CoachCampsPage() {
     Record<string, { registration_status: "invited" | "registered" | "declined"; day_status_by_day_index: Record<string, "present" | "absent"> }>
   >({});
 
-  async function loadCamps() {
+  const loadCamps = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
     try {
@@ -123,42 +132,20 @@ export default function CoachCampsPage() {
         cache: "no-store",
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les stages."));
+      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.load"));
+      if (version !== loadVersion.current) return;
       setCamps((json?.camps ?? []) as CampRow[]);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Erreur de chargement");
-      setCamps([]);
+      if (version === loadVersion.current) { setError(coachCaughtErrorKey(err, "coach.error.load")); setCamps([]); }
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    void loadCamps();
   }, []);
 
   useEffect(() => {
-    const shouldLockScroll = Boolean(participantsDay || registrationCamp || detailCamp);
-    if (!shouldLockScroll) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [detailCamp, participantsDay, registrationCamp]);
-
-  useEffect(() => {
-    if (!participantsDay && !registrationCamp && !detailCamp) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (participantsDay) setParticipantsDay(null);
-      else if (registrationCamp) closeRegistrationModal();
-      else setDetailCamp(null);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detailCamp, participantsDay, registrationCamp]);
+    void loadCamps();
+    return () => { loadVersion.current += 1; };
+  }, [loadCamps]);
 
   function initials(profile?: { first_name: string | null; last_name: string | null } | null) {
     const first = String(profile?.first_name ?? "").trim();
@@ -189,6 +176,7 @@ export default function CoachCampsPage() {
   }
 
   function closeRegistrationModal() {
+    if (saveInFlight.current) return;
     setRegistrationCamp(null);
     setRegistrationError(null);
     setRegistrationSearch("");
@@ -210,7 +198,8 @@ export default function CoachCampsPage() {
   }
 
   async function saveRegistrations() {
-    if (!registrationCamp) return;
+    if (!registrationCamp || saveInFlight.current) return;
+    saveInFlight.current = true;
     setRegistrationSaving(true);
     setRegistrationError(null);
     try {
@@ -222,21 +211,19 @@ export default function CoachCampsPage() {
           Authorization: `Bearer ${data.session?.access_token ?? ""}`,
         },
         body: JSON.stringify({
-          player_registrations: Object.entries(playerRegistrationsDraft).map(([playerId, registration]) => ({
-            player_id: playerId,
-            registration_status: registration.registration_status,
-            day_status_by_day_index: registration.day_status_by_day_index ?? {},
-          })),
+          player_registrations: coachCampRegistrationChanges(registrationCamp.player_registrations, playerRegistrationsDraft),
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Impossible d’enregistrer les inscriptions."));
+      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.save"));
 
       await loadCamps();
+      saveInFlight.current = false;
       closeRegistrationModal();
     } catch (err: unknown) {
-      setRegistrationError(err instanceof Error ? err.message : "Impossible d’enregistrer les inscriptions.");
+      setRegistrationError(coachCaughtErrorKey(err, "coach.error.save"));
     } finally {
+      saveInFlight.current = false;
       setRegistrationSaving(false);
     }
   }
@@ -278,66 +265,61 @@ export default function CoachCampsPage() {
     participants: new Set(camps.flatMap((camp) => camp.player_registrations.filter((registration) => registration.registration_status === "registered").map((registration) => registration.player_id))).size,
   }), [camps]);
 
+  const noRegistrationSearchMatch = registrationCamp && registrationSearch.trim() &&
+    ![...registrationCamp.available_players, ...registrationCamp.player_registrations.map((entry) => entry.player)]
+      .some((player) => matchesRegistrationSearch(player, registrationSearch));
+
   return (
     <main className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" /><span>Stages</span></nav>
-      <div className={styles.topline}><div><h1>Stages</h1><p className={styles.lead}>Consultez les journées, les participants et les informations opérationnelles des stages auxquels vous êtes rattaché.</p></div></div>
-      {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
-      <section className={styles.stats} aria-label="Statistiques des stages"><div className={styles.stat}><span>À venir</span><b>{counts.upcoming}</b></div><div className={styles.stat}><span>En cours</span><b>{counts.inProgress}</b></div><div className={styles.stat}><span>Terminés</span><b>{counts.completed}</b></div><div className={styles.stat}><span>Juniors inscrits</span><b>{counts.participants}</b></div></section>
+      <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><ChevronRight size={13} aria-hidden="true" /><span>{t("coach.camps.title")}</span></nav>
+      <div className={styles.topline}><div><h1>{t("coach.camps.title")}</h1><p className={styles.lead}>{t("coach.camps.intro")}</p></div></div>
+      {error ? <div className={styles.alertError} role="alert">{t(error)} <button type="button" className={styles.secondary} onClick={() => void loadCamps()}>{t("coach.retry")}</button></div> : null}
+      <section className={styles.stats} aria-label={t("coach.camps.statistics")} aria-busy={loading}><div className={styles.stat}><span>{t("coach.camps.upcoming")}</span><b>{loading || error ? "—" : counts.upcoming}</b></div><div className={styles.stat}><span>{t("coach.camps.inProgress")}</span><b>{loading || error ? "—" : counts.inProgress}</b></div><div className={styles.stat}><span>{t("coach.camps.completed")}</span><b>{loading || error ? "—" : counts.completed}</b></div><div className={styles.stat}><span>{t("coach.camps.registeredPlayers")}</span><b>{loading || error ? "—" : counts.participants}</b></div></section>
       <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>Liste des stages</h2><p>{filteredCamps.length} stage{filteredCamps.length > 1 ? "s" : ""} affiché{filteredCamps.length > 1 ? "s" : ""}.</p></div></div>
+        <div className={styles.panelHeader}><div><h2>{t("coach.camps.list")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filteredCamps.length === 1 ? "coach.camps.one" : "coach.camps.count", { count: filteredCamps.length })}</p></div></div>
         <div className={styles.toolbar}>
-          <label className={styles.field}><span>Rechercher</span><span className={coachStyles.searchField}><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom du stage, club ou coach" /></span></label>
-          <label className={styles.field}><span>État</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as CampState)}><option value="all">Tous les états</option><option value="upcoming">À venir</option><option value="in_progress">En cours</option><option value="completed">Terminés</option></select></label>
-          <label className={styles.field}><span>Période</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option value="all">Toutes les dates</option><option value="month">Ce mois</option><option value="year">Cette année</option></select></label>
+          <label className={styles.field}><span>{t("coach.directory.search")}</span><span className={coachStyles.searchField}><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("coach.camps.search")} /></span></label>
+          <label className={styles.field}><span>{t("coach.camps.state")}</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as CampState)}><option value="all">{t("coach.camps.allStates")}</option><option value="upcoming">{t("coach.camps.upcoming")}</option><option value="in_progress">{t("coach.camps.inProgress")}</option><option value="completed">{t("coach.camps.completed")}</option></select></label>
+          <label className={styles.field}><span>{t("coach.camps.period")}</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option value="all">{t("coach.camps.allDates")}</option><option value="month">{t("coach.camps.month")}</option><option value="year">{t("coach.camps.year")}</option></select></label>
         </div>
-        {loading ? <ListLoadingBlock label="Chargement des stages…" /> : filteredCamps.length === 0 ? <div className={styles.empty}>Aucun stage ne correspond aux critères.</div> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Stage</th><th className={styles.compactHeader}>Dates</th><th className={styles.compactHeader}>Head coach</th><th>Participants</th><th>Journées</th><th>État</th><th>Actions</th></tr></thead><tbody>{filteredCamps.map((camp) => {
+        {loading ? <CoachListSkeleton label={t("coach.camps.loading")} /> : error ? null : filteredCamps.length === 0 ? <div className={styles.empty}>{t("coach.camps.empty")}</div> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{t("coach.camps.camp")}</th><th className={styles.compactHeader}>{t("coach.camps.dates")}</th><th className={styles.compactHeader}>{t("coach.camps.headCoach")}</th><th>{t("coach.camps.participants")}</th><th>{t("coach.camps.days")}</th><th>{t("coach.camps.state")}</th><th>{t("coach.directory.actions")}</th></tr></thead><tbody>{filteredCamps.map((camp) => {
           const state = campState(camp);
           const registered = camp.player_registrations.filter((registration) => registration.registration_status === "registered").length;
           const badgeClass = state === "in_progress" ? styles.badgeProgress : state === "completed" ? styles.badgeDone : "";
-          return <tr key={camp.id}><td data-label="Stage"><div className={styles.titleCell}><b>{camp.title}</b><span className={styles.muted}>{camp.club_name}</span></div></td><td data-label="Dates">{campDateRange(camp)}</td><td data-label="Head coach">{fullName(camp.head_coach)}</td><td data-label="Participants">{registered}</td><td data-label="Journées">{camp.days.length}</td><td data-label="État"><span className={`${styles.badge} ${badgeClass}`}>{CAMP_STATE_LABELS[state]}</span></td><td data-label="Actions"><div className={styles.actions}><button type="button" className={styles.iconButton} title="Consulter" aria-label={`Consulter ${camp.title}`} onClick={() => setDetailCamp(camp)}><Eye size={15} aria-hidden="true" /></button><button type="button" className={styles.iconButton} title="Gérer les juniors" aria-label={`Gérer les juniors de ${camp.title}`} onClick={() => openRegistrationModal(camp)}><Users size={15} aria-hidden="true" /></button></div></td></tr>;
+          return <tr key={camp.id}><td data-label={t("coach.camps.camp")}><div className={styles.titleCell}><b>{camp.title}</b><span className={styles.muted}>{camp.club_name}</span></div></td><td data-label={t("coach.camps.dates")}>{campDateRange(camp, locale, t("coach.camps.datesUnknown"))}</td><td data-label={t("coach.camps.headCoach")}>{fullName(camp.head_coach)}</td><td data-label={t("coach.camps.participants")}>{registered}</td><td data-label={t("coach.camps.days")}>{camp.days.length}</td><td data-label={t("coach.camps.state")}><span className={`${styles.badge} ${badgeClass}`}>{t(CAMP_STATE_LABELS[state])}</span></td><td data-label={t("coach.directory.actions")}><div className={styles.actions}><button type="button" className={styles.iconButton} title={t("coach.directory.view")} aria-label={coachText(t, "coach.directory.viewNamed", { name: camp.title })} aria-haspopup="dialog" onClick={() => setDetailCamp(camp)}><Eye size={15} aria-hidden="true" /></button><button type="button" className={styles.iconButton} title={t("coach.camps.manage")} aria-label={coachText(t, "coach.camps.manageNamed", { name: camp.title })} aria-haspopup="dialog" onClick={() => openRegistrationModal(camp)}><Users size={15} aria-hidden="true" /></button></div></td></tr>;
         })}</tbody></table></div>}
       </section>
 
-      {detailCamp ? <div className={coachStyles.overlay} role="dialog" aria-modal="true" aria-labelledby="camp-detail-title" onClick={() => setDetailCamp(null)}><div className={`${coachStyles.modal} ${coachStyles.modalLarge}`} onClick={(event) => event.stopPropagation()}><div className={coachStyles.modalHeader}><div><h2 id="camp-detail-title">{detailCamp.title}</h2><p>{detailCamp.club_name} · {campDateRange(detailCamp)}</p></div><button className={styles.iconButton} type="button" onClick={() => setDetailCamp(null)} title="Fermer" aria-label="Fermer"><X size={16} /></button></div><div className={coachStyles.modalBody}>{detailCamp.notes?.trim() ? <div className={coachStyles.notes} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(detailCamp.notes) }} /> : null}<div className={coachStyles.dayGrid}>{detailCamp.days.map((day) => day.starts_at ? <CoachPlayerActivityCard key={day.event_id} startsAt={day.starts_at} endsAt={day.ends_at} dateLocale="fr-CH" typeLabel="Stage / camp" title={detailCamp.title} groupName={`Jour ${day.day_index + 1}`} clubName={detailCamp.club_name} location={day.location_text} statusLabel={CAMP_STATE_LABELS[campState(detailCamp)]} actions={<><Link className={styles.secondary} href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}><CalendarDays size={15} />Ouvrir l’activité</Link><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />Participants</button></>}><div className={styles.badge}>{day.participants_count} participant{day.participants_count > 1 ? "s" : ""}</div>{day.practical_info ? <p className={coachStyles.practical}>{day.practical_info}</p> : null}</CoachPlayerActivityCard> : <article className={styles.dayCard} key={day.event_id}><div className={styles.cardHead}><div><h3>Jour {day.day_index + 1}</h3><p className={styles.muted}>{fmtRange(day.starts_at, day.ends_at)}</p></div><span className={styles.badge}>{day.participants_count} participant{day.participants_count > 1 ? "s" : ""}</span></div><div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />Participants</button></div></article>)}</div></div></div></div> : null}
+      {detailCamp ? <AccessibleDialog className={`${coachStyles.modal} ${coachStyles.modalLarge}`} labelledBy="camp-detail-title" onClose={() => setDetailCamp(null)}><div className={coachStyles.modalHeader}><div><h2 id="camp-detail-title">{detailCamp.title}</h2><p>{detailCamp.club_name} · {campDateRange(detailCamp, locale, t("coach.camps.datesUnknown"))}</p></div><button className={styles.iconButton} type="button" onClick={() => setDetailCamp(null)} title={t("common.close")} aria-label={t("common.close")}><X size={16} /></button></div><div className={coachStyles.modalBody}>{detailCamp.notes?.trim() ? <div className={coachStyles.notes} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(detailCamp.notes) }} /> : null}<div className={coachStyles.dayGrid}>{detailCamp.days.map((day) => day.starts_at ? <CoachPlayerActivityCard key={day.event_id} startsAt={day.starts_at} endsAt={day.ends_at} dateLocale={coachDateLocale(locale)} typeLabel={t("coach.activity.camp")} title={detailCamp.title} groupName={coachText(t, "coach.camps.day", { number: day.day_index + 1 })} clubName={detailCamp.club_name} location={day.location_text} statusLabel={t(CAMP_STATE_LABELS[campState(detailCamp)])} actions={<><Link className={styles.secondary} href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}><CalendarDays size={15} />{t("coach.camps.openActivity")}</Link><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />{t("coach.camps.participants")}</button></>}><div className={styles.badge}>{coachText(t, day.participants_count === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: day.participants_count })}</div>{day.practical_info ? <p className={coachStyles.practical}>{day.practical_info}</p> : null}</CoachPlayerActivityCard> : <article className={styles.dayCard} key={day.event_id}><div className={styles.cardHead}><div><h3>{coachText(t, "coach.camps.day", { number: day.day_index + 1 })}</h3><p className={styles.muted}>{fmtRange(day.starts_at, day.ends_at, locale)}</p></div><span className={styles.badge}>{coachText(t, day.participants_count === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: day.participants_count })}</span></div><div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />{t("coach.camps.participants")}</button></div></article>)}</div></div></AccessibleDialog> : null}
 
         {registrationCamp ? (
-          <div
-            className={coachStyles.overlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="registration-modal-title"
-            onClick={closeRegistrationModal}
-          >
-            <div
-              className={`${coachStyles.modal} ${coachStyles.modalLarge}`}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <AccessibleDialog className={`${coachStyles.modal} ${coachStyles.modalLarge}`} labelledBy="registration-modal-title" onClose={closeRegistrationModal}>
               <div className={coachStyles.modalHeader}>
                 <div>
-                  <h2 id="registration-modal-title">Inscriptions des juniors</h2>
+                  <h2 id="registration-modal-title">{t("coach.camps.registrations")}</h2>
                   <p>{registrationCamp.title}</p>
                 </div>
-                <button type="button" className={styles.iconButton} onClick={closeRegistrationModal} aria-label="Fermer" title="Fermer" disabled={registrationSaving}>
+                <button type="button" className={styles.iconButton} onClick={closeRegistrationModal} aria-label={t("common.close")} title={t("common.close")} disabled={registrationSaving}>
                   <X size={18} />
                 </button>
               </div>
 
-              {registrationError ? <div className={styles.alertError} role="alert">{registrationError}</div> : null}
-
-              <div className={coachStyles.modalBody}>
+              <fieldset className={`${coachStyles.modalBody} ${coachStyles.formBody}`} disabled={registrationSaving} aria-busy={registrationSaving}>
+                {registrationError ? <div className={styles.alertError} role="alert">{t(registrationError)}</div> : null}
                 <label className={styles.field}>
-                  <span>Rechercher un junior</span>
+                  <span>{t("coach.camps.searchPlayer")}</span>
                   <input
                     value={registrationSearch}
                     onChange={(e) => setRegistrationSearch(e.target.value)}
-                    placeholder="Prénom, nom, ou les deux"
+                    placeholder={t("coach.camps.playerPlaceholder")}
                   />
                 </label>
 
+                {noRegistrationSearchMatch ? <p role="status">{t("coach.camps.noSearchMatch")}</p> : null}
+
                 {(registrationCamp.available_players ?? []).length > 0 ? (
                   <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontWeight: 800 }}>Ajouter un junior</div>
+                    <div style={{ fontWeight: 800 }}>{t("coach.camps.addPlayer")}</div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {registrationCamp.available_players
                         .filter((player) => matchesRegistrationSearch(player, registrationSearch))
@@ -364,7 +346,7 @@ export default function CoachCampsPage() {
                 ) : null}
 
                 {Object.keys(playerRegistrationsDraft).length === 0 ? (
-                  <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>Aucun junior n’est lié à ce stage/camp.</div>
+                  <div style={{ color: "rgba(0,0,0,0.58)", fontWeight: 800 }}>{t("coach.camps.noPlayers")}</div>
                 ) : (
                   Object.entries(playerRegistrationsDraft)
                     .sort(([playerIdA], [playerIdB]) => {
@@ -376,7 +358,7 @@ export default function CoachCampsPage() {
                         registrationCamp.player_registrations.find((entry) => entry.player_id === playerIdB)?.player ??
                         registrationCamp.available_players.find((entry) => entry.id === playerIdB) ??
                         null;
-                      return fullName(playerA).localeCompare(fullName(playerB), "fr");
+                      return fullName(playerA).localeCompare(fullName(playerB), locale);
                     })
                     .filter(([playerId]) => {
                       const player =
@@ -397,6 +379,7 @@ export default function CoachCampsPage() {
                             <div style={{ fontWeight: 950, lineHeight: 1.2 }}>{fullName(registration.player)}</div>
                             <select
                               className={coachStyles.select}
+                              aria-label={coachText(t, "coach.camps.registrationStatus", { name: fullName(player) })}
                               value={draft.registration_status}
                               onChange={(e) =>
                                 updateRegistrationDraft(registration.player_id, {
@@ -404,18 +387,19 @@ export default function CoachCampsPage() {
                                 })
                               }
                             >
-                              <option value="invited">Invité</option>
-                              <option value="registered">Inscrit</option>
-                              <option value="declined">Refusé</option>
+                              <option value="invited">{t("coach.camps.invited")}</option>
+                              <option value="registered">{t("coach.camps.registered")}</option>
+                              <option value="declined">{t("coach.camps.declined")}</option>
                             </select>
                           </div>
                           {draft.registration_status === "registered" ? (
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               {registrationCamp.days.map((day) => (
                                 <label key={`${registration.player_id}-${day.event_id}`} className={coachStyles.dayPresence}>
-                                  <span style={{ fontWeight: 800 }}>Jour {day.day_index + 1}</span>
+                                  <span style={{ fontWeight: 800 }}>{coachText(t, "coach.camps.day", { number: day.day_index + 1 })}</span>
                                   <select
                                     className={coachStyles.select}
+                                    aria-label={coachText(t, "coach.camps.presenceStatus", { name: fullName(player), number: day.day_index + 1 })}
                                     value={draft.day_status_by_day_index[String(day.day_index)] ?? "present"}
                                     onChange={(e) =>
                                       updateRegistrationDraft(registration.player_id, {
@@ -426,62 +410,51 @@ export default function CoachCampsPage() {
                                       })
                                     }
                                   >
-                                    <option value="present">Présent</option>
-                                    <option value="absent">Absent</option>
+                                    <option value="present">{t("coach.camps.present")}</option>
+                                    <option value="absent">{t("coach.camps.absent")}</option>
                                   </select>
                                 </label>
                               ))}
                             </div>
                           ) : (
                             <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.58)" }}>
-                              Les jours présents/absents sont disponibles dès que le junior est inscrit.
+                              {t("coach.camps.presenceHint")}
                             </div>
                           )}
                         </div>
                       );
                   })
                 )}
-              </div>
+              </fieldset>
 
               <div className={coachStyles.modalFooter}>
                 <button type="button" className={styles.secondary} onClick={closeRegistrationModal} disabled={registrationSaving}>
-                  Annuler
+                  {t("coach.directory.cancel")}
                 </button>
                 <button type="button" className={styles.primary} onClick={() => void saveRegistrations()} disabled={registrationSaving}>
-                  {registrationSaving ? "Enregistrement…" : "Enregistrer"}
+                  {registrationSaving ? t("coach.directory.saving") : t("coach.directory.save")}
                 </button>
               </div>
-            </div>
-          </div>
+          </AccessibleDialog>
         ) : null}
 
         {participantsDay ? (
-          <div
-            className={coachStyles.overlay}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="participants-modal-title"
-            onClick={() => setParticipantsDay(null)}
-          >
-            <div
-              className={coachStyles.modal}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <AccessibleDialog className={coachStyles.modal} labelledBy="participants-modal-title" onClose={() => setParticipantsDay(null)}>
               <div className={coachStyles.modalHeader}>
                 <div>
-                  <h2 id="participants-modal-title">Participants</h2>
+                  <h2 id="participants-modal-title">{t("coach.camps.participants")}</h2>
                   <p>
-                    Jour {participantsDay.day_index + 1} • {participantsDay.participants_count} participant{participantsDay.participants_count > 1 ? "s" : ""}
+                    {coachText(t, "coach.camps.day", { number: participantsDay.day_index + 1 })} • {coachText(t, participantsDay.participants_count === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: participantsDay.participants_count })}
                   </p>
                 </div>
-                <button type="button" className={styles.iconButton} onClick={() => setParticipantsDay(null)} aria-label="Fermer" title="Fermer">
+                <button type="button" className={styles.iconButton} onClick={() => setParticipantsDay(null)} aria-label={t("common.close")} title={t("common.close")}>
                   <X size={18} />
                 </button>
               </div>
 
               <div className={coachStyles.modalBody}>
                 {participantsDay.participants.length === 0 ? (
-                  <div className={styles.empty}>Aucun junior présent.</div>
+                  <div className={styles.empty}>{t("coach.camps.noPresent")}</div>
                 ) : (
                   participantsDay.participants.map((player) => (
                     <div key={player.id} className={coachStyles.participantRow}>
@@ -497,8 +470,7 @@ export default function CoachCampsPage() {
                   ))
                 )}
               </div>
-            </div>
-          </div>
+          </AccessibleDialog>
         ) : null}
     </main>
   );

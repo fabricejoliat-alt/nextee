@@ -228,7 +228,7 @@ export default function RoleGuard({
       return <div className="role-guard-inline" aria-busy="true" aria-label="Chargement"><span /><span /><span /></div>;
     }
     return (
-      <main style={{ padding: 24 }} aria-busy="true" aria-live="polite">
+      <main className="role-guard-page-loading" style={{ padding: 24 }} aria-busy="true" aria-live="polite">
         <div className="card" style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 12 }}>
           <div className="role-guard-loading-line role-guard-loading-line--short" />
           <div className="role-guard-loading-line" />

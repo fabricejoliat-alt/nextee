@@ -1,0 +1,24 @@
+.page button,.page select,.page a[class]{min-height:44px}
+.page button,.page a[class]{height:auto;padding-top:10px;padding-bottom:10px}
+.page button:disabled{cursor:not-allowed;opacity:.55}
+.page :focus-visible,.dialog :focus-visible{outline:2px solid #526b50;outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.alert{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.filter{display:grid;gap:7px;color:#526053;font-size:12px;font-weight:800}
+.filter select{min-width:0;width:100%}
+.list{display:grid;gap:12px}
+.people{display:grid;gap:6px}.people>span{color:#69766c;font-size:11px;font-weight:800}
+.people ul{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.people li{display:flex;align-items:center;gap:8px;max-width:100%;padding:6px 8px;border:1px solid #e0e7df;border-radius:10px;background:#fff}
+.personCopy{display:grid;gap:3px;min-width:0}.personCopy b{font-size:12px;overflow-wrap:anywhere}.personCopy small{color:#69766c;font-size:10px;line-height:1.4}
+.avatar{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;overflow:hidden;border-radius:50%;background:#edf3eb;color:#35483b;font-size:10px;font-weight:800}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.empty{margin:0;color:#69766c}.title{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.title h3{overflow-wrap:anywhere}
+.dialog{margin:auto;width:min(560px,calc(100vw - 28px));max-height:calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow-y:auto;border:1px solid #dce5db;border-radius:16px;padding:20px;background:#fff;color:#35483b}
+.dialog h2{margin:0;font-size:20px}.dialog p{line-height:1.5;overflow-wrap:anywhere}
+.dialog fieldset{display:grid;gap:12px;min-width:0;margin:16px 0;padding:0;border:0}.dialog legend{margin-bottom:12px;font-weight:800}
+.dialog label{display:flex;align-items:center;gap:10px;min-height:44px;padding:10px;border:1px solid #dce5db;border-radius:10px;cursor:pointer}
+.dialog input{accent-color:#35483b}.dialog button{min-height:44px;height:auto;padding-top:10px;padding-bottom:10px}
+.dialog footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:18px}
+.dialog button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:700px){.actions{width:100%}.actions>a,.actions>button{flex:1}.dialog footer>button{flex:1}.people li{width:100%}}

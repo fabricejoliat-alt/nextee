@@ -18,12 +18,9 @@ export async function isCoachTrainingAssistanceEnabled(
       || result.error.message.includes("is_coach_training_assistance_enabled_for_coach");
     if (!missingFunction) throw new Error(result.error.message);
 
-    // Keep already-running environments usable until the additive migration is applied.
-    const legacyResult = await supabaseAdmin.rpc("is_coach_training_assistance_enabled", {
-      p_organization_id: normalizedId,
-    });
-    if (legacyResult.error) throw new Error(legacyResult.error.message);
-    return legacyResult.data === true;
+    // Missing per-coach policy must never fall back to a club-wide opt-in.
+    // Manual evaluation remains available while assistance fails closed.
+    return false;
   }
   return result.data === true;
 }

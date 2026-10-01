@@ -333,35 +333,10 @@ export async function resolveCoachClubIds(
   supabaseAdmin: ReturnType<typeof createAdminClient>,
   coachId: string
 ): Promise<{ error: string; status: 400 } | { clubIds: string[] }> {
-  const [directMembershipsRes, groupCoachRes, headGroupsRes, assignedEventRes] = await Promise.all([
-    supabaseAdmin.from("club_members").select("club_id").eq("user_id", coachId).eq("role", "coach").eq("is_active", true),
-    supabaseAdmin.from("coach_group_coaches").select("group_id").eq("coach_user_id", coachId),
-    supabaseAdmin.from("coach_groups").select("club_id").eq("head_coach_user_id", coachId),
-    supabaseAdmin.from("club_event_coaches").select("event_id").eq("coach_id", coachId),
-  ]);
-  if (directMembershipsRes.error) return { error: directMembershipsRes.error.message, status: 400 as const };
-  if (groupCoachRes.error) return { error: groupCoachRes.error.message, status: 400 as const };
-  if (headGroupsRes.error) return { error: headGroupsRes.error.message, status: 400 as const };
-  if (assignedEventRes.error) return { error: assignedEventRes.error.message, status: 400 as const };
-
-  const groupIds = uniq((groupCoachRes.data ?? []).map((row: any) => row.group_id));
-  const eventIds = uniq((assignedEventRes.data ?? []).map((row: any) => row.event_id));
-
-  const [groupRes, eventRes] = await Promise.all([
-    groupIds.length ? supabaseAdmin.from("coach_groups").select("club_id").in("id", groupIds) : ({ data: [], error: null } as const),
-    eventIds.length ? supabaseAdmin.from("club_events").select("club_id").in("id", eventIds) : ({ data: [], error: null } as const),
-  ]);
-  if (groupRes.error) return { error: groupRes.error.message, status: 400 as const };
-  if (eventRes.error) return { error: eventRes.error.message, status: 400 as const };
-
-  return {
-    clubIds: uniq([
-      ...(directMembershipsRes.data ?? []).map((row: any) => row.club_id),
-      ...(headGroupsRes.data ?? []).map((row: any) => row.club_id),
-      ...(groupRes.data ?? []).map((row: any) => row.club_id),
-      ...(eventRes.data ?? []).map((row: any) => row.club_id),
-    ]),
-  };
+  const memberships = await supabaseAdmin.from("club_members").select("club_id")
+    .eq("user_id", coachId).eq("is_active", true).in("role", ["coach", "manager"]);
+  if (memberships.error) return { error: memberships.error.message, status: 400 };
+  return { clubIds: uniq((memberships.data ?? []).map((row) => String(row.club_id))) };
 }
 
 export async function resolvePlayerAccess(

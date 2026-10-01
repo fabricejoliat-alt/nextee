@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       callerId,
       requestedChildId,
       includeArchived: searchParams.get("include_archived") === "1",
+      locale: searchParams.get("locale"),
     });
 
     return NextResponse.json(payload);

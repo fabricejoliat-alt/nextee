@@ -55,11 +55,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
       : { allowed: false, clubId: null };
     const allowedSharedClubIds = Array.from(
       new Set([
-        ...access.sharedClubIds,
+        ...access.sensitiveClubIds,
         ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
       ])
     );
-    const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
     if (allowedSharedClubIds.length === 0 || !canAccessDocuments) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -157,11 +157,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
         : { allowed: false, clubId: null };
       const allowedSharedClubIds = Array.from(
         new Set([
-          ...access.sharedClubIds,
+          ...access.sensitiveClubIds,
           ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
         ])
       );
-      const canAccessDocuments = (access.sharedClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+      const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
       if (!canAccessDocuments) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }

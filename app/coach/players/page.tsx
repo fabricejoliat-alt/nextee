@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
+import { coachCaughtErrorKey } from "@/lib/coachUiErrors";
+import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import styles from "@/app/manager/camps/Camps.module.css";
 import playerListStyles from "./CoachPlayersPage.module.css";
 
@@ -14,25 +18,27 @@ type Player = Profile & { club_ids: string[]; club_names: string[] };
 
 function name(profile: Pick<Profile, "first_name" | "last_name">) { return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "—"; }
 function initials(profile: Profile) { return `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase() || "J"; }
-function sex(value: string | null) { return value === "male" ? "Garçon" : value === "female" ? "Fille" : value === "other" ? "Autre" : "Non défini"; }
+function sexKey(value: string | null) { return `coach.directory.${value === "male" || value === "female" || value === "other" ? value : "undefined"}`; }
 
 export default function CoachPlayersPage() {
+  const { locale, t } = useI18n();
+  const [reload, setReload] = useState(0);
   const [players, setPlayers] = useState<Player[]>([]); const [clubs, setClubs] = useState<Club[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [query, setQuery] = useState(""); const [clubFilter, setClubFilter] = useState("all"); const [sexFilter, setSexFilter] = useState("all");
-  useEffect(() => { void (async () => {
+  useEffect(() => { let active = true; void (async () => {
     setLoading(true); setError("");
     try {
-      const auth = await supabase.auth.getUser(); if (!auth.data.user) throw new Error("Session invalide."); const userId = auth.data.user.id;
+      const auth = await supabase.auth.getUser(); if (!auth.data.user) throw new Error("coach.error.session"); const userId = auth.data.user.id;
       const membershipsResult = await supabase.from("club_members").select("club_id,user_id,role,is_active,can_transfer_players_between_club_groups").eq("user_id", userId).eq("role", "coach").eq("is_active", true);
       if (membershipsResult.error) throw new Error(membershipsResult.error.message);
       const memberships = (membershipsResult.data ?? []) as Membership[]; const clubIds = [...new Set(memberships.map((row) => row.club_id))];
-      if (!clubIds.length) { setPlayers([]); setClubs([]); return; }
+      if (!clubIds.length) { if (active) { setPlayers([]); setClubs([]); } return; }
       const [clubsResult, linksResult, headGroupsResult] = await Promise.all([
         supabase.from("clubs").select("id,name").in("id", clubIds),
         supabase.from("coach_group_coaches").select("group_id").eq("coach_user_id", userId),
         supabase.from("coach_groups").select("id").in("club_id", clubIds).eq("head_coach_user_id", userId),
       ]);
       if (clubsResult.error || linksResult.error || headGroupsResult.error) throw new Error(clubsResult.error?.message ?? linksResult.error?.message ?? headGroupsResult.error?.message);
-      const clubList = ((clubsResult.data ?? []) as Club[]).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "fr")); setClubs(clubList);
+      const clubList = (clubsResult.data ?? []) as Club[]; if (active) setClubs(clubList);
       const groupIds = [...new Set([...(linksResult.data ?? []).map((row) => row.group_id), ...(headGroupsResult.data ?? []).map((row) => row.id)])];
       const assignedResult = groupIds.length ? await supabase.from("coach_group_players").select("player_user_id").in("group_id", groupIds) : { data: [], error: null };
       if (assignedResult.error) throw new Error(assignedResult.error.message);
@@ -42,26 +48,26 @@ export default function CoachPlayersPage() {
       if (playerMembersResult.error) throw new Error(playerMembersResult.error.message);
       const playerMembers = ((playerMembersResult.data ?? []) as Membership[]).filter((row) => assignedIds.has(row.user_id) || transferableClubs.has(row.club_id));
       const playerIds = [...new Set(playerMembers.map((row) => row.user_id))];
-      if (!playerIds.length) { setPlayers([]); return; }
+      if (!playerIds.length) { if (active) setPlayers([]); return; }
       const profilesResult = await supabase.from("profiles").select("id,first_name,last_name,avatar_url,handicap,sex").in("id", playerIds); if (profilesResult.error) throw new Error(profilesResult.error.message);
-      const clubNames = new Map(clubList.map((club) => [club.id, club.name ?? "Club"]));
+      const clubNames = new Map(clubList.map((club) => [club.id, club.name ?? ""]));
       const memberClubs = new Map<string, Set<string>>(); playerMembers.forEach((row) => { const current = memberClubs.get(row.user_id) ?? new Set<string>(); current.add(row.club_id); memberClubs.set(row.user_id, current); });
-      setPlayers(((profilesResult.data ?? []) as Profile[]).map((profile) => { const ids = [...(memberClubs.get(profile.id) ?? [])]; return { ...profile, club_ids: ids, club_names: ids.map((id) => clubNames.get(id) ?? "Club") }; }).sort((a, b) => name(a).localeCompare(name(b), "fr")));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Chargement impossible."); } finally { setLoading(false); }
-  })(); }, []);
-  const filtered = useMemo(() => { const q = query.trim().toLocaleLowerCase("fr"); return players.filter((player) => (clubFilter === "all" || player.club_ids.includes(clubFilter)) && (sexFilter === "all" || (sexFilter === "none" ? !player.sex : player.sex === sexFilter)) && (!q || `${name(player)} ${player.club_names.join(" ")}`.toLocaleLowerCase("fr").includes(q))); }, [players, query, clubFilter, sexFilter]);
+      if (active) setPlayers(((profilesResult.data ?? []) as Profile[]).map((profile) => { const ids = [...(memberClubs.get(profile.id) ?? [])]; return { ...profile, club_ids: ids, club_names: ids.map((id) => clubNames.get(id) ?? "") }; }));
+    } catch (cause) { if (active) { setError(coachCaughtErrorKey(cause, "coach.error.load")); setPlayers([]); } } finally { if (active) setLoading(false); }
+  })(); return () => { active = false; }; }, [reload]);
+  const filtered = useMemo(() => { const q = query.trim().toLocaleLowerCase(locale); return players.filter((player) => (clubFilter === "all" || player.club_ids.includes(clubFilter)) && (sexFilter === "all" || (sexFilter === "none" ? !player.sex : player.sex === sexFilter)) && (!q || `${name(player)} ${player.club_names.join(" ")}`.toLocaleLowerCase(locale).includes(q))).sort((a, b) => name(a).localeCompare(name(b), locale)); }, [players, query, clubFilter, sexFilter, locale]);
   return <main className={styles.page}>
-    <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><span>/</span><strong>Juniors</strong></nav>
-    <header className={styles.topline}><div><h1>Juniors</h1><p className={styles.lead}>Consultez les juniors que vous accompagnez.</p></div></header>
-    {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
+    <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><span>/</span><strong>{t("coach.nav.players")}</strong></nav>
+    <header className={styles.topline}><div><h1>{t("coach.nav.players")}</h1><p className={styles.lead}>{t("coach.players.intro")}</p></div></header>
+    {error ? <div className={styles.alertError} role="alert">{t(error)} <button type="button" className={styles.secondary} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
     <section className={styles.panel}>
-      <div className={styles.panelHeader}><div><h2>Liste des juniors</h2><p>{loading ? "Chargement…" : `${filtered.length} junior${filtered.length > 1 ? "s" : ""}`}</p></div></div>
+      <div className={styles.panelHeader}><div><h2>{t("coach.players.list")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filtered.length === 1 ? "coach.players.one" : "coach.players.count", { count: filtered.length })}</p></div></div>
       <div className={styles.toolbar}>
-        <label className={styles.field}><span>Rechercher</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom ou club…" /></label>
-        {clubs.length > 1 ? <label className={styles.field}><span>Club</span><select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}><option value="all">Tous les clubs</option>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name ?? "Club"}</option>)}</select></label> : null}
-        <label className={styles.field}><span>Genre</span><select value={sexFilter} onChange={(event) => setSexFilter(event.target.value)}><option value="all">Tous</option><option value="male">Garçon</option><option value="female">Fille</option><option value="other">Autre</option><option value="none">Non défini</option></select></label>
+        <label className={styles.field}><span>{t("coach.directory.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("coach.players.search")} /></label>
+        {clubs.length > 1 ? <label className={styles.field}><span>{t("coach.directory.club")}</span><select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}><option value="all">{t("coach.directory.allClubs")}</option>{[...clubs].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", locale)).map((club) => <option key={club.id} value={club.id}>{club.name || t("coach.directory.club")}</option>)}</select></label> : null}
+        <label className={styles.field}><span>{t("coach.directory.gender")}</span><select value={sexFilter} onChange={(event) => setSexFilter(event.target.value)}><option value="all">{t("coach.directory.all")}</option><option value="male">{t("coach.directory.male")}</option><option value="female">{t("coach.directory.female")}</option><option value="other">{t("coach.directory.other")}</option><option value="none">{t("coach.directory.undefined")}</option></select></label>
       </div>
-      {loading ? <div className={styles.empty}>Chargement des juniors…</div> : !filtered.length ? <div className={styles.empty}><UserRound size={21} />Aucun junior trouvé dans votre périmètre.</div> : <div className={`${styles.tableWrap} ${playerListStyles.mobileTableWrap}`}><table className={`${styles.table} ${playerListStyles.mobileTable}`}><thead><tr><th>Junior</th><th>Club</th><th>Genre</th><th>Handicap</th><th>Actions</th></tr></thead><tbody>{filtered.map((player) => <tr key={player.id}><td data-label="Junior"><div className={styles.person}><span className={styles.avatar}>{player.avatar_url ? <img src={player.avatar_url} alt="" /> : initials(player)}</span><b>{name(player)}</b></div></td><td data-label="Club">{player.club_names.join(" · ")}</td><td data-label="Genre">{sex(player.sex)}</td><td data-label="Handicap">{player.handicap == null ? "Données insuffisantes" : player.handicap.toFixed(1)}</td><td data-label="Actions"><Link className={styles.iconButton} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={`Consulter ${name(player)}`} title="Consulter"><ArrowRight size={16} /></Link></td></tr>)}</tbody></table></div>}
+      {loading ? <CoachListSkeleton label={t("coach.players.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><UserRound size={21} aria-hidden="true" />{t("coach.players.empty")}</div> : <div className={`${styles.tableWrap} ${playerListStyles.mobileTableWrap}`}><table className={`${styles.table} ${playerListStyles.mobileTable}`}><thead><tr><th>{t("coach.directory.player")}</th><th>{t("coach.directory.club")}</th><th>{t("coach.directory.gender")}</th><th>{t("coach.directory.handicap")}</th><th>{t("coach.directory.actions")}</th></tr></thead><tbody>{filtered.map((player) => <tr key={player.id}><td data-label={t("coach.directory.player")}><div className={styles.person}><span className={styles.avatar}>{player.avatar_url ? <img src={player.avatar_url} alt="" /> : initials(player)}</span><b>{name(player)}</b></div></td><td data-label={t("coach.directory.club")}>{player.club_names.map((name) => name || t("coach.directory.club")).join(" · ")}</td><td data-label={t("coach.directory.gender")}>{t(sexKey(player.sex))}</td><td data-label={t("coach.directory.handicap")}>{player.handicap == null ? t("coach.directory.noData") : new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(player.handicap)}</td><td data-label={t("coach.directory.actions")}><Link className={styles.iconButton} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: name(player) })} title={t("coach.directory.view")}><ArrowRight size={16} /></Link></td></tr>)}</tbody></table></div>}
     </section>
   </main>;
 }

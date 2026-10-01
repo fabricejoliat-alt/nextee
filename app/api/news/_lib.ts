@@ -70,6 +70,56 @@ function isNowVisible(row: VisibleNewsRow) {
   return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now();
 }
 
+function normalizeNewsLocale(value: string | null | undefined) {
+  const locale = String(value ?? "fr").toLowerCase().split("-")[0];
+  return ["fr", "en", "de", "it"].includes(locale) ? locale : "fr";
+}
+
+export async function fetchPublishedPlatformNewsForClubs(
+  supabaseAdmin: any,
+  clubIds: string[],
+  audienceRole: "player" | "coach" | "manager",
+  localeValue?: string | null,
+  options?: { includeArchived?: boolean }
+) {
+  if (clubIds.length === 0) return [] as VisibleNewsRow[];
+  const assignments = await supabaseAdmin.from("platform_news_clubs").select("news_id,club_id,target_roles").in("club_id", clubIds);
+  if (assignments.error) {
+    if (["42P01", "PGRST205"].includes(String(assignments.error.code ?? ""))) return [] as VisibleNewsRow[];
+    throw new Error(assignments.error.message);
+  }
+  const newsIds = Array.from(new Set(((assignments.data ?? []) as any[])
+    .filter((row) => (Array.isArray(row.target_roles) ? row.target_roles : ["player", "coach", "manager"]).includes(audienceRole))
+    .map((row) => String(row.news_id ?? "")).filter(Boolean)));
+  if (!newsIds.length) return [] as VisibleNewsRow[];
+  const news = await supabaseAdmin.from("platform_news")
+    .select("id,status,visible_on_home,image_url,published_at,scheduled_for,created_at,updated_at")
+    .in("id", newsIds)
+    .in("status", options?.includeArchived ? ["published", "scheduled", "archived"] : ["published", "scheduled"]);
+  if (news.error) throw new Error(news.error.message);
+  const translations = await supabaseAdmin.from("platform_news_translations")
+    .select("news_id,locale,title,summary,body").in("news_id", newsIds);
+  if (translations.error) throw new Error(translations.error.message);
+  const byNews = new Map<string, Map<string, any>>();
+  for (const row of translations.data ?? []) {
+    const values = byNews.get(String((row as any).news_id)) ?? new Map<string, any>();
+    values.set(String((row as any).locale), row); byNews.set(String((row as any).news_id), values);
+  }
+  const locale = normalizeNewsLocale(localeValue);
+  return ((news.data ?? []) as any[]).map((row) => {
+    const localized = byNews.get(String(row.id));
+    const text = localized?.get(locale) ?? localized?.get("fr") ?? Array.from(localized?.values() ?? [])[0];
+    return {
+      id: String(row.id), club_id: "", club_name: "ActiviTee", title: String(text?.title ?? ""),
+      image_url: row.image_url == null ? null : String(row.image_url), summary: text?.summary == null ? null : String(text.summary),
+      body: String(text?.body ?? ""), status: String(row.status), visible_on_home: Boolean(row.visible_on_home),
+      published_at: row.published_at == null ? null : String(row.published_at), scheduled_for: row.scheduled_for == null ? null : String(row.scheduled_for),
+      created_at: String(row.created_at), updated_at: String(row.updated_at), linked_club_event_id: null, linked_camp_id: null,
+      linked_group_id: null, linked_content_type: null, linked_content_label: null, include_linked_parents: true, targets: [],
+    } satisfies VisibleNewsRow;
+  }).filter((row) => isNowVisible(row) || (options?.includeArchived === true && row.status === "archived"));
+}
+
 function targetMatchesPlayerNews(row: VisibleNewsRow, ctx: PlayerNewsViewerContext) {
   if (!ctx.clubIds.has(row.club_id) || row.targets.length === 0) return false;
 
@@ -361,9 +411,13 @@ export async function fetchVisiblePlayerNews(args: {
   callerId: string;
   requestedChildId: string | null;
   includeArchived?: boolean;
+  locale?: string | null;
 }) {
   const ctx = await resolvePlayerNewsContext(args);
-  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: args.includeArchived });
+  const [rows, platformRows] = await Promise.all([
+    fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: args.includeArchived }),
+    fetchPublishedPlatformNewsForClubs(args.supabaseAdmin, ctx.clubIds, "player", args.locale, { includeArchived: args.includeArchived }),
+  ]);
   const visibleNews = rows.filter((row) =>
     targetMatchesPlayerNews(row, {
       actorUserId: ctx.actorUserId,
@@ -380,13 +434,16 @@ export async function fetchVisiblePlayerNews(args: {
     viewer_role: ctx.viewerRole,
     effective_player_id: ctx.effectivePlayerId,
     effective_player_name: ctx.effectivePlayerName,
-    news: visibleNews,
+    news: [...visibleNews, ...platformRows].sort((left, right) => new Date(publicationDateValue(right)).getTime() - new Date(publicationDateValue(left)).getTime()),
   };
 }
 
-export async function fetchVisibleCoachNews(args: { supabaseAdmin: any; callerId: string }) {
+export async function fetchVisibleCoachNews(args: { supabaseAdmin: any; callerId: string; locale?: string | null }) {
   const ctx = await resolveCoachNewsContext(args);
-  const rows = await fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: true });
+  const [rows, platformRows] = await Promise.all([
+    fetchPublishedNewsForClubs(args.supabaseAdmin, ctx.clubIds, { includeArchived: true }),
+    fetchPublishedPlatformNewsForClubs(args.supabaseAdmin, ctx.clubIds, "coach", args.locale, { includeArchived: true }),
+  ]);
   const visibleNews = rows.filter((row) =>
     targetMatchesCoachNews(row, {
       actorUserId: ctx.actorUserId,
@@ -396,5 +453,5 @@ export async function fetchVisibleCoachNews(args: { supabaseAdmin: any; callerId
     })
   );
 
-  return { news: visibleNews };
+  return { news: [...visibleNews, ...platformRows].sort((left, right) => new Date(publicationDateValue(right)).getTime() - new Date(publicationDateValue(left)).getTime()) };
 }

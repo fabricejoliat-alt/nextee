@@ -1,9 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
-import { CoachDebriefValidationError, normalizeDebriefSaveInput } from "@/lib/coachDebrief";
-import { assertCoachTrainingReportAllowed } from "@/lib/coachTrainingAssistance";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
+import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
 
 function httpError(message: string) {
   if (message === "event_not_found") return { status: 404, message: "Training not found." };
@@ -26,6 +25,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     }
 
     const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
+    const evaluationState = await loadCoachEvaluationState(supabaseAdmin, [eventId]);
     const [attendeesRes, feedbackRes, debriefRes, groupRes] = await Promise.all([
       supabaseAdmin
         .from("club_event_attendees")
@@ -93,7 +93,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       attendees,
       debrief: debriefRes.data ?? null,
       coachTrainingAssistanceEnabled: assistanceEnabled,
-    });
+      criteria: evaluationState.criteria.filter((criterion) => ["coach", "both"].includes(criterion.snapshot_respondent)),
+      responses: evaluationState.responses,
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Server error";
     const mapped = httpError(message);
@@ -101,60 +103,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
   }
 }
 
-export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
-  try {
-    const token = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-    const { eventId: rawEventId } = await ctx.params;
-    const eventId = String(rawEventId ?? "").trim();
-    if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
-
-    const { supabaseAdmin, callerId } = await requireCaller(token);
-    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
-    if (event.event_type !== "training") {
-      return NextResponse.json({ error: "Only training sessions can be debriefed." }, { status: 400 });
-    }
-
-    const attendeeRes = await supabaseAdmin.from("club_event_attendees").select("player_id").eq("event_id", eventId);
-    if (attendeeRes.error) throw new Error(attendeeRes.error.message);
-    const allowedIds = (attendeeRes.data ?? []).map((row: { player_id: string }) => row.player_id);
-    const body = await req.json().catch(() => ({}));
-    const normalized = normalizeDebriefSaveInput(body, allowedIds);
-    const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
-    assertCoachTrainingReportAllowed(assistanceEnabled, normalized.report_text);
-
-    const saveRes = await supabaseAdmin.rpc("save_coach_training_debrief_v2", {
-      p_event_id: eventId,
-      p_coach_id: callerId,
-      p_source_text: normalized.report_text,
-      p_report_scope: normalized.report_scope,
-      p_collective_summary_text: normalized.collective_summary_text,
-      p_individual_comments: normalized.individual_comments,
-      p_reviews: normalized.reviews,
-      p_update_report: assistanceEnabled,
-    });
-    if (saveRes.error) throw new Error(saveRes.error.message);
-
-    const versionRes = assistanceEnabled
-      ? await supabaseAdmin
-          .from("coach_training_debriefs")
-          .select("report_version")
-          .eq("event_id", eventId)
-          .maybeSingle()
-      : { data: null, error: null };
-    if (versionRes.error) throw new Error(versionRes.error.message);
-
-    return NextResponse.json({
-      ok: true,
-      debriefId: saveRes.data,
-      reportVersion: Number(versionRes.data?.report_version ?? 0) || null,
-    });
-  } catch (error: unknown) {
-    if (error instanceof CoachDebriefValidationError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
-    }
-    const message = error instanceof Error ? error.message : "Server error";
-    const mapped = httpError(message);
-    return NextResponse.json({ error: mapped.message }, { status: mapped.status });
-  }
+/** Retired collective save: use PUT /debrief/player for a reviewed participant. */
+export async function PUT() {
+  return NextResponse.json({ error: "Use the guided per-player evaluation.", code: "guided_evaluation_required" }, { status: 410 });
 }

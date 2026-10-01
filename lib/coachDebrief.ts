@@ -112,9 +112,10 @@ export function needsCoachPlayerEvaluation(
   recordedStatus: CoachAttendanceStatus | null,
   ratings: Array<number | null>
 ) {
+  if (recordedStatus === "absent") return false;
   if (recordedStatus !== "present") return true;
   return ratings.some(
-    (rating) => rating == null || rating < COACH_RATING_MIN || rating > COACH_RATING_MAX
+    (rating) => rating == null || !Number.isInteger(rating) || rating < COACH_RATING_MIN || rating > COACH_RATING_MAX
   );
 }
 

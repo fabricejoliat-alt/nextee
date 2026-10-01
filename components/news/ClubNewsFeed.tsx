@@ -147,10 +147,11 @@ export default function ClubNewsFeed({ scope, titleFr, titleEn, titleDe, titleIt
           if (cancelled) return;
           setViewerRole(ctx.role);
           setEffectivePlayerId(ctx.effectiveUserId);
-          const childParam = ctx.role === "parent" && ctx.effectiveUserId ? `?child_id=${encodeURIComponent(ctx.effectiveUserId)}` : "";
-          url = `/api/player/news${childParam}`;
+          const params = new URLSearchParams({ locale });
+          if (ctx.role === "parent" && ctx.effectiveUserId) params.set("child_id", ctx.effectiveUserId);
+          url = `/api/player/news?${params.toString()}`;
         } else {
-          url = "/api/coach/news";
+          url = `/api/coach/news?locale=${encodeURIComponent(locale)}`;
         }
 
         const res = await fetch(url, {
@@ -176,7 +177,7 @@ export default function ClubNewsFeed({ scope, titleFr, titleEn, titleDe, titleIt
     return () => {
       cancelled = true;
     };
-  }, [scope, tr]);
+  }, [scope, tr, locale]);
 
   function resolveOpenHref(item: NewsItem) {
     if (item.linked_camp_id) {

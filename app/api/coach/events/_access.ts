@@ -1,4 +1,4 @@
-import { isOrgStaffMember } from "@/app/api/messages/_lib";
+import { canCoachAccessEvent } from "@/lib/coachAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type CoachEventAccessRow = {
@@ -28,16 +28,8 @@ export async function requireCoachEventAccess(
   if (!eventRes.data?.id) throw new Error("event_not_found");
 
   const event = eventRes.data as CoachEventAccessRow;
-  if (event.club_id && (await isOrgStaffMember(supabaseAdmin, event.club_id, callerId))) return event;
-
-  const [headRes, assistantRes, assignedRes] = await Promise.all([
-    supabaseAdmin.from("coach_groups").select("id").eq("id", event.group_id).eq("head_coach_user_id", callerId).maybeSingle(),
-    supabaseAdmin.from("coach_group_coaches").select("id").eq("group_id", event.group_id).eq("coach_user_id", callerId).maybeSingle(),
-    supabaseAdmin.from("club_event_coaches").select("event_id").eq("event_id", eventId).eq("coach_id", callerId).maybeSingle(),
-  ]);
-  if (headRes.error) throw new Error(headRes.error.message);
-  if (assistantRes.error) throw new Error(assistantRes.error.message);
-  if (assignedRes.error) throw new Error(assignedRes.error.message);
-  if (!headRes.data?.id && !assistantRes.data?.id && !assignedRes.data?.event_id) throw new Error("forbidden");
+  if (!(await canCoachAccessEvent(supabaseAdmin, callerId, eventId, event.group_id, event.club_id))) {
+    throw new Error("forbidden");
+  }
   return event;
 }

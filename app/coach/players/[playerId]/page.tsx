@@ -742,6 +742,7 @@ export default function GolfDashboardPage() {
   const [playerProfile, setPlayerProfile] = useState<ProfileLite | null>(null);
   const [sharedClubNames, setSharedClubNames] = useState<string[]>([]);
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
+  const [sensitiveClubIds, setSensitiveClubIds] = useState<string[]>([]);
   const [coachId, setCoachId] = useState<string>("");
   const [trainingScope, setTrainingScope] = useState<TrainingScope>("all");
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
@@ -796,6 +797,7 @@ export default function GolfDashboardPage() {
       setAccessChecked(false);
       setCanLoadData(false);
       setCanAccessSensitiveSections(false);
+      setSensitiveClubIds([]);
       setError(null);
       setValidationDashboard(null);
       setValidationError(null);
@@ -832,6 +834,7 @@ export default function GolfDashboardPage() {
           : [];
         if (nextSharedClubIds.length === 0) throw new Error("Access denied for this player.");
         setSharedClubIds(nextSharedClubIds);
+        setSensitiveClubIds(Array.isArray(accessJson?.access?.sensitive_club_ids) ? accessJson.access.sensitive_club_ids : []);
 
         const sensitiveAccess = Boolean(accessJson?.access?.can_access_sensitive_sections);
         setCanAccessSensitiveSections(sensitiveAccess);
@@ -1156,32 +1159,16 @@ export default function GolfDashboardPage() {
 
       setLoadingCoachEvaluations(true);
       try {
-        const fbRes = await supabase
-          .from("club_event_coach_feedback")
-          .select("event_id,coach_id,engagement,attitude,performance,private_note,player_note")
-          .eq("player_id", playerId)
-          .eq("coach_id", coachId)
-          .limit(500);
-        if (fbRes.error) throw new Error(fbRes.error.message);
-
-        const feedbacks = (fbRes.data ?? []) as CoachEvaluationFeedbackRow[];
-        const eventIds = Array.from(new Set(feedbacks.map((x) => x.event_id).filter(Boolean)));
-        if (eventIds.length === 0) {
-          setCoachEvaluations([]);
-          setCoachEvalPage(0);
-          return;
-        }
-
-        const evRes = await supabase
-          .from("club_events")
-          .select("id,starts_at,event_type,status,club_id,title")
-          .in("id", eventIds)
-          .in("event_type", ["training"])
-          .lt("starts_at", new Date().toISOString())
-          .limit(1000);
-        if (evRes.error) throw new Error(evRes.error.message);
-
-        const events = (evRes.data ?? []) as CoachEvaluationEventRow[];
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error("Session invalide.");
+        const response = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/feedback`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(String(body.error ?? "Load failed"));
+        const feedbacks = (body.feedback ?? []) as CoachEvaluationFeedbackRow[];
+        const events = (body.events ?? []) as CoachEvaluationEventRow[];
         const eventById = new Map(events.map((e) => [e.id, e]));
 
         const merged = feedbacks
@@ -1218,7 +1205,7 @@ export default function GolfDashboardPage() {
 
   useEffect(() => {
     let active = true;
-    if (!canLoadData || !canAccessSensitiveSections || activeSection !== "evaluations" || !playerId) {
+    if (!canLoadData || !canAccessSensitiveSections || activeSection !== "followup" || !playerId) {
       setValidatedPrivateNotes([]);
       return;
     }
@@ -2800,7 +2787,7 @@ function presetToSelectValue(p: Preset): Preset {
   }
 
   async function uploadDocument() {
-    if (!docFile || !playerId || sharedClubIds.length === 0 || uploadingDocument) return;
+    if (!docFile || !playerId || sensitiveClubIds.length === 0 || uploadingDocument) return;
     const finalDocName = docName.trim();
     if (!finalDocName) {
       setError("Veuillez saisir un nom de document.");
@@ -2821,7 +2808,7 @@ function presetToSelectValue(p: Preset): Preset {
         },
         body: JSON.stringify({
           action: "prepare",
-          organization_id: sharedClubIds[0],
+          organization_id: sensitiveClubIds[0],
           coach_only: false,
           original_name: uploadFile.name,
           mime_type: uploadFile.type,
@@ -2859,7 +2846,7 @@ function presetToSelectValue(p: Preset): Preset {
         },
         body: JSON.stringify({
           action: "finalize",
-          organization_id: sharedClubIds[0],
+          organization_id: sensitiveClubIds[0],
           coach_only: false,
           storage_path: uploadPath,
           reservation_token: reservationToken,
@@ -3686,7 +3673,7 @@ function presetToSelectValue(p: Preset): Preset {
 
   return (
     <main className={managerStyles.page}>
-      <nav className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" /><Link href="/coach/players">Juniors</Link><ChevronRight size={13} aria-hidden="true" /><span>{fullName(playerProfile) || "Junior"}</span></nav>
+      <nav data-ui="breadcrumb" className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true" /><Link href="/coach/players">Juniors</Link><ChevronRight size={13} aria-hidden="true" /><span>{fullName(playerProfile) || "Junior"}</span></nav>
       <header className={managerStyles.topline}><div><h1>{fullName(playerProfile) || "Junior"}</h1><p className={managerStyles.lead}>Suivi sportif, activités et progression du junior.</p></div><div className={managerStyles.actions}><Link className={actionStyles.backButton} href={returnHref}><ArrowLeft size={16} aria-hidden="true" />Retour aux juniors</Link></div></header>
       {!accessChecked ? <section className={managerStyles.panel}><CompactLoadingBlock label={t("common.loading")} /></section> : null}
       {error && <div className={managerStyles.alertError} role="alert">{error}</div>}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { EvaluationChoice, EvaluationResponseFormat } from "@/lib/evaluationCriteria";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Props = {
   name: string;
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export default function EvaluationResponseField({ name, format, choices, value, onChange, disabled }: Props) {
+  const { t } = useI18n();
   if (format === "short_text") {
     return (
       <input
@@ -19,7 +21,7 @@ export default function EvaluationResponseField({ name, format, choices, value, 
         value={typeof value === "string" ? value : ""}
         maxLength={240}
         disabled={disabled}
-        placeholder="Votre réponse…"
+        placeholder={t("coach.responsePlaceholder")}
         onChange={(event) => onChange(event.target.value || null)}
       />
     );
@@ -37,7 +39,7 @@ export default function EvaluationResponseField({ name, format, choices, value, 
             aria-pressed={selected}
             onClick={() => onChange(selected ? null : choice.value)}
             style={{
-              minHeight: 38,
+              minHeight: 44,
               padding: "7px 11px",
               borderRadius: 10,
               border: selected ? "1px solid #35483b" : "1px solid rgba(0,0,0,.12)",

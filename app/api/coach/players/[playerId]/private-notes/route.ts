@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
       .from("coach_player_private_notes")
       .select("id,event_id,organization_id,player_id,author_coach_id,body,source,source_report_version,validated_at,created_at")
       .eq("player_id", playerId)
-      .in("organization_id", access.sharedClubIds)
+      .in("organization_id", access.sensitiveClubIds)
       .order("created_at", { ascending: false })
       .limit(200);
     if (notesRes.error) throw new Error(notesRes.error.message);

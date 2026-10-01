@@ -845,6 +845,7 @@ export default function PlayerHomePage() {
       if (!token) return;
 
       const query = new URLSearchParams();
+      query.set("locale", locale);
       if (viewerUid && viewerUid !== userId) query.set("child_id", userId);
       const res = await fetch(`/api/player/home-upcoming?${query.toString()}`, {
         method: "GET",

@@ -1,0 +1,2 @@
+.dialog { margin:0; padding:var(--safe-top, env(safe-area-inset-top)) 0 0; border:0; border-right:1px solid rgba(255,255,255,.13); max-height:none; color:#fff; }
+.dialog a:focus-visible,.dialog button:focus-visible { outline:2px solid #fff; outline-offset:-3px; }

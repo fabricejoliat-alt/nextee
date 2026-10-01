@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireCaller, isOrgStaffMember } from "@/app/api/messages/_lib";
+import { requireCaller } from "@/app/api/messages/_lib";
+import { canCoachAccessEvent, requireCoachEventPlayer } from "@/lib/coachAccess";
 import { signPlayerDocumentRows } from "@/lib/playerDocumentStorage";
 
 function mustEnv(name: string) {
@@ -11,25 +12,6 @@ function mustEnv(name: string) {
 
 function uniq(values: string[]) {
   return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
-}
-
-async function canCoachAccessEvent(supabaseAdmin: any, callerId: string, eventId: string, groupId: string, clubId: string) {
-  if (clubId) {
-    const staffAllowed = await isOrgStaffMember(supabaseAdmin, clubId, callerId);
-    if (staffAllowed) return true;
-  }
-
-  const [headRes, assistantRes, assignedRes] = await Promise.all([
-    supabaseAdmin.from("coach_groups").select("id").eq("id", groupId).eq("head_coach_user_id", callerId).maybeSingle(),
-    supabaseAdmin.from("coach_group_coaches").select("id").eq("group_id", groupId).eq("coach_user_id", callerId).maybeSingle(),
-    supabaseAdmin.from("club_event_coaches").select("event_id").eq("event_id", eventId).eq("coach_id", callerId).maybeSingle(),
-  ]);
-
-  if (headRes.error) throw new Error(headRes.error.message);
-  if (assistantRes.error) throw new Error(assistantRes.error.message);
-  if (assignedRes.error) throw new Error(assignedRes.error.message);
-
-  return Boolean(headRes.data?.id || assistantRes.data?.id || assignedRes.data?.event_id);
 }
 
 export async function GET(
@@ -61,6 +43,7 @@ export async function GET(
     const clubId = String(event.club_id ?? "").trim();
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    await requireCoachEventPlayer(supabaseAdmin, eventId, playerId);
 
     const [playerRes, eventStructureRes, playerStructureRes, sessionRes, attendeeRes, feedbackRowsRes, attendanceRes, playerFeedbackRes] = await Promise.all([
       supabaseAdmin
@@ -251,119 +234,14 @@ export async function GET(
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: message === "unknown_attendee" ? 404 : 500 });
   }
 }
 
-export async function POST(
-  req: NextRequest,
-  ctx: { params: Promise<{ eventId: string; playerId: string }> }
-) {
-  try {
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const { eventId: rawEventId, playerId: rawPlayerId } = await ctx.params;
-    const eventId = String(rawEventId ?? "").trim();
-    const playerId = String(rawPlayerId ?? "").trim();
-    if (!eventId || !playerId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
-
-    const body = await req.json().catch(() => ({}));
-    const attendanceStatus = String(body?.attendance_status ?? "").trim();
-    const engagement = body?.engagement == null ? null : Number(body.engagement);
-    const attitude = body?.attitude == null ? null : Number(body.attitude);
-    const performance = body?.performance == null ? null : Number(body.performance);
-    const privateNote = String(body?.private_note ?? "").trim() || null;
-    const playerNote = String(body?.player_note ?? "").trim() || null;
-    const visibleToPlayer = Boolean(body?.visible_to_player);
-    const customResponses = body?.custom_responses && typeof body.custom_responses === "object" ? body.custom_responses as Record<string, unknown> : {};
-
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const { callerId } = await requireCaller(accessToken);
-
-    const eventRes = await supabaseAdmin
-      .from("club_events")
-      .select("id,group_id,club_id,event_type")
-      .eq("id", eventId)
-      .maybeSingle();
-    if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
-    if (!eventRes.data?.id) return NextResponse.json({ error: "Training not found." }, { status: 404 });
-
-    const event = eventRes.data as any;
-    const clubId = String(event.club_id ?? "").trim();
-    const allowed = await canCoachAccessEvent(
-      supabaseAdmin,
-      callerId,
-      eventId,
-      String(event.group_id ?? "").trim(),
-      String(event.club_id ?? "").trim()
-    );
-    if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    const coachCriteriaRes = attendanceStatus !== "absent"
-      ? await supabaseAdmin.from("club_event_evaluation_criteria").select("*").eq("event_id", eventId).eq("is_enabled", true).in("snapshot_respondent", ["coach", "both"])
-      : ({ data: [], error: null } as const);
-    if (coachCriteriaRes.error) return NextResponse.json({ error: coachCriteriaRes.error.message }, { status: 400 });
-    const missingCriterion = (coachCriteriaRes.data ?? []).find((criterion: any) => criterion.snapshot_is_required && (customResponses[criterion.id] === null || customResponses[criterion.id] === undefined || customResponses[criterion.id] === ""));
-    if (missingCriterion) return NextResponse.json({ error: `Le critère « ${missingCriterion.snapshot_name} » est obligatoire.` }, { status: 400 });
-
-    if (attendanceStatus) {
-      if (!["expected", "present", "absent", "excused"].includes(attendanceStatus)) {
-        return NextResponse.json({ error: "Invalid attendance_status" }, { status: 400 });
-      }
-      const attRes = await supabaseAdmin
-        .from("club_event_attendees")
-        .update({ status: attendanceStatus })
-        .eq("event_id", eventId)
-        .eq("player_id", playerId);
-      if (attRes.error) return NextResponse.json({ error: attRes.error.message }, { status: 400 });
-    }
-
-    const feedbackPayload = {
-      event_id: eventId,
-      player_id: playerId,
-      coach_id: callerId,
-      engagement: attendanceStatus === "absent" ? null : engagement,
-      attitude: attendanceStatus === "absent" ? null : attitude,
-      performance: attendanceStatus === "absent" ? null : performance,
-      visible_to_player: attendanceStatus === "absent" ? false : visibleToPlayer,
-      private_note: privateNote,
-      player_note: attendanceStatus === "absent" ? null : playerNote,
-    };
-
-    const deleteRes = await supabaseAdmin
-      .from("club_event_coach_feedback")
-      .delete()
-      .eq("event_id", eventId)
-      .eq("player_id", playerId);
-    if (deleteRes.error) return NextResponse.json({ error: deleteRes.error.message }, { status: 400 });
-
-    const insertRes = await supabaseAdmin
-      .from("club_event_coach_feedback")
-      .insert(feedbackPayload)
-      .select("event_id,player_id,coach_id,engagement,attitude,performance,visible_to_player,private_note,player_note")
-      .single();
-    if (insertRes.error) return NextResponse.json({ error: insertRes.error.message }, { status: 400 });
-
-    if (attendanceStatus !== "absent") {
-      for (const criterion of coachCriteriaRes.data ?? []) {
-        const value = customResponses[criterion.id];
-        const answered = value !== null && value !== undefined && value !== "";
-        if (!answered) {
-          await supabaseAdmin.from("club_event_evaluation_responses").delete().eq("event_criterion_id", criterion.id).eq("player_id", playerId).eq("respondent_role", "coach");
-          continue;
-        }
-        const responseRes = await supabaseAdmin.from("club_event_evaluation_responses").upsert({ club_id: clubId, event_criterion_id: criterion.id, event_id: eventId, player_id: playerId, respondent_user_id: callerId, respondent_role: "coach", value_json: value }, { onConflict: "event_criterion_id,player_id,respondent_role" });
-        if (responseRes.error) return NextResponse.json({ error: responseRes.error.message }, { status: 400 });
-      }
-    }
-
-    return NextResponse.json({
-      feedback: insertRes.data,
-      attendanceStatus: attendanceStatus || null,
-    });
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+/** Retired: all Coach evaluations must use the validated, transactional guided flow. */
+export async function POST() {
+  return NextResponse.json(
+    { error: "This evaluation endpoint has been retired. Use the guided debrief.", code: "guided_evaluation_required" },
+    { status: 410 }
+  );
 }

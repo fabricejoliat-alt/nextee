@@ -1,3 +1,4 @@
+import { coachMessages } from "./coachMessages.ts";
 export type AppLocale = "fr" | "en" | "de" | "it";
 
 export const DEFAULT_LOCALE: AppLocale = "fr";
@@ -133,6 +134,7 @@ export const messages = ({
     "coachDebrief.commentHelp": "Ce retour est visible par le junior. Il n’est pas utilisé pour préparer les points d’attention du prochain entraînement.",
     "coachDebrief.defaultPresentHint": "Aucun statut enregistré : Présent est proposé par défaut, sans enregistrement automatique.",
     "coachDebrief.ratingsRequired": "Attribuez les trois critères ActiviTee avant d’enregistrer ce joueur.",
+    "coachDebrief.customRequired": "Complétez le critère obligatoire :",
     "coachDebrief.proposalApproved": "La proposition a remplacé les notes visibles par le junior.",
     "coachDebrief.proposalApprovedShort": "Version utilisée",
     "coachDebrief.playerSaved": "Évaluation enregistrée pour ce joueur.",
@@ -670,6 +672,7 @@ export const messages = ({
     "coachDebrief.commentHelp": "This feedback is visible to the junior. It is not used to prepare the focus points for the next training session.",
     "coachDebrief.defaultPresentHint": "No status is recorded: Present is shown by default without saving automatically.",
     "coachDebrief.ratingsRequired": "Complete all three ActiviTee ratings before saving this player.",
+    "coachDebrief.customRequired": "Complete the required criterion:",
     "coachDebrief.proposalApproved": "The proposal replaced the note visible to the junior.",
     "coachDebrief.proposalApprovedShort": "Version applied",
     "coachDebrief.playerSaved": "Evaluation saved for this player.",
@@ -1198,6 +1201,7 @@ const deOverrides: Record<string, string> = {
   "coachDebrief.commentHelp": "Dieses Feedback ist für den Junior sichtbar. Es wird nicht für die Schwerpunkte des nächsten Trainings verwendet.",
   "coachDebrief.defaultPresentHint": "Kein Status gespeichert: Anwesend wird standardmässig angezeigt, aber nicht automatisch gespeichert.",
   "coachDebrief.ratingsRequired": "Erfasse alle drei ActiviTee-Kriterien, bevor du diesen Spieler speicherst.",
+  "coachDebrief.customRequired": "Fülle das Pflichtkriterium aus:",
   "coachDebrief.proposalApproved": "Der Vorschlag hat die für den Junior sichtbare Notiz ersetzt.",
   "coachDebrief.proposalApprovedShort": "Version übernommen",
   "coachDebrief.playerSaved": "Bewertung für diesen Spieler gespeichert.",
@@ -1518,6 +1522,7 @@ const itOverrides: Record<string, string> = {
   "coachDebrief.commentHelp": "Questo feedback è visibile al junior. Non viene usato per preparare i punti di attenzione del prossimo allenamento.",
   "coachDebrief.defaultPresentHint": "Nessuno stato registrato: Presente è mostrato per impostazione predefinita, senza salvataggio automatico.",
   "coachDebrief.ratingsRequired": "Completa tutti e tre i criteri ActiviTee prima di salvare questo giocatore.",
+  "coachDebrief.customRequired": "Completa il criterio obbligatorio:",
   "coachDebrief.proposalApproved": "La proposta ha sostituito la nota visibile al junior.",
   "coachDebrief.proposalApprovedShort": "Versione applicata",
   "coachDebrief.playerSaved": "Valutazione salvata per questo giocatore.",
@@ -1721,3 +1726,5 @@ const itOverrides: Record<string, string> = {
 
 messages.de = { ...messages.en, ...deOverrides };
 messages.it = { ...messages.en, ...itOverrides };
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], coachMessages[locale]);

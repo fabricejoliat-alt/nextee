@@ -1,3 +1,6 @@
+"use client";
+
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { MapPin } from "lucide-react";
@@ -20,7 +23,8 @@ type Props = {
   children?: ReactNode;
 };
 
-export default function CoachPlayerActivityCard({ startsAt, endsAt, dateLocale, typeLabel, title, groupName, clubName, location, href, actionLabel = "Ouvrir l’activité", statusLabel, actions, children }: Props) {
+export default function CoachPlayerActivityCard({ startsAt, endsAt, dateLocale, typeLabel, title, groupName, clubName, location, href, actionLabel, statusLabel, actions, children }: Props) {
+  const { t } = useI18n();
   const date = new Date(startsAt);
   const formatter = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(dateLocale, options).format(date);
   const time = formatter({ hour: "2-digit", minute: "2-digit" });
@@ -37,14 +41,14 @@ export default function CoachPlayerActivityCard({ startsAt, endsAt, dateLocale, 
               {statusLabel ? <span className="pill-soft">{statusLabel}</span> : null}
             </div>
             <div className="manager-calendar-detail-grid">
-              <div><span>Groupe</span><b>{groupName}</b></div>
-              <div><span>Club</span><b>{clubName}</b></div>
-              <div><span>Horaire</span><b>{time}{endTime ? ` — ${endTime}` : ""}</b></div>
+              <div><span>{t("coach.groups.group")}</span><b>{groupName}</b></div>
+              <div><span>{t("coach.directory.club")}</span><b>{clubName}</b></div>
+              <div><span>{t("coach.camps.time")}</span><b>{time}{endTime ? ` — ${endTime}` : ""}</b></div>
             </div>
             {children}
             <div className="planning-event-footer">
-              <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{location?.trim() || "Lieu non disponible"}</span></span>
-              {actions ? <div className="user-mgmt-card-actions">{actions}</div> : href ? <div className="user-mgmt-card-actions"><Link className={actionStyles.secondaryButton} href={href}>{actionLabel}</Link></div> : null}
+              <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{location?.trim() || t("coach.activity.noPlace")}</span></span>
+              {actions ? <div className="user-mgmt-card-actions">{actions}</div> : href ? <div className="user-mgmt-card-actions"><Link className={actionStyles.secondaryButton} href={href}>{actionLabel ?? t("coach.camps.openActivity")}</Link></div> : null}
             </div>
           </div>
         </div>

@@ -13,7 +13,10 @@
 
 .tableThumbnail{display:block;width:76px;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#e9efe8}.noThumbnail{color:#a4aea5;font-size:14px}
 
+.platformGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.platformCard{overflow:hidden;border:1px solid #dfe7de;border-radius:13px;background:#fbfdf9}.platformCard>img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}.platformCard>div{display:grid;gap:7px;padding:15px}.platformCard span{color:#728077;font-size:10px;font-weight:750}.platformCard h3,.platformCard p{margin:0}.platformCard h3{color:#35483b;font-size:15px}.platformCard p,.platformCard div{color:#66736a;font-size:12px;line-height:1.5}
+
 @media(max-width:640px){
+  .platformGrid{grid-template-columns:1fr}
   .newsTable{
     min-width: 0;
   }

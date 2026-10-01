@@ -496,7 +496,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
     <div className={managerDesign ? campsStyles.page : "player-dashboard-bg"}>
       <div className={managerDesign ? styles.managerContent : "app-shell marketplace-page"}>
         {managerDesign ? (
-          <nav className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
+          <nav data-ui="breadcrumb" className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
             <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><span>Notifications</span>
           </nav>
         ) : null}

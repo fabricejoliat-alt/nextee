@@ -35,6 +35,7 @@ export async function GET(
     return NextResponse.json({
       access: {
         shared_club_ids: access.sharedClubIds,
+        sensitive_club_ids: access.sensitiveClubIds,
         can_access_sensitive_sections: access.canAccessSensitiveSections,
       },
       profile: profileRes.data ?? null,

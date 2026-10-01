@@ -29,3 +29,7 @@
 .participantRow b { color: #2f4135; font: 650 12px var(--font-inter),sans-serif; }
 
 @media(max-width:640px){.overlay{padding:10px}.modal{max-height:calc(100vh - 20px);border-radius:14px}.modalHeader,.modalBody,.modalFooter{padding-left:14px;padding-right:14px}.registrationRow>div:first-child{grid-template-columns:1fr}.modalFooter>*{flex:1}}
+.modal { margin:auto; max-width:calc(100vw - 28px); max-height:calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+.formBody { border:0; margin:0; min-width:0; }
+.modal button,.modal select,.modal input,.addPlayer { min-height:44px; }
+.modal :focus-visible { outline:2px solid #526b50; outline-offset:2px; }

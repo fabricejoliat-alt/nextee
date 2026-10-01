@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Bell, BellRing, ChevronRight, Settings, Smartphone } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
@@ -15,6 +15,7 @@ import {
   upsertMyNotificationPreferences,
 } from "@/lib/notificationPreferences";
 import { disablePushSubscription, ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
+import { nextNotificationKinds } from "@/lib/notificationKindSelection";
 
 type Props = {
   homeHref: string;
@@ -44,6 +45,9 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [reload, setReload] = useState(0);
+  const saveLock = useRef(false);
 
   const [receiveInApp, setReceiveInApp] = useState(DEFAULT_NOTIFICATION_PREFERENCES.receiveInApp);
   const [receivePush, setReceivePush] = useState(DEFAULT_NOTIFICATION_PREFERENCES.receivePush);
@@ -58,138 +62,132 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const allKindIds = useMemo(() => notificationKindOptions.map((option) => option.kind), [notificationKindOptions]);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       setLoading(true);
+      setLoaded(false);
       setError(null);
       try {
         const uRes = await supabase.auth.getUser();
-        if (uRes.error || !uRes.data.user) throw new Error(tr("Session invalide.", "Invalid session.", "Ungültige Sitzung.", "Sessione non valida."));
-
+        if (uRes.error || !uRes.data.user) throw new Error("unauthenticated");
         const uid = uRes.data.user.id;
-        setUserId(uid);
-
         const prefs = await loadMyNotificationPreferences(uid);
+        if (!active) return;
+        setUserId(uid);
         setReceiveInApp(prefs.receiveInApp);
         setReceivePush(prefs.receivePush);
         setEnabledKinds(prefs.enabledKinds);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : tr("Erreur de chargement.", "Loading error.", "Ladefehler.", "Errore di caricamento.");
-        setError(message);
+        setLoaded(true);
+      } catch {
+        if (active) setError("notifications.settings.loadError");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => { active = false; };
+  }, [reload]);
 
-  async function persist(next: { receiveInApp?: boolean; receivePush?: boolean; enabledKinds?: string[] }) {
-    if (!userId) return;
+  async function persist(makePatch: () => Promise<{ receiveInApp?: boolean; receivePush?: boolean; enabledKinds?: string[] } | null>) {
+    if (!userId || !loaded || saveLock.current) return;
+    saveLock.current = true;
     setSaving(true);
     setError(null);
     try {
+      const next = await makePatch();
+      if (!next) return;
       const updated = await upsertMyNotificationPreferences(userId, next);
       setReceiveInApp(updated.receiveInApp);
       setReceivePush(updated.receivePush);
       setEnabledKinds(updated.enabledKinds);
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : tr("Erreur de sauvegarde.", "Save error.", "Speicherfehler.", "Errore di salvataggio.");
-      setError(message);
+    } catch {
+      setError("notifications.settings.saveError");
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   }
 
   async function onToggleInApp(value: boolean) {
-    setReceiveInApp(value);
-    await persist({ receiveInApp: value });
+    await persist(async () => ({ receiveInApp: value }));
   }
 
   async function onTogglePush(value: boolean) {
-    if (!pushSupported) return;
-
-    if (value) {
-      const res = await ensurePushSubscription({ prompt: true });
-      if (!res.ok) {
-        if (res.reason === "denied") {
-          setError(tr("Permission notifications refusée par le navigateur.", "Notification permission denied by browser.", "Benachrichtigungsberechtigung vom Browser abgelehnt.", "Permesso notifiche rifiutato dal browser."));
+    if (!pushSupported || !receiveInApp) return;
+    await persist(async () => {
+      try {
+        if (value) {
+          const res = await ensurePushSubscription({ prompt: true });
+          if (!res.ok) {
+            setError(res.reason === "denied" ? "notifications.settings.pushDenied" : "notifications.settings.pushError");
+            return null;
+          }
         } else {
-          setError(tr("Impossible d’activer le push.", "Could not enable push.", "Push konnte nicht aktiviert werden.", "Impossibile attivare il push."));
+          const res = await disablePushSubscription();
+          if (!res.ok) {
+            setError("notifications.settings.pushError");
+            return null;
+          }
         }
-        return;
+        return { receivePush: value };
+      } catch {
+        setError("notifications.settings.pushError");
+        return null;
       }
-      setReceivePush(true);
-      await persist({ receivePush: true });
-      return;
-    }
-
-    await disablePushSubscription();
-    setReceivePush(false);
-    await persist({ receivePush: false });
+    });
   }
 
   async function onToggleKind(kind: string, enabled: boolean) {
-    let next: string[] = [];
-
-    // Empty array means "all kinds enabled" by default.
-    if (enabledKinds.length === 0) {
-      if (enabled) return;
-      next = allKindIds.filter((k) => k !== kind);
-    } else {
-      next = enabled ? Array.from(new Set([...enabledKinds, kind])) : enabledKinds.filter((k) => k !== kind);
-      if (next.length === allKindIds.length) next = [];
-    }
-
-    setEnabledKinds(next);
-    await persist({ enabledKinds: next });
+    if (!receiveInApp) return;
+    await persist(async () => ({ enabledKinds: nextNotificationKinds(enabledKinds, kind, enabled, allKindIds) }));
   }
 
   if (managerDesign) {
     return (
       <main className={campsStyles.page}>
-        <nav className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
-          <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><Link href={notificationsHref}>Notifications</Link><ChevronRight size={13} /><span>Paramètres</span>
+        <nav data-ui="breadcrumb" className={campsStyles.breadcrumb} aria-label={t("common.breadcrumb")}>
+          <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><Link href={notificationsHref}>{t("notifications.settings.notifications")}</Link><ChevronRight size={13} /><span>{t("notifications.settings.breadcrumb")}</span>
         </nav>
 
         <div className={campsStyles.topline}>
-          <div><h1>Paramètres de notifications</h1><p className={campsStyles.lead}>Choisissez comment recevoir les notifications et les activités qui vous intéressent.</p></div>
-          <div className={`${campsStyles.actions} ${styles.headerActions}`}><Link className={campsStyles.secondary} href={notificationsHref}><ArrowLeft size={15} />Retour aux notifications</Link></div>
+          <div><h1>{t("notifications.settings.title")}</h1><p className={campsStyles.lead}>{t("notifications.settings.intro")}</p></div>
+          <div className={`${campsStyles.actions} ${styles.headerActions}`}><Link className={campsStyles.secondary} href={notificationsHref}><ArrowLeft size={15} />{t("notifications.settings.back")}</Link></div>
         </div>
 
-        {error ? <div className={campsStyles.alertError} role="alert">{error}</div> : null}
-        {saving ? <div className={styles.savingState} role="status">Enregistrement des préférences…</div> : null}
+        {error ? <div className={campsStyles.alertError} role="alert">{t(error)}{!loaded && !loading ? <button type="button" className={campsStyles.secondary} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button> : null}</div> : null}
+        {saving ? <div className={styles.savingState} role="status">{t("notifications.settings.saving")}</div> : null}
 
-        {loading ? <section className={campsStyles.panel}><ListLoadingBlock label="Chargement des préférences…" /></section> : <>
+        {loading ? <section className={campsStyles.panel}><ListLoadingBlock label={t("notifications.settings.loading")} /></section> : loaded ? <>
           <section className={campsStyles.panel}>
             <div className={campsStyles.panelHeader}>
-              <div className={styles.panelTitle}><span className={styles.panelIcon}><BellRing size={16} /></span><div><h2>Canaux de réception</h2><p>Activez les notifications dans ActiviTee et, si votre appareil le permet, les notifications push.</p></div></div>
+              <div className={styles.panelTitle}><span className={styles.panelIcon}><BellRing size={16} /></span><div><h2>{t("notifications.settings.channels")}</h2><p>{t("notifications.settings.channelsHint")}</p></div></div>
             </div>
             <div className={styles.settingsList}>
               <div className={styles.settingRow}>
                 <span className={styles.settingIcon}><Bell size={16} /></span>
-                <div className={styles.settingText}><strong>Notifications dans ActiviTee</strong><span>Affiche les nouvelles activités dans votre centre de notifications.</span></div>
-                <Toggle checked={receiveInApp} disabled={saving} label="Notifications dans ActiviTee" onToggle={(checked) => void onToggleInApp(checked)} />
+                <div className={styles.settingText}><strong>{t("notifications.settings.inApp")}</strong><span>{t("notifications.settings.inAppHint")}</span></div>
+                <Toggle checked={receiveInApp} disabled={saving} label={t("notifications.settings.inApp")} onToggle={(checked) => void onToggleInApp(checked)} />
               </div>
               <div className={`${styles.settingRow} ${!pushSupported ? styles.settingDisabled : ""}`}>
                 <span className={styles.settingIcon}><Smartphone size={16} /></span>
-                <div className={styles.settingText}><strong>Notifications push</strong><span>{pushSupported ? "Recevez les notifications dans l’application et votre navigateur mobile ou ordinateur." : "Les notifications push ne sont pas prises en charge sur cet appareil."}</span></div>
-                <Toggle checked={receivePush} disabled={saving || !pushSupported || !receiveInApp} label="Notifications push" onToggle={(checked) => void onTogglePush(checked)} />
+                <div className={styles.settingText}><strong>{t("notifications.settings.push")}</strong><span>{t(pushSupported ? "notifications.settings.pushHint" : "notifications.settings.unsupported")}</span></div>
+                <Toggle checked={receivePush} disabled={saving || !pushSupported || !receiveInApp} label={t("notifications.settings.push")} onToggle={(checked) => void onTogglePush(checked)} />
               </div>
             </div>
           </section>
 
           <section className={`${campsStyles.panel} ${!receiveInApp ? styles.sectionDisabled : ""}`}>
             <div className={campsStyles.panelHeader}>
-              <div className={styles.panelTitle}><span className={styles.panelIcon}><Settings size={16} /></span><div><h2>Types de notifications</h2><p>Sélectionnez les catégories d’activité que vous souhaitez recevoir.</p></div></div>
+              <div className={styles.panelTitle}><span className={styles.panelIcon}><Settings size={16} /></span><div><h2>{t("notifications.settings.kinds")}</h2><p>{t("notifications.settings.kindsHint")}</p></div></div>
             </div>
             <div className={styles.kindGrid}>
               {notificationKindOptions.map((option) => {
                 const checked = enabledKinds.length === 0 || selectedKindsSet.has(option.kind);
-                const label = locale === "fr" ? option.labelFr : option.labelEn;
+                const label = t(`notifications.kind.${option.kind}`);
                 return <div className={styles.kindRow} key={option.kind}><span>{label}</span><Toggle checked={checked} disabled={saving || !receiveInApp} label={label} onToggle={(nextChecked) => void onToggleKind(option.kind, nextChecked)} /></div>;
               })}
             </div>
           </section>
-        </>}
+        </> : null}
       </main>
     );
   }
@@ -211,7 +209,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
               <Link className="cta-green cta-green-inline" href={homeHref}>{t("common.back")}</Link>
             </div>
           </div>
-          {error ? <div className="marketplace-error">{error}</div> : null}
+          {error ? <div className="marketplace-error" role="alert">{t(error)}{!loaded && !loading ? <button type="button" onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button> : null}</div> : null}
         </div>
 
         <div className="glass-section">
@@ -223,7 +221,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 
             {loading ? (
               <div style={{ opacity: 0.8, fontWeight: 800, fontSize: 13 }}>{t("common.loading")}</div>
-            ) : (
+            ) : loaded ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <label className="glass-card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: 12 }}>
                   <div style={{ display: "grid", gap: 4 }}>
@@ -349,7 +347,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
                           }}
                         >
                           <span style={{ fontWeight: 700, fontSize: 12, color: "rgba(0,0,0,0.72)", lineHeight: 1.35 }}>
-                            {locale === "fr" ? opt.labelFr : opt.labelEn}
+                            {t(`notifications.kind.${opt.kind}`)}
                           </span>
                           <span
                             role="switch"
@@ -398,7 +396,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
                   </div>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -407,5 +405,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 }
 
 function Toggle({ checked, disabled, label, onToggle }: { checked: boolean; disabled: boolean; label: string; onToggle: (checked: boolean) => void }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`${styles.toggle} ${checked ? styles.toggleChecked : ""}`} onClick={() => onToggle(!checked)}><span /></button>;
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`${styles.toggle} ${checked ? styles.toggleChecked : ""}`} onClick={() => onToggle(!checked)}>
+    <span className={styles.toggleTrack} aria-hidden="true"><span className={styles.toggleThumb} /></span>
+  </button>;
 }

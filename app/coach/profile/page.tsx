@@ -1,8 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import styles from "./CoachProfile.module.css";
 
 type ProfileRow = {
   id: string;
@@ -48,10 +52,10 @@ type ProfileCustomFieldGroup = {
   fields: ProfileCustomField[];
 };
 
-function displayHello(firstName?: string | null) {
+function displayHello(hello: string, firstName?: string | null) {
   const f = (firstName ?? "").trim();
-  if (!f) return "Salut";
-  return `Salut ${f}`;
+  if (!f) return hello;
+  return `${hello} ${f}`;
 }
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
@@ -70,13 +74,6 @@ function isAllowedImage(file: File) {
   return okTypes.includes(file.type);
 }
 
-function translateAuthMessage(message: string) {
-  if (message === "New password should be different from the old password.") {
-    return "Le nouveau mot de passe doit être différent de l’ancien.";
-  }
-  return message;
-}
-
 function normalizeDisplayEmail(raw: string | null | undefined) {
   const email = String(raw ?? "").trim().toLowerCase();
   if (!email) return "";
@@ -84,15 +81,18 @@ function normalizeDisplayEmail(raw: string | null | undefined) {
   return email;
 }
 
-function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
+function profileCustomFieldDisplayValue(rawValue: string | boolean | null | undefined) {
   if (rawValue == null || rawValue === "") return "—";
-  if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
   return String(rawValue);
 }
 
-export default function PlayerProfilePage() {
+export default function CoachProfilePage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const saveLock = useRef(false);
+  const avatarLock = useRef(false);
 
   // Avatar upload busy is separate so user can still edit fields
   const [avatarBusy, setAvatarBusy] = useState(false);
@@ -130,7 +130,7 @@ export default function PlayerProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const canSave = useMemo(() => !busy && !avatarBusy, [busy, avatarBusy]);
+  const canSave = loaded && !loading && !busy && !avatarBusy;
 
   // ✅ Avatar
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -156,14 +156,13 @@ export default function PlayerProfilePage() {
 
   async function load() {
     setLoading(true);
+    setLoaded(false);
     setError(null);
     setInfo(null);
-
+    try {
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide. Reconnecte-toi.");
-      setLoading(false);
-      return;
+      throw new Error("Missing session");
     }
 
     const uid = userRes.user.id;
@@ -180,7 +179,7 @@ export default function PlayerProfilePage() {
       });
       const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
       if (!customFieldsRes.ok) {
-        setError(String(customFieldsJson?.error ?? "Impossible de charger les champs personnalisés du profil."));
+        throw new Error("Custom fields unavailable");
       } else {
         const memberships = Array.isArray(customFieldsJson?.memberships) ? customFieldsJson.memberships : [];
         setCustomFieldGroups(
@@ -194,7 +193,7 @@ export default function PlayerProfilePage() {
         );
       }
     } else {
-      setCustomFieldGroups([]);
+      throw new Error("Missing session token");
     }
 
     // profile
@@ -220,9 +219,7 @@ export default function PlayerProfilePage() {
       .maybeSingle();
 
     if (profRes.error) {
-      setError(profRes.error.message);
-      setLoading(false);
-      return;
+      throw new Error("Profile unavailable");
     }
 
     const row = (profRes.data ?? null) as unknown as ProfileRow | null;
@@ -233,7 +230,7 @@ export default function PlayerProfilePage() {
     setBirthDate(row?.birth_date ?? "");
     setSex(row?.sex ?? "");
 
-    setHandedness((row?.handedness as any) ?? "");
+    setHandedness(row?.handedness === "right" || row?.handedness === "left" ? row.handedness : "");
 
     setAddress(row?.address ?? "");
     setPostalCode(row?.postal_code ?? "");
@@ -269,36 +266,37 @@ export default function PlayerProfilePage() {
       setClubs([]);
     }
 
-    setLoading(false);
+    setLoaded(true);
+    } catch {
+      setError("coach.profile.loadError");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     load();
-    return () => {
-      // cleanup when unmount (if crop src is a blob URL)
-      if (cropImageSrc?.startsWith("blob:")) URL.revokeObjectURL(cropImageSrc);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => () => { if (cropImageSrc?.startsWith("blob:")) URL.revokeObjectURL(cropImageSrc); }, [cropImageSrc]);
 
   async function save() {
-    if (!userId) return;
-
+    if (!userId || !canSave || saveLock.current || avatarLock.current) return;
+    saveLock.current = true;
     setBusy(true);
     setError(null);
     setInfo(null);
 
-    const nextPassword = newPassword.trim();
-    const nextPasswordConfirm = confirmPassword.trim();
+    let profileSaved = false;
+    try {
+    const nextPassword = newPassword;
+    const nextPasswordConfirm = confirmPassword;
     if (nextPassword || nextPasswordConfirm) {
       if (nextPassword.length < 8) {
-        setError("Le mot de passe doit contenir au moins 8 caractères.");
-        setBusy(false);
+        setError("coach.profile.passwordShort");
         return;
       }
       if (nextPassword !== nextPasswordConfirm) {
-        setError("Les mots de passe ne correspondent pas.");
-        setBusy(false);
+        setError("coach.profile.passwordMismatch");
         return;
       }
     }
@@ -326,10 +324,9 @@ export default function PlayerProfilePage() {
       );
 
     if (error) {
-      setError(error.message);
-      setBusy(false);
-      return;
+      throw new Error("Profile save failed");
     }
+    profileSaved = true;
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token ?? "";
@@ -344,7 +341,8 @@ export default function PlayerProfilePage() {
       }))
       .filter((group) => Object.keys(group.values).length > 0);
 
-    if (token && editableCustomFieldUpdates.length > 0) {
+    if (editableCustomFieldUpdates.length > 0) {
+      if (!token) throw new Error("Missing session token");
       const customFieldsRes = await fetch("/api/profile/custom-fields", {
         method: "PATCH",
         headers: {
@@ -353,31 +351,31 @@ export default function PlayerProfilePage() {
         },
         body: JSON.stringify({ updates: editableCustomFieldUpdates }),
       });
-      const customFieldsJson = await customFieldsRes.json().catch(() => ({}));
       if (!customFieldsRes.ok) {
-        setError(String(customFieldsJson?.error ?? "Impossible d’enregistrer les champs personnalisés."));
-        setBusy(false);
-        return;
+        throw new Error("Custom fields save failed");
       }
     }
 
     if (nextPassword) {
       const { error: passwordError } = await supabase.auth.updateUser({ password: nextPassword });
       if (passwordError) {
-        setError(translateAuthMessage(passwordError.message));
-        setBusy(false);
-        return;
+        throw new Error("Password update failed");
       }
       setNewPassword("");
       setConfirmPassword("");
     }
 
-    setInfo("Profil enregistré ✅");
-    setBusy(false);
+    setInfo("coach.profile.saved");
+    } catch {
+      setError(profileSaved ? "coach.profile.partialError" : "coach.profile.saveError");
+    } finally {
+      saveLock.current = false;
+      setBusy(false);
+    }
   }
 
   function openFilePicker() {
-    if (loading || avatarBusy || !userId) return;
+    if (!canSave || !userId) return;
     setError(null);
     setInfo(null);
     fileInputRef.current?.click();
@@ -386,19 +384,19 @@ export default function PlayerProfilePage() {
   async function onPickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
-    if (!file || !userId) return;
+    if (!file || !userId || !canSave) return;
 
     setError(null);
     setInfo(null);
 
     if (!isAllowedImage(file)) {
-      setError("Format non pris en charge. Utilise JPG, PNG ou WEBP.");
+      setError("coach.profile.photoFormat");
       return;
     }
 
     // 4MB limit (ajuste si tu veux)
     if (file.size > 4 * 1024 * 1024) {
-      setError("Image trop lourde (max 4 Mo).");
+      setError("coach.profile.photoSize");
       return;
     }
 
@@ -410,7 +408,8 @@ export default function PlayerProfilePage() {
   }
 
   async function uploadAvatarBlob(blob: Blob) {
-    if (!userId) return;
+    if (!userId || !canSave || avatarLock.current || saveLock.current) return false;
+    avatarLock.current = true;
 
     setError(null);
     setInfo(null);
@@ -442,10 +441,13 @@ export default function PlayerProfilePage() {
       // ✅ REFRESH: bump de la clé juste après succès => l'image se recharge tout de suite
       setAvatarRefreshKey(Date.now());
 
-      setInfo("Profile photo updated ✅");
-    } catch (err: any) {
-      setError(err?.message ?? "Erreur lors de l’upload de l’avatar.");
+      setInfo("coach.profile.photoSaved");
+      return true;
+    } catch {
+      setError("coach.profile.photoError");
+      return false;
     } finally {
+      avatarLock.current = false;
       setAvatarBusy(false);
     }
   }
@@ -459,22 +461,24 @@ export default function PlayerProfilePage() {
           <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
             <div
               className="avatar"
-              aria-hidden="true"
               role="button"
+              aria-label={t("coach.profile.changePhoto")}
+              aria-disabled={!canSave}
               tabIndex={0}
               onClick={openFilePicker}
               onKeyDown={(ev) => {
-                if (ev.key === "Enter" || ev.key === " ") openFilePicker();
+                if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openFilePicker(); }
               }}
               style={{
                 cursor: loading || avatarBusy ? "default" : "pointer",
                 position: "relative",
                 overflow: "hidden",
               }}
-              title={loading ? "" : "Changer la photo"}
+              title={loading ? "" : t("coach.profile.changePhoto")}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarDbUrl ? (
+                // Profile uploads are user-controlled public storage URLs, rendered without optimization.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
                   alt=""
@@ -522,7 +526,7 @@ export default function PlayerProfilePage() {
                 opacity: loading ? 0.6 : 1,
               }}
             >
-              {avatarBusy ? "Upload…" : "Changer"}
+              {avatarBusy ? t("coach.profile.uploading") : t("coach.profile.changePhoto")}
             </button>
           </div>
 
@@ -545,13 +549,11 @@ export default function PlayerProfilePage() {
               if (cropImageSrc?.startsWith("blob:")) URL.revokeObjectURL(cropImageSrc);
               setCropImageSrc(null);
             }}
-            onConfirm={async (croppedBlob) => {
-              await uploadAvatarBlob(croppedBlob);
-            }}
+            onConfirm={uploadAvatarBlob}
           />
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(firstName)} 👋`}</div>
+            <h1 className="hero-title">{loading ? `${t("coach.profile.hello")}…` : `${displayHello(t("coach.profile.hello"), firstName)} 👋`}</h1>
 
             <div className="hero-sub">
               <div>
@@ -566,37 +568,36 @@ export default function PlayerProfilePage() {
           </div>
         </div>
 
-        {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
+        {error && <div className={styles.error} role="alert">{t(error)}{!loaded && !loading ? <button type="button" className="btn" onClick={() => void load()}>{t("coach.retry")}</button> : null}</div>}
 
-        {info && <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>{info}</div>}
+        {info && <div className={styles.success} role="status">{t(info)}</div>}
 
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Mon profil</div>
+          <div className="section-title">{t("coach.profile.title")}</div>
 
           <div className="glass-card">
             {loading ? (
-              <div style={{ opacity: 0.85, fontWeight: 800 }}>Chargement…</div>
-            ) : (
-              <div style={{ display: "grid", gap: 16 }}>
+              <CoachListSkeleton label={t("coach.profile.loading")} />
+            ) : loaded ? (
+              <fieldset disabled={busy || avatarBusy} className={styles.fields}>
                 {/* Identité */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Identité
-                  </div>
+                    {t("coach.profile.identity")}</div>
 
                   <div className="grid-2">
-                    <Field label="Prénom">
+                    <Field label={t("coach.profile.firstName")}>
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                     </Field>
 
-                    <Field label="Nom">
+                    <Field label={t("coach.profile.lastName")}>
                       <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
                     </Field>
                   </div>
 
                   {/* ✅ Date de naissance sur une ligne */}
-                  <Field label="Date de naissance">
+                  <Field label={t("coach.profile.birthDate")}>
                     <input
                       type="date"
                       value={birthDate}
@@ -605,24 +606,24 @@ export default function PlayerProfilePage() {
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Sexe">
+                    <Field label={t("coach.profile.sex")}>
                       <select value={sex} onChange={(e) => setSex(e.target.value)}>
                         <option value="">—</option>
-                        <option value="male">Homme</option>
-                        <option value="female">Femme</option>
-                        <option value="other">Autre</option>
+                        <option value="male">{t("coach.profile.male")}</option>
+                        <option value="female">{t("coach.profile.female")}</option>
+                        <option value="other">{t("coach.profile.other")}</option>
                       </select>
                     </Field>
 
                     {/* ✅ NEW */}
-                    <Field label="Latéralité">
+                    <Field label={t("coach.profile.handedness")}>
                       <select
                         value={handedness}
-                        onChange={(e) => setHandedness(e.target.value as any)}
+                        onChange={(e) => setHandedness(e.target.value === "left" || e.target.value === "right" ? e.target.value : "")}
                       >
                         <option value="">—</option>
-                        <option value="right">Droite</option>
-                        <option value="left">Gauche</option>
+                        <option value="right">{t("coach.profile.right")}</option>
+                        <option value="left">{t("coach.profile.left")}</option>
                       </select>
                     </Field>
                   </div>
@@ -649,23 +650,22 @@ export default function PlayerProfilePage() {
                 {/* Contact */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Contact
-                  </div>
+                    {t("coach.profile.contact")}</div>
 
                   <div className="grid-2">
-                    <Field label="Téléphone">
+                    <Field label={t("coach.profile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
-                    <Field label="Email (login)">
+                    <Field label={t("coach.profile.email")}>
                       <input value={email} disabled />
                     </Field>
                   </div>
-                  <Field label="Fonction">
+                  <Field label={t("coach.profile.function")}>
                     <input
                       value={staffFunction}
                       onChange={(e) => setStaffFunction(e.target.value)}
-                      placeholder="Ex: Head Pro"
+                      placeholder={t("coach.profile.functionHint")}
                     />
                   </Field>
                 </div>
@@ -676,8 +676,7 @@ export default function PlayerProfilePage() {
                   <>
                     <div style={{ display: "grid", gap: 14 }}>
                       <div className="card-title" style={{ marginBottom: 0 }}>
-                        Paramètres organisationnels
-                      </div>
+                        {t("coach.profile.organization")}</div>
 
                       {customFieldGroups.map((group) => (
                         <div key={group.member_id} style={{ display: "grid", gap: 10 }}>
@@ -712,8 +711,8 @@ export default function PlayerProfilePage() {
                                     }
                                   >
                                     <option value="">—</option>
-                                    <option value="yes">Oui</option>
-                                    <option value="no">Non</option>
+                                    <option value="yes">{t("coach.profile.yes")}</option>
+                                    <option value="no">{t("coach.profile.no")}</option>
                                   </select>
                                 ) : field.field_type === "select" ? (
                                   <select
@@ -748,7 +747,7 @@ export default function PlayerProfilePage() {
                                   </select>
                                 ) : (
                                   <input
-                                    value={field.editable_in_profile ? String(field.value ?? "") : profileCustomFieldDisplayValue(field, field.value)}
+                                    value={field.editable_in_profile ? String(field.value ?? "") : profileCustomFieldDisplayValue(field.value)}
                                     disabled={!field.editable_in_profile}
                                     onChange={(e) =>
                                       setCustomFieldGroups((previous) =>
@@ -785,19 +784,18 @@ export default function PlayerProfilePage() {
                 {/* Adresse */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Adresse
-                  </div>
+                    {t("coach.profile.address")}</div>
 
-                  <Field label="Adresse">
+                  <Field label={t("coach.profile.address")}>
                     <input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Code postal">
+                    <Field label={t("coach.profile.postalCode")}>
                       <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
-                    <Field label="Ville">
+                    <Field label={t("coach.profile.city")}>
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
                     </Field>
                   </div>
@@ -808,27 +806,26 @@ export default function PlayerProfilePage() {
                 {/* Sécurité */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Sécurité
-                  </div>
+                    {t("coach.profile.security")}</div>
 
                   <div className="grid-2">
-                    <Field label="Nouveau mot de passe">
+                    <Field label={t("coach.profile.password")}>
                       <input
                         type="password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         autoComplete="new-password"
-                        placeholder="Minimum 8 caractères"
+                        placeholder={t("coach.profile.passwordHint")}
                       />
                     </Field>
 
-                    <Field label="Confirmer le mot de passe">
+                    <Field label={t("coach.profile.confirmPassword")}>
                       <input
                         type="password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         autoComplete="new-password"
-                        placeholder="Confirme le mot de passe"
+                        placeholder={t("coach.profile.confirmPassword")}
                       />
                     </Field>
                   </div>
@@ -845,11 +842,11 @@ export default function PlayerProfilePage() {
                     disabled={!canSave}
                     style={{ height: 34, padding: "0 12px", fontSize: 13, fontWeight: 800, borderRadius: 10 }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer"}
+                    {busy ? t("coach.directory.saving") : t("common.save")}
                   </button>
                 </div>
-              </div>
-            )}
+              </fieldset>
+            ) : null}
           </div>
 
           {/* ✅ Logout supprimé */}
@@ -862,12 +859,13 @@ export default function PlayerProfilePage() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = useId();
   return (
     <div style={{ display: "grid", gap: 6 }}>
-      <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
+      <label htmlFor={id} className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
         {label}
       </label>
-      {children}
+      {React.isValidElement<{ id?: string }>(children) ? React.cloneElement(children, { id }) : children}
     </div>
   );
 }
@@ -881,10 +879,15 @@ type CropAvatarModalProps = {
   imageSrc: string | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (blob: Blob) => Promise<void> | void;
+  onConfirm: (blob: Blob) => Promise<boolean>;
 };
 
 function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvatarModalProps) {
+  const { t } = useI18n();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState(false);
+  const lock = useRef(false);
+  const working = busy || processing;
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
@@ -899,44 +902,19 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setCroppedAreaPixels(null);
+      setError(false);
     }
   }, [open]);
 
   if (!open || !imageSrc) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 50,
-        background: "rgba(0,0,0,0.55)",
-        display: "grid",
-        placeItems: "center",
-        padding: 16,
-      }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
-    >
-      <div
-        style={{
-          width: "min(520px, 92vw)",
-          borderRadius: 18,
-          overflow: "hidden",
-          background: "rgba(255,255,255,0.10)",
-          border: "1px solid rgba(255,255,255,0.18)",
-          backdropFilter: "blur(10px)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-        }}
-      >
-        <div style={{ padding: 14, fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
-          Recadrer la photo
+    <AccessibleDialog className={styles.cropDialog} labelledBy="coach-crop-title" onClose={() => { if (!working) onClose(); }}>
+        <div id="coach-crop-title" className={styles.cropTitle}>
+          {t("coach.profile.crop")}
         </div>
 
-        <div style={{ position: "relative", height: 340, background: "rgba(0,0,0,0.35)" }}>
+        <div className={styles.cropPreview}>
           <Cropper
             image={imageSrc}
             crop={crop}
@@ -950,56 +928,60 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
           />
         </div>
 
-        <div style={{ padding: 14, display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,0.85)" }}>
-              Zoom
-            </div>
+        <div className={styles.cropControls}>
+          {error ? <div className={styles.error} role="alert">{t("coach.profile.photoError")}</div> : null}
+          <div className={styles.cropZoom}>
+            <label htmlFor="coach-crop-zoom">{t("coach.profile.zoom")}</label>
             <input
+              id="coach-crop-zoom"
               type="range"
               min={1}
               max={3}
               step={0.01}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
-              disabled={busy}
-              style={{ width: "100%" }}
+              disabled={working}
             />
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
+          <div className={styles.cropActions}>
             <button
               type="button"
               onClick={onClose}
-              disabled={busy}
+              disabled={working}
               className="btn"
-              style={{ width: "100%", opacity: busy ? 0.65 : 1 }}
             >
-              Annuler
-            </button>
+              {t("common.cancel")}</button>
 
             <button
               type="button"
-              disabled={busy || !croppedAreaPixels}
-              className="btn"
-              style={{ width: "100%" }}
+              disabled={working || !croppedAreaPixels}
+              className="cta-green"
               onClick={async () => {
-                if (!croppedAreaPixels) return;
-                const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
-                await onConfirm(blob);
-                onClose();
+                if (!croppedAreaPixels || working || lock.current) return;
+                lock.current = true;
+                setProcessing(true);
+                setError(false);
+                try {
+                  const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
+                  if (await onConfirm(blob)) onClose(); else setError(true);
+                } catch {
+                  setError(true);
+                } finally {
+                  lock.current = false;
+                  setProcessing(false);
+                }
               }}
             >
-              {busy ? "Enregistrement…" : "Valider"}
+              {working ? t("coach.directory.saving") : t("common.save")}
             </button>
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.7)" }}>
-            Astuce : centre le visage / logo dans le cercle.
+          <div className={styles.cropHint}>
+            {t("coach.profile.cropHint")}
           </div>
         </div>
-      </div>
-    </div>
+    </AccessibleDialog>
   );
 }
 

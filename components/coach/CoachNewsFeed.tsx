@@ -6,6 +6,7 @@ import { ChevronRight, Eye, Newspaper, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import managerStyles from "@/app/manager/camps/Camps.module.css";
 import styles from "./CoachNewsFeed.module.css";
 
@@ -46,6 +47,7 @@ function openHref(item: NewsItem) {
 }
 
 export default function CoachNewsFeed() {
+  const { locale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -57,7 +59,7 @@ export default function CoachNewsFeed() {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token ?? "";
       if (!token) throw new Error("Pas de session.");
-      const response = await fetch("/api/coach/news", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const response = await fetch(`/api/coach/news?locale=${encodeURIComponent(locale)}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Impossible de charger les actualités.");
       setNews(Array.isArray(payload.news) ? payload.news as NewsItem[] : []);
@@ -66,7 +68,7 @@ export default function CoachNewsFeed() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [locale]);
   useEffect(() => {
     if (!selectedNews) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedNews(null); };
@@ -78,7 +80,7 @@ export default function CoachNewsFeed() {
   const archivedNews = news.filter((item) => item.status === "archived");
 
   return <main className={managerStyles.page}>
-    <nav className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true"/><span>Actualités</span></nav>
+    <nav data-ui="breadcrumb" className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true"/><span>Actualités</span></nav>
     <header className={managerStyles.topline}><div><h1>Actualités</h1><p className={managerStyles.lead}>Retrouvez les informations partagées avec vos groupes et votre équipe.</p></div></header>
     {error ? <div className={managerStyles.alertError} role="alert"><span>{error}</span><button type="button" className={managerStyles.secondary} onClick={() => void load()}>Réessayer</button></div> : null}
     <section className={styles.activeSection} aria-label="Actualités actives">

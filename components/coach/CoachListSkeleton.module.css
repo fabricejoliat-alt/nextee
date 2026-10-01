@@ -1,0 +1,10 @@
+.list { display:grid; gap:12px; }
+.card { display:flex; align-items:center; gap:14px; min-height:88px; padding:16px; border:1px solid #e1e8df; border-radius:13px; background:#fff; }
+.card i,.card span { display:block; border-radius:6px; background:linear-gradient(90deg,#edf2eb 20%,#f8faf6 50%,#edf2eb 80%); background-size:200% 100%; animation:shimmer 1.4s linear infinite; }
+.card i { width:44px; height:44px; border-radius:12px; flex-shrink:0; }
+.card div { display:grid; gap:9px; flex:1; }
+.card span { height:10px; width:72%; }
+.card span:nth-child(2) { width:90%; }
+.card span:nth-child(3) { width:50%; }
+@keyframes shimmer { to { background-position:-200% 0; } }
+@media(prefers-reduced-motion:reduce) { .card i,.card span { animation:none; } }

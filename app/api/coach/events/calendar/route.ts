@@ -1,10 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  coachTrainingCompletionByEvent,
-  type CoachTrainingAttendeeState,
-  type CoachTrainingFeedbackState,
-} from "@/lib/coachCalendar";
+import { resolveCoachAssignments } from "@/lib/coachAccess";
+import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -26,6 +23,7 @@ type EventRow = {
   coach_note: string | null;
   series_id: string | null;
   status: "scheduled" | "cancelled";
+  requires_evaluation: boolean;
 };
 
 export async function GET(req: NextRequest) {
@@ -38,32 +36,18 @@ export async function GET(req: NextRequest) {
     if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
     const coachId = callerData.user.id;
-    const [headRes, asstRes, eventCoachRes] = await Promise.all([
-      supabaseAdmin.from("coach_groups").select("id").eq("head_coach_user_id", coachId),
-      supabaseAdmin.from("coach_group_coaches").select("group_id").eq("coach_user_id", coachId),
-      supabaseAdmin.from("club_event_coaches").select("event_id").eq("coach_id", coachId),
-    ]);
-    if (headRes.error) return NextResponse.json({ error: headRes.error.message }, { status: 400 });
-    if (asstRes.error) return NextResponse.json({ error: asstRes.error.message }, { status: 400 });
-    if (eventCoachRes.error) return NextResponse.json({ error: eventCoachRes.error.message }, { status: 400 });
-
-    const groupIds = Array.from(
-      new Set([
-        ...(headRes.data ?? []).map((r: { id: string | null }) => String(r?.id ?? "").trim()),
-        ...(asstRes.data ?? []).map((r: { group_id: string | null }) => String(r?.group_id ?? "").trim()),
-      ])
-    ).filter(Boolean);
-    const eventIdsFromAssign = Array.from(
-      new Set((eventCoachRes.data ?? []).map((r: { event_id: string | null }) => String(r?.event_id ?? "").trim()))
-    ).filter(Boolean);
+    const scope = await resolveCoachAssignments(supabaseAdmin, coachId);
+    const groupIds = scope.groups.map((group) => group.id);
+    const eventIdsFromAssign = scope.eventIds;
 
     const rowsById: Record<string, EventRow> = {};
 
     if (groupIds.length > 0) {
       const r = await supabaseAdmin
         .from("club_events")
-        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .in("group_id", groupIds)
+        .in("club_id", scope.clubIds)
         .order("starts_at", { ascending: true });
       if (r.error) return NextResponse.json({ error: r.error.message }, { status: 400 });
       (r.data ?? []).forEach((e: EventRow) => {
@@ -74,8 +58,9 @@ export async function GET(req: NextRequest) {
     if (eventIdsFromAssign.length > 0) {
       const r = await supabaseAdmin
         .from("club_events")
-        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
+        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .in("id", eventIdsFromAssign)
+        .in("club_id", scope.clubIds)
         .order("starts_at", { ascending: true });
       if (r.error) return NextResponse.json({ error: r.error.message }, { status: 400 });
       (r.data ?? []).forEach((e: EventRow) => {
@@ -87,27 +72,7 @@ export async function GET(req: NextRequest) {
     const trainingEventIds = events
       .filter((event) => event.event_type === "training")
       .map((event) => event.id);
-    const [trainingAttendeesRes, trainingFeedbackRes] = await Promise.all([
-      trainingEventIds.length > 0
-        ? supabaseAdmin
-          .from("club_event_attendees")
-          .select("event_id,player_id,coach_recorded_status")
-          .in("event_id", trainingEventIds)
-        : Promise.resolve({ data: [], error: null } as const),
-      trainingEventIds.length > 0
-        ? supabaseAdmin
-          .from("club_event_coach_feedback")
-          .select("event_id,player_id,engagement,attitude,performance")
-          .in("event_id", trainingEventIds)
-        : Promise.resolve({ data: [], error: null } as const),
-    ]);
-    if (trainingAttendeesRes.error) return NextResponse.json({ error: trainingAttendeesRes.error.message }, { status: 400 });
-    if (trainingFeedbackRes.error) return NextResponse.json({ error: trainingFeedbackRes.error.message }, { status: 400 });
-    const trainingEvaluationCompleteByEventId = coachTrainingCompletionByEvent(
-      trainingEventIds,
-      (trainingAttendeesRes.data ?? []) as CoachTrainingAttendeeState[],
-      (trainingFeedbackRes.data ?? []) as CoachTrainingFeedbackState[]
-    );
+    const { completeByEvent: trainingEvaluationCompleteByEventId } = await loadCoachEvaluationState(supabaseAdmin, trainingEventIds);
     const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
     const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
     const campEventIds = events

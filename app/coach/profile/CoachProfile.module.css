@@ -1,0 +1,12 @@
+.fields{display:grid;gap:16px;margin:0;padding:0;border:0;min-width:0}
+.error,.success{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:14px 16px;border-radius:12px;font-size:13px;font-weight:700}
+.error{background:#fff1f2;color:#9f1239;border:1px solid #fecdd3}
+.success{background:#edf4ea;color:#35483b;border:1px solid #d4e2d0}
+.cropDialog{width:min(520px,calc(100vw - 32px));padding:0;border:1px solid #e3e9e2;border-radius:18px;color:#35483b;background:#fff;overflow:auto;max-height:calc(100dvh - 32px - env(safe-area-inset-bottom,0px))}
+.cropTitle{padding:16px;font-weight:800}
+.cropPreview{position:relative;height:min(340px,48dvh);background:#e8eee5}
+.cropControls{padding:16px;display:grid;gap:12px}
+.cropZoom{display:flex;align-items:center;gap:12px;font-size:13px;font-weight:700}
+.cropZoom input{width:100%;min-width:0;min-height:44px}
+.cropActions{display:flex;gap:10px}.cropActions button{flex:1;min-width:0;min-height:44px}
+.cropHint{color:#526056;font-size:12px;line-height:1.5}

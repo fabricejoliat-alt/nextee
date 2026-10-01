@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Eye, MapPin } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { coachDateLocale } from "@/lib/i18n/coachMessages";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -21,7 +21,7 @@ type EventRow = {
   event_type: "training" | "interclub" | "camp" | "session" | "event" | null;
   title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null;
   duration_minutes: number | null; location_text: string | null; coach_note: string | null;
-  series_id: string | null; status: string;
+  series_id: string | null; status: string; requires_evaluation?: boolean;
 };
 
 function startOfDay(date: Date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()); }
@@ -31,19 +31,14 @@ function ymd(date: Date) { return `${date.getFullYear()}-${String(date.getMonth(
 function capitalise(value: string) { return value.charAt(0).toUpperCase() + value.slice(1); }
 function monthLabel(date: Date, locale: string) { return capitalise(new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(date)); }
 function dayLabel(date: Date, locale: string) { return capitalise(new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(date)); }
-function eventTypeLabel(value: EventRow["event_type"], locale: "fr" | "en" | "de" | "it") {
-  if (value === "training") return pickLocaleText(locale, "Entraînement", "Training");
-  if (value === "interclub") return "Interclub";
-  if (value === "camp") return pickLocaleText(locale, "Stage", "Camp");
-  if (value === "session") return pickLocaleText(locale, "Séance", "Session");
-  return pickLocaleText(locale, "Activité", "Activity");
+function eventTypeLabel(value: EventRow["event_type"], t: (key: string) => string) {
+  return t(`coach.activity.${value ?? "other"}`);
 }
 
 export default function CoachCalendarPage() {
   const searchParams = useSearchParams();
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
-  const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  const dateLocale = coachDateLocale(locale);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -58,29 +53,37 @@ export default function CoachCalendarPage() {
   const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [referenceNow] = useState(() => Date.now());
 
+  const [reload, setReload] = useState(0);
+  const requestedView = searchParams.get("view");
+  useEffect(() => { setEventFilter(requestedView === "evaluations" ? "evaluations" : "all"); }, [requestedView]);
+
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
     void (async () => {
       setLoading(true); setError(null);
       try {
         const session = await supabase.auth.getSession();
         const token = session.data.session?.access_token ?? "";
         const userId = session.data.session?.user.id ?? "";
-        if (!token || !userId) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session."));
+        if (!token || !userId) throw new Error("coach.error.session");
         const [calendarResponse, permissions] = await Promise.all([
-          fetch("/api/coach/events/calendar", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+          fetch("/api/coach/events/calendar", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal }),
           supabase.from("club_members").select("can_manage_assigned_group_planning").eq("user_id", userId).eq("role", "coach").eq("is_active", true),
         ]);
         const calendar = await calendarResponse.json().catch(() => ({}));
-        if (!calendarResponse.ok) throw new Error(String(calendar?.error ?? pickLocaleText(locale, "Chargement impossible.", "Unable to load.")));
+        if (!calendarResponse.ok) throw new Error(calendarResponse.status === 401 ? "coach.error.session" : calendarResponse.status === 403 ? "coach.error.forbidden" : "coach.error.load");
+        if (!active) return;
         setEvents((calendar?.events ?? []) as EventRow[]);
         setGroupNames((calendar?.groupNameById ?? {}) as Record<string, string>);
         setClubNames((calendar?.clubNameById ?? {}) as Record<string, string>);
         setTrainingEvaluationCompleteByEventId((calendar?.trainingEvaluationCompleteByEventId ?? {}) as Record<string, boolean>);
         setCanPlan(!permissions.error && (permissions.data ?? []).some((row) => Boolean(row.can_manage_assigned_group_planning)));
-      } catch (cause) { setError(cause instanceof Error ? cause.message : pickLocaleText(locale, "Chargement impossible.", "Unable to load.")); }
-      finally { setLoading(false); }
+      } catch (cause) { if (active) { setError(cause instanceof Error && cause.message.startsWith("coach.error.") ? cause.message : "coach.error.load"); setEvents([]); setCanPlan(false); } }
+      finally { if (active) setLoading(false); }
     })();
-  }, [locale]);
+    return () => { active = false; controller.abort(); };
+  }, [reload]);
 
   const pendingEvaluationIds = useMemo(() => new Set(events
     .filter((event) => coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow) === "needs_evaluation")
@@ -98,24 +101,24 @@ export default function CoachCalendarPage() {
   function movePeriod(direction: -1 | 1) { if (view === "month") setAnchorDate((date) => new Date(date.getFullYear(), date.getMonth() + direction, 1)); else if (view === "week") setAnchorDate((date) => addDays(date, direction * 7)); else setAnchorDate((date) => addDays(date, direction)); }
 
   return <main className={styles.page}>
-    <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>{tr("Coach / Activités", "Coach / Activities")}</nav>
-    <div className={styles.topline}><div><h1>{tr("Activités", "Activities")}</h1><p className={styles.lead}>{tr("Consultez et gérez les activités de vos groupes.", "View and manage your group activities.")}</p></div>{canPlan && firstGroupId ? <Link className={actionStyles.primaryButton} href={`/coach/groups/${firstGroupId}/planning/add`}><CalendarDays size={16} aria-hidden="true" />{tr("Ajouter une activité", "Add activity")}</Link> : null}</div>
-    {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
-    <section className={styles.overview} aria-label={tr("Indicateurs des activités", "Activity statistics")}><div className={styles.statsGrid}><article className={styles.statCard}><span>{tr("Activités réalisées jusqu’à aujourd’hui", "Activities completed to date")}</span><b>{stats.completed}</b><small>{tr("dans votre périmètre", "in your scope")}</small></article><article className={styles.statCard}><span>{tr("Activités planifiées", "Planned activities")}</span><b>{stats.planned}</b><small>{tr("à venir", "upcoming")}</small></article><article className={styles.statCard}><span>{tr("Activités totales", "Total activities")}</span><b>{stats.total}</b><small>{tr("réalisées et planifiées", "completed and planned")}</small></article></div></section>
-    <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>{tr("Filtrer les activités", "Filter activities")}</h2><p>{tr("Affinez la liste par vue, type d’activité ou groupe.", "Refine the list by view, activity type or group.")}</p></div></div><div style={{ display: "grid", gap: 12 }}>
-      <div style={segmentWrapStyle}><button type="button" onClick={() => setView("month")} style={segmentButtonStyle(view === "month", true)}>{tr("Mois", "Month")}</button><button type="button" onClick={() => setView("week")} style={segmentButtonStyle(view === "week", true)}>{tr("Semaine", "Week")}</button><button type="button" onClick={() => setView("day")} style={segmentButtonStyle(view === "day")}>{tr("Jour", "Day")}</button></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}><FilterSelect label={tr("Affichage", "Display")} value={eventFilter} onChange={(value) => setEventFilter(value as EventFilter)} options={[["all", tr("Toutes les activités", "All activities")], ["evaluations", tr("Activités à évaluer", "Activities to evaluate")]]} /><FilterSelect label={tr("Type d’activité", "Activity type")} value={typeFilter} onChange={setTypeFilter} options={[["all", tr("Tous les types", "All types")], ["training", tr("Entraînement", "Training")], ["interclub", "Interclub"], ["camp", tr("Stage", "Camp")], ["session", tr("Séance", "Session")], ["event", tr("Événement", "Event")]]} /><FilterSelect label={tr("Groupe", "Group")} value={groupFilter} onChange={setGroupFilter} options={[["all", tr("Tous les groupes", "All groups")], ...groups]} /></div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(-1)} aria-label={tr("Période précédente", "Previous period")} title={tr("Période précédente", "Previous period")}><ChevronLeft size={16} aria-hidden="true" /></button><button className={actionStyles.secondaryButton} type="button" onClick={() => setAnchorDate(new Date())}>{tr("Aujourd’hui", "Today")}</button><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(1)} aria-label={tr("Période suivante", "Next period")} title={tr("Période suivante", "Next period")}><ChevronRight size={16} aria-hidden="true" /></button></div><strong style={{ color: "#35483b", fontSize: 16 }}>{headerLabel}</strong></div>
+    <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>{`${t("common.coach")} / ${t("coach.nav.activities")}`}</nav>
+    <div className={styles.topline}><div><h1>{t("coach.nav.activities")}</h1><p className={styles.lead}>{t("coach.calendar.intro")}</p></div>{canPlan && firstGroupId ? <Link className={actionStyles.primaryButton} href={`/coach/groups/${firstGroupId}/planning/add`}><CalendarDays size={16} aria-hidden="true" />{t("coach.calendar.add")}</Link> : null}</div>
+    {error ? <div className={actionStyles.errorAlert} role="alert">{t(error)} <button type="button" className={actionStyles.secondaryButton} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
+    <section className={styles.overview} aria-label={t("coach.calendar.metrics")}><div className={styles.statsGrid}><article className={styles.statCard}><span>{t("coach.calendar.completed")}</span><b>{loading || error ? "—" : stats.completed}</b><small>{t("coach.calendar.scope")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.planned")}</span><b>{loading || error ? "—" : stats.planned}</b><small>{t("coach.calendar.upcoming")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.total")}</span><b>{loading || error ? "—" : stats.total}</b><small>{t("coach.calendar.totalHint")}</small></article></div></section>
+    <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>{t("coach.calendar.filter")}</h2><p>{t("coach.calendar.filterHint")}</p></div></div><div style={{ display: "grid", gap: 12 }}>
+      <div style={segmentWrapStyle}><button type="button" onClick={() => setView("month")} aria-pressed={view === "month"} style={segmentButtonStyle(view === "month", true)}>{t("coach.calendar.month")}</button><button type="button" onClick={() => setView("week")} aria-pressed={view === "week"} style={segmentButtonStyle(view === "week", true)}>{t("coach.calendar.week")}</button><button type="button" onClick={() => setView("day")} aria-pressed={view === "day"} style={segmentButtonStyle(view === "day")}>{t("coach.calendar.day")}</button></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}><FilterSelect label={t("coach.calendar.display")} value={eventFilter} onChange={(value) => setEventFilter(value as EventFilter)} options={[["all", t("coach.calendar.all")], ["evaluations", t("coach.nav.evaluations")]]} /><FilterSelect label={t("coach.calendar.type")} value={typeFilter} onChange={setTypeFilter} options={[["all", t("coach.calendar.allTypes")], ["training", t("coach.activity.training")], ["interclub", t("coach.activity.interclub")], ["camp", t("coach.activity.camp")], ["session", t("coach.activity.session")], ["event", t("coach.activity.event")]]} /><FilterSelect label={t("coach.calendar.group")} value={groupFilter} onChange={setGroupFilter} options={[["all", t("coach.calendar.allGroups")], ...groups]} /></div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(-1)} aria-label={t("coach.calendar.previous")} title={t("coach.calendar.previous")}><ChevronLeft size={16} aria-hidden="true" /></button><button className={actionStyles.secondaryButton} type="button" onClick={() => setAnchorDate(new Date())}>{t("coach.calendar.today")}</button><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(1)} aria-label={t("coach.calendar.next")} title={t("coach.calendar.next")}><ChevronRight size={16} aria-hidden="true" /></button></div><strong style={{ color: "#35483b", fontSize: 16 }}>{headerLabel}</strong></div>
     </div></section>
-    {loading ? <section className={styles.quickPanel}><ListLoadingBlock label={tr("Chargement des activités…", "Loading activities…")} /></section> : <section className={`${styles.quickPanel} ${activityStyles.panel}`}><div className={activityStyles.list}>{visibleEvents.filter((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))).map((event) => {
+    {loading ? <section className={styles.quickPanel}><ListLoadingBlock label={t("coach.calendar.loading")} /></section> : error ? null : <section className={`${styles.quickPanel} ${activityStyles.panel}`}><div className={activityStyles.list}>{visibleEvents.filter((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))).map((event) => {
       const startsAt = new Date(event.starts_at);
       const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
       const actionState = coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow);
       const action = calendarAction(actionState, event.group_id, event.id, t);
       const ActionIcon = action.Icon;
       const customTitle = String(event.title ?? "").trim();
-      const typeLabel = eventTypeLabel(event.event_type, locale);
-      const groupName = groupNames[event.group_id] ?? tr("Groupe spécifique", "Specific group");
+      const typeLabel = eventTypeLabel(event.event_type, t);
+      const groupName = groupNames[event.group_id] ?? t("coach.calendar.specificGroup");
       const activityTitle = `${typeLabel}${event.event_type === "training" ? ` • ${groupName}` : ""}${customTitle ? ` · ${customTitle}` : ""}`;
       const dateDay = new Intl.DateTimeFormat(dateLocale, { weekday: "short" }).format(startsAt).replace(".", "");
       const dateMonth = new Intl.DateTimeFormat(dateLocale, { month: "short" }).format(startsAt).replace(".", "");
@@ -126,14 +129,14 @@ export default function CoachCalendarPage() {
         </div>
         <div className={dashboardStyles.activityBody}>
           <Link className={dashboardStyles.activityTitle} href={href}>{activityTitle}</Link>
-          <span className={dashboardStyles.activityMeta}>{groupName} · {clubNames[event.club_id] ?? tr("Club non renseigné", "Club not provided")}</span>
-          <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{event.location_text || tr("Lieu à confirmer", "Location to be confirmed")}</span></span>
+          <span className={dashboardStyles.activityMeta}>{groupName} · {clubNames[event.club_id] ?? t("coach.activity.noClub")}</span>
+          <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{event.location_text || t("coach.activity.noPlace")}</span></span>
         </div>
         <div className={activityStyles.actions}>
           <Link className={`${activityStyles.iconAction} ${activityStyles[action.className]}`} href={action.href} aria-label={`${action.label} — ${customTitle || typeLabel}`} title={action.label}><ActionIcon size={18} aria-hidden="true" /></Link>
         </div>
       </article>;
-    })}{!visibleEvents.some((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))) ? <div className="marketplace-empty">{tr("Aucune activité sur cette période.", "No activity in this period.")}</div> : null}</div></section>}
+    })}{!visibleEvents.some((event) => displayedDays.some((date) => ymd(date) === ymd(new Date(event.starts_at)))) ? <div className="marketplace-empty">{t("coach.calendar.empty")}</div> : null}</div></section>}
   </main>;
 }
 
@@ -154,4 +157,4 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 const fieldStyle: React.CSSProperties = { display: "grid", gap: 4 };
 const fieldLabelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 800, color: "#53675a" };
 const segmentWrapStyle: React.CSSProperties = { display: "inline-flex", width: "fit-content", border: "1px solid #dce5db", borderRadius: 10, overflow: "hidden", background: "#fff" };
-function segmentButtonStyle(active: boolean, withBorder = false): React.CSSProperties { return { minHeight: 38, padding: "0 14px", border: 0, borderRight: withBorder ? "1px solid #dce5db" : 0, background: active ? "#35483b" : "#fff", color: active ? "#fff" : "#35483b", fontSize: 12, fontWeight: 750, cursor: "pointer" }; }
+function segmentButtonStyle(active: boolean, withBorder = false): React.CSSProperties { return { minHeight: 44, padding: "0 14px", border: 0, borderRight: withBorder ? "1px solid #dce5db" : 0, background: active ? "#35483b" : "#fff", color: active ? "#fff" : "#35483b", fontSize: 12, fontWeight: 750, cursor: "pointer" }; }

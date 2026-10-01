@@ -14,12 +14,15 @@ import {
   UserX,
 } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { coachUiErrorKey, coachCaughtErrorKey } from "@/lib/coachUiErrors";
 import { supabase } from "@/lib/supabaseClient";
 import {
-  needsCoachPlayerEvaluation,
   type CoachAttendanceStatus,
   type CoachIndividualComments,
 } from "@/lib/coachDebrief";
+import { coachPlayerEvaluationComplete, validCoachCriterionValue, type CoachEvaluationResponseState } from "@/lib/coachCalendar";
+import type { EventEvaluationCriterion } from "@/lib/evaluationCriteria";
+import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
 import styles from "./CoachDebrief.module.css";
 
 type PlayerProfile = {
@@ -37,6 +40,8 @@ type ReviewDraft = {
   attitude: number | null;
   performance: number | null;
   persisted: boolean;
+  recordedAt: string | null;
+  customResponses: Record<string, string | number | boolean | null>;
   profile: PlayerProfile | null;
 };
 
@@ -65,6 +70,7 @@ type EventRow = {
 type DebriefApiAttendee = {
   player_id: string;
   coach_recorded_status: string | null;
+  coach_recorded_at: string | null;
   feedback?: {
     engagement?: number | null;
     attitude?: number | null;
@@ -106,12 +112,13 @@ function initials(profile: PlayerProfile | null) {
 
 function hasAllRatings(review: ReviewDraft) {
   return [review.engagement, review.attitude, review.performance].every(
-    (value) => typeof value === "number" && value >= 1 && value <= 6
+    (value) => typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 6
   );
 }
 
-function isEvaluationComplete(review: ReviewDraft) {
-  return review.persisted && (review.status === "absent" || hasAllRatings(review));
+function isEvaluationComplete(review: ReviewDraft, criteria: EventEvaluationCriterion[]) {
+  return review.persisted && coachPlayerEvaluationComplete(review.status,
+    [review.engagement, review.attitude, review.performance], criteria, review.customResponses);
 }
 
 function formatMoment(value: string, locale: string) {
@@ -137,6 +144,7 @@ export default function CoachTrainingDebriefPage() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [groupName, setGroupName] = useState("");
   const [reviews, setReviews] = useState<ReviewDraft[]>([]);
+  const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
   const [individualComments, setIndividualComments] = useState<CoachIndividualComments>({});
   const [privateNotes, setPrivateNotes] = useState<CoachIndividualComments>({});
   const [individualAi, setIndividualAi] = useState<Record<string, IndividualAiState>>({});
@@ -150,7 +158,7 @@ export default function CoachTrainingDebriefPage() {
   const currentReview = reviews[currentIndex] ?? null;
   const currentAi = currentReview ? individualAi[currentReview.player_id] ?? EMPTY_AI_STATE : EMPTY_AI_STATE;
   const currentPrivateAi = currentReview ? privateNoteAi[currentReview.player_id] ?? EMPTY_AI_STATE : EMPTY_AI_STATE;
-  const completedCount = reviews.filter(isEvaluationComplete).length;
+  const completedCount = reviews.filter((review) => isEvaluationComplete(review, customCriteria)).length;
 
   useEffect(() => {
     let active = true;
@@ -160,19 +168,22 @@ export default function CoachTrainingDebriefPage() {
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token ?? "";
-        if (!token) throw new Error("Session invalide.");
+        if (!token) throw new Error("coach.error.session");
         const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/debrief`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(String(json?.error ?? "Erreur chargement."));
+        if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.load"));
         if (!active) return;
 
         setEvent((json?.event ?? null) as EventRow | null);
         setGroupName(String(json?.groupName ?? ""));
         setAssistanceEnabled(json?.coachTrainingAssistanceEnabled === true);
         const debrief = (json?.debrief ?? {}) as DebriefApiRecord;
+        const criteria = (json?.criteria ?? []) as EventEvaluationCriterion[];
+        const responses = (json?.responses ?? []) as CoachEvaluationResponseState[];
+        setCustomCriteria(criteria);
         const rawComments =
           debrief.individual_comments && typeof debrief.individual_comments === "object"
             ? debrief.individual_comments
@@ -186,10 +197,11 @@ export default function CoachTrainingDebriefPage() {
             const engagement = typeof row.feedback?.engagement === "number" ? row.feedback.engagement : null;
             const attitude = typeof row.feedback?.attitude === "number" ? row.feedback.attitude : null;
             const performance = typeof row.feedback?.performance === "number" ? row.feedback.performance : null;
-            // Existing absences are shown first and always require explicit confirmation in this guided run.
-            const persisted = !needsCoachPlayerEvaluation(
+            const customResponses = Object.fromEntries(responses.filter((answer) => answer.player_id === row.player_id)
+              .map((answer) => [answer.event_criterion_id, answer.value_json])) as ReviewDraft["customResponses"];
+            const persisted = coachPlayerEvaluationComplete(
               recordedStatus,
-              [engagement, attitude, performance]
+              [engagement, attitude, performance], criteria, customResponses
             );
             return {
               player_id: String(row.player_id),
@@ -199,24 +211,26 @@ export default function CoachTrainingDebriefPage() {
               attitude,
               performance,
               persisted,
+              recordedAt: row.coach_recorded_at ?? null,
+              customResponses,
               profile: (row.profile ?? null) as PlayerProfile | null,
             } satisfies ReviewDraft;
           }
         );
         setIndividualComments(Object.fromEntries(loadedReviews.map((review) => {
           const attendee = ((json?.attendees ?? []) as DebriefApiAttendee[]).find((row) => row.player_id === review.player_id);
-          return [review.player_id, String(attendee?.feedback?.player_note ?? rawComments[review.player_id] ?? "")];
+          return [review.player_id, review.status === "absent" ? "" : String(attendee?.feedback?.player_note ?? rawComments[review.player_id] ?? "")];
         })));
         setPrivateNotes(Object.fromEntries(loadedReviews.map((review) => {
           const attendee = ((json?.attendees ?? []) as DebriefApiAttendee[]).find((row) => row.player_id === review.player_id);
           return [review.player_id, String(attendee?.feedback?.private_note ?? "")];
         })));
         setReviews(loadedReviews);
-        const firstIncomplete = loadedReviews.findIndex((review) => !isEvaluationComplete(review));
+        const firstIncomplete = loadedReviews.findIndex((review) => !isEvaluationComplete(review, criteria));
         setCurrentIndex(firstIncomplete >= 0 ? firstIncomplete : 0);
         setFlowComplete(loadedReviews.length > 0 && firstIncomplete === -1);
       } catch (caught: unknown) {
-        if (active) setError(caught instanceof Error ? caught.message : "Erreur chargement.");
+        if (active) setError(coachCaughtErrorKey(caught, "coach.error.load"));
       } finally {
         if (active) setLoading(false);
       }
@@ -296,7 +310,7 @@ export default function CoachTrainingDebriefPage() {
   async function authToken() {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token ?? "";
-    if (!token) throw new Error("Session invalide.");
+    if (!token) throw new Error("coach.error.session");
     return token;
   }
 
@@ -325,10 +339,10 @@ export default function CoachTrainingDebriefPage() {
         body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "junior", locale }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "AI analysis failed"));
+      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.ai"));
       const raw = (json?.proposal ?? {}) as DebriefAiProposal;
       if (String(raw.player_id ?? "") !== currentReview.player_id || !String(raw.text ?? "").trim()) {
-        throw new Error("AI returned an invalid player proposal.");
+        throw new Error("coach.error.ai");
       }
       patchIndividualAi(currentReview.player_id, {
         proposal: {
@@ -341,7 +355,7 @@ export default function CoachTrainingDebriefPage() {
       });
     } catch (caught: unknown) {
       patchIndividualAi(currentReview.player_id, {
-        error: caught instanceof Error ? caught.message : "AI analysis failed",
+        error: coachCaughtErrorKey(caught, "coach.error.ai"),
         proposal: null,
       });
     } finally {
@@ -374,10 +388,10 @@ export default function CoachTrainingDebriefPage() {
         body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "private", locale }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "AI analysis failed"));
+      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.ai"));
       const raw = (json?.proposal ?? {}) as DebriefAiProposal;
       if (String(raw.player_id ?? "") !== currentReview.player_id || !String(raw.text ?? "").trim()) {
-        throw new Error("AI returned an invalid player proposal.");
+        throw new Error("coach.error.ai");
       }
       patchPrivateNoteAi(currentReview.player_id, {
         proposal: {
@@ -390,7 +404,7 @@ export default function CoachTrainingDebriefPage() {
       });
     } catch (caught: unknown) {
       patchPrivateNoteAi(currentReview.player_id, {
-        error: caught instanceof Error ? caught.message : "AI analysis failed",
+        error: coachCaughtErrorKey(caught, "coach.error.ai"),
         proposal: null,
       });
     } finally {
@@ -435,6 +449,12 @@ export default function CoachTrainingDebriefPage() {
       });
       return;
     }
+    const missingCriterion = currentReview.status === "present" && customCriteria.find((criterion) =>
+      criterion.snapshot_is_required && !validCoachCriterionValue(criterion, currentReview.customResponses[criterion.id]));
+    if (missingCriterion) {
+      setError(`${t("coachDebrief.customRequired")} ${missingCriterion.snapshot_name}`);
+      return;
+    }
 
     saveInFlightRef.current = true;
     setBusy(true);
@@ -461,15 +481,18 @@ export default function CoachTrainingDebriefPage() {
           performance: currentReview.performance,
           player_note: playerNote,
           private_note: privateNote,
+          expected_recorded_at: currentReview.recordedAt,
+          custom_responses: currentReview.status === "present" ? currentReview.customResponses : {},
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? "Save failed"));
+      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.save"));
 
       setReviews((current) =>
         current.map((review) =>
           review.player_id === currentReview.player_id
-            ? { ...review, persisted: true, statusRecorded: true }
+            ? { ...review, persisted: true, statusRecorded: true, recordedAt: json.recordedAt,
+                customResponses: review.status === "absent" ? {} : review.customResponses }
             : review
         )
       );
@@ -484,18 +507,20 @@ export default function CoachTrainingDebriefPage() {
         success: null,
       });
 
-      if (currentIndex >= reviews.length - 1) {
+      const nextReviews = reviews.map((review) => review.player_id === currentReview.player_id ? { ...review, persisted: true } : review);
+      const remainingIndex = nextReviews.findIndex((review) => !isEvaluationComplete(review, customCriteria));
+      if (remainingIndex === -1) {
         setFlowComplete(true);
         setMessage(t("coachDebrief.finishedMessage"));
       } else {
         setMessage(json?.noteInserted === true
           ? t("coachDebrief.individualValidated")
           : t("coachDebrief.playerSaved"));
-        setCurrentIndex((index) => Math.min(index + 1, reviews.length - 1));
+        setCurrentIndex(currentIndex < reviews.length - 1 ? currentIndex + 1 : remainingIndex);
       }
     } catch (caught: unknown) {
       patchIndividualAi(currentReview.player_id, {
-        error: caught instanceof Error ? caught.message : "Save failed",
+        error: coachCaughtErrorKey(caught, "coach.error.save"),
         success: null,
       });
     } finally {
@@ -557,7 +582,7 @@ export default function CoachTrainingDebriefPage() {
   return (
     <div className="player-dashboard-bg">
       <main className={styles.page}>
-        <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+        <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label="Fil d’Ariane">
           <Link href="/coach/groups">Coach</Link>
           <span aria-hidden="true">/</span>
           <Link href={`/coach/groups/${groupId}`}>{groupName}</Link>
@@ -583,7 +608,7 @@ export default function CoachTrainingDebriefPage() {
           </Link>
         </header>
 
-        {error ? <div className={styles.error} role="alert">{error}</div> : null}
+        {error ? <div className={styles.error} role="alert">{t(error)}</div> : null}
         {message ? <div className={styles.success} role="status"><Check size={18} />{message}</div> : null}
 
         <div className={styles.workflowShell}>
@@ -605,9 +630,9 @@ export default function CoachTrainingDebriefPage() {
             </section>
           ) : currentReview ? (
             <>
-            {currentAi.error ? <div className={styles.cardError} role="alert">{currentAi.error}</div> : null}
+            {currentAi.error ? <div className={styles.cardError} role="alert">{t(currentAi.error)}</div> : null}
             {currentAi.success ? <div className={styles.cardSuccess} role="status">{currentAi.success}</div> : null}
-            {currentPrivateAi.error ? <div className={styles.cardError} role="alert">{currentPrivateAi.error}</div> : null}
+            {currentPrivateAi.error ? <div className={styles.cardError} role="alert">{t(currentPrivateAi.error)}</div> : null}
             {currentPrivateAi.success ? <div className={styles.cardSuccess} role="status">{currentPrivateAi.success}</div> : null}
             <div className={styles.evaluationCards}>
             <section className={styles.workflowCard} aria-labelledby="current-player-title">
@@ -618,12 +643,12 @@ export default function CoachTrainingDebriefPage() {
                   </span>
                   <p>{completedCount}/{reviews.length} {t("coachDebrief.progress")}</p>
                 </div>
-                {isEvaluationComplete(currentReview) ? (
+                {isEvaluationComplete(currentReview, customCriteria) ? (
                   <span className={styles.savedBadge}><Check size={14} />{t("coachDebrief.savedBadge")}</span>
                 ) : null}
               </div>
-              <div className={styles.progressTrack} role="progressbar" aria-label={t("coachDebrief.progress")} aria-valuemin={1} aria-valuemax={reviews.length} aria-valuenow={currentIndex + 1}>
-                <span style={{ width: `${((currentIndex + 1) / reviews.length) * 100}%` }} />
+              <div className={styles.progressTrack} role="progressbar" aria-label={t("coachDebrief.progress")} aria-valuemin={0} aria-valuemax={reviews.length} aria-valuenow={completedCount}>
+                <span style={{ width: `${(completedCount / reviews.length) * 100}%` }} />
               </div>
 
               <div className={styles.currentPlayer}>
@@ -673,6 +698,17 @@ export default function CoachTrainingDebriefPage() {
                         </div>
                       ))}
                     </div>
+                    {customCriteria.map((criterion) => (
+                      <div className={styles.sectionBlock} key={criterion.id}>
+                        <h4>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</h4>
+                        {criterion.snapshot_description ? <p>{criterion.snapshot_description}</p> : null}
+                        <EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format}
+                          choices={criterion.snapshot_choices} value={currentReview.customResponses[criterion.id]} disabled={busy}
+                          onChange={(value) => updateReview(currentReview.player_id, {
+                            customResponses: { ...currentReview.customResponses, [criterion.id]: value },
+                          })} />
+                      </div>
+                    ))}
                   </div>
               )}
             </section>

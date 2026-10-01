@@ -23,11 +23,6 @@ export const NOTIFICATION_KIND_OPTIONS: Array<{ kind: string; labelFr: string; l
   { kind: "player_marked_present", labelFr: "Présences confirmées", labelEn: "Attendance confirmations" },
 ];
 
-function isMissingRelationError(message: string) {
-  const m = message.toLowerCase();
-  return m.includes("does not exist") || m.includes("relation") || m.includes("42p01");
-}
-
 export function isKindEnabled(kind: string, prefs: NotificationPreferences) {
   if (!prefs.receiveInApp) return false;
   if (prefs.enabledKinds.length === 0) return true;
@@ -48,7 +43,6 @@ export async function loadMyNotificationPreferences(userId: string): Promise<Not
     .maybeSingle();
 
   if (res.error) {
-    if (isMissingRelationError(res.error.message)) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
     throw new Error(res.error.message);
   }
 
@@ -84,7 +78,6 @@ export async function upsertMyNotificationPreferences(
   );
 
   if (up.error) {
-    if (isMissingRelationError(up.error.message)) return next;
     throw new Error(up.error.message);
   }
 
