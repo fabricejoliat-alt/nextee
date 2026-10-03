@@ -2,10 +2,15 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Upload } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
+import { managerLocaleTag, managerFormat } from "@/lib/managerLocale";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { managerAdministrationFeedback } from "@/lib/managerAdministrationPresentation";
+import { useManagerResource } from "@/components/manager/useManagerResource";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import directoryStyles from "@/components/manager/UserDirectory.module.css";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 
 type Club = { id: string; name: string };
@@ -13,7 +18,7 @@ type Season = { id: string; name: string; starts_on: string; ends_on: string; is
 type Member = { id: string; role: string; is_active: boolean | null; player_consent_status: "granted" | "pending" | "refused" | "adult" | null; profiles: { first_name: string | null; last_name: string | null; birth_date: string | null; avatar_url: string | null } | null };
 type SeasonRecord = { id: string; club_member_id: string; course_label: string | null; group_id: string | null; registration_status: "draft" | "active" | "waitlist" | "cancelled" | "completed"; membership_status: "pending" | "paid" | "waived" | "overdue"; playing_right_status: "pending" | "paid" | "waived" | "not_applicable" };
 
-const consentLabel: Record<NonNullable<Member["player_consent_status"]>, string> = { granted: "Accordé", pending: "À obtenir", refused: "Refusé", adult: "Non requis / Majeur" };
+
 
 function age(value: string | null | undefined) {
   if (!value) return "—";
@@ -23,54 +28,58 @@ function age(value: string | null | undefined) {
   return String(result);
 }
 
-async function authHeaders() { const { data } = await supabase.auth.getSession(); return data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {}; }
-
 export default function PlayersManagementPage() {
-  const [clubId, setClubId] = useState(""); const [seasons, setSeasons] = useState<Season[]>([]); const [seasonId, setSeasonId] = useState("");
-  const [members, setMembers] = useState<Member[]>([]); const [records, setRecords] = useState<SeasonRecord[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const { t, locale } = useI18n();
+  const router = useRouter();
+  const params = useSearchParams();
+  const consentLabel: Record<NonNullable<Member["player_consent_status"]>, string> = { granted: t("manager.administration.consent.granted"), pending: t("manager.administration.consent.pending"), refused: t("manager.content.declined"), adult: t("manager.administration.consent.adult") };
+
   const [query, setQuery] = useState(""); const [consentFilter, setConsentFilter] = useState<"all" | NonNullable<Member["player_consent_status"]>>("all");
-
-  async function loadClub(id: string) {
-    if (!id) return; setLoading(true); setError("");
-    try {
-      const headers = await authHeaders();
-      const [membersResponse, seasonsResponse] = await Promise.all([fetch(`/api/manager/clubs/${id}/members`, { headers, cache: "no-store" }), fetch(`/api/manager/clubs/${id}/seasons`, { headers, cache: "no-store" })]);
-      const membersJson = await membersResponse.json(); const seasonsJson = await seasonsResponse.json();
-      if (!membersResponse.ok) throw new Error(membersJson.error ?? "Impossible de charger les juniors.");
-      if (!seasonsResponse.ok) throw new Error(seasonsJson.error ?? "Impossible de charger les saisons.");
-      const nextSeasons = seasonsJson.seasons ?? []; setMembers((membersJson.members ?? []).filter((item: Member) => item.role === "player" && item.is_active !== false)); setSeasons(nextSeasons); setSeasonId((current) => nextSeasons.some((season: Season) => season.id === current) ? current : (nextSeasons.find((season: Season) => season.is_current)?.id ?? nextSeasons[0]?.id ?? ""));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Impossible de charger la page."); } finally { setLoading(false); }
+  const clubsResource = useManagerResource<{ clubs: Club[] }>("/api/manager/my-clubs", "clubs_load_failed");
+  const clubs = clubsResource.data?.clubs ?? [];
+  const requestedClubId = params.get("club") || "";
+  const clubId = requestedClubId ? clubs.find((club) => club.id === requestedClubId)?.id ?? "" : clubs[0]?.id ?? "";
+  const membersResource = useManagerResource<{ members: Member[] }>(clubId ? `/api/manager/clubs/${clubId}/members` : null, "members_load_failed");
+  const seasonsResource = useManagerResource<{ seasons: Season[] }>(clubId ? `/api/manager/clubs/${clubId}/seasons` : null, "seasons_load_failed");
+  const seasons = seasonsResource.data?.seasons ?? [];
+  const requestedSeasonId = params.get("season") || "";
+  const seasonId = seasons.some((season) => season.id === requestedSeasonId) ? requestedSeasonId : seasons.find((season) => season.is_current)?.id ?? seasons[0]?.id ?? "";
+  const recordsResource = useManagerResource<{ records: SeasonRecord[] }>(clubId && seasonId ? `/api/manager/clubs/${clubId}/seasons/${seasonId}/records` : null, "records_load_failed");
+  const loading = clubsResource.loading || Boolean(clubId && (membersResource.loading || seasonsResource.loading));
+  const directoryReady = Boolean(clubId && !loading && !membersResource.error && !seasonsResource.error && membersResource.data && seasonsResource.data);
+  const members = useMemo(() => directoryReady ? (membersResource.data?.members ?? []).filter((item) => item.role === "player" && item.is_active !== false) : [], [directoryReady, membersResource.data]);
+  const recordsReady = directoryReady && Boolean(seasonId && !recordsResource.loading && !recordsResource.error && recordsResource.data);
+  const error = clubsResource.error ? (clubsResource.error === "Forbidden" ? t("manager.settings.forbidden") : t("manager.administration.clubsError"))
+    : requestedClubId && clubsResource.data && !clubId ? t("manager.clubUnavailable")
+    : membersResource.error ? t("manager.administration.players.loadError")
+    : seasonsResource.error ? t("manager.settings.seasons.loadError")
+    : recordsResource.error ? t("manager.administration.seasonDataError") : "";
+  function selectClub(id: string) {
+    if (!clubs.some((club) => club.id === id)) return;
+    const next = new URLSearchParams(params.toString()); next.set("club", id); next.delete("season");
+    router.replace(`/manager/user-management/players?${next}`, { scroll: false });
   }
-  async function loadRecords() {
-    if (!clubId || !seasonId) { setRecords([]); return; }
-    try {
-      const response = await fetch(`/api/manager/clubs/${clubId}/seasons/${seasonId}/records`, { headers: await authHeaders(), cache: "no-store" });
-      const json = await response.json();
-      if (response.status === 403) {
-        // The directory remains usable when the optional season records are not accessible.
-        setRecords([]);
-        return;
-      }
-      if (!response.ok) throw new Error(json.error);
-      setRecords(json.records ?? []);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Impossible de charger les données de saison."); }
+  function selectSeason(id: string) {
+    const next = new URLSearchParams(params.toString()); next.set("club", clubId); next.set("season", id);
+    router.replace(`/manager/user-management/players?${next}`, { scroll: false });
   }
-  useEffect(() => { void (async () => { const response = await fetch("/api/manager/my-clubs", { headers: await authHeaders() }); const json = await response.json(); const next = (json.clubs ?? []) as Club[]; const initial = next[0]?.id ?? ""; setClubId(initial); if (initial) await loadClub(initial); else setLoading(false); })(); }, []);
-  useEffect(() => { if (clubId) void loadClub(clubId); }, [clubId]);
-  // The request only depends on the selected identifiers; the loader is local to this component.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { void loadRecords(); }, [clubId, seasonId]);
 
-  const recordByMember = useMemo(() => new Map(records.map((record) => [record.club_member_id, record])), [records]);
-  const rows = useMemo(() => members.map((member) => ({ member, record: recordByMember.get(member.id) })).filter(({ member }) => { const searchable = `${member.profiles?.first_name ?? ""} ${member.profiles?.last_name ?? ""}`.toLocaleLowerCase(); return (!query || searchable.includes(query.toLocaleLowerCase())) && (consentFilter === "all" || member.player_consent_status === consentFilter); }).sort((a, b) => `${a.member.profiles?.last_name} ${a.member.profiles?.first_name}`.localeCompare(`${b.member.profiles?.last_name} ${b.member.profiles?.first_name}`, "fr")), [members, recordByMember, query, consentFilter]);
-  const incompleteCount = rows.filter(({ member, record }) => !member.profiles?.birth_date || !record).length;
+  const recordByMember = useMemo(() => new Map((recordsReady ? recordsResource.data?.records ?? [] : []).map((record) => [record.club_member_id, record])), [recordsReady, recordsResource.data]);
+  const rows = useMemo(() => members.map((member) => ({ member, record: recordByMember.get(member.id) })).filter(({ member }) => { const searchable = `${member.profiles?.first_name ?? ""} ${member.profiles?.last_name ?? ""}`.toLocaleLowerCase(locale); return (!query || searchable.includes(query.toLocaleLowerCase(locale))) && (consentFilter === "all" || member.player_consent_status === consentFilter); }).sort((a, b) => `${a.member.profiles?.last_name} ${a.member.profiles?.first_name}`.localeCompare(`${b.member.profiles?.last_name} ${b.member.profiles?.first_name}`, managerLocaleTag(locale))), [members, recordByMember, query, consentFilter, locale]);
+  const registeredCount = recordsReady ? members.filter((member) => recordByMember.get(member.id)?.registration_status === "active").length : null;
+  const incompleteCount = recordsReady ? members.filter((member) => !member.profiles?.birth_date || !recordByMember.has(member.id)).length : null;
   return <div className={styles.page}>
-    <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>Gestion des utilisateurs / Juniors</nav>
-    <div className={styles.topline}><div><h1>Juniors</h1><p className={styles.lead}>Le suivi administratif et sportif du club, saison par saison.</p></div><div className="user-mgmt-actions"><label className="groups-season-nav-select"><select aria-label="Saison" value={seasonId} onChange={(event) => setSeasonId(event.target.value)} disabled={seasons.length === 0}>{seasons.length === 0 ? <option value="">Aucune saison configurée</option> : null}{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? " · En cours" : ""}</option>)}</select></label><Link className="btn" href={`/manager/user-management/players/import?club=${clubId}`}><Upload size={14} />Importer un fichier Excel</Link><Link className="btn" href="/manager/user-management/players/new"><Plus size={14} />Ajouter un junior</Link></div></div>
-    {error ? <div role="alert" className={styles.errorAlert}>{error}</div> : null}
-    {loading ? <section className={styles.overview}><ListLoadingBlock label="Chargement des juniors…" /></section> : <>
-      <section className={styles.overview}><div className={styles.statsGrid}><article className={styles.statCard}><span>Juniors actifs</span><b>{members.length}</b><small>dans le club</small></article><article className={styles.statCard}><span>Inscrits</span><b>{rows.filter(({ record }) => record?.registration_status === "active").length}</b><small>pour cette saison</small></article><article className={styles.statCard}><span>Dossiers incomplets</span><b>{incompleteCount}</b><small>profil ou saison à compléter</small></article></div></section>
-      <section className={styles.quickPanel}><div className={styles.sectionHeading}><h2>Juniors</h2><button className={styles.refreshButton} type="button" onClick={() => { void loadClub(clubId); void loadRecords(); }}><RefreshCw size={14} />Actualiser</button></div><div className="user-mgmt-toolbar"><label className="user-mgmt-field" style={{ minWidth: 220 }}><span className="user-mgmt-field-label">Recherche</span><span style={{ position: "relative" }}><Search size={15} style={{ position: "absolute", left: 10, top: 11, color: "#778178" }} /><input value={query} onChange={(event) => setQuery(event.target.value)} style={{ paddingLeft: 33 }} placeholder="Nom ou prénom" /></span></label><label className="user-mgmt-field"><span className="user-mgmt-field-label">Consentement</span><select value={consentFilter} onChange={(event) => setConsentFilter(event.target.value as typeof consentFilter)}><option value="all">Tous les statuts</option><option value="pending">À obtenir</option><option value="granted">Accordé</option><option value="refused">Refusé</option><option value="adult">Non requis / Majeur</option></select></label></div><div className="user-mgmt-table-wrap"><table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--players"><thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th>Âge</th><th>Statut</th><th>Consentement</th><th aria-label="Actions" /></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={6}><div className="marketplace-empty">Aucun junior ne correspond à la recherche.</div></td></tr> : rows.map(({ member, record }) => { const active = record?.registration_status === "active"; return <tr key={member.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{member.profiles?.avatar_url ? <img src={member.profiles.avatar_url} alt="" /> : [member.profiles?.first_name, member.profiles?.last_name].map((value) => value?.trim().charAt(0).toUpperCase()).join("") || "—"}</span></td><td><b>{[member.profiles?.last_name, member.profiles?.first_name].filter(Boolean).join(" ") || "Sans nom"}</b></td><td>{age(member.profiles?.birth_date)}</td><td><span className="pill-soft">{active ? "Actif" : "Inactif"}</span></td><td><span className="pill-soft">{member.player_consent_status ? consentLabel[member.player_consent_status] : "À obtenir"}</span></td><td><Link className="btn" aria-label="Éditer le junior" href={`/manager/user-management/players/${member.id}?club=${clubId}&season=${seasonId}`}>Éditer</Link></td></tr>; })}</tbody></table></div></section>
+    <nav aria-label={t("manager.content.breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>{t("manager.administration.players.breadcrumb")}</nav>
+    <div className={styles.topline}><div><h1>{t("manager.fields.player")}</h1><p className={styles.lead}>{t("manager.administration.players.lead")}</p></div><div className="user-mgmt-actions">
+      <label className="groups-season-nav-select"><select aria-label={t("common.club")} value={clubId} onChange={(event) => selectClub(event.target.value)} disabled={clubsResource.loading || !clubs.length}>{!clubId ? <option value="">{t("manager.chooseClub")}</option> : null}{clubs.map((club) => <option key={club.id} value={club.id}>{club.name || t("common.club")}</option>)}</select></label>
+      <label className="groups-season-nav-select"><select aria-label={t("manager.season")} value={seasonId} onChange={(event) => selectSeason(event.target.value)} disabled={!directoryReady || seasons.length === 0}>{seasons.length === 0 ? <option value="">{t("manager.noSeason")}</option> : null}{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? t("manager.settings.seasons.currentSuffix") : ""}</option>)}</select></label>
+      {clubId ? <Link className="btn" href={`/manager/user-management/players/import?club=${clubId}`}><Upload size={14} />{t("manager.administration.players.import")}</Link> : null}
+      {clubId ? <Link className="btn" href={`/manager/user-management/players/new?club=${clubId}${seasonId ? `&season=${seasonId}` : ""}`}><Plus size={14} />{t("manager.administration.players.add")}</Link> : null}
+    </div></div>
+    {error ? <div role="alert" className={styles.errorAlert}>{managerAdministrationFeedback(t, error)}</div> : null}
+    {loading ? <section className={styles.overview}><ListLoadingBlock label={t("manager.administration.players.loading")} /></section> : !directoryReady ? (clubsResource.data && !clubs.length ? <section className={styles.overview}>{t("manager.noClub")}</section> : null) : <>
+      <section className={styles.overview}><div className={styles.statsGrid}><article className={styles.statCard}><span>{t("manager.performance.activeJuniors")}</span><b>{members.length}</b><small>{t("manager.administration.inClub")}</small></article><article className={styles.statCard}><span>{t("manager.administration.registered")}</span><b>{registeredCount ?? "—"}</b><small>{t("manager.administration.inSeason")}</small></article><article className={styles.statCard}><span>{t("manager.administration.incompleteFiles")}</span><b>{incompleteCount ?? "—"}</b><small>{t("manager.administration.players.incompleteHelp")}</small></article></div></section>
+      <section className={`${styles.quickPanel} ${directoryStyles.panel}`}><div className={`${styles.sectionHeading} ${directoryStyles.heading}`}><h2>{t("manager.fields.player")}</h2><button className={styles.refreshButton} type="button" onClick={() => { membersResource.reload(); seasonsResource.reload(); recordsResource.reload(); }}><RefreshCw size={14} />{t("manager.refresh")}</button></div><div className="user-mgmt-toolbar"><label className="user-mgmt-field" style={{ minWidth: 220 }}><span className="user-mgmt-field-label">{t("manager.settings.search")}</span><span style={{ position: "relative" }}><Search size={15} style={{ position: "absolute", left: 10, top: 11, color: "#778178" }} /><input value={query} onChange={(event) => setQuery(event.target.value)} style={{ paddingLeft: 33 }} placeholder={t("manager.administration.nameSearch")} /></span></label><label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.administration.consent")}</span><select value={consentFilter} onChange={(event) => setConsentFilter(event.target.value as typeof consentFilter)}><option value="all">{t("manager.administration.allStatuses")}</option><option value="pending">{t("manager.administration.consent.pending")}</option><option value="granted">{t("manager.administration.consent.granted")}</option><option value="refused">{t("manager.content.declined")}</option><option value="adult">{t("manager.administration.consent.adult")}</option></select></label></div><div className="user-mgmt-table-wrap"><table className={`${directoryStyles.table} user-mgmt-table user-mgmt-table--compact user-mgmt-table--players`}><thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th>{t("manager.administration.age")}</th><th>{t("manager.performance.status")}</th><th>{t("manager.administration.consent")}</th><th aria-label={t("manager.content.actions")} /></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={6}><div className="marketplace-empty">{t("manager.administration.players.empty")}</div></td></tr> : rows.map(({ member, record }) => { const active = record?.registration_status === "active"; return <tr key={member.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{member.profiles?.avatar_url ? <img src={member.profiles.avatar_url} alt="" /> : [member.profiles?.first_name, member.profiles?.last_name].map((value) => value?.trim().charAt(0).toUpperCase()).join("") || "—"}</span></td><td><b>{[member.profiles?.last_name, member.profiles?.first_name].filter(Boolean).join(" ") || t("manager.settings.volume.unnamed")}</b></td><td data-label={t("manager.administration.age")}>{age(member.profiles?.birth_date)}</td><td data-label={t("manager.performance.status")}><span className="pill-soft">{!recordsReady ? "—" : active ? t("manager.administration.active") : t("manager.administration.inactive")}</span></td><td data-label={t("manager.administration.consent")}><span className="pill-soft">{member.player_consent_status ? consentLabel[member.player_consent_status] : t("manager.administration.consent.pending")}</span></td><td><Link className="btn" aria-label={managerFormat(t, "manager.administration.editNamed", { name: [member.profiles?.first_name, member.profiles?.last_name].filter(Boolean).join(" ") || t("manager.settings.volume.unnamed") })} href={`/manager/user-management/players/${member.id}?club=${clubId}&season=${seasonId}`}>{t("manager.administration.edit")}</Link></td></tr>; })}</tbody></table></div></section>
     </>}
   </div>;
 }

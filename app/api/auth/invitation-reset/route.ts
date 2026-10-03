@@ -14,19 +14,11 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function loadInvitation(supabaseAdmin: SupabaseClient, rawToken: string) {
-  const tokenHash = hashToken(rawToken);
-  const { data, error } = await supabaseAdmin
-    .from("access_invitation_tokens")
-    .select("id, user_id, sent_to_email, invitation_kind, expires_at, consumed_at")
-    .eq("token_hash", tokenHash)
-    .maybeSingle();
-
+async function loadInvitation(supabaseAdmin: SupabaseClient, rawToken: string, consume = false) {
+  const { data, error } = await supabaseAdmin.rpc("claim_access_invitation_v1", { p_token_hash: hashToken(rawToken), p_consume: consume });
   if (error) throw new Error(error.message);
-  if (!data) return { ok: false as const, reason: "missing" };
-  if (data.consumed_at) return { ok: false as const, reason: "consumed" };
-  if (new Date(data.expires_at).getTime() <= Date.now()) return { ok: false as const, reason: "expired" };
-  return { ok: true as const, row: data };
+  if (!data) return { ok: false as const };
+  return { ok: true as const, row: data as { user_id: string; sent_to_email: string; invitation_kind: string } };
 }
 
 function translateAuthMessage(message: string) {
@@ -78,21 +70,15 @@ export async function POST(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const invite = await loadInvitation(supabaseAdmin, token);
+    const invite = await loadInvitation(supabaseAdmin, token, true);
     if (!invite.ok) {
       return NextResponse.json({ error: "Ce lien est invalide ou expiré." }, { status: 400 });
     }
 
     const updateRes = await supabaseAdmin.auth.admin.updateUserById(invite.row.user_id, { password });
     if (updateRes.error) {
-      return NextResponse.json({ error: translateAuthMessage(updateRes.error.message) }, { status: 400 });
+      return NextResponse.json({ error: `${translateAuthMessage(updateRes.error.message)} Demandez un nouveau lien d’invitation pour réessayer.` }, { status: 400 });
     }
-
-    const { error: consumeError } = await supabaseAdmin
-      .from("access_invitation_tokens")
-      .update({ consumed_at: new Date().toISOString() })
-      .eq("id", invite.row.id);
-    if (consumeError) throw new Error(consumeError.message);
 
     return NextResponse.json({
       ok: true,

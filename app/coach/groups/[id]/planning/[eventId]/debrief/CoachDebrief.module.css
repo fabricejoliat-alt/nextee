@@ -280,7 +280,7 @@
   .workflowHeader { align-items: center; }
   .currentPlayer { padding: 12px; }
   .ratingButtons { grid-template-columns: repeat(6, minmax(44px, 1fr)); }
-  .workflowActions { grid-template-columns: 1fr; }
+  .workflowActions { grid-template-columns: 1fr; border-top: 0; }
   .finishActions { grid-template-columns: 1fr; }
   .skeletonHero { align-items: stretch; flex-direction: column; }
   .skeletonBack { width: 100%; flex-basis: 42px; }

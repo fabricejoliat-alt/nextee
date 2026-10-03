@@ -21,3 +21,7 @@
     min-width: 0;
   }
 }
+
+.formHeadingGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px);gap:12px}
+.memberGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:640px){.formHeadingGrid,.memberGrid{grid-template-columns:minmax(0,1fr)}}

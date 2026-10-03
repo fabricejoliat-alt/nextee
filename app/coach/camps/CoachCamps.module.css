@@ -11,9 +11,9 @@
 .modalBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; display: grid; align-content: start; gap: 14px; background: #f8faf7; }
 .modalFooter { display: flex; justify-content: flex-end; gap: 9px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid #e4e9e2; background: #fff; }
 
-.notes { padding: 14px; border: 1px solid #e3e9e2; border-radius: 12px; background: #fff; color: #526056; font: 500 12px/1.55 var(--font-inter),sans-serif; }
-.notes > :first-child { margin-top: 0; }.notes > :last-child { margin-bottom: 0; }
-.dayGrid { display: grid; gap: 12px; }
+.dayGrid { display: grid; gap: 0; }
+.undatedDay { display: grid; gap: 8px; padding: 12px 0; }
+.undatedDay h3,.undatedDay p { margin: 0; }
 .location { display: flex; align-items: center; gap: 7px; color: #3f5847; font: 700 12px var(--font-inter),sans-serif; }
 .location svg { color: #c84a40; }
 .practical { margin: 0; color: #66736a; font: 500 12px/1.5 var(--font-inter),sans-serif; white-space: pre-wrap; }
@@ -33,3 +33,13 @@
 .formBody { border:0; margin:0; min-width:0; }
 .modal button,.modal select,.modal input,.addPlayer { min-height:44px; }
 .modal :focus-visible { outline:2px solid #526b50; outline-offset:2px; }
+.campBody { min-width: 0; align-content: start; }
+.campHeader { min-width: 0; overflow-wrap: anywhere; }
+.campHeader > span { max-width: 100%; }
+.campHeader svg { flex-shrink: 0; }
+.campCard .campAction { width: 44px; height: 44px; flex: 0 0 44px; padding: 0; }
+.campMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 11px; color: #647167; }
+.description { overflow-wrap: anywhere; }
+.description img { max-width: 100%; height: auto; }
+.inlineDays { display: grid; gap: 14px; }
+@media(prefers-reduced-motion:reduce) { .loadingCard * { animation: none; } }

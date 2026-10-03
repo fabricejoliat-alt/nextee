@@ -1,3 +1,6 @@
+import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { coachRows } from "@/lib/server/coachRows";
+import { additionalManagerCampCounts } from "@/lib/managerCampCounts";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -347,13 +350,8 @@ export async function GET(req: NextRequest) {
 
         const evaluationEventIds = uniq(assiduityEvents.filter((event) => event.requires_evaluation).map((event) => event.id));
         if (evaluationEventIds.length > 0) {
-          const feedbackRes = await supabaseAdmin
-            .from("club_event_coach_feedback")
-            .select("event_id,player_id")
-            .in("event_id", evaluationEventIds);
-          if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
-          const completedPairs = new Set(((feedbackRes.data ?? []) as Array<{ event_id: string; player_id: string }>).map((row) => `${row.event_id}|${row.player_id}`));
-          activitiesAwaitingCoachEvaluationCount = evaluationEventIds.filter((eventId) => attendanceRows.some((row) => row.event_id === eventId && row.status !== "absent" && row.status !== "excused" && row.status !== "not_registered" && !completedPairs.has(`${eventId}|${row.player_id}`))).length;
+          const evaluationState = await loadCoachEvaluationState(supabaseAdmin, evaluationEventIds);
+          activitiesAwaitingCoachEvaluationCount = evaluationEventIds.filter((id) => !evaluationState.completeByEvent[id]).length;
         }
 
         topAttendance = Array.from(counters.entries())
@@ -374,46 +372,37 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const scheduledCampsRes = await supabaseAdmin
-      .from("club_camps")
-      .select("id,title")
-      .in("club_id", clubIds)
-      .eq("status", "scheduled");
-    if (scheduledCampsRes.error) return NextResponse.json({ error: scheduledCampsRes.error.message }, { status: 400 });
-
-    const scheduledCamps = (scheduledCampsRes.data ?? []) as Array<{ id: string; title: string | null }>;
+    const scheduledCamps = await coachRows<{ id: string; title: string | null }>((from, to) => supabaseAdmin
+      .from("club_camps").select("id,title").in("club_id", clubIds).eq("status", "scheduled").order("id").range(from, to));
     const campTitleById = new Map(scheduledCamps.map((camp) => [String(camp.id), String(camp.title ?? "").trim() || "Stage/Camp"]));
     const campIds = Array.from(campTitleById.keys());
-    const campDaysRes = campIds.length > 0
-      ? await supabaseAdmin
-          .from("club_camp_days")
-          .select("camp_id,event_id")
-          .in("camp_id", campIds)
-          .gte("starts_at", nowIso)
-      : ({ data: [], error: null } as const);
-    if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
+    const campDays: Array<{ camp_id: string; event_id: string | null }> = [];
+    for (let offset = 0; offset < campIds.length; offset += 150) {
+      campDays.push(...await coachRows<{ camp_id: string; event_id: string | null }>((from, to) => supabaseAdmin
+        .from("club_camp_days").select("camp_id,event_id").in("camp_id", campIds.slice(offset, offset + 150)).order("id").range(from, to)));
+    }
 
     const campIdByEventId = new Map<string, string>();
-    for (const day of (campDaysRes.data ?? []) as Array<{ camp_id: string | null; event_id: string | null }>) {
+    for (const day of campDays) {
       const campId = String(day.camp_id ?? "").trim();
       const eventId = String(day.event_id ?? "").trim();
       if (campId && eventId) campIdByEventId.set(eventId, campId);
     }
     const campEventIds = Array.from(campIdByEventId.keys());
-    const campEventsRes = campEventIds.length > 0
-      ? await supabaseAdmin
-          .from("club_events")
-          .select("id,group_id,event_type,starts_at,ends_at,location_text,status")
-          .in("id", campEventIds)
-          .eq("status", "scheduled")
-          .gte("starts_at", nowIso)
-      : ({ data: [], error: null } as const);
-    if (campEventsRes.error) return NextResponse.json({ error: campEventsRes.error.message }, { status: 400 });
+    const campEvents: EventLite[] = [];
+    for (let offset = 0; offset < campEventIds.length; offset += 150) {
+      campEvents.push(...await coachRows<EventLite>((from, to) => supabaseAdmin
+        .from("club_events").select("id,group_id,event_type,starts_at,ends_at,location_text,status")
+        .in("id", campEventIds.slice(offset, offset + 150)).in("club_id", clubIds).eq("status", "scheduled").order("id").range(from, to)));
+    }
+    const campCounts = additionalManagerCampCounts(campEvents, planningGroupIds, nowIso);
+    plannedEventsCount += campCounts.planned;
+    pastEventsCount += campCounts.past;
 
     const upcomingById = new Map(upcomingEvents.map((event) => [event.id, event]));
-    for (const event of (campEventsRes.data ?? []) as EventLite[]) {
+    for (const event of campEvents) {
       const campId = campIdByEventId.get(String(event.id));
-      if (!campId) continue;
+      if (!campId || Date.parse(event.starts_at) < Date.parse(nowIso)) continue;
       upcomingById.set(String(event.id), {
         ...event,
         event_type: "camp",

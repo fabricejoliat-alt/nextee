@@ -1,5 +1,7 @@
 "use client";
 
+import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import NextImage from "next/image";
 import { supabase } from "@/lib/supabaseClient";
@@ -62,7 +64,7 @@ type ProfileCustomField = {
   visible_in_profile: boolean;
   editable_in_profile: boolean;
   scope: "permanent" | "season";
-  value: string | boolean | null;
+  value: string | boolean | string[] | null;
 };
 type ProfileCustomFieldGroup = {
   member_id: string;
@@ -140,10 +142,10 @@ function toErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | null | undefined) {
+function profileCustomFieldDisplayValue(field: ProfileCustomField, rawValue: string | boolean | string[] | null | undefined) {
   if (rawValue == null || rawValue === "") return "—";
   if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
-  return String(rawValue);
+  return Array.isArray(rawValue) ? rawValue.join(", ") || "—" : String(rawValue);
 }
 
 function staticDisplayValue(rawValue: string | null | undefined) {
@@ -1236,87 +1238,10 @@ export default function PlayerProfilePage() {
                             {group.fields.map((field) => (
                               field.editable_in_profile ? (
                                 <Field key={`${group.member_id}-${field.id}`} label={field.label}>
-                                  {field.field_type === "boolean" ? (
-                                    <select
-                                      value={field.value == null ? "" : field.value ? "yes" : "no"}
-                                      onChange={(e) =>
-                                        setCustomFieldGroups((previous) =>
-                                          previous.map((currentGroup) =>
-                                            currentGroup.member_id !== group.member_id
-                                              ? currentGroup
-                                              : {
-                                                  ...currentGroup,
-                                                  fields: currentGroup.fields.map((currentField) =>
-                                                    currentField.id !== field.id
-                                                      ? currentField
-                                                      : {
-                                                          ...currentField,
-                                                          value: e.target.value === "" ? null : e.target.value === "yes",
-                                                        }
-                                                  ),
-                                                }
-                                          )
-                                        )
-                                      }
-                                    >
-                                      <option value="">—</option>
-                                      <option value="yes">Oui</option>
-                                      <option value="no">Non</option>
-                                    </select>
-                                  ) : field.field_type === "select" ? (
-                                    <select
-                                      value={String(field.value ?? "")}
-                                      onChange={(e) =>
-                                        setCustomFieldGroups((previous) =>
-                                          previous.map((currentGroup) =>
-                                            currentGroup.member_id !== group.member_id
-                                              ? currentGroup
-                                              : {
-                                                  ...currentGroup,
-                                                  fields: currentGroup.fields.map((currentField) =>
-                                                    currentField.id !== field.id
-                                                      ? currentField
-                                                      : {
-                                                          ...currentField,
-                                                          value: e.target.value || null,
-                                                        }
-                                                  ),
-                                                }
-                                          )
-                                        )
-                                      }
-                                    >
-                                      <option value="">—</option>
-                                      {field.options_json.map((option) => (
-                                        <option key={option} value={option}>
-                                          {option}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      value={String(field.value ?? "")}
-                                      onChange={(e) =>
-                                        setCustomFieldGroups((previous) =>
-                                          previous.map((currentGroup) =>
-                                            currentGroup.member_id !== group.member_id
-                                              ? currentGroup
-                                              : {
-                                                  ...currentGroup,
-                                                  fields: currentGroup.fields.map((currentField) =>
-                                                    currentField.id !== field.id
-                                                      ? currentField
-                                                      : {
-                                                          ...currentField,
-                                                          value: e.target.value || null,
-                                                        }
-                                                  ),
-                                                }
-                                          )
-                                        )
-                                      }
-                                    />
-                                  )}
+                                  <ProfileCustomFieldControl field={field} name={`${group.member_id}-${field.id}`} disabled={!field.editable_in_profile} yes="Oui" no="Non"
+                                    onChange={(value) => setCustomFieldGroups((previous) => previous.map((currentGroup) => currentGroup.member_id !== group.member_id ? currentGroup : {
+                                      ...currentGroup, fields: currentGroup.fields.map((currentField) => currentField.id !== field.id ? currentField : { ...currentField, value }),
+                                    }))} />
                                 </Field>
                               ) : (
                                 <StaticField

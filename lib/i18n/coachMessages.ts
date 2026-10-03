@@ -5,9 +5,11 @@ import { coachEventEditorRows } from "./coachEventEditorMessages.ts";
 import { coachActivityFormRows } from "./coachActivityFormMessages.ts";
 import { coachFinishingRows } from "./coachFinishingMessages.ts";
 import { coachProfileRows } from "./coachProfileMessages.ts";
+import { coachActivityRows } from "./coachActivityMessages.ts";
 
 // Interface copy only: club-authored catalogue content remains unchanged.
 const rows = {
+  ...coachActivityRows,
   ...coachProfileRows,
   ...coachFinishingRows,
   ...coachDirectoryRows,

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CoachPlanningData, CoachPlanningEvent, CoachPlanningPerson } from "../coachPlanning.ts";
+import { loadCoachPreparationStatus } from "./coachPreparationStatus";
+import { coachClubCount } from "./coachClubCount";
 import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
 
 export class CoachPlanningAccessError extends Error {
@@ -80,13 +82,16 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
     const profile = profiles.get(id);
     return { id, first_name: profile?.first_name ?? null, last_name: profile?.last_name ?? null, avatar_url: profile?.avatar_url ?? null };
   };
+  const preparation = await loadCoachPreparationStatus(db, callerId, events);
   return {
+    coachClubCount: await coachClubCount(db, callerId),
     group: { id: group.id, name: group.name, club_id: group.club_id }, club_name: clubResult.data?.name ?? null, can_plan: canPlan,
     events: events.map((event) => ({
       id: event.id, group_id: event.group_id, club_id: event.club_id, event_type: event.event_type,
       title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, duration_minutes: event.duration_minutes,
       location_text: event.location_text, series_id: event.series_id, status: event.status, requires_evaluation: event.requires_evaluation,
       evaluation_complete: completion[event.id] ?? false,
+      preparation_pending: preparation[event.id] ?? false,
       coaches: [...new Set(coaches.filter((row) => row.event_id === event.id).map((row) => row.coach_id))].map(person),
       attendees: [...new Map(attendees.filter((row) => row.event_id === event.id).map((row) => [row.player_id, row])).values()]
         .map((row) => ({ ...person(row.player_id), is_player: playerIds.has(row.player_id), status: row.status, coach_recorded_status: row.coach_recorded_status })),

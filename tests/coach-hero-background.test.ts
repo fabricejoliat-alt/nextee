@@ -71,9 +71,39 @@ test("Coach access skeleton uses the hero background and a white shimmer", () =>
   assert.match(globals, /\.coach-page-root > \.role-guard-page-loading \.role-guard-loading-line\{[\s\S]*?rgba\(255,255,255,\.62\)/);
 });
 
+test("Coach contextual loading does not inherit the full-height Manager background", () => {
+  const rules: postcss.Rule[] = [];
+  postcss.parse(globals).walkRules((rule) => {
+    if (rule.selectors.includes('.player-page main[aria-busy="true"]')) rules.push(rule);
+  });
+  assert.equal(rules.length, 1);
+  assert.deepEqual(rules[0].selectors, [
+    '.manager-page:not(.coach-page-root) main[aria-busy="true"]',
+    '.player-page main[aria-busy="true"]',
+  ]);
+
+  const debrief = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/debrief/page.tsx", import.meta.url), "utf8");
+  assert.match(debrief, /<main className=\{styles.page\} aria-busy="true" aria-label=\{t\("common.loading"\)\}/);
+  assert.match(debrief, /className=\{styles.debriefSkeleton\} aria-hidden="true"/);
+  assert.equal([...debrief.matchAll(/className=\{styles.skeletonPanel\}/g)].length, 2);
+});
+
 test("Coach card titles stay dark on white surfaces", () => {
   assert.match(globals, /\.coach-page-root \.card-title\{color:#35483b !important/);
   assert.doesNotMatch(globals, /\.coach-page-root \.coach-shell h2\s*\{\s*color:#fff/);
+});
+
+test("mobile Coach debrief actions have no light divider under the feedback card", () => {
+  const css = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/debrief/CoachDebrief.module.css", import.meta.url), "utf8");
+  const actions: postcss.Rule[] = [];
+  postcss.parse(css).walkAtRules("media", (media) => {
+    if (media.params === "(max-width: 640px)") {
+      media.walkRules(".workflowActions", (rule) => { actions.push(rule); });
+    }
+  });
+  assert.equal(actions.length, 1);
+  assert.ok(actions[0].nodes.some((node) => node.type === "decl" && node.prop === "border-top" && node.value === "0"));
+  assert.ok(actions[0].nodes.some((node) => node.type === "decl" && node.prop === "grid-template-columns" && node.value === "1fr"));
 });
 
 test("Coach home previews exactly three upcoming activities", () => {

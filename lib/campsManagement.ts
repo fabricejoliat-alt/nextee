@@ -76,3 +76,21 @@ export function moveCampItem<T>(values: T[], index: number, direction: -1 | 1) {
   [next[index], next[target]] = [next[target], next[index]];
   return next;
 }
+
+/** Keep registrations/options attached to the same day when its position changes. */
+export function remapCampDayReferences<T, R extends { day_status_by_day_index: Record<string, unknown> }, O extends { day_indexes?: number[] }>(
+  previous: T[], next: T[], registrations: Record<string, R>, options: O[],
+) {
+  const oldIndexes = next.map((day) => previous.indexOf(day));
+  return {
+    registrations: Object.fromEntries(Object.entries(registrations).map(([player, registration]) => [player, {
+      ...registration,
+      day_status_by_day_index: Object.fromEntries(oldIndexes.flatMap((oldIndex, index) =>
+        Object.hasOwn(registration.day_status_by_day_index, String(oldIndex))
+          ? [[String(index), registration.day_status_by_day_index[String(oldIndex)]]] : [])),
+    }])) as Record<string, R>,
+    options: options.map((option) => ({ ...option,
+      day_indexes: oldIndexes.flatMap((oldIndex, index) => option.day_indexes?.includes(oldIndex) ? [index] : []),
+    })),
+  };
+}

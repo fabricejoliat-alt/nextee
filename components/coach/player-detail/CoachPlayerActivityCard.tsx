@@ -1,58 +1,23 @@
 "use client";
 
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { MapPin } from "lucide-react";
-import actionStyles from "../../admin/organizations/OrganizationSettingsAdmin.module.css";
-import ManagementActivityDate from "@/components/ui/ManagementActivityDate";
+import Link from "next/link";
+import { Eye } from "lucide-react";
+import CoachActivityCard from "@/components/coach/CoachActivityCard";
+import styles from "@/components/coach/CoachActivityCard.module.css";
 
 type Props = {
-  startsAt: string;
-  endsAt?: string | null;
-  dateLocale: string;
-  typeLabel: string;
-  title?: string;
-  groupName: string;
-  clubName: string;
-  location?: string | null;
-  href?: string;
-  actionLabel?: string;
-  statusLabel?: string;
-  actions?: ReactNode;
-  children?: ReactNode;
+  startsAt: string; endsAt?: string | null; dateLocale: string; typeLabel: string; title?: string;
+  groupName: string; clubName: string; showClub?: boolean; location?: string | null; href?: string;
+  actionLabel?: string; statusLabel?: string; actions?: ReactNode; children?: ReactNode;
 };
 
-export default function CoachPlayerActivityCard({ startsAt, endsAt, dateLocale, typeLabel, title, groupName, clubName, location, href, actionLabel, statusLabel, actions, children }: Props) {
+export default function CoachPlayerActivityCard({ startsAt, endsAt, typeLabel, title, groupName, clubName, showClub = false, location, href, actionLabel, actions, children }: Props) {
   const { t } = useI18n();
-  const date = new Date(startsAt);
-  const formatter = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(dateLocale, options).format(date);
-  const time = formatter({ hour: "2-digit", minute: "2-digit" });
-  const endTime = endsAt ? new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(new Date(endsAt)) : null;
-
-  return (
-    <article className="planning-event-card">
-      <div className="planning-event-card-inner">
-        <ManagementActivityDate startsAt={startsAt} endsAt={endsAt} locale={dateLocale} />
-        <div className="planning-event-content">
-          <div className="manager-calendar-expanded">
-            <div className="planning-event-title-row">
-              <h3 className="planning-event-title">{typeLabel}{title ? <span className="planning-event-custom-title"> — {title}</span> : null}</h3>
-              {statusLabel ? <span className="pill-soft">{statusLabel}</span> : null}
-            </div>
-            <div className="manager-calendar-detail-grid">
-              <div><span>{t("coach.groups.group")}</span><b>{groupName}</b></div>
-              <div><span>{t("coach.directory.club")}</span><b>{clubName}</b></div>
-              <div><span>{t("coach.camps.time")}</span><b>{time}{endTime ? ` — ${endTime}` : ""}</b></div>
-            </div>
-            {children}
-            <div className="planning-event-footer">
-              <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{location?.trim() || t("coach.activity.noPlace")}</span></span>
-              {actions ? <div className="user-mgmt-card-actions">{actions}</div> : href ? <div className="user-mgmt-card-actions"><Link className={actionStyles.secondaryButton} href={href}>{actionLabel ?? t("coach.camps.openActivity")}</Link></div> : null}
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
+  return <CoachActivityCard startsAt={startsAt} endsAt={endsAt} typeLabel={typeLabel} title={title} groupName={groupName}
+    clubName={clubName} showClub={showClub} location={location} href={href}
+    actions={actions ?? (href ? <Link className={`${styles.action} ${styles.view}`} href={href} title={actionLabel ?? t("coach.open")} aria-label={actionLabel ?? t("coach.open")}><Eye size={18} aria-hidden="true"/></Link> : null)}>
+    {children}
+  </CoachActivityCard>;
 }

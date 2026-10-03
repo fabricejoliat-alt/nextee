@@ -1,3 +1,5 @@
+import { activeClubMember, requireManagerClub } from "@/lib/server/managerAccess";
+import { managerMutationError } from "@/lib/server/managerMutationError";
 import { NextResponse, type NextRequest } from "next/server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from "@supabase/supabase-js";
@@ -5,7 +7,6 @@ import { cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from 
 
 export const runtime = "nodejs";
 type ConsentStatus = "pending" | "granted" | "refused" | "adult";
-type ConsentSource = "parent_portal" | "manager" | "import";
 
 function mustEnv(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }
 function db() { return createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } }); }
@@ -64,8 +65,32 @@ async function sendReminder(database: any, clubId: string, playerId: string, cal
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string; playerId: string }> }) { try { const { clubId, playerId } = await ctx.params; const database = db(); if (!(await authorize(req, database, clubId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 }); return NextResponse.json(await load(database, clubId, playerId)); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 }); } }
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: string; playerId: string }> }) {
-  try { const { clubId, playerId } = await ctx.params; const database = db(); const callerId = await authorize(req, database, clubId); if (!callerId) return NextResponse.json({ error: "Forbidden" }, { status: 403 }); const body = await req.json(); const status = String(body.status ?? "") as ConsentStatus; const source = String(body.source ?? "manager") as ConsentSource; if (!["pending", "granted", "refused", "adult"].includes(status)) return NextResponse.json({ error: "Statut invalide" }, { status: 400 }); if (!["parent_portal", "manager", "import"].includes(source)) return NextResponse.json({ error: "Origine invalide" }, { status: 400 }); const decidedAt = status === "pending" ? null : (body.decided_at || new Date().toISOString()); const values = { club_id: clubId, player_user_id: playerId, status, decided_at: decidedAt, signer_guardian_user_id: body.signer_guardian_user_id || null, signer_name: String(body.signer_name ?? "").trim() || null, source, consent_version: String(body.consent_version ?? "").trim() || null, internal_notes: String(body.internal_notes ?? "").trim() || null, updated_by: callerId, updated_at: new Date().toISOString() }; const membership = await database.from("club_members").update({ player_consent_status: status }).eq("user_id", playerId).eq("role", "player").eq("is_active", true); if (membership.error) throw new Error(membership.error.message); const consent = await database.from("player_consents").upsert(values, { onConflict: "club_id,player_user_id" }); if (consent.error) throw new Error(consent.error.message); const history = await database.from("player_consent_history").insert({ club_id: clubId, player_user_id: playerId, status, decided_at: decidedAt, signer_guardian_user_id: values.signer_guardian_user_id, signer_name: values.signer_name, source, consent_version: values.consent_version, internal_notes: values.internal_notes, changed_by: callerId }); if (history.error) throw new Error(history.error.message); return NextResponse.json({ ok: true, ...(await load(database, clubId, playerId)) }); }
-  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 }); }
+  try {
+    const { clubId, playerId } = await ctx.params;
+    const database = db();
+    const auth = await requireManagerClub(req, database, clubId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (!(await activeClubMember(database, clubId, playerId, "player"))) {
+      return NextResponse.json({ error: "Junior introuvable dans ce club." }, { status: 404 });
+    }
+    const body = await req.json();
+    if (!["pending", "granted", "refused", "adult"].includes(body.status) ||
+        !["manager", "import"].includes(body.source ?? "manager")) {
+      return NextResponse.json({ error: "Statut ou origine invalide." }, { status: 400 });
+    }
+    // Load display metadata before the transaction, so a failed read cannot disguise a successful save.
+    const before = await load(database, clubId, playerId);
+    const result = await database.rpc("save_manager_player_consent_v1", {
+      p_actor_id: auth.callerId, p_club_id: clubId, p_player_id: playerId, p_values: body,
+    });
+    if (result.error) {
+      const failure = managerMutationError(result.error);
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
+    }
+    return NextResponse.json({ ...before, ...result.data, migration_pending: false });
+  } catch {
+    return NextResponse.json({ error: "Enregistrement du consentement impossible." }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: string; playerId: string }> }) { try { const { clubId, playerId } = await ctx.params; const database = db(); const callerId = await authorize(req, database, clubId); if (!callerId) return NextResponse.json({ error: "Forbidden" }, { status: 403 }); return NextResponse.json({ ok: true, ...(await sendReminder(database, clubId, playerId, callerId)) }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 400 }); } }

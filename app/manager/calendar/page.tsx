@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { managerCalendarText } from "@/lib/i18n/managerCalendarMessages";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -44,12 +44,6 @@ type EventCoachRow = {
   event_id: string;
   coach_id: string;
   coach_name: string | null;
-};
-type MemberLite = {
-  user_id: string;
-  role: "manager" | "coach" | "player" | "parent";
-  is_active: boolean | null;
-  profiles?: { first_name: string | null; last_name: string | null } | null;
 };
 
 const fieldLabelStyle: React.CSSProperties = {
@@ -134,12 +128,12 @@ function dateCardParts(date: Date, locale: string) {
 
 function eventTypeLabel(v: EventRow["event_type"], locale: string) {
   const l = locale as "fr" | "en" | "de" | "it";
-  if (v === "training") return pickLocaleText(l, "Entraînement", "Training");
-  if (v === "interclub") return pickLocaleText(l, "Interclub", "Interclub");
-  if (v === "camp") return pickLocaleText(l, "Stage", "Camp");
-  if (v === "session") return pickLocaleText(l, "Séance", "Session");
-  if (v === "competition") return pickLocaleText(l, "Compétition", "Competition");
-  return pickLocaleText(l, "Activité", "Activity");
+  if (v === "training") return managerCalendarText(l, "Entraînement", "Training");
+  if (v === "interclub") return managerCalendarText(l, "Interclub", "Interclub");
+  if (v === "camp") return managerCalendarText(l, "Stage", "Camp");
+  if (v === "session") return managerCalendarText(l, "Séance", "Session");
+  if (v === "competition") return managerCalendarText(l, "Compétition", "Competition");
+  return managerCalendarText(l, "Activité", "Activity");
 }
 
 function eventTypeColor(v: EventRow["event_type"]) {
@@ -151,17 +145,17 @@ function eventTypeColor(v: EventRow["event_type"]) {
   return { bg: "rgba(15,23,42,0.10)", border: "rgba(15,23,42,0.24)", text: "rgba(15,23,42,1)" };
 }
 
-function competitionLevelLabel(value: EventRow["competition_level"]) {
-  if (value === "internal") return "Tournoi interne";
-  if (value === "club") return "Tournoi Club";
-  if (value === "regional") return "Régional";
-  if (value === "national") return "National";
-  if (value === "international") return "International";
+function competitionLevelLabel(value: EventRow["competition_level"], locale: string) {
+  if (value === "internal") return managerCalendarText(locale, "Tournoi interne", "Internal tournament");
+  if (value === "club") return managerCalendarText(locale, "Tournoi Club", "Club tournament");
+  if (value === "regional") return managerCalendarText(locale, "Régional", "Regional");
+  if (value === "national") return managerCalendarText(locale, "National", "National");
+  if (value === "international") return managerCalendarText(locale, "International", "International");
   return "—";
 }
 
-function competitionCategoryLabel(value: EventRow["competition_category"]) {
-  return value === "all" ? "Tous" : String(value ?? "—").toUpperCase();
+function competitionCategoryLabel(value: EventRow["competition_category"], locale: string) {
+  return value === "all" ? managerCalendarText(locale, "Tous", "All") : String(value ?? "—").toUpperCase();
 }
 
 function eventPeriodLabel(event: EventRow, locale: string) {
@@ -202,10 +196,13 @@ function overlapsDay(e: EventRow, d: Date) {
 
 export default function CoachCalendarPage() {
   const { locale } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const tr = (fr: string, en: string) => managerCalendarText(locale, fr, en);
   const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 
-  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(true);
+  const [loadedPeriod, setLoadedPeriod] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [activityStats, setActivityStats] = useState({ completed: 0, planned: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
@@ -224,6 +221,11 @@ export default function CoachCalendarPage() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
 
+  const from = (view === "month" ? startOfMonth(anchorDate) : view === "week" ? startOfWeek(anchorDate) : startOfDay(anchorDate)).toISOString();
+  const to = (view === "month" ? endOfMonth(anchorDate) : view === "week" ? endOfWeek(anchorDate) : endOfDay(anchorDate)).toISOString();
+  const periodKey = `${from}|${to}`;
+  const loading = pending || loadedPeriod !== periodKey;
+
   const filteredEvents = useMemo(() => {
     let list = events;
     if (groupFilter !== "all") {
@@ -238,150 +240,43 @@ export default function CoachCalendarPage() {
     return list;
   }, [events, groupFilter, playerFilter, eventTypeFilter, attendeeByEvent]);
 
-  const activityStats = useMemo(() => {
-    const now = new Date();
-    const plannedEvents = events.filter((event) => event.status === "scheduled");
-    return {
-      completed: plannedEvents.filter((event) => new Date(event.starts_at).getTime() <= now.getTime()).length,
-      planned: plannedEvents.filter((event) => new Date(event.starts_at).getTime() > now.getTime()).length,
-      total: plannedEvents.length,
-    };
-  }, [events]);
-
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-
+    const controller = new AbortController();
+    void (async () => {
+      setPending(true); setError(null); setSelectedEventId(null);
       try {
-        const { data: auth, error: authErr } = await supabase.auth.getUser();
-        if (authErr || !auth.user) throw new Error("Session invalide.");
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token ?? "";
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
         if (!token) throw new Error(tr("Session invalide.", "Invalid session"));
-
-        const clubsRes = await fetch("/api/manager/my-clubs", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const clubsJson = await clubsRes.json().catch(() => ({}));
-        if (!clubsRes.ok) throw new Error(String(clubsJson?.error ?? "Could not load clubs."));
-
-        const managedClubs = (Array.isArray(clubsJson?.clubs) ? clubsJson.clubs : []) as ManagedClub[];
-        const clubIds = Array.from(new Set(managedClubs.map((c) => String(c?.id ?? "").trim()).filter(Boolean)));
-
-        if (clubIds.length === 0) {
-          setEvents([]);
-          setGroupNames({});
-          setGroupHeadCoachNames({});
-          setClubNames({});
-          setAttendeeByEvent({});
-          setPlayerNameById({});
-          return;
-        }
-
-        const calendarRes = await fetch("/api/manager/events/calendar", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const calendarJson = await calendarRes.json().catch(() => ({}));
-        if (!calendarRes.ok) throw new Error(String(calendarJson?.error ?? "Could not load calendar events."));
-        const merged = ((Array.isArray(calendarJson?.events) ? calendarJson.events : []) as EventRow[]).sort(
-          (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
-        );
-        setEvents(merged);
-
-        const groupMap: Record<string, string> = {};
-        const groupHeadCoachMap: Record<string, string> = {};
-        const eventCoachNameMap: Record<string, string[]> = {};
-        const groups = (Array.isArray(calendarJson?.groups) ? calendarJson.groups : []) as CalendarGroupRow[];
-        groups.forEach((g) => {
-          groupMap[g.id] = String(g?.name ?? tr("Groupe", "Group"));
-          const head = String(g.head_coach_name ?? "").trim();
-          if (head) groupHeadCoachMap[g.id] = head;
-        });
-        ((Array.isArray(calendarJson?.event_coaches) ? calendarJson.event_coaches : []) as EventCoachRow[]).forEach((row) => {
-          const eventId = String(row.event_id ?? "").trim();
-          const coachName = String(row.coach_name ?? "").trim();
-          if (!eventId || !coachName) return;
-          if (!eventCoachNameMap[eventId]) eventCoachNameMap[eventId] = [];
-          if (!eventCoachNameMap[eventId].includes(coachName)) eventCoachNameMap[eventId].push(coachName);
-        });
-        setGroupNames(groupMap);
-        setGroupHeadCoachNames(groupHeadCoachMap);
-        setCoachNamesByEventId(eventCoachNameMap);
-        setGroupFilterOptions(
-          groups
-            .filter((g) => !g.is_archived)
-            .map((g) => {
-              const base = String(g.name ?? tr("Groupe", "Group"));
-              const head = String(g.head_coach_name ?? "").trim();
-              return {
-                id: g.id,
-                label: head ? `${base} (${head})` : base,
-              };
-            })
-            .sort((a, b) => a.label.localeCompare(b.label, dateLocale))
-        );
-
-        const clubMap: Record<string, string> = {};
-        (Array.isArray(calendarJson?.clubs) ? calendarJson.clubs : []).forEach((c: any) => {
-          clubMap[c.id] = String(c?.name ?? "Club");
-        });
-        setClubNames(clubMap);
-
-        const map: Record<string, string[]> = {};
-        (Array.isArray(calendarJson?.attendees) ? calendarJson.attendees : []).forEach((r: any) => {
-          const eventId = String(r.event_id ?? "").trim();
-          const playerId = String(r.player_id ?? "").trim();
-          if (!eventId || !playerId) return;
-          if (!map[eventId]) map[eventId] = [];
-          if (!map[eventId].includes(playerId)) map[eventId].push(playerId);
-        });
-        setAttendeeByEvent(map);
-
-        const membersByClubRes = await Promise.all(
-          clubIds.map(async (clubId) => {
-            const res = await fetch(`/api/manager/clubs/${clubId}/members`, {
-              method: "GET",
-              headers: { Authorization: `Bearer ${token}` },
-              cache: "no-store",
-            });
-            const json = await res.json().catch(() => ({}));
-            return { ok: res.ok, members: (json?.members ?? []) as MemberLite[] };
-          })
-        );
-        const playerNames: Record<string, string> = {};
-        membersByClubRes.forEach((row) => {
-          if (!row.ok) return;
-          row.members
-            .filter((m) => m.role === "player" && m.is_active)
-            .forEach((m) => {
-              const id = String(m.user_id ?? "").trim();
-              if (!id || playerNames[id]) return;
-              const first = m.profiles?.first_name ?? null;
-              const last = m.profiles?.last_name ?? null;
-              playerNames[id] = `${first ?? ""} ${last ?? ""}`.trim() || id;
-            });
-        });
-        setPlayerNameById(playerNames);
-      } catch (e: any) {
-        setError(e?.message ?? tr("Erreur chargement", "Loading error"));
-        setEvents([]);
-        setGroupNames({});
-        setGroupHeadCoachNames({});
-        setCoachNamesByEventId({});
-        setGroupFilterOptions([]);
-        setClubNames({});
-        setAttendeeByEvent({});
-        setPlayerNameById({});
+        const query = new URLSearchParams({ from, to });
+        const response = await fetch(`/api/manager/events/calendar?${query}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: "no-store" });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error ?? tr("Erreur chargement", "Loading error"));
+        if (controller.signal.aborted) return;
+        setEvents(json.events ?? []); setActivityStats(json.stats ?? { completed: 0, planned: 0, total: 0 });
+        const groups = (json.groups ?? []) as CalendarGroupRow[];
+        setGroupNames(Object.fromEntries(groups.map((group) => [group.id, group.name || tr("Groupe", "Group")])));
+        setGroupHeadCoachNames(Object.fromEntries(groups.map((group) => [group.id, group.head_coach_name ?? ""])));
+        setGroupFilterOptions(groups.filter((group) => !group.is_archived).map((group) => ({ id: group.id, label: [group.name || tr("Groupe", "Group"), group.head_coach_name ? `(${group.head_coach_name})` : ""].filter(Boolean).join(" ") })).sort((a, b) => a.label.localeCompare(b.label, dateLocale)));
+        const coaches: Record<string, string[]> = {};
+        for (const row of (json.event_coaches ?? []) as EventCoachRow[]) if (row.coach_name) coaches[row.event_id] = [...new Set([...(coaches[row.event_id] ?? []), row.coach_name])];
+        setCoachNamesByEventId(coaches);
+        setClubNames(Object.fromEntries(((json.clubs ?? []) as ManagedClub[]).map((club) => [club.id, club.name || "Club"])));
+        const attendees: Record<string, string[]> = {};
+        for (const row of (json.attendees ?? []) as Array<{ event_id: string; player_id: string }>) attendees[row.event_id] = [...new Set([...(attendees[row.event_id] ?? []), row.player_id])];
+        setAttendeeByEvent(attendees);
+        setPlayerNameById(Object.fromEntries(((json.players ?? []) as Array<{ id: string; name: string }>).map((player) => [player.id, player.name])));
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setError(cause instanceof Error ? cause.message : tr("Erreur chargement", "Loading error")); setEvents([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) { setLoadedPeriod(`${from}|${to}`); setPending(false); }
       }
     })();
-  }, [locale]);
+    return () => controller.abort();
+  // Labels and requests both follow the visible calendar period and language.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, locale, revision]);
 
   function eventMetaLabel(e: EventRow) {
     const eventTitle = String(e.title ?? "").trim();
@@ -426,8 +321,8 @@ export default function CoachCalendarPage() {
   const eventsByYmd = useMemo(() => {
     const map: Record<string, EventRow[]> = {};
     for (const e of filteredEvents) {
-      const start = startOfDay(new Date(e.starts_at));
-      const end = startOfDay(new Date(e.ends_at ?? e.starts_at));
+      const start = startOfDay(new Date(Math.max(Date.parse(e.starts_at), Date.parse(from))));
+      const end = startOfDay(new Date(Math.min(Date.parse(e.ends_at ?? e.starts_at), Date.parse(to))));
       for (let d = new Date(start); d.getTime() <= end.getTime(); d = addDays(d, 1)) {
         const k = ymd(d);
         if (!map[k]) map[k] = [];
@@ -436,7 +331,7 @@ export default function CoachCalendarPage() {
     }
     Object.values(map).forEach((list) => list.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()));
     return map;
-  }, [filteredEvents]);
+  }, [filteredEvents, from, to]);
 
   function goPrev() {
     if (view === "month") setAnchorDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
@@ -504,14 +399,15 @@ export default function CoachCalendarPage() {
       if (!res.ok) throw new Error(String(json?.error ?? tr("Suppression impossible.", "Could not delete activity.")));
 
       setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      setRevision((value) => value + 1);
       setSelectedEventId((prev) => (prev === eventId ? null : prev));
       setAttendeeByEvent((prev) => {
         const next = { ...prev };
         delete next[eventId];
         return next;
       });
-    } catch (e: any) {
-      setError(e?.message ?? tr("Suppression impossible.", "Could not delete activity."));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : tr("Suppression impossible.", "Could not delete activity."));
     } finally {
       setDeletingEventId(null);
     }
@@ -542,8 +438,8 @@ export default function CoachCalendarPage() {
           <div><span>{tr("Groupe", "Group")}</span><b>{groupNames[event.group_id] ?? tr("Groupe spécifique", "Specific group")}</b></div>
           {!isCompetition ? <div><span>{tr("Club", "Club")}</span><b>{clubNames[event.club_id] ?? tr("Club", "Club")}</b></div> : null}
           {showScheduleCard ? <div><span>{isCompetition ? tr("Période", "Period") : tr("Horaire", "Schedule")}</span><b>{isCompetition ? eventPeriodLabel(event, dateLocale) : `${timeLabel(event.starts_at, dateLocale)}${event.ends_at ? ` — ${timeLabel(event.ends_at, dateLocale)}` : ""}`}</b></div> : null}
-          {isCompetition ? <div><span>{tr("Niveau", "Level")}</span><b>{competitionLevelLabel(event.competition_level)}</b></div> : null}
-          {isCompetition ? <div><span>{tr("Catégorie", "Category")}</span><b>{competitionCategoryLabel(event.competition_category)}</b></div> : null}
+          {isCompetition ? <div><span>{tr("Niveau", "Level")}</span><b>{competitionLevelLabel(event.competition_level, locale)}</b></div> : null}
+          {isCompetition ? <div><span>{tr("Catégorie", "Category")}</span><b>{competitionCategoryLabel(event.competition_category, locale)}</b></div> : null}
         </div>
 
         {(isCompetition ? event.competition_note : event.coach_note) ? <p className="manager-calendar-detail-note">{isCompetition ? event.competition_note : event.coach_note}</p> : null}
@@ -568,7 +464,7 @@ export default function CoachCalendarPage() {
 
   return (
     <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
+      <nav aria-label={tr("Fil d’Ariane", "Breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
         {tr("Gestion des activités / Activités", "Activity management / Activities")}
       </nav>
 
@@ -615,9 +511,9 @@ export default function CoachCalendarPage() {
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={segmentWrapStyle}>
-                <button onClick={() => setView("month")} style={segmentBtnStyle(view === "month", true)}>{tr("Mois", "Month")}</button>
-                <button onClick={() => setView("week")} style={segmentBtnStyle(view === "week", true)}>{tr("Semaine", "Week")}</button>
-                <button onClick={() => setView("day")} style={segmentBtnStyle(view === "day")}>{tr("Jour", "Day")}</button>
+                <button type="button" aria-pressed={view === "month"} onClick={() => setView("month")} style={segmentBtnStyle(view === "month", true)}>{tr("Mois", "Month")}</button>
+                <button type="button" aria-pressed={view === "week"} onClick={() => setView("week")} style={segmentBtnStyle(view === "week", true)}>{tr("Semaine", "Week")}</button>
+                <button type="button" aria-pressed={view === "day"} onClick={() => setView("day")} style={segmentBtnStyle(view === "day")}>{tr("Jour", "Day")}</button>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
@@ -717,6 +613,7 @@ export default function CoachCalendarPage() {
                                       <button
                                         type="button"
                                         className="manager-calendar-activity"
+                                        aria-expanded={isSelected}
                                         onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                                         style={{
                                           textAlign: "left",
@@ -779,6 +676,7 @@ export default function CoachCalendarPage() {
                                 <button
                                   type="button"
                                   className="manager-calendar-activity"
+                                  aria-expanded={isSelected}
                                   onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                                   style={{
                                     textAlign: "left",
@@ -824,6 +722,7 @@ export default function CoachCalendarPage() {
                           <button
                             type="button"
                             className="manager-calendar-activity"
+                            aria-expanded={isSelected}
                             onClick={() => setSelectedEventId((prev) => (prev === e.id ? null : e.id))}
                             style={{
                               textAlign: "left",

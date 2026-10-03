@@ -1,165 +1,64 @@
 "use client";
-
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ChevronRight, Plus, Save, Trash2 } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import { useManagerOmMutation } from "@/components/manager/useManagerOmMutation";
+import { supabase } from "@/lib/supabaseClient";
+import { omText, omDate, omError, omName, type OmContestData } from "@/lib/managerOrderOfMerit";
 import styles from "../../OrderOfMerit.module.css";
 
-type Contest = {
-  id: string;
-  organization_id: string;
-  group_id: string | null;
-  title: string;
-  description: string | null;
-  contest_date: string;
-};
-type CandidatePlayer = { id: string; first_name: string | null; last_name: string | null };
-type ResultRow = { player_id: string; rank: number; note: string };
-type ProfileRelation = { first_name: string | null; last_name: string | null } | Array<{ first_name: string | null; last_name: string | null }> | null;
-type GroupPlayerRecord = { player_user_id: string | null; profiles: ProfileRelation };
-type ClubPlayerRecord = { user_id: string | null; profiles: ProfileRelation };
-
-function profileFromRelation(value: ProfileRelation) {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
-function playerName(player: CandidatePlayer) {
-  return `${player.first_name ?? ""} ${player.last_name ?? ""}`.trim() || "Joueur";
-}
-
-function formatDate(value: string | undefined) {
-  if (!value) return "Date à définir";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "long", year: "numeric" }).format(date);
-}
-
-export default function ManagerOMContestDetailPage() {
-  const params = useParams<{ contestId: string }>();
-  const contestId = params.contestId;
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [contest, setContest] = useState<Contest | null>(null);
-  const [players, setPlayers] = useState<CandidatePlayer[]>([]);
-  const [rows, setRows] = useState<ResultRow[]>([]);
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    const contestResponse = await supabase.from("om_internal_contests")
-      .select("id,organization_id,group_id,title,description,contest_date")
-      .eq("id", contestId).maybeSingle();
-    if (contestResponse.error || !contestResponse.data) {
-      setError(contestResponse.error?.message ?? "Concours introuvable.");
-      setLoading(false);
-      return;
-    }
-    const nextContest = contestResponse.data as Contest;
-    setContest(nextContest);
-
-    const resultsResponse = await supabase.from("om_internal_contest_results")
-      .select("player_id,rank,note").eq("contest_id", contestId).order("rank", { ascending: true });
-    if (resultsResponse.error) {
-      setError(resultsResponse.error.message);
-    } else {
-      setRows(((resultsResponse.data ?? []) as Array<{ player_id: string; rank: number; note: string | null }>).map((row) => ({
-        player_id: String(row.player_id ?? ""),
-        rank: Number(row.rank ?? 1),
-        note: String(row.note ?? ""),
-      })));
-    }
-
-    let candidates: CandidatePlayer[] = [];
-    if (nextContest.group_id) {
-      const playersResponse = await supabase.from("coach_group_players")
-        .select("player_user_id,profiles:player_user_id(first_name,last_name)").eq("group_id", nextContest.group_id);
-      if (playersResponse.error) {
-        setError(playersResponse.error.message);
-      } else {
-        candidates = ((playersResponse.data ?? []) as unknown as GroupPlayerRecord[]).map((row) => {
-          const profile = profileFromRelation(row.profiles);
-          return { id: String(row.player_user_id ?? ""), first_name: profile?.first_name ?? null, last_name: profile?.last_name ?? null };
-        });
-      }
-    } else {
-      const playersResponse = await supabase.from("club_members")
-        .select("user_id,profiles:user_id(first_name,last_name)")
-        .eq("club_id", nextContest.organization_id).eq("role", "player").eq("is_active", true);
-      if (playersResponse.error) {
-        setError(playersResponse.error.message);
-      } else {
-        candidates = ((playersResponse.data ?? []) as unknown as ClubPlayerRecord[]).map((row) => {
-          const profile = profileFromRelation(row.profiles);
-          return { id: String(row.user_id ?? ""), first_name: profile?.first_name ?? null, last_name: profile?.last_name ?? null };
-        });
-      }
-    }
-    const uniquePlayers = Array.from(new Map(candidates.filter((player) => player.id).map((player) => [player.id, player])).values());
-    setPlayers(uniquePlayers.sort((a, b) => playerName(a).localeCompare(playerName(b), "fr")));
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contestId]);
-
-  function addRow() {
-    const availablePlayer = players.find((player) => !rows.some((row) => row.player_id === player.id));
-    setRows((current) => [...current, { player_id: availablePlayer?.id ?? "", rank: current.length + 1, note: "" }]);
-  }
-
-  function updateRow(index: number, patch: Partial<ResultRow>) {
-    setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
-  }
-
-  async function saveRanking() {
-    setError(null);
-    setSuccess(null);
-    const cleaned = rows.map((row) => ({ player_id: row.player_id, rank: Math.max(1, Number(row.rank || 1)), note: row.note.trim() })).filter((row) => row.player_id);
-    if (new Set(cleaned.map((row) => row.player_id)).size !== cleaned.length) {
-      setError("Chaque joueur doit apparaître une seule fois.");
-      return;
-    }
-    const sorted = [...cleaned].sort((a, b) => a.rank - b.rank);
-    const fullRanking = sorted.map((row) => ({
-      rank: row.rank,
-      player_id: row.player_id,
-      player_name: playerName(players.find((player) => player.id === row.player_id) ?? { id: row.player_id, first_name: null, last_name: null }),
-      note: row.note || null,
-    }));
-    setSaving(true);
-    const response = await supabase.rpc("om_publish_internal_contest", { p_contest_id: contestId, p_rankings: sorted, p_full_ranking: fullRanking });
-    setSaving(false);
-    if (response.error) {
-      setError(response.error.message);
-      return;
-    }
-    setSuccess("Le classement a été publié et les points ont été recalculés.");
-    await load();
-  }
-
-  const remainingPlayers = useMemo(() => players.filter((player) => !rows.some((row) => row.player_id === player.id)).length, [players, rows]);
-
-  return (
-    <main className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="Fil d'Ariane"><Link href="/manager">Manager</Link><ChevronRight size={13} /><Link href="/manager/om/contests">Concours internes</Link><ChevronRight size={13} /><span>{contest?.title ?? "Classement"}</span></nav>
-      <div className={styles.topline}><div><h1>{contest?.title ?? "Classement du concours"}</h1><p className={styles.lead}>{contest?.description || "Renseignez l'ordre d'arrivée pour calculer les points du concours interne."}</p></div><div className={styles.actions}><button type="button" className={styles.primary} onClick={() => void saveRanking()} disabled={saving || loading}><Save size={16} />{saving ? "Publication..." : "Publier le classement"}</button></div></div>
-      {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
-      {success ? <div className={styles.alertSuccess} role="status">{success}</div> : null}
-      <section className={styles.stats} aria-label="Résumé du concours"><div className={styles.stat}><span>Date</span><b style={{ fontSize: 17 }}>{formatDate(contest?.contest_date)}</b></div><div className={styles.stat}><span>Joueurs disponibles</span><b>{players.length}</b></div><div className={styles.stat}><span>Résultats saisis</span><b>{rows.length}</b></div><div className={styles.stat}><span>Encore disponibles</span><b>{remainingPlayers}</b></div></section>
-      <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>Classement</h2><p>Chaque joueur ne peut apparaître qu’une seule fois. La note est facultative.</p></div><div className={styles.actions}><button type="button" className={styles.secondary} onClick={addRow} disabled={loading || remainingPlayers === 0}><Plus size={15} />Ajouter un joueur</button></div></div>
-        {loading ? <ListLoadingBlock label="Chargement du concours..." /> : players.length === 0 ? <div className={styles.empty}>Aucun joueur disponible pour ce concours.</div> : rows.length === 0 ? <div className={styles.empty}>Aucun résultat saisi. Ajoutez un joueur pour commencer le classement.</div> : <div className={styles.tableWrap}><table className={styles.table}>
-          <thead><tr><th>Joueur</th><th>Classement</th><th>Note</th><th>Actions</th></tr></thead>
-          <tbody>{rows.map((row, index) => <tr key={`${index}:${row.player_id}`}><td data-label="Joueur"><select className={styles.tableControl} value={row.player_id} onChange={(event) => updateRow(index, { player_id: event.target.value })}><option value="">Choisir un joueur</option>{players.map((player) => <option key={player.id} value={player.id} disabled={rows.some((current, rowIndex) => rowIndex !== index && current.player_id === player.id)}>{playerName(player)}</option>)}</select></td><td data-label="Classement"><input className={styles.tableControl} type="number" min={1} value={row.rank} onChange={(event) => updateRow(index, { rank: Math.max(1, Number(event.target.value || 1)) })} /></td><td data-label="Note"><input className={styles.tableControl} value={row.note} onChange={(event) => updateRow(index, { note: event.target.value })} placeholder="Note facultative" /></td><td data-label="Actions"><div className={styles.actions}><button type="button" className={`${styles.iconButton} ${styles.dangerIcon}`} title="Retirer" aria-label="Retirer ce joueur" onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} /></button></div></td></tr>)}</tbody>
-        </table></div>}
-      </section>
-    </main>
-  );
+type Draft = { player_id:string; rank:string; note:string };
+export default function ManagerContestDetailPage() {
+ const params=useParams<{contestId:string}>(),id=params.contestId;
+ const {t,locale}=useI18n();const tr=(key:string,values?:Record<string,string|number>)=>omText(t,key,values);
+ const [loaded,setLoaded]=useState<(OmContestData&{id:string})|null>(null),[rows,setRows]=useState<Draft[]>([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState("");
+ const [validation,setValidation]=useState(""),[success,setSuccess]=useState(false),[dirty,setDirty]=useState(false);const generation=useRef(0);
+ const load=useCallback(async()=>{
+  const token=++generation.current;setLoading(true);setLoadError("");setLoaded(null);
+  try{
+   const {data,error}=await supabase.rpc("get_manager_om_contest_v1",{p_contest_id:id});if(error)throw error;
+   if(data?.contest?.id!==id||!data.contest.organization_id||typeof data.version!=="string"||!Array.isArray(data.players)||!Array.isArray(data.results))throw new Error("invalid_response");
+   if(token!==generation.current)return;
+   setLoaded({...data,id});setRows(data.results.map((r:{player_id:string;rank:number;note:string|null})=>({player_id:r.player_id,rank:String(r.rank),note:r.note??""})));setDirty(false);
+  }catch(cause){if(token===generation.current){const failure=omError(cause);setLoadError(failure.definite?failure.key:"load");}throw cause;}
+  finally{if(token===generation.current)setLoading(false);}
+ },[id]);
+ useEffect(()=>{setRows([]);setValidation("");setSuccess(false);void load().catch(()=>{});const counter=generation;return()=>{counter.current++;};},[load]);
+ const mutation=useManagerOmMutation(id,async()=>{setSuccess(true);setDirty(false);await load();});
+ const data=loaded?.id===id?loaded:null,locked=mutation.locked||loading||!data;
+ const update=(index:number,patch:Partial<Draft>)=>{setRows(current=>current.map((r,i)=>i===index?{...r,...patch}:r));setDirty(true);setSuccess(false);};
+ async function publish(){
+  if(locked||!data)return;
+  if(rows.some(r=>!r.player_id||!/^\d+$/.test(r.rank)||Number(r.rank)<1||Number(r.rank)>10000)){setValidation("invalid_rankings");return;}
+  if(new Set(rows.map(r=>r.player_id)).size!==rows.length){setValidation("duplicate_player");return;}
+  if(!rows.length&&data.results.length&&!window.confirm(tr("clearConfirm")))return;
+  setValidation("");setSuccess(false);
+  await mutation.run({club:data.contest.organization_id,kind:"contest",action:"publish",id,expected:data.version,payload:{rankings:rows.map(r=>({...r,rank:Number(r.rank)})),allow_empty:!rows.length&&!!data.results.length}});
+ }
+ const reload=()=>{if(dirty&&!window.confirm(tr("reloadDraft")))return;setValidation("");mutation.clearError();void load().catch(()=>{});};
+ const error=validation||mutation.error||loadError;
+ return <main className={styles.page}>
+  <nav className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/manager">Manager</Link><ChevronRight size={13}/><Link href="/manager/om">{tr("title")}</Link><ChevronRight size={13}/><Link href={`/manager/om/contests${data?`?club=${data.contest.organization_id}`:""}`}>{tr("contest.title")}</Link></nav>
+  <div className={styles.topline}><div><h1>{data?.contest.title||tr("results")}</h1>{data?<p className={styles.lead}>{omDate(data.contest.contest_date,locale,tr("undated"))}{data.contest.description?` — ${data.contest.description}`:""}</p>:null}</div><button className={styles.secondary} type="button" disabled={mutation.locked||loading} onClick={reload}>{tr("retry")}</button></div>
+  {error?<div className={styles.alertError} role="alert">{tr(`error.${error}`)}</div>:null}
+  {success?<div className={styles.alertSuccess} role="status">{tr("saved")}</div>:null}
+  {mutation.uncertain?<button className={styles.secondary} disabled={mutation.busy} type="button" onClick={()=>void mutation.retry()}>{tr(mutation.busy?"saving":"verify")}</button>:null}
+  {loading?<ListLoadingBlock label={tr("loading")}/>:data?<section className={styles.panel}>
+   <div className={styles.panelHeader}><div><h2>{tr("results")}</h2><p>{tr("resultsHelp")}</p></div></div>
+   <fieldset className={styles.formFields} disabled={locked}><div className={styles.tableWrap}><table className={styles.table}>
+    <thead><tr>{["player","rank","note","actions"].map(k=><th key={k} scope="col">{tr(k)}</th>)}</tr></thead>
+    <tbody>{rows.map((r,i)=><tr key={i}>
+     <td data-label={tr("player")}><select className={styles.tableControl} aria-label={tr("rowLabel",{field:tr("player"),n:i+1})} value={r.player_id} onChange={e=>update(i,{player_id:e.target.value})}><option value="">{tr("choosePlayer")}</option>{data.players.map(p=><option key={p.id} value={p.id}>{omName(p,tr("unnamed"))}</option>)}</select></td>
+     <td data-label={tr("rank")}><input className={styles.tableControl} aria-label={tr("rowLabel",{field:tr("rank"),n:i+1})} type="number" min={1} max={10000} step={1} value={r.rank} onChange={e=>update(i,{rank:e.target.value})}/></td>
+     <td data-label={tr("note")}><input className={styles.tableControl} aria-label={tr("rowLabel",{field:tr("note"),n:i+1})} value={r.note} maxLength={10000} onChange={e=>update(i,{note:e.target.value})}/></td>
+     <td data-label={tr("actions")}><button type="button" className={`${styles.iconButton} ${styles.dangerIcon}`} aria-label={tr("removeRow",{n:i+1})} onClick={()=>{setRows(current=>current.filter((_,n)=>n!==i));setDirty(true);setSuccess(false);}}><Trash2 size={15}/></button></td>
+    </tr>)}</tbody>
+   </table></div></fieldset>
+   {!rows.length?<div className={styles.empty}>{tr("noResults")}</div>:null}
+   <div className={styles.actions}><button className={styles.secondary} type="button" disabled={locked||rows.length>=2000} onClick={()=>{setRows(current=>[...current,{player_id:"",rank:String(current.length+1),note:""}]);setDirty(true);setSuccess(false);}}><Plus size={15}/>{tr("addPlayer")}</button><button className={styles.primary} type="button" disabled={locked} onClick={()=>void publish()}>{tr(mutation.busy?"saving":"publish")}</button></div>
+  </section>:null}
+ </main>;
 }

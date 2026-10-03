@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Test-only hook slots and JSX properties. */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import ts from "typescript";
@@ -13,9 +13,11 @@ const same = (a?: unknown[], b?: unknown[]) => Boolean(a && b && a.length === b.
 
 /** Runs component handlers/effects with fake IO; it is not a browser or a DOM test. */
 export function coachComponentHarness(path: string, options: {
-  fetch: typeof fetch; props?: Props; locale?: AppLocale; database?: unknown; params?: Record<string, string>;
+  fetch: typeof fetch; searchParams?: string; props?: Props; locale?: AppLocale; database?: unknown; params?: Record<string, string>;
   navigate?: (path: string) => void; notify?: (input: unknown) => Promise<unknown>;
-  modules?: Record<string, unknown>;
+  modules?: Record<string, unknown>; exportName?: string;
+  /** Opt in only for presentational children without their own state or effects. */
+  inlineComponentNames?: string[];
 }) {
   let cursor = 0;
   let locale = options.locale ?? "fr";
@@ -34,6 +36,14 @@ export function coachComponentHarness(path: string, options: {
       if (!(index in hooks)) hooks[index] = { current: initial };
       return hooks[index];
     },
+    useImperativeHandle(ref: { current: unknown } | ((value: unknown) => void) | undefined, create: () => unknown, deps: unknown[]) {
+      const index = cursor++;
+      if (same(hooks[index]?.deps, deps)) return;
+      const value = create();
+      hooks[index] = { deps };
+      if (typeof ref === "function") ref(value);
+      else if (ref) ref.current = value;
+    },
     useMemo(factory: () => unknown, deps: unknown[]) {
       const index = cursor++;
       if (!same(hooks[index]?.deps, deps)) hooks[index] = { deps, value: factory() };
@@ -46,12 +56,13 @@ export function coachComponentHarness(path: string, options: {
       pending.push(() => { hooks[index]?.cleanup?.(); hooks[index] = { deps, cleanup: fn() }; });
     },
   };
-  const jsx = (type: string, props: Props) => ({ type, props });
+  const inlineComponents = new Set<unknown>();
+  const jsx = (type: string | ((props: Props) => unknown), props: Props) => typeof type === "function" && (inlineComponents.has(type) || options.inlineComponentNames?.includes(type.name)) ? type(props) : ({ type, props });
   const mocks: Record<string, unknown> = {
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },
     "next/link": { __esModule: true, default: "a" },
-    "next/navigation": { useParams: () => options.params ?? {}, useRouter: () => ({ push: options.navigate ?? (() => {}) }) },
+    "next/navigation": { useSearchParams: () => new URLSearchParams(options.searchParams ?? ""), useParams: () => options.params ?? {}, useRouter: () => ({ push: options.navigate ?? (() => {}) }) },
     "@/lib/notifications": { createAppNotification: options.notify ?? (async () => ({})), getEventAttendeeUserIds: async () => [] },
     "@/lib/notificationMessages": { getNotificationMessage: async () => ({ title: "Test notification", body: "Test notification" }) },
     "lucide-react": new Proxy({}, { get: (_, key) => String(key) }),
@@ -79,13 +90,18 @@ export function coachComponentHarness(path: string, options: {
     new Function("require", "module", "exports", "fetch", code)((id: string) => {
       if (Object.hasOwn(mocks, id)) return mocks[id];
       if (id.endsWith(".css")) return { default: {} };
-      if (id.startsWith("@/")) return load(id.slice(2) + ".ts");
-      if (id.startsWith(".")) return load(resolve(file, "..", id));
+      if (id.startsWith("@/") || id.startsWith(".")) {
+        const base = id.startsWith("@/") ? id.slice(2) : resolve(file, "..", id);
+        const target = [base, base + ".ts", base + ".tsx"].find((candidate) => existsSync(resolve(root, candidate)));
+        if (!target) throw new Error("Missing test module: " + base);
+        return load(target);
+      }
       return require(id);
     }, compiledModule, compiledModule.exports, options.fetch);
+    if (file.endsWith("CoachActivityCard.tsx")) Object.values(compiledModule.exports).forEach((component) => inlineComponents.add(component));
     return compiledModule.exports;
   }
-  const Component = load(path).default;
+  const Component = load(path)[options.exportName ?? "default"];
   return {
     render(nextProps?: Props) {
       if (nextProps) props = nextProps;

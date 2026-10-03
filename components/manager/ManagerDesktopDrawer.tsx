@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { isManagerClubScopedRoute, managerScopedHref } from "@/lib/managerNavigationContext";
+import { requestManagerClubChange } from "@/components/manager/useManagerClubChangeGuard";
 import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline, BookOpen, WandSparkles } from "lucide-react";
 
 const ROUTES = {
@@ -50,7 +52,8 @@ function isActive(pathname: string, href: string) {
 export default function ManagerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const { t, locale } = useI18n();
+  const searchParams = useSearchParams();
+  const { t } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
   const [organizationId, setOrganizationId] = useState<string>("");
@@ -106,79 +109,89 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
     })();
   }, []);
 
+  const requestedClubId = searchParams.get("club");
+  const activeOrganizationId = requestedClubId && managedClubs.some((club) => club.id === requestedClubId)
+    ? requestedClubId
+    : organizationId;
+
+  function handleNavigate() {
+    setOrganizationId(activeOrganizationId);
+    onClose();
+  }
+
   useEffect(() => {
     if (!open) return;
     Object.values(ROUTES).forEach((href) => router.prefetch(href));
-    if (organizationId) {
-      router.prefetch(`/manager/organizations/${organizationId}/groups`);
+    if (activeOrganizationId) {
+      router.prefetch(`/manager/organizations/${activeOrganizationId}/groups`);
     }
-  }, [open, organizationId, router]);
+  }, [open, activeOrganizationId, router]);
 
   const navSections = useMemo(
     () => [
       {
-        label: locale === "fr" ? "Accueil" : "Home",
-        items: [{ label: locale === "fr" ? "Tableau de bord" : "Dashboard", icon: LayoutDashboard, href: ROUTES.home }],
+        label: t("manager.nav.home"),
+        items: [{ label: t("manager.nav.dashboard"), icon: LayoutDashboard, href: ROUTES.home }],
       },
       {
-        label: locale === "fr" ? "Organisation" : "Organization",
+        label: t("manager.nav.organization"),
         groups: [
           {
-            label: locale === "fr" ? "Gestion des utilisateurs" : "User management",
+            label: t("manager.nav.users"),
             icon: Users,
             children: [
-              { label: locale === "fr" ? "Juniors" : "Players", icon: UserRound, href: ROUTES.userManagementPlayers },
-              { label: "Coachs", icon: User, href: ROUTES.userManagementCoaches },
-              { label: "Manager", icon: ShieldCheck, href: ROUTES.userManagementManagers },
-              { label: locale === "fr" ? "Champs personnalisés" : "Custom fields", icon: SlidersHorizontal, href: ROUTES.userManagementCustomFields },
-              { label: locale === "fr" ? "Accès aux familles" : "Family access", icon: KeyRound, href: ROUTES.access },
+              { label: t("manager.nav.juniors"), icon: UserRound, href: ROUTES.userManagementPlayers },
+              { label: t("manager.nav.coaches"), icon: User, href: ROUTES.userManagementCoaches },
+              { label: t("manager.nav.managers"), icon: ShieldCheck, href: ROUTES.userManagementManagers },
+              { label: t("manager.fields.title"), icon: SlidersHorizontal, href: ROUTES.userManagementCustomFields },
+              { label: t("manager.nav.familyAccess"), icon: KeyRound, href: ROUTES.access },
             ],
           },
           {
-            label: locale === "fr" ? "Gestion des groupes" : "Group management",
+            label: t("manager.nav.groups"),
             icon: FolderKanban,
             children: [
-              { label: locale === "fr" ? "Tous les groupes" : "All groups", icon: List, href: ROUTES.groups },
-              { label: locale === "fr" ? "Ajouter un groupe" : "Add group", icon: PlusCircle, href: ROUTES.groupsNew },
-              { label: locale === "fr" ? "Organisation des groupes" : "Group organization", icon: Network, href: organizationId ? `/manager/organizations/${organizationId}/groups` : ROUTES.groups },
+              { label: t("manager.nav.allGroups"), icon: List, href: ROUTES.groups },
+              { label: t("manager.nav.addGroup"), icon: PlusCircle, href: ROUTES.groupsNew },
+              { label: t("manager.nav.groupOrganization"), icon: Network, href: activeOrganizationId ? `/manager/organizations/${activeOrganizationId}/groups` : ROUTES.groups },
             ],
           },
         ],
-        itemsLabel: locale === "fr" ? "Organisation" : "Organization",
+        itemsLabel: t("manager.nav.organization"),
         items: [
-          { label: locale === "fr" ? "Activités" : "Activities", icon: CalendarDays, href: ROUTES.events },
-          { label: locale === "fr" ? "Stages / camps" : "Camps", icon: Tent, href: ROUTES.camps },
-          { label: "News", icon: Newspaper, href: ROUTES.news },
+          { label: t("manager.nav.activities"), icon: CalendarDays, href: ROUTES.events },
+          { label: t("manager.nav.camps"), icon: Tent, href: ROUTES.camps },
+          { label: t("manager.nav.news"), icon: Newspaper, href: ROUTES.news },
         ],
       },
       {
-        label: locale === "fr" ? "Suivi" : "Tracking",
-        itemsLabel: locale === "fr" ? "Performance" : "Performance",
+        label: t("manager.nav.tracking"),
+        itemsLabel: t("manager.nav.performance"),
         itemsIcon: Trophy,
         items: [
-          { label: locale === "fr" ? "Statistiques juniors" : "Player statistics", icon: ChartNoAxesCombined, href: ROUTES.performanceJuniors },
-          { label: locale === "fr" ? "Statistiques coachs" : "Coach statistics", icon: ChartSpline, href: ROUTES.performanceCoaches },
-          { label: locale === "fr" ? "Ordre du mérite" : "Order of Merit", icon: Medal, href: ROUTES.om },
-          { label: locale === "fr" ? "Concours internes" : "Internal contests", icon: ListChecks, href: ROUTES.omContests },
-          { label: locale === "fr" ? "Règles de golf" : "Rules of golf", icon: BookOpen, href: ROUTES.rules },
+          { label: t("manager.nav.juniorStatistics"), icon: ChartNoAxesCombined, href: ROUTES.performanceJuniors },
+          { label: t("manager.nav.coachStatistics"), icon: ChartSpline, href: ROUTES.performanceCoaches },
+          { label: t("manager.nav.merit"), icon: Medal, href: ROUTES.om },
+          { label: t("manager.nav.contests"), icon: ListChecks, href: ROUTES.omContests },
+          { label: t("manager.nav.rules"), icon: BookOpen, href: ROUTES.rules },
         ],
       },
       {
-        label: locale === "fr" ? "Paramètres" : "Settings",
-        itemsLabel: locale === "fr" ? "Paramètres" : "Settings",
+        label: t("manager.nav.settings"),
+        itemsLabel: t("manager.nav.settings"),
         itemsIcon: Settings,
         items: [
-          { label: locale === "fr" ? "Saisons" : "Seasons", icon: CalendarRange, href: ROUTES.userManagementSeasons },
-          { label: locale === "fr" ? "E-mails" : "Emails", icon: Mail, href: ROUTES.userManagementEmailConfiguration },
-          { label: locale === "fr" ? "Volume d'entraînement" : "Training volume", icon: Gauge, href: ROUTES.trainingVolume },
-          { label: locale === "fr" ? "Critères d’évaluation" : "Evaluation criteria", icon: ClipboardCheck, href: ROUTES.evaluationCriteria },
-          { label: locale === "fr" ? "Assistance IA" : "AI assistance", icon: WandSparkles, href: ROUTES.aiAssistance },
-          { label: locale === "fr" ? "Tournois exceptionnels" : "Exceptional tournaments", icon: Sparkles, href: ROUTES.omTournaments },
-          { label: locale === "fr" ? "Notifications" : "Notifications", icon: Bell, href: ROUTES.notifications },
+          { label: t("manager.nav.seasons"), icon: CalendarRange, href: ROUTES.userManagementSeasons },
+          { label: t("manager.nav.emails"), icon: Mail, href: ROUTES.userManagementEmailConfiguration },
+          { label: t("manager.nav.trainingVolume"), icon: Gauge, href: ROUTES.trainingVolume },
+          { label: t("manager.nav.criteria"), icon: ClipboardCheck, href: ROUTES.evaluationCriteria },
+          { label: t("manager.nav.ai"), icon: WandSparkles, href: ROUTES.aiAssistance },
+          { label: t("manager.nav.tournaments"), icon: Sparkles, href: ROUTES.omTournaments },
+          { label: t("manager.nav.notifications"), icon: Bell, href: ROUTES.notifications },
         ],
       },
     ],
-    [locale, organizationId]
+    [t, activeOrganizationId]
   );
 
   async function handleLogout() {
@@ -196,7 +209,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
 
       <aside className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
         <div className="drawer-top">
-          <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee">
+          <Link href={ROUTES.home} className="drawer-brand" onClick={handleNavigate} aria-label="ActiviTee">
             <span className="drawer-brand-nex">Activi</span>
             <span className="drawer-brand-tee">Tee</span>
           </Link>
@@ -222,7 +235,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
                         const CIcon = c.icon;
                         const active = isActive(pathname, c.href);
                         return (
-                          <Link key={c.label} href={c.href} className={`drawer-subitem ${active ? "active" : ""}`} onClick={onClose}>
+                          <Link key={c.label} href={managerScopedHref(c.href, activeOrganizationId)} className={`drawer-subitem ${active ? "active" : ""}`} onClick={handleNavigate}>
                             <span className="drawer-item-left"><CIcon size={15} strokeWidth={1.8} /><span>{c.label}</span></span>
                             <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
                           </Link>
@@ -246,7 +259,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
                       const Icon = item.icon;
                       const active = isActive(pathname, item.href);
                       return (
-                        <Link key={item.label} href={item.href} className={`drawer-subitem ${active ? "active" : ""}`} onClick={onClose}>
+                        <Link key={item.label} href={managerScopedHref(item.href, activeOrganizationId)} className={`drawer-subitem ${active ? "active" : ""}`} onClick={handleNavigate}>
                           <span className="drawer-item-left"><Icon size={15} strokeWidth={1.8} /><span>{item.label}</span></span>
                           <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
                         </Link>
@@ -258,7 +271,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
                   const Icon = item.icon;
                   const active = isActive(pathname, item.href);
                   return (
-                    <Link key={item.label} href={item.href} className={`drawer-item ${active ? "active" : ""}`} onClick={onClose}>
+                  <Link key={item.label} href={managerScopedHref(item.href, activeOrganizationId)} className={`drawer-item ${active ? "active" : ""}`} onClick={handleNavigate}>
                       <span className="drawer-item-left"><Icon size={17} strokeWidth={1.8} /><span>{item.label}</span></span>
                       <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
                     </Link>
@@ -273,14 +286,16 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
 
           {managedClubs.length > 1 ? (
             <label className="drawer-club-context drawer-club-context--account">
-              <span>Club actif</span>
-              <select value={organizationId} onChange={(event) => {
+              <span>{t("manager.nav.activeClub")}</span>
+              <select value={activeOrganizationId} onChange={(event) => {
                 const nextId = event.target.value;
+                if (!requestManagerClubChange()) return;
                 setOrganizationId(nextId);
                 if (pathname.includes("/organizations/") && pathname.endsWith("/groups")) router.push(`/manager/organizations/${nextId}/groups`);
                 if (pathname === "/manager/groups") router.push(`/manager/groups?club=${encodeURIComponent(nextId)}`);
+                if (isManagerClubScopedRoute(pathname) && pathname !== ROUTES.groups) router.push(managerScopedHref(pathname, nextId));
               }}>
-                {managedClubs.map((club) => <option key={club.id} value={club.id}>{club.name ?? "Club"}</option>)}
+                {managedClubs.map((club) => <option key={club.id} value={club.id}>{club.name ?? t("common.club")}</option>)}
               </select>
             </label>
           ) : null}

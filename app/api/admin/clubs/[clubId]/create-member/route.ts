@@ -1,3 +1,5 @@
+import { encodeMemberFieldValue } from "@/lib/memberFieldValues";
+import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -82,12 +84,14 @@ function normalizeLegacyCourseTrackValue(
 
 async function findAuthUserByEmail(supabaseAdmin: any, emailInput: string) {
   if (!emailInput) return null;
-  const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({
-    page: 1,
-    perPage: 200,
-  });
-  if (listErr) throw new Error(listErr.message);
-  return (listData.users ?? []).find((u) => (u.email ?? "").toLowerCase() === emailInput) ?? null;
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(error.message);
+    const users = data.users ?? [];
+    const match = users.find((user: { email?: string }) => (user.email ?? "").toLowerCase() === emailInput);
+    if (match) return match;
+    if (users.length < 200) return null;
+  }
 }
 
 async function generateUniqueUsername(
@@ -221,7 +225,7 @@ async function syncLinkedParentsToClub(supabaseAdmin: any, clubId: string, playe
 
   const { error: parentMembershipError } = await supabaseAdmin
     .from("club_members")
-    .upsert(parentMembershipRows, { onConflict: "club_id,user_id,role" });
+    .upsert(parentMembershipRows, { onConflict: "club_id,user_id,role", ignoreDuplicates: true });
 
   if (parentMembershipError) throw new Error(parentMembershipError.message);
 }
@@ -269,46 +273,22 @@ const clubId: string | undefined = params?.clubId;
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
-    // Vérifier que l'appelant est superadmin OU manager de ce club
-    // On récupère le token user depuis Authorization Bearer
-    const authHeader = req.headers.get("authorization") || "";
-    const accessToken = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : null;
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-    if (!accessToken) {
-      return NextResponse.json({ error: "Missing token" }, { status: 401 });
-    }
-
-    const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (userErr || !userData.user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    const callerId = userData.user.id;
-
-    const { data: adminRow } = await supabaseAdmin
-      .from("app_admins")
-      .select("user_id")
-      .eq("user_id", callerId)
-      .maybeSingle();
-
-    let isAllowed = Boolean(adminRow);
-
-    if (!isAllowed) {
-      const { data: membership } = await supabaseAdmin
-        .from("club_members")
-        .select("id, role, is_active")
-        .eq("club_id", clubId)
-        .eq("user_id", callerId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      isAllowed = Boolean(membership && membership.role === "manager");
-    }
-
-    if (!isAllowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const fieldIds = role === "player" ? Object.keys(playerFieldValues) : [];
+    const { data: fields, error: fieldsError } = fieldIds.length
+      ? await supabaseAdmin.from("club_player_fields").select("id,label,field_type,options_json,legacy_binding").eq("club_id", clubId).in("id", fieldIds)
+      : { data: [], error: null };
+    if (fieldsError) return NextResponse.json({ error: fieldsError.message }, { status: 400 });
+    const fieldById = new Map((fields ?? []).map((field: any) => [String(field.id), field]));
+    try {
+      for (const [id, raw] of Object.entries(playerFieldValues)) {
+        const field = fieldById.get(id);
+        if (field) encodeMemberFieldValue(field, raw);
+      }
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Champ invalide" }, { status: 400 });
     }
 
     // 1) Créer l’utilisateur Auth (admin)
@@ -323,6 +303,9 @@ const clubId: string | undefined = params?.clubId;
       last_name,
       birthDate
     );
+    if (existingUserId && !auth.isSuperadmin && !(await canReuseClubAccount(supabaseAdmin, clubId, existingUserId, role))) {
+      return NextResponse.json({ error: "Le rattachement de ce compte nécessite une validation par l’administration de la plateforme." }, { status: 409 });
+    }
     const authUserWithSameEmail = emailInput ? await findAuthUserByEmail(supabaseAdmin, emailInput) : null;
     const mustUseTechnicalEmail =
       !existingUserId &&
@@ -352,11 +335,6 @@ const clubId: string | undefined = params?.clubId;
         (typeof existingProfile?.username === "string" && existingProfile.username.trim() !== ""
           ? existingProfile.username.trim().toLowerCase()
           : null);
-      if (!username) {
-        const fn = first_name || existingProfile?.first_name || "parent";
-        const ln = last_name || existingProfile?.last_name || "user";
-        username = await generateUniqueUsername(supabaseAdmin, fn, ln, userId);
-      }
     } else {
       username = await generateUniqueUsername(supabaseAdmin, first_name, last_name);
       const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
@@ -377,7 +355,7 @@ const clubId: string | undefined = params?.clubId;
     }
 
     // 2) Upsert profile
-    const { error: profErr } = await supabaseAdmin
+    const { error: profErr } = existingUserId ? { error: null } : await supabaseAdmin
       .from("profiles")
       .upsert(
         {
@@ -431,16 +409,7 @@ const clubId: string | undefined = params?.clubId;
     if (role === "player" && memberRow?.id) {
       await syncLinkedParentsToClub(supabaseAdmin, clubId, userId);
 
-      const fieldIds = Object.keys(playerFieldValues);
       if (fieldIds.length > 0) {
-        const { data: fields, error: fieldsError } = await supabaseAdmin
-          .from("club_player_fields")
-          .select("id,field_type,options_json,legacy_binding")
-          .eq("club_id", clubId)
-          .in("id", fieldIds);
-        if (fieldsError) return NextResponse.json({ error: fieldsError.message }, { status: 400 });
-
-        const fieldById = new Map((fields ?? []).map((field: any) => [String(field.id), field]));
         for (const [fieldId, rawValue] of Object.entries(playerFieldValues)) {
           const field = fieldById.get(fieldId);
           if (!field) continue;
@@ -471,7 +440,9 @@ const clubId: string | undefined = params?.clubId;
             continue;
           }
 
-          const isEmpty = rawValue == null || (typeof rawValue === "string" && rawValue.trim() === "");
+          const encoded = encodeMemberFieldValue(field, rawValue);
+          const isEmpty = encoded === null;
+
           if (isEmpty) {
             const { error } = await supabaseAdmin
               .from("club_member_player_field_values")
@@ -482,25 +453,7 @@ const clubId: string | undefined = params?.clubId;
             continue;
           }
 
-          const valuePatch: Record<string, any> = {
-            club_member_id: memberRow.id,
-            field_id: fieldId,
-            value_text: null,
-            value_bool: null,
-            value_option: null,
-          };
-          if (field.field_type === "boolean") {
-            valuePatch.value_bool = Boolean(rawValue);
-          } else if (field.field_type === "select") {
-            const option = String(rawValue).trim();
-            const options = normalizePlayerFieldOptions(field.options_json);
-            if (options.length > 0 && !options.includes(option)) {
-              return NextResponse.json({ error: `Valeur invalide pour ${fieldId}` }, { status: 400 });
-            }
-            valuePatch.value_option = option;
-          } else {
-            valuePatch.value_text = String(rawValue).trim();
-          }
+          const valuePatch = { club_member_id: memberRow.id, field_id: fieldId, ...encoded };
 
           const { error } = await supabaseAdmin
             .from("club_member_player_field_values")

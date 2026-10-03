@@ -24,7 +24,7 @@
 
 .playerRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   flex-wrap: nowrap;
 }
@@ -99,6 +99,42 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+.playerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pageActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.seenButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid #bfd3e1;
+  border-radius: 10px;
+  background: #edf5fc;
+  color: #255c83;
+  font: 700 12px var(--font-inter), sans-serif;
+  cursor: pointer;
+}
+.isSeen { background: #e8f1e5; border-color: #cbdcc4; color: #35483b; }
+.seenButton:disabled { cursor: default; }
+.seenButton:focus-visible { outline: 3px solid #83a879; outline-offset: 3px; }
+.readError { color: #a63b32; font-size: 12px; margin: 0; }
 
 .playerIdentity b {
   overflow: hidden;
@@ -244,7 +280,7 @@
 
 @media (max-width: 720px) {
   .playerRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     padding-inline: 9px;
   }
@@ -253,13 +289,6 @@
     grid-column: 1 / -1;
   }
 
-  .attendance {
-    grid-column: 1;
-  }
-
-  .playerActions {
-    grid-column: 2;
-  }
 
   .playerIdentity {
     gap: 7px;

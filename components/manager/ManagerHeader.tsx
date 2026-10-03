@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import ManagerDesktopDrawer from "@/components/manager/ManagerDesktopDrawer";
 import LanguageToggle from "@/components/i18n/LanguageToggle";
@@ -148,7 +148,9 @@ export default function ManagerHeader() {
 
       <PushActivationBanner settingsHref="/manager/notifications/settings" />
 
-      <ManagerDesktopDrawer open={open} onClose={() => setOpen(false)} />
+      <Suspense fallback={null}>
+        <ManagerDesktopDrawer open={open} onClose={() => setOpen(false)} />
+      </Suspense>
     </>
   );
 }

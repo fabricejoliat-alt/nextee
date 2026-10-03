@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
 import { coachEventEndMs, coachTrainingEvaluationComplete } from "@/lib/coachCalendar";
 import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { coachRows } from "@/lib/server/coachRows";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -85,18 +86,17 @@ export async function GET(req: NextRequest) {
           .gte("starts_at", nowIso)
           .order("starts_at", { ascending: true })
           .limit(80),
-        supabaseAdmin
+        coachRows<EventLite>((from, to) => supabaseAdmin
           .from("club_events")
           .select("id,group_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,status,requires_evaluation")
           .in("group_id", groupIds)
           .in("club_id", scope.clubIds)
           .lt("starts_at", nowIso)
           .order("starts_at", { ascending: false })
-          .limit(120),
+          .order("id").range(from, to)).then((data) => ({ data, error: null })),
         supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", groupIds),
       ]);
       if (groupUpcomingRes.error) return NextResponse.json({ error: groupUpcomingRes.error.message }, { status: 400 });
-      if (groupPastRes.error) return NextResponse.json({ error: groupPastRes.error.message }, { status: 400 });
       if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
 
       (groupsRes.data ?? []).forEach((g: { id: string; name: string | null; club_id: string | null }) => {
@@ -116,15 +116,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (eventIdsFromAssign.length > 0) {
-      const assignedEventsRes = await supabaseAdmin
+      const assignedEvents = await coachRows<EventLite>((from, to) => supabaseAdmin
         .from("club_events")
         .select("id,group_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,status,requires_evaluation")
         .in("id", eventIdsFromAssign)
         .in("club_id", scope.clubIds)
-        .order("starts_at", { ascending: false });
-      if (assignedEventsRes.error) return NextResponse.json({ error: assignedEventsRes.error.message }, { status: 400 });
-
-      const assignedEvents = (assignedEventsRes.data ?? []) as EventLite[];
+        .order("starts_at", { ascending: false }).order("id").range(from, to));
       const missingGroupIds = Array.from(
         new Set(assignedEvents.map((e) => String(e.group_id ?? "").trim()).filter((id) => Boolean(id) && !groupNameById[id]))
       );
@@ -186,8 +183,7 @@ export async function GET(req: NextRequest) {
     const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 80);
     const pastEvents = allEventsWithCampDay
       .filter((e) => e.status === "scheduled" && coachEventEndMs(e) <= new Date(nowIso).getTime())
-      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
-      .slice(0, 120);
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
     const evaluationEvents = pastEvents.filter((event) => event.event_type === "training" && event.requires_evaluation !== false);
 
     const groupPlayersRes = groupIds.length > 0

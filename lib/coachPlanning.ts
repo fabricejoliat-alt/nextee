@@ -5,12 +5,14 @@ export type CoachPlanningAttendee = CoachPlanningPerson & {
   is_player: boolean; status: string | null; coach_recorded_status: "present" | "absent" | null;
 };
 export type CoachPlanningEvent = {
+  preparation_pending?: boolean;
   id: string; group_id: string; club_id: string; event_type: string; title: string | null;
   starts_at: string; ends_at: string | null; duration_minutes: number | null;
   location_text: string | null; series_id: string | null; status: string; requires_evaluation: boolean;
   evaluation_complete: boolean; coaches: CoachPlanningPerson[]; attendees: CoachPlanningAttendee[];
 };
 export type CoachPlanningData = {
+  coachClubCount?: number;
   group: { id: string; name: string | null; club_id: string }; club_name: string | null;
   can_plan: boolean; events: CoachPlanningEvent[];
 };

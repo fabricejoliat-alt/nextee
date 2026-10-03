@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { resolveCoachAssignments } from "@/lib/coachAccess";
+import { loadCoachPreparationStatus } from "@/lib/server/coachPreparationStatus";
 
 export async function GET(
   req: NextRequest,
@@ -20,7 +22,7 @@ export async function GET(
 
     const evRes = await supabaseAdmin
       .from("club_events")
-      .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status")
+      .select("id,starts_at,ends_at,event_type,title,group_id,location_text,club_id,status,duration_minutes,requires_evaluation")
       .in("club_id", sharedClubIds)
       .eq("status", "scheduled")
       .gte("starts_at", new Date().toISOString())
@@ -121,12 +123,19 @@ export async function GET(
     const clubNameById: Record<string, string> = {};
     for (const c of clubsRes.data ?? []) clubNameById[String((c as any).id)] = String((c as any).name ?? "");
 
+    const scope = await resolveCoachAssignments(supabaseAdmin, callerId);
+    const canOpen = (event: { id: string; group_id: string; club_id: string }) => Boolean(
+      scope.memberships.some((member) => member.club_id === event.club_id && member.role === "manager")
+      || scope.groups.some((group) => group.id === event.group_id && group.club_id === event.club_id)
+      || scope.eventIds.includes(event.id));
+    const preparation = await loadCoachPreparationStatus(supabaseAdmin, callerId, events.filter(canOpen));
     return NextResponse.json({
       events: events.map((e: any) => ({
         ...e,
         group_name: e.group_id ? groupNameById[String(e.group_id)] ?? "" : "",
         organization_name: e.club_id ? clubNameById[String(e.club_id)] ?? "" : "",
-        can_open_detail: Boolean(e.group_id && e.club_id && sharedClubIds.includes(String(e.club_id))),
+        can_open_detail: canOpen(e),
+        preparation_pending: preparation[e.id] ?? false,
       })),
     });
   } catch (e: any) {

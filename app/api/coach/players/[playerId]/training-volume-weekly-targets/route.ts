@@ -73,7 +73,7 @@ export async function GET(
 
     const configsRes = await Promise.all(
       sharedClubIds.map(async (clubId) => {
-        const [settingsRes, targetsRes] = await Promise.all([
+        const [settingsRes, targetsRes, seasonsRes] = await Promise.all([
           supabaseAdmin
             .from("training_volume_settings")
             .select("season_months,offseason_months")
@@ -84,13 +84,16 @@ export async function GET(
             .select("id,ftem_code,level_label,handicap_label,handicap_min,handicap_max,motivation_text,minutes_offseason,minutes_inseason,sort_order")
             .eq("organization_id", clubId)
             .order("sort_order", { ascending: true }),
+          supabaseAdmin.from("club_seasons").select("id,name,starts_on,ends_on,is_current")
+            .eq("club_id", clubId).order("starts_on", { ascending: false }),
         ]);
-        if (settingsRes.error || targetsRes.error) return null;
+        if (settingsRes.error || targetsRes.error || seasonsRes.error) return null;
         return {
           organization_id: clubId,
           season_months: parseMonthArray((settingsRes.data as any)?.season_months),
           offseason_months: parseMonthArray((settingsRes.data as any)?.offseason_months),
           rows: (targetsRes.data ?? []) as TrainingVolumeTargetRow[],
+          seasons: seasonsRes.data ?? [],
         };
       })
     );

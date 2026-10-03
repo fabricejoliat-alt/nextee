@@ -1,6 +1,7 @@
 import { CalendarDays, Clock3, Flag, Target, TrendingDown } from "lucide-react";
 import styles from "@/components/manager/ManagerPlayerStatistics.module.css";
 import campStyles from "@/app/manager/camps/Camps.module.css";
+import { periodicReportLabels } from "@/lib/periodicReportPresentation";
 import { periodicEventTitle } from "@/lib/periodicReports";
 
 export type PublishedReport = {
@@ -9,6 +10,7 @@ export type PublishedReport = {
   period_label: string;
   personalized_comment: string | null;
   published_content: {
+    locale?: string;
     playerName: string;
     summary: string;
     sections?: {
@@ -24,27 +26,27 @@ export type PublishedReport = {
   };
 };
 
-const duration = (minutes: number) => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
 
-export function PeriodicReportView({ report, compactHeading = false }: { report: PublishedReport; compactHeading?: boolean }) {
+export function PeriodicReportView({ report, compactHeading = false, locale: requestedLocale }: { report: PublishedReport; compactHeading?: boolean; locale?: string }) {
   const content = report.published_content;
+  const { t, number, format, duration, date, locale } = periodicReportLabels(requestedLocale ?? content.locale);
   const sections = content.sections ?? {};
   const next = sections.nextPeriod;
   return <div className={styles.stack}>
     <section className={campStyles.panel}>
-      <div className={campStyles.panelHeader}><div><span className={styles.kpiLabel}>{report.club_name}</span>{compactHeading ? <h2>{content.playerName}</h2> : <h1>Rapport périodique · {content.playerName}</h1>}<p>{report.period_label}</p></div></div>
-      <div className={styles.summary}><div><CalendarDays size={18} /><h2>Résumé de la période</h2></div><p>{content.summary}</p></div>
+      <div className={campStyles.panelHeader}><div><span className={styles.kpiLabel}>{report.club_name}</span>{compactHeading ? <h2>{content.playerName}</h2> : <h1>{t("title")} · {content.playerName}</h1>}<p>{report.period_label}</p></div></div>
+      <div className={styles.summary}><div><CalendarDays size={18} /><h2>{t("summary")}</h2></div><p>{content.summary}</p></div>
     </section>
     <section className={styles.metricGrid}>
-      {sections.attendance ? <Card icon={<CalendarDays />} label="Participation au club" main={`${sections.attendance.present} / ${sections.attendance.invited}`} detail={sections.attendance.rate == null ? "Données insuffisantes" : `${sections.attendance.rate} % d’assiduité · ${sections.attendance.excused} absence(s) excusée(s)`} /> : null}
-      {sections.training ? <Card icon={<Clock3 />} label="Entraînement" main={duration(sections.training.minutes)} detail={`${sections.training.sessions} séance(s) · régularité ${sections.training.regularityRate ?? "—"} %${sections.training.objectiveRate == null ? "" : ` · ${sections.training.objectiveRate} % du repère FTEM`}`} /> : null}
-      {sections.competitions ? <Card icon={<Flag />} label="Compétitions" main={String(sections.competitions.competitions)} detail={`${sections.competitions.rounds} parcours · ${sections.competitions.results} résultat(s)`} /> : null}
-      {sections.handicap ? <Card icon={<TrendingDown />} label="Handicap et FTEM" main={String(sections.handicap.end ?? "—")} detail={`${sections.handicap.ftemCode ?? "Niveau indisponible"}${sections.handicap.change == null ? " · évolution indisponible" : ` · progression nette ${sections.handicap.change > 0 ? "+" : ""}${sections.handicap.change}`}`} /> : null}
-      {sections.evaluations ? <Card icon={<Target />} label="Évaluations" main={`${sections.evaluations.sample} observation(s)`} detail={`Engagement ${sections.evaluations.engagement ?? "—"} · attitude ${sections.evaluations.attitude ?? "—"} · application ${sections.evaluations.application ?? "—"}`} /> : null}
+      {sections.attendance ? <Card icon={<CalendarDays />} label={t("participation")} main={`${number(sections.attendance.present)} / ${number(sections.attendance.invited)}`} detail={sections.attendance.rate == null ? t("insufficient") : format("attendance", { rate: number(sections.attendance.rate), excused: number(sections.attendance.excused) })} /> : null}
+      {sections.training ? <Card icon={<Clock3 />} label={t("training")} main={duration(sections.training.minutes)} detail={format("trainingDetail", { sessions: number(sections.training.sessions), rate: number(sections.training.regularityRate) }) + (sections.training.objectiveRate == null ? "" : format("objective", { rate: number(sections.training.objectiveRate) }))} /> : null}
+      {sections.competitions ? <Card icon={<Flag />} label={t("competitions")} main={number(sections.competitions.competitions)} detail={format("competitionDetail", { rounds: number(sections.competitions.rounds), results: number(sections.competitions.results) })} /> : null}
+      {sections.handicap ? <Card icon={<TrendingDown />} label={t("handicap")} main={number(sections.handicap.end)} detail={(sections.handicap.ftemCode ?? t("noLevel")) + (sections.handicap.change == null ? t("noChange") : format(sections.handicap.change > 0 ? "improvement" : "change", { value: number(Math.abs(sections.handicap.change)) }))} /> : null}
+      {sections.evaluations ? <Card icon={<Target />} label={t("evaluations")} main={format("observations", { count: number(sections.evaluations.sample) })} detail={format("evaluationDetail", { engagement: number(sections.evaluations.engagement), attitude: number(sections.evaluations.attitude), application: number(sections.evaluations.application) })} /> : null}
     </section>
-    {sections.upcoming?.length ? <section className={campStyles.panel}><h2>Prochaines activités</h2><div className={styles.rows}>{sections.upcoming.map((event) => <div key={event.id}><span>{periodicEventTitle(event.title, event.type)}</span><b>{new Intl.DateTimeFormat("fr-CH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.startsAt))}</b></div>)}</div></section> : null}
-    {(next?.priority || next?.objective || next?.encouragement) ? <section className={campStyles.panel}><h2>Prochaine période</h2><div className={styles.rows}>{next.priority ? <div><span>Priorité</span><b>{next.priority}</b></div> : null}{next.objective ? <div><span>Objectif</span><b>{next.objective}</b></div> : null}{next.encouragement ? <div><span>Encouragement</span><b>{next.encouragement}</b></div> : null}</div></section> : null}
-    {(sections.coachComment || report.personalized_comment) ? <section className={campStyles.panel}><h2>Message de l’encadrement</h2><p>{sections.coachComment ?? report.personalized_comment}</p></section> : null}
+    {sections.upcoming?.length ? <section className={campStyles.panel}><h2>{t("upcoming")}</h2><div className={styles.rows}>{sections.upcoming.map(event => <div key={event.id}><span>{periodicEventTitle(event.title, event.type, locale)}</span><b>{date(event.startsAt)}</b></div>)}</div></section> : null}
+    {(next?.priority || next?.objective || next?.encouragement) ? <section className={campStyles.panel}><h2>{t("next")}</h2><div className={styles.rows}>{next.priority ? <div><span>{t("priority")}</span><b>{next.priority}</b></div> : null}{next.objective ? <div><span>{t("goal")}</span><b>{next.objective}</b></div> : null}{next.encouragement ? <div><span>{t("encouragement")}</span><b>{next.encouragement}</b></div> : null}</div></section> : null}
+    {(sections.coachComment || report.personalized_comment) ? <section className={campStyles.panel}><h2>{t("coachMessage")}</h2><p>{sections.coachComment ?? report.personalized_comment}</p></section> : null}
   </div>;
 }
 

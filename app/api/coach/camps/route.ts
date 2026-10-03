@@ -28,11 +28,11 @@ export async function GET(req: NextRequest) {
 
     const access = await resolveCoachClubIds(supabaseAdmin, caller.userId);
     if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
-    if (access.clubIds.length === 0) return NextResponse.json({ camps: [] });
+    if (access.clubIds.length === 0) return NextResponse.json({ camps: [], coachClubCount: 0 });
 
     const campsRes = await supabaseAdmin
       .from("club_camps")
-      .select("id,club_id,title,notes,status,head_coach_user_id,created_at")
+      .select("id,club_id,title,notes,image_url,status,head_coach_user_id,created_at")
       .in("club_id", access.clubIds)
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
@@ -263,6 +263,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
+      coachClubCount: access.clubIds.length,
       camps: camps.map((camp: any) => ({
         ...camp,
         club_name: clubNameById.get(String(camp.club_id ?? "").trim()) ?? "Club",

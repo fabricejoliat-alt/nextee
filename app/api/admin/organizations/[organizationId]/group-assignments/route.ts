@@ -1,3 +1,4 @@
+import { requireManagerClub, activeClubMember } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -5,37 +6,6 @@ function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
-}
-
-async function assertSuperadminOrManager(req: NextRequest, supabaseAdmin: any, organizationId: string) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing Authorization token." };
-
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token." };
-
-  const callerId = callerData.user.id;
-  const { data: isAdminRow, error: isAdminErr } = await supabaseAdmin
-    .from("app_admins")
-    .select("user_id")
-    .eq("user_id", callerId)
-    .maybeSingle();
-
-  if (!isAdminErr && isAdminRow) return { ok: true as const, callerId };
-
-  const { data: managerMembership, error: membershipErr } = await supabaseAdmin
-    .from("club_members")
-    .select("id,role,is_active")
-    .eq("club_id", organizationId)
-    .eq("user_id", callerId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (membershipErr || !managerMembership || managerMembership.role !== "manager") {
-    return { ok: false as const, status: 403, error: "Forbidden." };
-  }
-
-  return { ok: true as const, callerId };
 }
 
 async function getFutureEventIdsByGroup(supabaseAdmin: any, groupId: string) {
@@ -89,7 +59,7 @@ export async function GET(
     );
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
-    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    const auth = await requireManagerClub(req, supabaseAdmin, organizationId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const [
@@ -198,7 +168,7 @@ export async function POST(
     );
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
-    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    const auth = await requireManagerClub(req, supabaseAdmin, organizationId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
@@ -223,6 +193,24 @@ export async function POST(
     if (toGroupRes.error) return NextResponse.json({ error: toGroupRes.error.message }, { status: 400 });
     if (!toGroupRes.data || toGroupRes.data.club_id !== organizationId) {
       return NextResponse.json({ error: "Target group not in this organization" }, { status: 400 });
+    }
+
+    if (!(await activeClubMember(supabaseAdmin, organizationId, userId, actorType))) {
+      return NextResponse.json({ error: "Membre introuvable dans ce club." }, { status: 404 });
+    }
+    if (fromGroupId) {
+      const source = await supabaseAdmin.from("coach_groups").select("id")
+        .eq("id", fromGroupId).eq("club_id", organizationId).maybeSingle();
+      if (source.error) throw new Error(source.error.message);
+      if (!source.data) return NextResponse.json({ error: "Groupe source introuvable dans ce club." }, { status: 404 });
+    }
+    if (seasonId) {
+      const scopedGroups = await supabaseAdmin.from("coach_groups").select("id,club_season_id")
+        .in("id", fromGroupId ? [fromGroupId, toGroupId] : [toGroupId]);
+      if (scopedGroups.error) throw new Error(scopedGroups.error.message);
+      if ((scopedGroups.data ?? []).some((row: { club_season_id: string | null }) => row.club_season_id && row.club_season_id !== seasonId)) {
+        return NextResponse.json({ error: "Les groupes doivent appartenir à la saison sélectionnée." }, { status: 400 });
+      }
     }
 
     // Season assignments are independent from the legacy group-membership rows.
@@ -384,7 +372,7 @@ export async function DELETE(
     );
     const { organizationId } = await ctx.params;
     if (!organizationId) return NextResponse.json({ error: "Missing organizationId" }, { status: 400 });
-    const auth = await assertSuperadminOrManager(req, supabaseAdmin, organizationId);
+    const auth = await requireManagerClub(req, supabaseAdmin, organizationId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));

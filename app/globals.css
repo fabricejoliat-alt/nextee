@@ -2641,7 +2641,8 @@ body:has(.player-page)::before{
   display: none !important;
 }
 
-.manager-page main[aria-busy="true"],
+/* Coach shares the Manager shell, but its contextual loaders sit on the photo. */
+.manager-page:not(.coach-page-root) main[aria-busy="true"],
 .player-page main[aria-busy="true"]{
   min-height: 100vh;
   background: #f5f6f8;
@@ -3453,7 +3454,11 @@ body:has([data-design-system]){
 /* Calendar activity entries use the same calm palette as the planning cards. */
 .manager-calendar-activity{
   width: 100%;
+  min-width: 0;
+  height: auto;
   min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border: 1px solid #dce5db !important;
   border-radius: 12px !important;
   background: linear-gradient(135deg, #edf3eb 0%, #f8fbf8 100%) !important;
@@ -3505,6 +3510,7 @@ body:has([data-design-system]){
    planning activity card. */
 .manager-calendar-expanded{
   display:grid;
+  min-width:0;
   gap:14px;
   margin-top:4px;
   padding:16px;
@@ -3512,6 +3518,18 @@ body:has([data-design-system]){
   border-radius:16px;
   background:linear-gradient(180deg,#fff 0%,#f7faf6 100%);
   box-shadow:0 10px 22px rgba(27,45,33,.06);
+}
+
+.manager-calendar-expanded .user-mgmt-card-actions{
+  flex-wrap:wrap;
+  justify-content:flex-start;
+  margin-left:0;
+}
+
+.manager-calendar-expanded :is(.planning-event-title,.planning-event-location,.pill-soft){
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
 }
 
 .manager-calendar-detail-grid{
@@ -3563,6 +3581,14 @@ body:has([data-design-system]){
 @media (max-width: 560px){
   .manager-calendar-date-card{ grid-template-columns: 86px minmax(0,1fr) !important; }
   .manager-calendar-date-card > div:first-child{ font-size: 11px !important; padding-inline: 6px !important; }
+  .manager-calendar-date-card:has(.manager-calendar-expanded){ grid-template-columns:minmax(0,1fr) !important; }
+  .manager-calendar-date-card:has(.manager-calendar-expanded) > .manager-calendar-date-column{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:8px;
+    min-height:44px !important;
+  }
   .manager-calendar-detail-grid{ grid-template-columns:1fr; }
   .manager-calendar-expanded{ padding:13px; }
 }

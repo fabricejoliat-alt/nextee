@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
+import { loadManagerParticipant, participantDate, participantError } from "@/lib/managerParticipant";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { managerFormat, managerLocaleTag } from "@/lib/managerLocale";
+import groupStyles from "@/components/manager/GroupsManagement.module.css";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { ArrowLeft, Mountain, Smile, Target } from "lucide-react";
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
@@ -89,38 +92,8 @@ type TrainingItemRow = {
   created_at: string;
 };
 
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
-
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
-}
-
-function categoryLabel(cat: string) {
-  const map: Record<string, string> = {
-    warmup_mobility: "Warmup / mobility",
-    long_game: "Long jeu",
-    short_game_all: "Petit jeu (tout secteur)",
-    putting: "Putting",
-    wedging: "Wedging",
-    pitching: "Pitching",
-    chipping: "Chipping",
-    bunker: "Bunker",
-    course: "Parcours",
-    mental: "Mental",
-    fitness: "Fitness",
-    other: "Autre",
-  };
-  return map[cat] ?? cat;
 }
 
 function initials(p?: { first_name: string | null; last_name: string | null } | null) {
@@ -165,7 +138,10 @@ function StatBar({ icon, label, value }: { icon: ReactNode; label: string; value
   );
 }
 
-export default function CoachEventPlayerDetailPage() {
+export default function ManagerEventPlayerDetailPage() {
+  const { locale, t } = useI18n();
+  const version = useRef(0);
+  const season = useSearchParams().get("season");
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
@@ -174,7 +150,8 @@ export default function CoachEventPlayerDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [meId, setMeId] = useState("");
+  const seasonQuery = season ? `?season=${encodeURIComponent(season)}` : "";
+  const activityHref = `/manager/groups/${groupId}/planning/${eventId}${seasonQuery}`;
 
   const [event, setEvent] = useState<EventRow | null>(null);
   const [clubName, setClubName] = useState("");
@@ -189,127 +166,41 @@ export default function CoachEventPlayerDetailPage() {
   const [session, setSession] = useState<TrainingSessionRow | null>(null);
   const [items, setItems] = useState<TrainingItemRow[]>([]);
 
-  async function load() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (!eventId || !playerId) throw new Error("Missing parameters.");
-
-      const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
-      setMeId(uRes.user.id);
-
-      // event
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,starts_at,duration_minutes,location_text,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
-
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Training not found.");
-      const ev = eRes.data as EventRow;
-      setEvent(ev);
-
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
-      setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? "Club" : "Club");
-
-      const gRes = await supabase.from("coach_groups").select("id,name").eq("id", ev.group_id).maybeSingle();
-      setGroupName(!gRes.error && gRes.data ? (gRes.data as GroupRow).name ?? "Groupe" : "Groupe");
-
-      // player
-      const pRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name,handicap,avatar_url")
-        .eq("id", playerId)
-        .maybeSingle();
-      if (pRes.error) throw new Error(pRes.error.message);
-      if (!pRes.data) throw new Error("Joueur introuvable.");
-      setPlayer(pRes.data as ProfileRow);
-
-      // attendee status
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id,status")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .maybeSingle();
-      setAttendance(!aRes.error && aRes.data ? (aRes.data as AttendeeRow) : null);
-
-      // player feedback
-      const pfRes = await supabase
-        .from("club_event_player_feedback")
-        .select("event_id,player_id,motivation,difficulty,satisfaction,player_note,submitted_at")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .maybeSingle();
-      setPlayerFb(!pfRes.error && pfRes.data ? (pfRes.data as PlayerFeedbackRow) : null);
-
-      // coach feedback (this coach)
-      const cfRes = await loadCoachEventFeedback(eventId, playerId);
-      setCoachFb(!cfRes.error && cfRes.data ? (cfRes.data as CoachFeedbackRow) : null);
-
-      // ✅ STRUCTURE: training_sessions linked by club_event_id + user_id
-      const sRes = await supabase
-        .from("training_sessions")
-        .select(
-          "id,user_id,start_at,location_text,session_type,club_id,coach_user_id,coach_name,motivation,difficulty,satisfaction,notes,total_minutes,club_event_id,created_at"
-        )
-        .eq("user_id", playerId)
-        .eq("club_event_id", eventId)
-        .maybeSingle();
-
-      if (sRes.error) throw new Error(sRes.error.message);
-
-      const sess = (sRes.data ?? null) as TrainingSessionRow | null;
-      setSession(sess);
-
-      if (sess?.id) {
-        const itRes = await supabase
-          .from("training_session_items")
-          .select("id,session_id,category,minutes,note,other_detail,created_at")
-          .eq("session_id", sess.id)
-          .order("created_at", { ascending: true });
-        if (itRes.error) throw new Error(itRes.error.message);
-        setItems((itRes.data ?? []) as TrainingItemRow[]);
-      } else {
-        setItems([]);
-      }
-
-      setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
-      setEvent(null);
-      setClubName("");
-      setGroupName("");
-      setPlayer(null);
-      setAttendance(null);
-      setPlayerFb(null);
-      setCoachFb(null);
-      setSession(null);
-      setItems([]);
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId, playerId]);
+    const current = ++version.current;
+    setLoading(true); setError(null); setEvent(null); setPlayer(null);
+    async function load() {
+      try {
+        const info = await loadManagerParticipant<{ event: EventRow; player: ProfileRow; attendanceStatus: AttendeeRow["status"]; playerFeedback: PlayerFeedbackRow | null; feedback: CoachFeedbackRow | null; session: TrainingSessionRow | null; sessionItems: TrainingItemRow[] }>(eventId, playerId, groupId);
+        if (current !== version.current) return;
+        const [club, group] = await Promise.all([
+          supabase.from("clubs").select("id,name").eq("id", info.event.club_id).maybeSingle(),
+          supabase.from("coach_groups").select("id,name").eq("id", groupId).maybeSingle(),
+        ]);
+        if (current !== version.current) return;
+        if (club.error || group.error) throw new Error("coach.error.load");
+        setEvent(info.event); setPlayer(info.player); setAttendance({player_id:playerId,status:info.attendanceStatus ?? "expected"});
+        setClubName((club.data as ClubRow | null)?.name ?? ""); setGroupName((group.data as GroupRow | null)?.name ?? "");
+        setPlayerFb(info.playerFeedback); setCoachFb(info.feedback); setSession(info.session); setItems(info.sessionItems ?? []);
+      } catch (cause) { if (current === version.current) setError(participantError(cause, "coach.error.load")); }
+      finally { if (current === version.current) setLoading(false); }
+    }
+    void load();
+    return () => { version.current += 1; };
+  }, [groupId, eventId, playerId]);
 
   const title = useMemo(() => {
-    if (!player) return "Player detail";
-    return `Détail — ${nameOf(player.first_name, player.last_name)}`;
-  }, [player]);
+    if (!player) return t("manager.participant.title");
+    return managerFormat(t, "manager.participant.detail", { name: nameOf(player.first_name, player.last_name) });
+  }, [player, t]);
 
   const attendanceLabel = useMemo(() => {
-    if (!attendance) return "Non défini";
-    if (attendance.status === "present") return "Présent";
-    if (attendance.status === "absent") return "Absent";
-    if (attendance.status === "excused") return "Excusé";
-    return "Attendu";
-  }, [attendance]);
+    if (!attendance) return t("manager.content.undefined");
+    if (attendance.status === "present") return t("manager.content.present");
+    if (attendance.status === "absent") return t("coach.camps.absent");
+    if (attendance.status === "excused") return t("manager.planning.excused");
+    return t("manager.planning.expected");
+  }, [attendance, t]);
 
   const attendanceStyle = useMemo((): React.CSSProperties => {
     if (!attendance) return { background: "rgba(0,0,0,0.08)", color: "rgba(0,0,0,0.72)" };
@@ -320,32 +211,31 @@ export default function CoachEventPlayerDetailPage() {
   }, [attendance]);
 
   return (
-    <div className="player-dashboard-bg">
+    <main className={`player-dashboard-bg ${groupStyles.page}`}>
       <div className="app-shell marketplace-page">
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>{title}</div>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>{title}</h1>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning/${eventId}`}>
+              <Link className="cta-green cta-green-inline" href={activityHref}>
                 <ArrowLeft size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                Retour
-              </Link>
+                {t("common.back")}</Link>
             </div>
           </div>
 
-          {error && <div className="marketplace-error">{error}</div>}
+          {error && <div className="marketplace-error" role="alert">{t(error)}</div>}
         </div>
 
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card"><CompactLoadingBlock label="Chargement..." /></div>
+            <div className="glass-card"><CompactLoadingBlock label={t("manager.content.loading")} /></div>
           ) : !event || !player ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>No data.</div>
+            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               <div className="glass-card" style={{ padding: 16, display: "grid", gap: 14 }}>
@@ -370,10 +260,10 @@ export default function CoachEventPlayerDetailPage() {
                       <PlayerAvatar player={player} />
                     </div>
                     <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                      <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>FICHE JOUEUR</div>
+                      <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>{t("manager.participant.title")}</div>
                       <div style={{ fontWeight: 980, fontSize: 20 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
                       <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.65)" }}>
-                        Handicap {typeof player.handicap === "number" ? Number(player.handicap).toFixed(1) : "—"}
+                        {t("manager.settings.volume.handicap")} {typeof player.handicap === "number" ? Number(player.handicap).toLocaleString(managerLocaleTag(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
                       </div>
                     </div>
                   </div>
@@ -382,11 +272,11 @@ export default function CoachEventPlayerDetailPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
-                  <span className="pill-soft">{event.duration_minutes} min</span>
-                  <span className="pill-soft">{clubName || "Club"}</span>
-                  <span className="pill-soft">{groupName || "Groupe"}</span>
-                  {event.series_id ? <span className="pill-soft">Récurrent</span> : <span className="pill-soft">Unique</span>}
+                  <span className="pill-soft">{participantDate(event.starts_at, locale)}</span>
+                  <span className="pill-soft">{event.duration_minutes} {t("common.min")}</span>
+                  <span className="pill-soft">{clubName || t("manager.groups.club")}</span>
+                  <span className="pill-soft">{groupName || t("manager.content.group")}</span>
+                  {event.series_id ? <span className="pill-soft">{t("coach.form.recurring")}</span> : <span className="pill-soft">{t("coach.form.single")}</span>}
                   {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
                 </div>
               </div>
@@ -395,26 +285,24 @@ export default function CoachEventPlayerDetailPage() {
                 style={{
                   display: "grid",
                   gap: 14,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
                   alignItems: "start",
                 }}
               >
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Structure de l’entraînement</div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.editor.structure")}</div>
                   {!session ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Le joueur n’a pas encore saisi son entraînement.
-                    </div>
+                      {t("manager.participant.noSession")}</div>
                   ) : items.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Session trouvée, mais aucun poste enregistré.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.participant.noItems")}</div>
                   ) : (
                     <ul style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                       {items.map((it) => {
                         const extra = String(it.note ?? it.other_detail ?? "").trim();
                         return (
                           <li key={it.id} style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.72)" }}>
-                            {categoryLabel(it.category)} — {it.minutes} min
-                            {extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
+                            {t(`coach.form.category.${it.category}`)} — {it.minutes} {t("common.min")}{extra ? <span style={{ fontWeight: 700, color: "rgba(0,0,0,0.55)" }}> • {extra}</span> : null}
                           </li>
                         );
                       })}
@@ -423,14 +311,14 @@ export default function CoachEventPlayerDetailPage() {
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Retour joueur</div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.participant.playerFeedback")}</div>
                   {!playerFb ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non saisi.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.participant.notSubmitted")}</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <StatBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label="Motivation" value={playerFb.motivation} />
-                      <StatBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label="Difficulté" value={playerFb.difficulty} />
-                      <StatBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label="Satisfaction" value={playerFb.satisfaction} />
+                      <StatBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label={t("manager.settings.volume.motivation")} value={playerFb.motivation} />
+                      <StatBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label={t("common.difficulty")} value={playerFb.difficulty} />
+                      <StatBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label={t("common.satisfaction")} value={playerFb.satisfaction} />
                       {playerFb.player_note ? (
                         <div
                           style={{
@@ -448,23 +336,23 @@ export default function CoachEventPlayerDetailPage() {
                           {playerFb.player_note}
                         </div>
                       ) : (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucune note joueur.</div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.participant.noPlayerNote")}</div>
                       )}
                     </div>
                   )}
                 </div>
 
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 10 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach</div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.participant.evaluation")}</div>
                   {!coachFb ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Non évalué.</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.participant.notEvaluated")}</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <StatBar icon={<Target size={16} />} label="Engagement" value={coachFb.engagement} />
-                      <StatBar icon={<Smile size={16} />} label="Attitude" value={coachFb.attitude} />
-                      <StatBar icon={<Mountain size={16} />} label="Application" value={coachFb.performance} />
+                      <StatBar icon={<Target size={16} />} label={t("trainingDetail.engagement")} value={coachFb.engagement} />
+                      <StatBar icon={<Smile size={16} />} label={t("trainingDetail.attitude")} value={coachFb.attitude} />
+                      <StatBar icon={<Mountain size={16} />} label={t("trainingDetail.performance")} value={coachFb.performance} />
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span className="pill-soft">{coachFb.visible_to_player ? "Visible joueur" : "Invisible joueur"}</span>
+                        <span className="pill-soft">{coachFb.visible_to_player ? t("manager.participant.visible") : t("manager.participant.hidden")}</span>
                       </div>
                       {coachFb.player_note ? (
                         <div
@@ -480,7 +368,7 @@ export default function CoachEventPlayerDetailPage() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          <b>Pour le joueur :</b>
+                          <b>{t("manager.participant.playerNote")}</b>
                           <div style={{ height: 8 }} />
                           {coachFb.player_note}
                         </div>
@@ -499,7 +387,7 @@ export default function CoachEventPlayerDetailPage() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          <b>Note privée coach :</b>
+                          <b>{t("manager.participant.privateNote")}</b>
                           <div style={{ height: 8 }} />
                           {coachFb.private_note}
                         </div>
@@ -511,15 +399,14 @@ export default function CoachEventPlayerDetailPage() {
 
               <div className="glass-card" style={{ padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-                  <Link className="btn" href={`/manager/groups/${groupId}/planning/${eventId}`}>
-                    Retour participants
-                  </Link>
+                  <Link className="btn" href={activityHref}>
+                    {t("manager.participant.backParticipants")}</Link>
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

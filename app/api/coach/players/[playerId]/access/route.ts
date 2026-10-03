@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { coachClubCount } from "@/lib/server/coachClubCount";
 
 export async function GET(
   req: NextRequest,
@@ -17,7 +18,7 @@ export async function GET(
     const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
     if (access.sharedClubIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const [profileRes, clubsRes] = await Promise.all([
+    const [profileRes, clubsRes, clubCount] = await Promise.all([
       supabaseAdmin
         .from("profiles")
         .select("id,first_name,last_name,handicap,avatar_url")
@@ -27,6 +28,7 @@ export async function GET(
         .from("clubs")
         .select("id,name")
         .in("id", access.sharedClubIds),
+      coachClubCount(supabaseAdmin, callerId),
     ]);
 
     if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
@@ -34,6 +36,7 @@ export async function GET(
 
     return NextResponse.json({
       access: {
+        coach_club_count: clubCount,
         shared_club_ids: access.sharedClubIds,
         sensitive_club_ids: access.sensitiveClubIds,
         can_access_sensitive_sections: access.canAccessSensitiveSections,

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import {
   calculateAttendance,
+  playerSummarySignals,
   benchmarkMedian,
   calculateProratedTrainingObjective,
   calculateRegularity,
@@ -51,12 +52,13 @@ async function authorize(db: any, callerId: string, clubId: string, playerId: st
 }
 
 function summarize(args: { attendanceRate: number | null; objectiveRate: number | null; regularityRate: number | null; handicapChange: number | null; samples: number }) {
-  const parts: string[] = [];
-  if (args.attendanceRate != null && args.samples >= 3) parts.push(`L’assiduité aux activités du club atteint ${args.attendanceRate.toLocaleString("fr-CH")} %.`);
-  if (args.objectiveRate != null) parts.push(`Le volume enregistré représente ${Math.round(args.objectiveRate)} % du repère FTEM sur la période.`);
-  if (args.handicapChange != null && args.handicapChange !== 0) parts.push(`Le handicap a ${args.handicapChange > 0 ? "progressé" : "évolué"} de ${Math.abs(args.handicapChange).toLocaleString("fr-CH")} point${Math.abs(args.handicapChange) > 1 ? "s" : ""}.`);
-  if (parts.length < 3 && args.regularityRate != null) parts.push(`Une activité d’entraînement est enregistrée sur ${Math.round(args.regularityRate)} % des semaines.`);
-  return parts.slice(0, 3).join(" ") || "Les données disponibles ne sont pas encore suffisantes pour dégager une synthèse fiable.";
+  return playerSummarySignals(args).map(({ kind, value }) => {
+    const formatted = value.toLocaleString("fr-CH");
+    if (kind === "attendance") return `L’assiduité aux activités du club atteint ${formatted} %.`;
+    if (kind === "objective") return `Le volume enregistré représente ${value} % du repère FTEM sur la période.`;
+    if (kind === "regularity") return `Une activité d’entraînement est enregistrée sur ${value} % des semaines.`;
+    return `Le handicap a ${kind === "improvement" ? "progressé" : "évolué"} de ${formatted} point${value > 1 ? "s" : ""}.`;
+  }).join(" ") || "Les données disponibles ne sont pas encore suffisantes pour dégager une synthèse fiable.";
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string; playerId: string }> }) {
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", clubId).order("sort_order"),
       db.from("club_event_coach_feedback").select("event_id,engagement,attitude,performance,player_note,visible_to_player").eq("player_id", playerId).limit(3000),
       db.from("club_event_player_feedback").select("event_id,motivation,difficulty,satisfaction,submitted_at").eq("player_id", playerId).limit(3000),
-      db.from("club_event_evaluation_criteria").select("id,event_id,snapshot_name,snapshot_response_format,snapshot_domain_label,snapshot_respondent").eq("club_id", clubId).eq("is_enabled", true).limit(3000),
+      db.from("club_event_evaluation_criteria").select("id,event_id,snapshot_name,snapshot_response_format,snapshot_domain_label,snapshot_respondent,snapshot_choices").eq("club_id", clubId).eq("is_enabled", true).limit(3000),
       db.from("club_event_evaluation_responses").select("event_criterion_id,event_id,respondent_role,value_json,submitted_at").eq("club_id", clubId).eq("player_id", playerId).limit(6000),
     ]);
     for (const result of [profile, attendeeRows, trainingRows, rounds, handicapRows, settings, targets, coachFeedback, playerFeedback, customLinks, customResponses]) if (result.error) throw new Error(result.error.message);

@@ -1,3 +1,4 @@
+import { isPlatformAccount } from "@/lib/server/managerAccess";
 import { createHash, randomBytes } from "crypto";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse, type NextRequest } from "next/server";
@@ -7,6 +8,7 @@ import {
   defaultFamilyMailConfig,
   PLAYER_GUIDE_URL,
   renderFamilyTemplate,
+  renderAccessInvitationBody,
   type AccessStatus,
   type FamilyMailConfig,
   type InvitationKind,
@@ -16,7 +18,7 @@ export const runtime = "nodejs";
 
 type AuthSummary = { email: string | null; last_sign_in_at: string | null };
 type Profile = { id: string; first_name: string | null; last_name: string | null; username: string | null };
-type GuardianLink = { player_id: string; guardian_user_id: string; relation: string | null; is_primary: boolean | null };
+type GuardianLink = { player_id: string; guardian_user_id: string; relation: string | null; is_primary: boolean | null; can_view: boolean; can_edit: boolean };
 type InvitationLog = { recipient_user_id: string; target_user_id: string; invitation_kind: InvitationKind; last_sent_at: string | null; send_count: number | null; last_error: string | null; sent_to_email: string | null };
 
 function mustEnv(name: string) {
@@ -34,11 +36,6 @@ function appBaseUrl() {
     .map((value) => String(value ?? "").trim())
     .find((value) => value && !/localhost|127\.0\.0\.1/i.test(value));
   return (configured || "https://www.activitee.golf").replace(/\/+$/, "");
-}
-
-function randomPassword(length = 12) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 async function authorize(req: NextRequest, db: any, clubId: string) {
@@ -129,7 +126,7 @@ async function loadDataset(db: any, clubId: string) {
   const [club, members, links, logs, tokens] = await Promise.all([
     db.from("clubs").select("id,name").eq("id", clubId).maybeSingle(),
     db.from("club_members").select("user_id,role,is_active").eq("club_id", clubId).eq("is_active", true).in("role", ["player", "parent"]),
-    db.from("player_guardians").select("player_id,guardian_user_id,relation,is_primary"),
+    db.from("player_guardians").select("player_id,guardian_user_id,relation,is_primary,can_view,can_edit"),
     db.from("access_invitation_logs").select("recipient_user_id,target_user_id,invitation_kind,last_sent_at,send_count,last_error,sent_to_email").eq("club_id", clubId),
     db.from("access_invitation_tokens").select("user_id,expires_at,consumed_at,created_at").eq("club_id", clubId).eq("invitation_kind", "parent_access").order("created_at", { ascending: false }),
   ]);
@@ -141,8 +138,7 @@ async function loadDataset(db: any, clubId: string) {
     if (member.role === "player") playerIds.add(String(member.user_id));
     if (member.role === "parent") parentIds.add(String(member.user_id));
   }
-  const relevantLinks = ((links.data ?? []) as GuardianLink[]).filter((link) => playerIds.has(String(link.player_id)));
-  relevantLinks.forEach((link) => parentIds.add(String(link.guardian_user_id)));
+  const relevantLinks = ((links.data ?? []) as GuardianLink[]).filter((link) => playerIds.has(String(link.player_id)) && parentIds.has(String(link.guardian_user_id)) && link.can_view);
   const allIds = Array.from(new Set([...playerIds, ...parentIds]));
   const profiles = new Map<string, Profile>();
   if (allIds.length) {
@@ -188,7 +184,7 @@ async function loadDataset(db: any, clubId: string) {
   const juniors = Array.from(playerIds).map((id) => {
     const profile = profiles.get(id);
     const juniorAuth = auth.get(id);
-    const guardianLinks = (linksByPlayer.get(id) ?? []).map((link) => {
+    const guardianLinks = (linksByPlayer.get(id) ?? []).filter((link) => link.can_edit).map((link) => {
       const parentAuth = auth.get(link.guardian_user_id);
       return {
         parent_user_id: link.guardian_user_id,
@@ -255,11 +251,10 @@ async function logSend(db: any, args: { clubId: string; recipientId: string; tar
   if (response.error) throw new Error(response.error.message);
 }
 
-async function parentToken(db: any, args: { clubId: string; parentId: string; email: string; callerId: string }) {
+async function invitationToken(db: any, args: { clubId: string; targetId: string; recipientId: string; kind: "parent_access" | "junior_access"; email: string; callerId: string }) {
   const raw = randomBytes(32).toString("hex");
   const hash = createHash("sha256").update(raw).digest("hex");
-  await db.from("access_invitation_tokens").delete().eq("club_id", args.clubId).eq("user_id", args.parentId).eq("invitation_kind", "parent_access").is("consumed_at", null);
-  const response = await db.from("access_invitation_tokens").insert({ club_id: args.clubId, user_id: args.parentId, invitation_kind: "parent_access", sent_to_email: args.email, token_hash: hash, expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), sent_by: args.callerId });
+  const response = await db.from("access_invitation_tokens").insert({ club_id: args.clubId, user_id: args.targetId, recipient_user_id: args.recipientId, invitation_kind: args.kind, sent_to_email: args.email, token_hash: hash, expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), sent_by: args.callerId });
   if (response.error) throw new Error(response.error.message);
   return raw;
 }
@@ -271,10 +266,10 @@ async function sendOne(db: any, clubId: string, callerId: string, payload: any, 
     const parent = dataset.parents.find((row) => row.parent_user_id === String(payload.parent_user_id ?? ""));
     if (!parent || !parent.parent_email || !parent.parent_username) throw new Error("Informations parent incomplètes");
     if (requireReady && parent.parent_status !== "ready") throw new Error("Invitation parent ignorée : l’état n’est pas prêt");
-    const token = await parentToken(db, { clubId, parentId: parent.parent_user_id, email: parent.parent_email, callerId });
+    const token = await invitationToken(db, { clubId, kind, targetId: parent.parent_user_id, recipientId: parent.parent_user_id, email: parent.parent_email, callerId });
     const variables = { club_name: dataset.club.name, parent_name: parent.parent_name, parent_username: parent.parent_username, parent_username_or_existing: parent.parent_username, reset_url: `${appBaseUrl()}/reset-password?invite_token=${encodeURIComponent(token)}`, app_url: `${appBaseUrl()}/`, player_guide_url: PLAYER_GUIDE_URL };
     const subject = renderFamilyTemplate(dataset.mail_config.parent_subject, variables);
-    const body = renderFamilyTemplate(dataset.mail_config.parent_body, variables);
+    const body = renderAccessInvitationBody(dataset.mail_config.parent_body, variables);
     try {
       await sendEmail({ toEmail: parent.parent_email, toName: parent.parent_name, subject, body });
       await logSend(db, { clubId, recipientId: parent.parent_user_id, targetId: parent.parent_user_id, kind, email: parent.parent_email, callerId });
@@ -296,14 +291,17 @@ async function sendOne(db: any, clubId: string, callerId: string, payload: any, 
   if (!recipientId || !recipientEmail || !recipientName || !junior.junior_username) throw new Error("Informations d’accès à compléter");
   const becomesReadyAfterSelection = junior.junior_status === "not_ready" && !direct && Boolean(linkedRecipient);
   if (requireReady && junior.junior_status !== "ready" && !becomesReadyAfterSelection) throw new Error("Accès junior ignoré : l’état n’est pas prêt");
-  const password = randomPassword();
-  const update = await db.auth.admin.updateUserById(junior.junior_user_id, { password });
-  if (update.error) throw new Error(update.error.message);
-  const variables = { club_name: dataset.club.name, parent_name: linkedRecipient?.parent_name ?? "", junior_name: junior.junior_name, junior_username: junior.junior_username, temp_password: password, app_url: `${appBaseUrl()}/`, player_guide_url: PLAYER_GUIDE_URL };
+  const staff = await db.from("club_members").select("id").eq("user_id", junior.junior_user_id).in("role", ["coach", "manager"]).limit(1);
+  if (staff.error) throw new Error(staff.error.message);
+  if (staff.data?.length || await isPlatformAccount(db, junior.junior_user_id)) {
+    throw new Error("Les identifiants de ce compte sont gérés par leur titulaire.");
+  }
+  const token = await invitationToken(db, { clubId, kind, targetId: junior.junior_user_id, recipientId, email: recipientEmail, callerId });
+  const variables = { club_name: dataset.club.name, parent_name: linkedRecipient?.parent_name ?? "", junior_name: junior.junior_name, junior_username: junior.junior_username, reset_url: `${appBaseUrl()}/reset-password?invite_token=${encodeURIComponent(token)}`, app_url: `${appBaseUrl()}/`, player_guide_url: PLAYER_GUIDE_URL };
   const subjectTemplate = direct ? dataset.mail_config.junior_direct_subject : dataset.mail_config.junior_parent_subject;
   const bodyTemplate = direct ? dataset.mail_config.junior_direct_body : dataset.mail_config.junior_parent_body;
   try {
-    await sendEmail({ toEmail: recipientEmail, toName: recipientName, subject: renderFamilyTemplate(subjectTemplate, variables), body: renderFamilyTemplate(bodyTemplate, variables) });
+    await sendEmail({ toEmail: recipientEmail, toName: recipientName, subject: renderFamilyTemplate(subjectTemplate, variables), body: renderAccessInvitationBody(bodyTemplate, variables) });
     await logSend(db, { clubId, recipientId, targetId: junior.junior_user_id, kind, email: recipientEmail, callerId });
   } catch (error) {
     await logSend(db, { clubId, recipientId, targetId: junior.junior_user_id, kind, email: recipientEmail, callerId, error: error instanceof Error ? error.message : "Échec de l’envoi" });

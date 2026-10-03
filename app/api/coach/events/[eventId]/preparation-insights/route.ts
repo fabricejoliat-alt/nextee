@@ -1,40 +1,14 @@
-import { createHash } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
 import {
-  COACH_PREPARATION_MAX_HISTORY_EVENTS,
-  completedBefore,
   isFutureTraining,
   normalizeCoachPreparationPoints,
-  selectPreparationPrivateNote,
   type CoachPreparationInsight,
 } from "@/lib/coachPreparationInsights";
+import { loadCoachPreparationSources } from "@/lib/server/coachPreparationSources";
+import { loadCoachPreparationReads } from "@/lib/server/coachPreparationReads";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
-
-type HistoryEvent = {
-  id: string;
-  starts_at: string;
-  ends_at: string | null;
-  duration_minutes: number | null;
-  status: string;
-};
-
-type HistoryFeedback = {
-  event_id: string;
-  player_id: string;
-  private_note: string | null;
-  updated_at: string | null;
-};
-
-type ValidatedPrivateNote = {
-  id: string;
-  event_id: string;
-  player_id: string;
-  body: string;
-  source_report_version: number;
-  validated_at: string;
-};
 
 type CacheRow = {
   player_id: string;
@@ -49,7 +23,6 @@ type OpenAIResponse = {
   error?: { message?: string };
 };
 
-const COACH_PREPARATION_GENERATION_VERSION = 2;
 
 function extractOutputText(response: OpenAIResponse) {
   for (const item of response.output ?? []) {
@@ -63,14 +36,6 @@ function extractOutputText(response: OpenAIResponse) {
 function isMissingCacheTable(error: { code?: string | null; message?: string | null } | null) {
   const message = String(error?.message ?? "").toLowerCase();
   return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("coach_training_preparation_insights");
-}
-
-function recordKey(eventId: string, playerId: string) {
-  return `${eventId}:${playerId}`;
-}
-
-function fingerprint(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 async function generateAttentionPoints(apiKey: string, playerHistory: unknown) {
@@ -150,88 +115,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     );
     if (playerIds.length === 0) return NextResponse.json({ insights: [], history_event_count: 0 });
 
-    const now = new Date();
-    const historyEventsRes = await supabaseAdmin
-      .from("club_events")
-      .select("id,starts_at,ends_at,duration_minutes,status")
-      .eq("group_id", targetEvent.group_id)
-      .eq("club_id", targetEvent.club_id)
-      .eq("event_type", "training")
-      .neq("id", eventId)
-      .lt("starts_at", now.toISOString())
-      .order("starts_at", { ascending: false })
-      .limit(12);
-    if (historyEventsRes.error) throw new Error(historyEventsRes.error.message);
-    const historyEvents = ((historyEventsRes.data ?? []) as HistoryEvent[])
-      .filter((event) => completedBefore(event, now))
-      .slice(0, COACH_PREPARATION_MAX_HISTORY_EVENTS);
-    const historyEventIds = historyEvents.map((event) => event.id);
-    if (historyEventIds.length === 0) return NextResponse.json({ insights: [], history_event_count: 0 });
-
-    const [feedbackRes, validatedNotesRes] = await Promise.all([
-      supabaseAdmin
-        .from("club_event_coach_feedback")
-        .select("event_id,player_id,private_note,updated_at")
-        .in("event_id", historyEventIds)
-        .in("player_id", playerIds),
-      supabaseAdmin
-        .from("coach_player_private_notes")
-        .select("id,event_id,player_id,body,source_report_version,validated_at")
-        .in("event_id", historyEventIds)
-        .in("player_id", playerIds)
-        .order("validated_at", { ascending: false }),
-    ]);
-    if (feedbackRes.error) throw new Error(feedbackRes.error.message);
-    if (validatedNotesRes.error) throw new Error(validatedNotesRes.error.message);
-
-    const feedbackByKey = new Map(
-      ((feedbackRes.data ?? []) as HistoryFeedback[]).map((row) => [recordKey(row.event_id, row.player_id), row])
-    );
-    const latestValidatedNoteByKey = new Map<string, ValidatedPrivateNote>();
-    for (const note of (validatedNotesRes.data ?? []) as ValidatedPrivateNote[]) {
-      const key = recordKey(note.event_id, note.player_id);
-      if (!latestValidatedNoteByKey.has(key) && String(note.body ?? "").trim()) {
-        latestValidatedNoteByKey.set(key, note);
-      }
-    }
-
-    const sourceByPlayerId = new Map<string, { source: unknown; sourceCount: number; sourceHash: string }>();
-    for (const playerId of playerIds) {
-      const privateNoteSessions = historyEvents.flatMap((historyEvent) => {
-        const key = recordKey(historyEvent.id, playerId);
-        const feedback = feedbackByKey.get(key);
-        const validatedNote = latestValidatedNoteByKey.get(key);
-        const selectedNote = selectPreparationPrivateNote({
-          feedbackText: feedback?.private_note,
-          feedbackUpdatedAt: feedback?.updated_at,
-          validatedText: validatedNote?.body,
-          validatedAt: validatedNote?.validated_at,
-        });
-        if (!selectedNote) return [];
-        return [{
-          event_id: historyEvent.id,
-          date: historyEvent.starts_at,
-          private_notes: [{
-            id: selectedNote.source === "validated"
-              ? validatedNote?.id ?? `validated:${historyEvent.id}:${playerId}`
-              : `feedback:${historyEvent.id}:${playerId}`,
-            text: selectedNote.text,
-            saved_at: selectedNote.savedAt || historyEvent.starts_at,
-          }],
-        }];
-      });
-      if (privateNoteSessions.length === 0) continue;
-      const source = {
-        player_reference: playerId,
-        instructions_context: "Préparation de la prochaine séance à partir des notes privées du même joueur",
-        private_notes_by_session: privateNoteSessions,
-      };
-      sourceByPlayerId.set(playerId, {
-        source,
-        sourceCount: privateNoteSessions.length,
-        sourceHash: fingerprint({ generationVersion: COACH_PREPARATION_GENERATION_VERSION, source }),
-      });
-    }
+    const { sourceByPlayerId, historyEventIds } = await loadCoachPreparationSources(supabaseAdmin, targetEvent, playerIds);
     const playersWithoutSource = playerIds.filter((playerId) => !sourceByPlayerId.has(playerId));
     if (playersWithoutSource.length > 0) {
       const cleanupRes = await supabaseAdmin
@@ -268,6 +152,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
           points: cachedPoints,
           source_event_count: cached.source_event_count,
           generated_at: cached.generated_at,
+          source_fingerprint: sourceData.sourceHash,
         });
       } else {
         misses.push([playerId, sourceData]);
@@ -299,6 +184,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
             points: item.points,
             source_event_count: item.sourceData.sourceCount,
             generated_at: item.generatedAt,
+            source_fingerprint: item.sourceData.sourceHash,
           });
           if (cacheAvailable) {
             const writeRes = await supabaseAdmin.from("coach_training_preparation_insights").upsert(
@@ -317,7 +203,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
               },
               { onConflict: "target_event_id,player_id" }
             );
-            if (writeRes.error && isMissingCacheTable(writeRes.error)) cacheAvailable = false;
+            if (writeRes.error) {
+              if (isMissingCacheTable(writeRes.error)) cacheAvailable = false;
+              else throw new Error(writeRes.error.message);
+            }
           }
         }
       }
@@ -325,7 +214,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     }
 
     insights.sort((a, b) => playerIds.indexOf(a.player_id) - playerIds.indexOf(b.player_id));
-    return NextResponse.json({ insights, history_event_count: historyEventIds.length });
+    const reads = await loadCoachPreparationReads(supabaseAdmin, callerId, [eventId]);
+    return NextResponse.json({
+      insights: insights.map((insight) => ({
+        ...insight,
+        seen_at: reads.rows.find((read) => read.target_event_id === eventId && read.player_id === insight.player_id
+          && read.source_fingerprint === insight.source_fingerprint)?.seen_at ?? null,
+      })),
+      read_tracking_available: reads.available && cacheAvailable,
+      history_event_count: historyEventIds.length,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "forbidden" ? 403 : message === "event_not_found" ? 404 : 500;

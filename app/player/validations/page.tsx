@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
 import type { ValidationDashboardPayload, ValidationExerciseItem } from "@/lib/validations";
 import styles from "./PlayerValidations.module.css";
 
@@ -244,16 +245,8 @@ export default function PlayerValidationsPage() {
           <ProgressBar value={dashboard.overall_validated_count} total={dashboard.overall_total_count} />
         </div>
 
-        <nav className={styles.sectorNav} aria-label={txt.sections}>
-          {dashboard.sections.map((section) => <button
-            key={section.id} type="button"
-            className={`${styles.sectorTab} ${selectedSection?.id === section.id ? styles.sectorTabActive : ""}`}
-            onClick={() => setSelectedSectionId(section.id)}
-            aria-current={selectedSection?.id === section.id ? "true" : undefined}
-          >
-            <span>{section.name}</span><small>{section.validated_count}/{section.total_count}</small>
-          </button>)}
-        </nav>
+        <ManagerStatisticsTabs<string> items={dashboard.sections.map((section) => ({ value: section.id, label: `${section.name} (${section.validated_count}/${section.total_count})` }))}
+          value={selectedSection?.id ?? ""} onChange={setSelectedSectionId} ariaLabel={txt.sections}/>
 
         {selectedSection ? <section className={styles.sectorSection} aria-labelledby="validation-sector-title">
           <div className={styles.sectorHeading}>

@@ -1,8 +1,9 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, UserRound } from "lucide-react";
+import { Eye, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
@@ -18,7 +19,6 @@ type Player = Profile & { club_ids: string[]; club_names: string[] };
 
 function name(profile: Pick<Profile, "first_name" | "last_name">) { return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "—"; }
 function initials(profile: Profile) { return `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase() || "J"; }
-function sexKey(value: string | null) { return `coach.directory.${value === "male" || value === "female" || value === "other" ? value : "undefined"}`; }
 
 export default function CoachPlayersPage() {
   const { locale, t } = useI18n();
@@ -67,7 +67,30 @@ export default function CoachPlayersPage() {
         {clubs.length > 1 ? <label className={styles.field}><span>{t("coach.directory.club")}</span><select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}><option value="all">{t("coach.directory.allClubs")}</option>{[...clubs].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", locale)).map((club) => <option key={club.id} value={club.id}>{club.name || t("coach.directory.club")}</option>)}</select></label> : null}
         <label className={styles.field}><span>{t("coach.directory.gender")}</span><select value={sexFilter} onChange={(event) => setSexFilter(event.target.value)}><option value="all">{t("coach.directory.all")}</option><option value="male">{t("coach.directory.male")}</option><option value="female">{t("coach.directory.female")}</option><option value="other">{t("coach.directory.other")}</option><option value="none">{t("coach.directory.undefined")}</option></select></label>
       </div>
-      {loading ? <CoachListSkeleton label={t("coach.players.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><UserRound size={21} aria-hidden="true" />{t("coach.players.empty")}</div> : <div className={`${styles.tableWrap} ${playerListStyles.mobileTableWrap}`}><table className={`${styles.table} ${playerListStyles.mobileTable}`}><thead><tr><th>{t("coach.directory.player")}</th><th>{t("coach.directory.club")}</th><th>{t("coach.directory.gender")}</th><th>{t("coach.directory.handicap")}</th><th>{t("coach.directory.actions")}</th></tr></thead><tbody>{filtered.map((player) => <tr key={player.id}><td data-label={t("coach.directory.player")}><div className={styles.person}><span className={styles.avatar}>{player.avatar_url ? <img src={player.avatar_url} alt="" /> : initials(player)}</span><b>{name(player)}</b></div></td><td data-label={t("coach.directory.club")}>{player.club_names.map((name) => name || t("coach.directory.club")).join(" · ")}</td><td data-label={t("coach.directory.gender")}>{t(sexKey(player.sex))}</td><td data-label={t("coach.directory.handicap")}>{player.handicap == null ? t("coach.directory.noData") : new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(player.handicap)}</td><td data-label={t("coach.directory.actions")}><Link className={styles.iconButton} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: name(player) })} title={t("coach.directory.view")}><ArrowRight size={16} /></Link></td></tr>)}</tbody></table></div>}
+      {loading ? <CoachListSkeleton label={t("coach.players.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><UserRound size={21} aria-hidden="true" />{t("coach.players.empty")}</div> : (
+        <ul className={playerListStyles.list} role="list" aria-label={t("coach.players.list")}>
+          {filtered.map((player) => {
+            const playerName = name(player);
+            const handicap = typeof player.handicap === "number" && Number.isFinite(player.handicap)
+              ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(player.handicap)
+              : t("coach.directory.noData");
+            return (
+              <li key={player.id} className={playerListStyles.row}>
+                <span className={`${styles.avatar} ${playerListStyles.avatar}`} aria-hidden="true">
+                  {player.avatar_url ? <img src={player.avatar_url} alt="" /> : initials(player)}
+                </span>
+                <div className={playerListStyles.identity}>
+                  <b>{playerName}</b>{" "}
+                  <span className={playerListStyles.handicap} aria-label={`${t("coach.directory.handicap")} : ${handicap}`}>({handicap})</span>
+                </div>
+                <Link className={`${styles.iconButton} ${playerListStyles.viewButton}`} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: playerName })} title={t("coach.directory.view")}>
+                  <Eye size={18} aria-hidden="true" />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   </main>;
 }

@@ -1,0 +1,11 @@
+.table small { display: block; }
+.table td { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .table { min-width: 0 !important; }
+  .table thead { display: none; }
+  .table tbody { display: grid; gap: 14px; }
+  .table tbody tr { display: grid; border-bottom: 1px solid #e3e9e2; padding-bottom: 10px; }
+  .table tbody td { display: block; width: auto; padding: 6px 0; border: 0; text-align: left; }
+  .table tbody td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #738076; font-size: 11px; font-weight: 600; }
+}

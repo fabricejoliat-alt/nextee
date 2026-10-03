@@ -13,8 +13,23 @@ async function allRows<T>(query: (from: number, to: number) => PromiseLike<{ dat
   }
 }
 
-export async function loadCoachEvaluationState(db: SupabaseClient, eventIds: string[]) {
+type EvaluationState = {
+  attendees: CoachTrainingAttendeeState[]; feedback: CoachTrainingFeedbackState[];
+  criteria: EventEvaluationCriterion[]; responses: CoachEvaluationResponseState[]; completeByEvent: Record<string, boolean>;
+};
+
+export async function loadCoachEvaluationState(db: SupabaseClient, eventIds: string[]): Promise<EvaluationState> {
   if (!eventIds.length) return { attendees: [], feedback: [], criteria: [], responses: [], completeByEvent: {} };
+  if (eventIds.length > 150) {
+    const combined: EvaluationState = { attendees: [], feedback: [], criteria: [], responses: [], completeByEvent: {} };
+    for (let from = 0; from < eventIds.length; from += 150) {
+      const batch = await loadCoachEvaluationState(db, eventIds.slice(from, from + 150));
+      combined.attendees.push(...batch.attendees); combined.feedback.push(...batch.feedback);
+      combined.criteria.push(...batch.criteria); combined.responses.push(...batch.responses);
+      Object.assign(combined.completeByEvent, batch.completeByEvent);
+    }
+    return combined;
+  }
   const [attendees, feedback, criteria, responses] = await Promise.all([
     allRows<CoachTrainingAttendeeState>((from,to) => db.from("club_event_attendees").select("event_id,player_id,coach_recorded_status")
       .in("event_id", eventIds).order("event_id").order("player_id").range(from,to)),

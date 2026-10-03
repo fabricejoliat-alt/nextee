@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ArrowLeft, Save } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { managerActivityLabel, managerFormat, managerLocaleTag } from "@/lib/managerLocale";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -42,22 +42,8 @@ type CreateDataResponse = {
   group_coaches?: Array<{ group_id: string; coach_id: string }>;
 };
 
-const EVENT_TYPES: Array<{ value: EventType; fr: string; en: string }> = [
-  { value: "competition", fr: "Compétition", en: "Competition" },
-  { value: "training", fr: "Entraînement", en: "Training" },
-  { value: "interclub", fr: "Interclub", en: "Interclub" },
-  { value: "camp", fr: "Stage/Camp", en: "Camp" },
-  { value: "session", fr: "Séance", en: "Session" },
-  { value: "event", fr: "Événement", en: "Event" },
-];
-
-const COMPETITION_LEVEL_OPTIONS: Array<{ value: CompetitionLevel; label: string }> = [
-  { value: "internal", label: "Tournoi interne" },
-  { value: "club", label: "Tournoi Club" },
-  { value: "regional", label: "Régional" },
-  { value: "national", label: "National" },
-  { value: "international", label: "International" },
-];
+const EVENT_TYPES: EventType[] = ["competition", "training", "interclub", "camp", "session", "event"];
+const COMPETITION_LEVEL_OPTIONS: CompetitionLevel[] = ["internal", "club", "regional", "national", "international"];
 
 const COMPETITION_CATEGORY_OPTIONS: Array<{ value: CompetitionCategory; label: string }> = [
   { value: "u10", label: "U10" },
@@ -68,12 +54,9 @@ const COMPETITION_CATEGORY_OPTIONS: Array<{ value: CompetitionCategory; label: s
   { value: "all", label: "Tous" },
 ];
 
-const COMPETITION_CATEGORY_LABELS = Object.fromEntries(
-  COMPETITION_CATEGORY_OPTIONS.map((option) => [option.value, option.label]),
-) as Record<CompetitionCategory, string>;
-
 function nowLocalDatetime() {
   const d = new Date();
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -152,10 +135,6 @@ function reminderDateBefore(startDate: string, daysBefore: number) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T09:00`;
 }
 
-function defaultReminderMessage(name: string) {
-  const safeName = name.trim() || "{competition_name}";
-  return `Rappel : n’oublie pas de t’inscrire à la compétition “${safeName}” sur la plateforme externe.`;
-}
 
 function SearchablePicker({
   label,
@@ -172,11 +151,12 @@ function SearchablePicker({
   disabled?: boolean;
   placeholder: string;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options.slice(0, 80);
-    return options.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 80);
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, query]);
 
   return (
@@ -198,6 +178,7 @@ function SearchablePicker({
           onChange={(e) => setQuery(e.target.value)}
           disabled={disabled}
           placeholder={placeholder}
+          aria-label={placeholder}
           style={{ border: 0, outline: "none", width: "100%", background: "transparent", padding: 0 }}
         />
       </label>
@@ -208,21 +189,31 @@ function SearchablePicker({
             <span>{o.label}</span>
           </label>
         ))}
-        {filtered.length === 0 ? <div style={{ fontSize: 12, color: "#666" }}>Aucun résultat</div> : null}
+        {filtered.length === 0 ? <div style={{ fontSize: 12, color: "#666" }}>{t("manager.activityForm.empty")}</div> : null}
       </div>
     </div>
   );
 }
 
 export default function ManagerEventCreatePage() {
-  const { locale } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const { locale, t } = useI18n();
+  const tr = (key: string) => t(`manager.activityForm.${key}`);
+  const fmt = (key: string, values: Record<string, string | number>) => managerFormat(t, `manager.activityForm.${key}`, values);
   const router = useRouter();
   const searchParams = useSearchParams();
   const editingEventId = String(searchParams.get("event") ?? "").trim();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<unknown>(null);
+  const inFlight = useRef(false);
+  const attempt = useRef<string | null>(null);
+  const loadVersion = useRef(0);
+  const locked = loading || saving || uncertain || Boolean(savedId) || loadFailed;
+
   const [error, setError] = useState<string | null>(null);
 
   const [clubs, setClubs] = useState<ClubLite[]>([]);
@@ -248,7 +239,7 @@ export default function ManagerEventCreatePage() {
   const [reminderShortcut, setReminderShortcut] = useState<"1d" | "3d" | "1w" | "custom">("3d");
   const [reminderAtLocal, setReminderAtLocal] = useState("");
   const [reminderChannel, setReminderChannel] = useState<ReminderChannel>("in_app");
-  const [reminderMessage, setReminderMessage] = useState(defaultReminderMessage(""));
+  const [reminderMessage, setReminderMessage] = useState("");
   const [reminderMessageTouched, setReminderMessageTouched] = useState(false);
   const [reminderStatus, setReminderStatus] = useState<string | null>(null);
 
@@ -278,21 +269,26 @@ export default function ManagerEventCreatePage() {
   });
 
   useEffect(() => {
+    const version = ++loadVersion.current;
+    const controller = new AbortController();
+    setLoadFailed(false); setSnapshot(null); setUncertain(false); setSavedId(null); setSaving(false);
+    attempt.current = null; inFlight.current = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token ?? "";
-        if (!token) throw new Error(tr("Session invalide.", "Invalid session."));
+        if (!token) throw new Error("session");
 
         const res = await fetch("/api/manager/events/create", {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
+          cache: "no-store", signal: controller.signal,
         });
         const json = (await res.json().catch(() => ({}))) as Partial<CreateDataResponse> & { error?: string };
-        if (!res.ok) throw new Error(String(json.error ?? tr("Chargement impossible.", "Load failed.")));
+        if (!res.ok || !Array.isArray(json.clubs) || !Array.isArray(json.groups) || !Array.isArray(json.players) || !Array.isArray(json.coaches)) throw new Error("load");
+        if (version !== loadVersion.current) return;
 
         const g = Array.isArray(json.groups) ? json.groups : [];
         const loadedClubs = Array.isArray(json.clubs) ? json.clubs : [];
@@ -310,10 +306,12 @@ export default function ManagerEventCreatePage() {
         if (editingEventId) {
           const editRes = await fetch(`/api/manager/events/${encodeURIComponent(editingEventId)}`, {
             headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
+            cache: "no-store", signal: controller.signal,
           });
           const editJson = await editRes.json().catch(() => ({}));
-          if (!editRes.ok) throw new Error(String(editJson?.error ?? "Chargement de la compétition impossible."));
+          if (!editRes.ok || !editJson.snapshot || editJson.event?.id !== editingEventId) throw new Error("load");
+          if (version !== loadVersion.current) return;
+          setSnapshot(editJson.snapshot);
           const event = editJson.event ?? {};
           setEventType("competition");
           setMode("single");
@@ -336,26 +334,28 @@ export default function ManagerEventCreatePage() {
           setReminderShortcut("custom");
           setReminderAtLocal(reminder?.scheduled_for ? isoToLocalDatetime(String(reminder.scheduled_for)) : "");
           setReminderChannel(String(reminder?.channel ?? "in_app") as ReminderChannel);
-          setReminderMessage(String(reminder?.message_template ?? defaultReminderMessage(String(event.title ?? ""))));
+          setReminderMessage(String(reminder?.message_template ?? ""));
           setReminderMessageTouched(Boolean(reminder));
         }
-      } catch (e: any) {
-        setError(e?.message ?? tr("Erreur inattendue.", "Unexpected error."));
+      } catch {
+        if (version !== loadVersion.current) return;
+        setError("load"); setLoadFailed(true);
       } finally {
-        setLoading(false);
+        if (version === loadVersion.current) setLoading(false);
       }
     })();
-  }, [locale, editingEventId]);
+    return () => { loadVersion.current = version + 1; controller.abort(); };
+  }, [editingEventId]);
 
   const groupOptions = useMemo(
     () =>
       groups
         .map((g) => ({
           id: g.id,
-          label: `${g.name ?? tr("Groupe", "Group")}${g.head_coach_name ? ` (${g.head_coach_name})` : ""}`,
+          label: `${g.name ?? t("manager.activityForm.group")}${g.head_coach_name ? ` (${g.head_coach_name})` : ""}`,
         }))
-        .sort((a, b) => a.label.localeCompare(b.label, "fr-CH")),
-    [groups, tr]
+        .sort((a, b) => a.label.localeCompare(b.label, managerLocaleTag(locale))),
+    [groups, t, locale]
   );
 
   const competitionPlayers = useMemo(
@@ -377,10 +377,10 @@ export default function ManagerEventCreatePage() {
         const age = competitionAgeInYear(player.birth_date, year);
         return {
           id: player.id,
-          label: `${player.name}${age == null ? " · date de naissance non renseignée" : ` · ${age} ans en ${year}`}`,
+          label: `${player.name} · ${age == null ? t("manager.activityForm.birthMissing") : managerFormat(t, "manager.activityForm.age", { age, year })}`,
         };
       });
-  }, [players, competitionPlayers, eventType, startsAtLocal]);
+  }, [players, competitionPlayers, eventType, startsAtLocal, t]);
   const coachOptions = useMemo(() => {
     const source = eventType === "competition"
       ? coaches.filter((coach) => coach.club_id === competitionClubId)
@@ -460,10 +460,12 @@ export default function ManagerEventCreatePage() {
   }, [competitionCategory, competitionPlayers, editingEventId, endsAtLocal, eventType, startsAtLocal]);
 
   useEffect(() => {
-    if (eventType !== "competition") return;
+    if (eventType !== "competition" || locked) return;
     setMode("single");
-    if (!reminderMessageTouched) setReminderMessage(defaultReminderMessage(title));
-  }, [eventType, reminderMessageTouched, title]);
+    if (!reminderMessageTouched) setReminderMessage(fmt("reminderDefault", { name: title.trim() || "{competition_name}" }));
+  // The default follows the interface language; an edited message remains unchanged.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventType, reminderMessageTouched, title, locale, locked]);
 
   useEffect(() => {
     if (eventType !== "competition" || reminderShortcut === "custom") return;
@@ -500,138 +502,148 @@ export default function ManagerEventCreatePage() {
   }
 
   async function submit() {
-    if (saving) return;
+    if (inFlight.current || loading || loadFailed || savedId || (editingEventId && uncertain)) return;
     setError(null);
 
     const groupSelected = selectedGroupIds.size > 0;
-    const directPlayerCoachSelection = isDirectSelectionMode;
+    if (!attempt.current) {
+      const directPlayerCoachSelection = isDirectSelectionMode;
 
-    if (eventType === "competition") {
-      if (!competitionClubId) {
-        setError("Aucun club actif n’est disponible pour créer cette compétition.");
-        return;
-      }
-      if (!title.trim()) {
-        setError("Le nom de la compétition est obligatoire.");
-        return;
-      }
-      const competitionStart = splitLocalDateTime(startsAtLocal).date;
-      const competitionEnd = splitLocalDateTime(endsAtLocal).date;
-      if (!competitionStart || !competitionEnd) {
-        setError("Les dates de début et de fin sont obligatoires.");
-        return;
-      }
-      if (competitionEnd < competitionStart) {
-        setError("La date de fin doit être après la date de début.");
-        return;
-      }
-      const yearCheck = competitionTournamentYear(competitionStart, competitionEnd);
-      if (yearCheck.error) {
-        setError(yearCheck.error);
-        return;
-      }
-      if (!isHttpUrl(externalRegistrationUrl)) {
-        setError("Le lien d’inscription externe doit être une URL HTTP ou HTTPS valide.");
-        return;
-      }
-      if (selectedPlayerIds.size === 0) {
-        setError("Sélectionnez au moins un joueur pour afficher la compétition dans son agenda.");
-        return;
-      }
-      if (reminderEnabled && !reminderLocked) {
-        const reminderDate = new Date(reminderAtLocal);
-        const competitionStartsAt = competitionBoundaryIso(competitionStart, "start");
-        if (
-          !reminderAtLocal ||
-          Number.isNaN(reminderDate.getTime()) ||
-          reminderDate.getTime() <= Date.now() ||
-          !competitionStartsAt ||
-          reminderDate >= new Date(competitionStartsAt)
-        ) {
-          setError("Le rappel doit être planifié dans le futur et avant le début de la compétition.");
+      if (eventType === "competition") {
+        if (!competitionClubId) {
+          setError("forbidden");
           return;
         }
-        if (!reminderMessage.trim()) {
-          setError("Le texte du rappel est obligatoire.");
+        if (!title.trim()) {
+          setError("title_required");
           return;
         }
+        const competitionStart = splitLocalDateTime(startsAtLocal).date;
+        const competitionEnd = splitLocalDateTime(endsAtLocal).date;
+        if (!competitionStart || !competitionEnd) {
+          setError("invalid_competition_dates");
+          return;
+        }
+        if (competitionEnd < competitionStart) {
+          setError("invalid_competition_dates");
+          return;
+        }
+        const yearCheck = competitionTournamentYear(competitionStart, competitionEnd);
+        if (yearCheck.error) {
+          setError("invalid_competition_dates");
+          return;
+        }
+        if (!isHttpUrl(externalRegistrationUrl)) {
+          setError("invalid_competition");
+          return;
+        }
+        if (selectedPlayerIds.size === 0) {
+          setError("invalid_assignments");
+          return;
+        }
+        if (reminderEnabled && !reminderLocked) {
+          const reminderDate = new Date(reminderAtLocal);
+          const competitionStartsAt = competitionBoundaryIso(competitionStart, "start");
+          if (
+            !reminderAtLocal ||
+            Number.isNaN(reminderDate.getTime()) ||
+            reminderDate.getTime() <= Date.now() ||
+            !competitionStartsAt ||
+            reminderDate >= new Date(competitionStartsAt)
+          ) {
+            setError("invalid_reminder");
+            return;
+          }
+          if (!reminderMessage.trim()) {
+            setError("invalid_reminder");
+            return;
+          }
+        }
+      } else if (!groupSelected && !directPlayerCoachSelection) {
+        setError("invalid_assignments");
+        return;
       }
-    } else if (!groupSelected && !directPlayerCoachSelection) {
-      setError(
-        tr(
-          "Sélectionne au moins un groupe, ou bien au moins un joueur et un coach.",
-          "Select at least one group, or at least one player and one coach."
-        )
-      );
-      return;
-    }
-    if ((eventType === "session" || eventType === "event" || eventType === "camp") && !title.trim()) {
-      setError(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
-      return;
-    }
-    if (mode === "series" && endDate < startDate) {
-      setError(tr("La date de fin doit être après le début.", "End date must be after start date."));
-      return;
-    }
+      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !title.trim()) {
+        setError("title_required");
+        return;
+      }
+      if (mode === "series" && endDate < startDate) {
+        setError("invalid_recurrence");
+        return;
+      }
 
+      if (mode === "single" && eventType !== "competition") {
+        const start = new Date(startsAtLocal), end = new Date(endsAtLocal);
+        if (!Number.isFinite(start.getTime()) || (eventType !== "training" && (!Number.isFinite(end.getTime()) || end <= start))) { setError("invalid_event"); return; }
+      }
+      if ((eventType === "training" || mode === "series") && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300)) { setError("invalid_event"); return; }
+    }
+    inFlight.current = true;
+    const version = loadVersion.current;
     setSaving(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
-      if (!token) throw new Error(tr("Session invalide.", "Invalid session."));
+      if (!token) throw new Error("session");
 
-      const targetGroupIds = groupSelected ? Array.from(selectedGroupIds) : [];
-      const competitionStartDate = splitLocalDateTime(startsAtLocal).date;
-      const competitionEndDate = splitLocalDateTime(endsAtLocal).date;
-      const body = {
-        mode,
-        eventType,
-        title: title.trim() || null,
-        startsAt: eventType === "competition" ? competitionBoundaryIso(competitionStartDate, "start") : startsAtLocal,
-        endsAt: eventType === "competition" ? competitionBoundaryIso(competitionEndDate, "end") : endsAtLocal,
-        competitionStartDate: eventType === "competition" ? competitionStartDate : null,
-        competitionEndDate: eventType === "competition" ? competitionEndDate : null,
-        durationMinutes,
-        locationText: locationText.trim() || null,
-        coachNote: coachNote.trim() || null,
-        requiresEvaluation,
-        evaluationCriterionIds: requiresEvaluation ? evaluationCriterionIds : [],
-        competitionClubId: eventType === "competition" ? competitionClubId : null,
-        competitionLevel: eventType === "competition" ? competitionLevel : null,
-        competitionCategory: eventType === "competition" ? competitionCategory : null,
-        externalRegistrationUrl: eventType === "competition" ? externalRegistrationUrl.trim() || null : null,
-        competitionNote: eventType === "competition" ? competitionNote.trim() || null : null,
-        reminder: {
-          enabled: eventType === "competition" && reminderEnabled,
-          scheduledFor: reminderEnabled && reminderAtLocal ? new Date(reminderAtLocal).toISOString() : null,
-          channel: reminderEnabled ? reminderChannel : null,
-          messageTemplate: reminderEnabled ? reminderMessage.trim() : null,
-  },
-        series: {
-          weekday,
-          timeOfDay,
-          intervalWeeks,
-          startDate,
-          endDate,
-        },
-        groupTarget: {
-          mode: "selected",
-          ids: targetGroupIds,
-        },
-        playerTarget: {
-          mode: "selected",
-          ids: Array.from(selectedPlayerIds),
-        },
-        coachTarget: {
-          mode: "selected",
-          ids: Array.from(selectedCoachIds),
-        },
-        parentTarget: {
-          mode: "none",
-          ids: [],
-        },
-      };
+      if (version !== loadVersion.current) return;
+      if (!attempt.current) {
+        const targetGroupIds = groupSelected ? Array.from(selectedGroupIds) : [];
+        const competitionStartDate = splitLocalDateTime(startsAtLocal).date;
+        const competitionEndDate = splitLocalDateTime(endsAtLocal).date;
+        const body = {
+          requestId: crypto.randomUUID(),
+          ...(editingEventId ? { snapshot } : {}),
+          mode,
+          eventType,
+          title: title.trim() || null,
+          startsAt: eventType === "competition" ? competitionBoundaryIso(competitionStartDate, "start") : mode === "single" ? new Date(startsAtLocal).toISOString() : null,
+          endsAt: eventType === "competition" ? competitionBoundaryIso(competitionEndDate, "end") : mode === "single" && eventType !== "training" ? new Date(endsAtLocal).toISOString() : null,
+          competitionStartDate: eventType === "competition" ? competitionStartDate : null,
+          competitionEndDate: eventType === "competition" ? competitionEndDate : null,
+          durationMinutes,
+          locationText: locationText.trim() || null,
+          coachNote: coachNote.trim() || null,
+          requiresEvaluation: ["training", "camp"].includes(eventType) && requiresEvaluation,
+          evaluationCriterionIds: ["training", "camp"].includes(eventType) && requiresEvaluation ? evaluationCriterionIds : [],
+          competitionClubId: eventType === "competition" ? competitionClubId : null,
+          competitionLevel: eventType === "competition" ? competitionLevel : null,
+          competitionCategory: eventType === "competition" ? competitionCategory : null,
+          externalRegistrationUrl: eventType === "competition" ? externalRegistrationUrl.trim() || null : null,
+          competitionNote: eventType === "competition" ? competitionNote.trim() || null : null,
+          reminder: {
+            enabled: eventType === "competition" && reminderEnabled,
+            scheduledFor: eventType === "competition" && reminderEnabled && reminderAtLocal ? new Date(reminderAtLocal).toISOString() : null,
+            channel: reminderEnabled ? reminderChannel : null,
+            messageTemplate: reminderEnabled ? reminderMessage.trim() : null,
+          },
+          series: {
+            weekday,
+            timeOfDay,
+            intervalWeeks,
+            startDate,
+            endDate,
+          },
+          groupTarget: {
+            mode: "selected",
+            ids: targetGroupIds,
+          },
+          playerTarget: {
+            mode: "selected",
+            ids: Array.from(selectedPlayerIds),
+          },
+          coachTarget: {
+            mode: "selected",
+            ids: Array.from(selectedCoachIds),
+          },
+          parentTarget: {
+            mode: "none",
+            ids: [],
+          },
+        };
 
+        attempt.current = JSON.stringify(body);
+      }
       const res = await fetch(
         editingEventId ? `/api/manager/events/${encodeURIComponent(editingEventId)}` : "/api/manager/events/create",
         {
@@ -640,62 +652,66 @@ export default function ManagerEventCreatePage() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: attempt.current,
       });
 
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        firstEventId?: string | null;
-      };
-      if (!res.ok) throw new Error(String(json.error ?? tr("Création impossible.", "Could not create events.")));
-
-      if (json.firstEventId) {
-        router.push(`/manager/calendar?event=${encodeURIComponent(String(json.firstEventId))}`);
-      } else {
-        router.push("/manager/calendar");
+      const json = await res.json().catch(() => ({}));
+      if (version !== loadVersion.current) return;
+      if (!res.ok) {
+        if (json.outcome === "rejected" && !uncertain) { attempt.current = null; setUncertain(false); setError(json.error || "invalid_event"); return; }
+        throw new Error("unconfirmed");
       }
+      if (json.ok !== true || typeof json.firstEventId !== "string" || !json.firstEventId) throw new Error("unconfirmed");
+      setSavedId(json.firstEventId); setUncertain(false);
+      if (json.notificationWarning || json.replayed) { setError("notification"); return; }
+      router.push(`/manager/calendar?event=${encodeURIComponent(json.firstEventId)}`);
       router.refresh();
-    } catch (e: any) {
-      setError(e?.message ?? tr("Erreur de création.", "Creation error."));
-      setSaving(false);
+    } catch {
+      if (version !== loadVersion.current) return;
+      if (attempt.current) { setUncertain(true); setError(editingEventId ? "editUnconfirmed" : "unconfirmed"); }
+      else setError("session");
+    } finally {
+      if (version === loadVersion.current) { inFlight.current = false; setSaving(false); }
     }
   }
 
   return (
     <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
-        {tr("Gestion des activités / Nouvelle activité", "Activity management / New activity")}
+      <nav aria-label={tr("breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
+        {tr("breadcrumb")}
       </nav>
       <div className={styles.topline}>
         <div>
-          <h1>{editingEventId ? "Modifier la compétition" : tr("Ajouter une activité", "Add activity")}</h1>
+          <h1>{editingEventId ? tr("editTitle") : tr("title")}</h1>
           {eventType !== "competition" ? (
-            <p className={styles.lead}>{tr("Planifiez une activité pour un ou plusieurs groupes, ou sélectionnez directement les juniors et coachs.", "Plan an activity for one or more groups, or select juniors and coaches directly.")}</p>
+            <p className={styles.lead}>{tr("lead")}</p>
           ) : null}
         </div>
-        <Link className={actionStyles.backButton} href="/manager/calendar"><ArrowLeft size={16} />{tr("Retour aux activités", "Back to activities")}</Link>
+        <Link className={actionStyles.backButton} href="/manager/calendar"><ArrowLeft size={16} />{tr("back")}</Link>
       </div>
-      {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
+      {savedId ? <Link className={actionStyles.backButton} href={`/manager/calendar?event=${encodeURIComponent(savedId)}`}>{tr("viewSaved")}</Link> : null}
+      {error ? <div className={actionStyles.errorAlert} role="alert">{tr(`error.${error}`) === `manager.activityForm.error.${error}` ? tr("error.invalid_request") : tr(`error.${error}`)}</div> : null}
+      {loadFailed || ["competition_conflict", "editUnconfirmed", "event_cancelled"].includes(error ?? "") ? <button type="button" className="btn" onClick={() => window.location.reload()}>{tr("reload")}</button> : null}
 
         <section className={`${styles.quickPanel} manager-activity-form`}>
-          <div className={styles.sectionHeading}><div><h2>{tr("Informations de l’activité", "Activity details")}</h2><p>{tr("Les champs marqués d’un astérisque sont requis.", "Fields marked with an asterisk are required.")}</p></div></div>
+          <div className={styles.sectionHeading}><div><h2>{tr("details")}</h2><p>{tr("required")}</p></div></div>
           <div style={{ display: "grid", gap: 10 }}>
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Type d’activité", "Activity type")}</span>
-              <select value={eventType} onChange={(e) => setEventType(e.target.value as EventType)} disabled={saving || loading || Boolean(editingEventId)}>
-                {EVENT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {pickLocaleText(locale, t.fr, t.en)}
+              <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("type")}</span>
+              <select value={eventType} onChange={(e) => setEventType(e.target.value as EventType)} disabled={locked || Boolean(editingEventId)}>
+                {EVENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {managerActivityLabel(t, type)}
                   </option>
                 ))}
               </select>
             </label>
 
             {eventType !== "competition" ? <fieldset style={{ display: "grid", gap: 7, padding: 0, border: 0, margin: 0 }}>
-              <legend style={{ fontSize: 12, fontWeight: 900, color: "#53675a" }}>{tr("Récurrence", "Recurrence")}</legend>
-              <div className="mode-radio-group" role="radiogroup" aria-label={tr("Récurrence", "Recurrence")}>
-                <label className={`mode-radio-option ${mode === "single" ? "is-active" : ""}`}><input type="radio" name="event-mode" checked={mode === "single"} onChange={() => setMode("single")} /><span>{tr("Unique", "Single")}</span></label>
-                <label className={`mode-radio-option ${mode === "series" ? "is-active" : ""}`}><input type="radio" name="event-mode" checked={mode === "series"} onChange={() => setMode("series")} /><span>{tr("Récurrent", "Recurring")}</span></label>
+              <legend style={{ fontSize: 12, fontWeight: 900, color: "#53675a" }}>{tr("recurrence")}</legend>
+              <div className="mode-radio-group" role="radiogroup" aria-label={tr("recurrence")}>
+                <label className={`mode-radio-option ${mode === "single" ? "is-active" : ""}`}><input type="radio" disabled={locked} name="event-mode" checked={mode === "single"} onChange={() => setMode("single")} /><span>{tr("single")}</span></label>
+                <label className={`mode-radio-option ${mode === "series" ? "is-active" : ""}`}><input type="radio" disabled={locked} name="event-mode" checked={mode === "series"} onChange={() => setMode("series")} /><span>{tr("series")}</span></label>
               </div>
             </fieldset> : null}
 
@@ -703,25 +719,26 @@ export default function ManagerEventCreatePage() {
               {(eventType === "session" || eventType === "event" || eventType === "camp" || eventType === "competition") ? (
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 900 }}>
-                    {eventType === "competition" ? "Nom de la compétition *" : eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
+                    {eventType === "competition" ? tr("competitionName") : eventType === "session" ? tr("sessionName") : eventType === "camp" ? tr("campName") : tr("eventName")}
                   </span>
-                  <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving || loading} required={eventType === "competition"} />
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={locked} required={eventType === "competition"} />
                 </label>
               ) : <div />}
             </div>
 
+            {eventType === "competition" && clubs.length > 1 ? <label style={{ display: "grid", gap: 6 }}><span>{tr("club")}</span><select value={competitionClubId} disabled={locked || Boolean(editingEventId)} onChange={event => { setCompetitionClubId(event.target.value); setSelectedCoachIds(new Set()); }} >{clubs.map(club => <option key={club.id} value={club.id}>{club.name || club.id}</option>)}</select></label> : null}
             {eventType === "competition" ? (
               <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 900 }}>Niveau *</span>
-                  <select value={competitionLevel} onChange={(event) => setCompetitionLevel(event.target.value as CompetitionLevel)} disabled={saving || loading}>
-                    {COMPETITION_LEVEL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("level")}</span>
+                  <select value={competitionLevel} onChange={(event) => setCompetitionLevel(event.target.value as CompetitionLevel)} disabled={locked}>
+                    {COMPETITION_LEVEL_OPTIONS.map((option) => <option key={option} value={option}>{tr(option === "club" ? "clubLevel" : option)}</option>)}
                   </select>
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 900 }}>Catégorie d’âge *</span>
-                  <select value={competitionCategory} onChange={(event) => setCompetitionCategory(event.target.value as CompetitionCategory)} disabled={saving || loading}>
-                    {COMPETITION_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("category")}</span>
+                  <select value={competitionCategory} onChange={(event) => setCompetitionCategory(event.target.value as CompetitionCategory)} disabled={locked}>
+                    {COMPETITION_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.value === "all" ? tr("allAges") : option.label}</option>)}
                   </select>
                 </label>
               </div>
@@ -730,18 +747,18 @@ export default function ManagerEventCreatePage() {
             {mode === "single" ? (
               <div className="grid-2">
                 <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? "Date de début *" : tr("Début", "Start")}</span>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? tr("startDate") : tr("start")}</span>
                   <div style={{ display: "grid", gridTemplateColumns: eventType === "competition" ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,170px)", gap: 8 }}>
                     <input
                       type="date"
                       value={splitLocalDateTime(startsAtLocal).date}
                       onChange={(e) => setStartsAtLocal(withLocalDate(startsAtLocal, e.target.value))}
-                      disabled={saving || loading}
+                      disabled={locked}
                     />
                     {eventType !== "competition" ? <select
                       value={splitLocalDateTime(startsAtLocal).time}
                       onChange={(e) => setStartsAtLocal(withLocalTime(startsAtLocal, e.target.value))}
-                      disabled={saving || loading}
+                      disabled={locked}
                     >
                       {QUARTER_HOURS.map((q) => (
                         <option key={`single-start-${q}`} value={q}>
@@ -753,23 +770,23 @@ export default function ManagerEventCreatePage() {
                 </label>
                 {eventType === "training" ? (
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Durée (min)", "Duration (min)")}</span>
-                    <input type="number" min={15} step={15} value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(15, Number(e.target.value) || 60))} disabled={saving || loading} />
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("duration")}</span>
+                    <input type="number" min={15} max={300} step={15} value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(15, Number(e.target.value) || 60))} disabled={locked} />
                   </label>
                 ) : (
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? "Date de fin *" : tr("Fin", "End")}</span>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? tr("endDate") : tr("end")}</span>
                     <div style={{ display: "grid", gridTemplateColumns: eventType === "competition" ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,170px)", gap: 8 }}>
                       <input
                         type="date"
                         value={splitLocalDateTime(endsAtLocal).date}
                         onChange={(e) => setEndsAtLocal(withLocalDate(endsAtLocal, e.target.value))}
-                        disabled={saving || loading}
+                        disabled={locked}
                       />
                       {eventType !== "competition" ? <select
                         value={splitLocalDateTime(endsAtLocal).time}
                         onChange={(e) => setEndsAtLocal(withLocalTime(endsAtLocal, e.target.value))}
-                        disabled={saving || loading}
+                        disabled={locked}
                       >
                         {QUARTER_HOURS.map((q) => (
                           <option key={`single-end-${q}`} value={q}>
@@ -785,20 +802,20 @@ export default function ManagerEventCreatePage() {
               <div style={{ display: "grid", gap: 10 }}>
                 <div className="grid-2">
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Jour", "Day")}</span>
-                    <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={saving || loading}>
-                      <option value={1}>{tr("Lundi", "Monday")}</option>
-                      <option value={2}>{tr("Mardi", "Tuesday")}</option>
-                      <option value={3}>{tr("Mercredi", "Wednesday")}</option>
-                      <option value={4}>{tr("Jeudi", "Thursday")}</option>
-                      <option value={5}>{tr("Vendredi", "Friday")}</option>
-                      <option value={6}>{tr("Samedi", "Saturday")}</option>
-                      <option value={0}>{tr("Dimanche", "Sunday")}</option>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("day")}</span>
+                    <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={locked}>
+                      <option value={1}>{tr("monday")}</option>
+                      <option value={2}>{tr("tuesday")}</option>
+                      <option value={3}>{tr("wednesday")}</option>
+                      <option value={4}>{tr("thursday")}</option>
+                      <option value={5}>{tr("friday")}</option>
+                      <option value={6}>{tr("saturday")}</option>
+                      <option value={0}>{tr("sunday")}</option>
                     </select>
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Heure", "Time")}</span>
-                    <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={saving || loading}>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("time")}</span>
+                    <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={locked}>
                       {QUARTER_HOURS.map((q) => (
                         <option key={q} value={q}>{q}</option>
                       ))}
@@ -806,53 +823,53 @@ export default function ManagerEventCreatePage() {
                   </label>
                 </div>
 
-                <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10 }}>
+                <div className="grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Du", "From")}</span>
-                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={saving || loading} />
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("from")}</span>
+                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={locked} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Au", "To")}</span>
-                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={saving || loading} />
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("to")}</span>
+                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={locked} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Toutes les X semaines", "Every X weeks")}</span>
-                    <input type="number" min={1} max={8} value={intervalWeeks} onChange={(e) => setIntervalWeeks(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} disabled={saving || loading} />
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("interval")}</span>
+                    <input type="number" min={1} max={8} value={intervalWeeks} onChange={(e) => setIntervalWeeks(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} disabled={locked} />
                   </label>
                 </div>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Durée (min)", "Duration (min)")}</span>
-                  <input type="number" min={15} step={15} value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(15, Number(e.target.value) || 60))} disabled={saving || loading} />
+                  <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("duration")}</span>
+                  <input type="number" min={15} max={300} step={15} value={durationMinutes} onChange={(e) => setDurationMinutes(Math.max(15, Number(e.target.value) || 60))} disabled={locked} />
                 </label>
               </div>
             )}
 
             <div className="grid-2">
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("Lieu", "Location")}</span>
-                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={saving || loading} />
+                <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("location")}</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={locked} />
               </label>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? "Lien d’inscription externe" : tr("Infos logistiques", "Logistics notes")}</span>
+                <span style={{ fontSize: 12, fontWeight: 900 }}>{eventType === "competition" ? tr("externalLink") : tr("logistics")}</span>
                 {eventType === "competition" ? (
-                  <input type="url" inputMode="url" placeholder="https://…" value={externalRegistrationUrl} onChange={(event) => setExternalRegistrationUrl(event.target.value)} disabled={saving || loading} />
+                  <input type="url" inputMode="url" placeholder="https://…" value={externalRegistrationUrl} onChange={(event) => setExternalRegistrationUrl(event.target.value)} disabled={locked} />
                 ) : (
-                  <input value={coachNote} onChange={(e) => setCoachNote(e.target.value)} disabled={saving || loading} />
+                  <input value={coachNote} onChange={(e) => setCoachNote(e.target.value)} disabled={locked} />
                 )}
               </label>
             </div>
             {eventType === "competition" ? (
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900 }}>Remarque / commentaire</span>
-                <textarea rows={4} value={competitionNote} onChange={(event) => setCompetitionNote(event.target.value)} disabled={saving || loading} />
+                <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("note")}</span>
+                <textarea rows={4} value={competitionNote} onChange={(event) => setCompetitionNote(event.target.value)} disabled={locked} />
               </label>
-            ) : <label className="user-mgmt-checkbox-label">
-              <input type="checkbox" checked={requiresEvaluation} onChange={(event) => setRequiresEvaluation(event.target.checked)} disabled={saving || loading} />
-              <span><b>{tr("Activité à évaluer", "Activity to evaluate")}</b></span>
-            </label>}
-            {eventType !== "competition" && requiresEvaluation ? (
-              evaluationClubId ? <EventCriteriaSelector clubId={evaluationClubId} eventType={eventType} selectedIds={evaluationCriterionIds} onChange={setEvaluationCriterionIds} disabled={saving || loading} /> : <div className={actionStyles.errorAlert}>Sélectionnez des participants d’un seul club pour choisir les critères personnalisés.</div>
+            ) : ["training", "camp"].includes(eventType) ? <label className="user-mgmt-checkbox-label">
+              <input type="checkbox" checked={requiresEvaluation} onChange={(event) => setRequiresEvaluation(event.target.checked)} disabled={locked} />
+              <span><b>{tr("evaluation")}</b></span>
+            </label> : null}
+            {["training", "camp"].includes(eventType) && requiresEvaluation ? (
+              evaluationClubId ? <EventCriteriaSelector clubId={evaluationClubId} eventType={eventType} selectedIds={evaluationCriterionIds} onChange={setEvaluationCriterionIds} disabled={locked} /> : <div className={actionStyles.errorAlert}>{tr("criteriaScope")}</div>
             ) : null}
           </div>
         </section>
@@ -861,52 +878,52 @@ export default function ManagerEventCreatePage() {
           <section className={styles.quickPanel} style={{ display: "grid", gap: 14 }}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Rappel d’inscription externe</h2>
-                <p>Le rappel est envoyé une seule fois aux joueurs sélectionnés et à leurs parents liés.</p>
+                <h2>{tr("reminderTitle")}</h2>
+                <p>{tr("reminderHelp")}</p>
               </div>
             </div>
             {reminderLocked ? (
-              <div className={actionStyles.successAlert}>Ce rappel a déjà été traité ({reminderStatus}) et ne peut plus être modifié.</div>
+              <div className={actionStyles.successAlert}>{tr("reminderLocked")}</div>
             ) : null}
             <label className="user-mgmt-checkbox-label">
-              <input type="checkbox" checked={reminderEnabled} onChange={(event) => setReminderEnabled(event.target.checked)} disabled={saving || loading || reminderLocked} />
-              <span><b>Programmer un rappel</b></span>
+              <input type="checkbox" checked={reminderEnabled} onChange={(event) => setReminderEnabled(event.target.checked)} disabled={locked || reminderLocked} />
+              <span><b>{tr("scheduleReminder")}</b></span>
             </label>
             {reminderEnabled ? (
               <div style={{ display: "grid", gap: 12 }}>
                 <fieldset style={{ display: "grid", gap: 7, padding: 0, border: 0, margin: 0 }}>
-                  <legend style={{ fontSize: 12, fontWeight: 900, color: "#53675a" }}>Date d’envoi</legend>
-                  <div className="mode-radio-group" role="radiogroup" aria-label="Date du rappel">
+                  <legend style={{ fontSize: 12, fontWeight: 900, color: "#53675a" }}>{tr("sendDate")}</legend>
+                  <div className="mode-radio-group" role="radiogroup" aria-label={tr("reminderDate")}>
                     {([[
-                      "1d", "1 jour avant",
-                    ], ["3d", "3 jours avant"], ["1w", "1 semaine avant"], ["custom", "Date personnalisée"]] as const).map(([value, label]) => (
+                      "1d", "oneDay",
+                    ], ["3d", "threeDays"], ["1w", "oneWeek"], ["custom", "customDate"]] as const).map(([value, label]) => (
                       <label key={value} className={`mode-radio-option ${reminderShortcut === value ? "is-active" : ""}`}>
-                        <input type="radio" name="reminder-shortcut" checked={reminderShortcut === value} onChange={() => setReminderShortcut(value)} disabled={reminderLocked} />
-                        <span>{label}</span>
+                        <input type="radio" name="reminder-shortcut" checked={reminderShortcut === value} onChange={() => setReminderShortcut(value)} disabled={locked || reminderLocked} />
+                        <span>{tr(label)}</span>
                       </label>
                     ))}
                   </div>
                 </fieldset>
-                <div className="grid-2">
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>Date et heure d’envoi *</span>
-                    <input type="datetime-local" value={reminderAtLocal} onChange={(event) => { setReminderShortcut("custom"); setReminderAtLocal(event.target.value); }} disabled={saving || loading || reminderLocked} />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("sendTime")}</span>
+                    <input style={{ minWidth: 0, width: "100%" }} type="datetime-local" value={reminderAtLocal} onChange={(event) => { setReminderShortcut("custom"); setReminderAtLocal(event.target.value); }} disabled={locked || reminderLocked} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 900 }}>Canal *</span>
-                    <select value={reminderChannel} onChange={(event) => setReminderChannel(event.target.value as ReminderChannel)} disabled={saving || loading || reminderLocked}>
-                      <option value="in_app">Notification dans l’application</option>
-                      <option value="email">E-mail</option>
-                      <option value="both">Notification et e-mail</option>
+                    <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("channel")}</span>
+                    <select value={reminderChannel} onChange={(event) => setReminderChannel(event.target.value as ReminderChannel)} disabled={locked || reminderLocked}>
+                      <option value="in_app">{tr("inApp")}</option>
+                      <option value="email">{tr("email")}</option>
+                      <option value="both">{tr("both")}</option>
                     </select>
                   </label>
                 </div>
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 900 }}>Texte du rappel *</span>
-                  <textarea rows={4} value={reminderMessage} onChange={(event) => { setReminderMessageTouched(true); setReminderMessage(event.target.value); }} disabled={saving || loading || reminderLocked} />
+                  <span style={{ fontSize: 12, fontWeight: 900 }}>{tr("reminderText")}</span>
+                  <textarea rows={4} value={reminderMessage} onChange={(event) => { setReminderMessageTouched(true); setReminderMessage(event.target.value); }} disabled={locked || reminderLocked} />
                 </label>
-                <div style={{ fontSize: 11, lineHeight: 1.55, color: "#667268" }}>
-                  Variables disponibles : <code>{"{competition_name}"}</code>, <code>{"{start_date}"}</code>, <code>{"{end_date}"}</code>, <code>{"{level}"}</code>, <code>{"{category}"}</code>, <code>{"{external_registration_url}"}</code>.
+                <div style={{ fontSize: 11, lineHeight: 1.55, color: "#667268", overflowWrap: "anywhere" }}>
+                  {tr("variables")} <code>{"{competition_name}"}</code>, <code>{"{start_date}"}</code>, <code>{"{end_date}"}</code>, <code>{"{level}"}</code>, <code>{"{category}"}</code>, <code>{"{external_registration_url}"}</code>.
                 </div>
               </div>
             ) : null}
@@ -914,12 +931,12 @@ export default function ManagerEventCreatePage() {
         ) : null}
 
         <section className={styles.quickPanel} style={{ display: "grid", gap: 12 }}>
-          <div className={styles.sectionHeading}><div><h2>{tr("Participants", "Participants")}</h2><p>{eventType === "competition" ? "La catégorie propose automatiquement des joueurs. Vous pouvez ensuite modifier librement la sélection finale." : tr("Choisissez des groupes ou une sélection spécifique de juniors et coachs.", "Choose groups or a specific selection of juniors and coaches.")}</p></div></div>
+          <div className={styles.sectionHeading}><div><h2>{tr("participants")}</h2><p>{eventType === "competition" ? tr("competitionSelectionHelp") : tr("participantHelp")}</p></div></div>
 
             {eventType === "competition" ? (
               <div className={actionStyles.successAlert} role="status">
-                <b>{editingEventId ? `${selectedPlayerIds.size} joueur${selectedPlayerIds.size > 1 ? "s" : ""} dans la sélection enregistrée` : `${automaticPlayerIds.size} joueur${automaticPlayerIds.size > 1 ? "s" : ""} trouvé${automaticPlayerIds.size > 1 ? "s" : ""} automatiquement`}</b>
-                <span>{editingEventId ? ". La catégorie n’est pas recalculée automatiquement après la création." : ` pour ${COMPETITION_CATEGORY_LABELS[competitionCategory]} en ${splitLocalDateTime(startsAtLocal).date.slice(0, 4) || "—"}. Les joueurs sans date de naissance ne sont pas inclus automatiquement.`}</span>
+                <b>{fmt(editingEventId ? "savedPlayers" : "autoPlayers", { count: editingEventId ? selectedPlayerIds.size : automaticPlayerIds.size })}</b>{" "}
+                <span>{editingEventId ? tr("noRecalculate") : fmt("autoPlayersHelp", { category: competitionCategory === "all" ? tr("allAges") : competitionCategory.toUpperCase(), year: splitLocalDateTime(startsAtLocal).date.slice(0, 4) || "—" })}</span>
               </div>
             ) : null}
 
@@ -935,28 +952,29 @@ export default function ManagerEventCreatePage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 900 }}>
-                  {tr("Groupes", "Groups")} ({selectedGroupIds.size})
+                  {tr("groups")} ({selectedGroupIds.size})
                 </div>
                 <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, groups: !prev.groups }))}>
-                  {openTargets.groups ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                  {openTargets.groups ? tr("hide") : tr("select")}
                 </button>
               </div>
               {openTargets.groups ? (
                 <>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button type="button" className="btn" onClick={() => selectAll(setSelectedGroupIds, allGroupIds)} disabled={loading || saving}>
-                      {tr("Tout sélectionner", "Select all")}
+                    <button type="button" className="btn" onClick={() => selectAll(setSelectedGroupIds, allGroupIds)} disabled={locked}>
+                      {tr("selectAll")}
                     </button>
-                    <button type="button" className="btn" onClick={() => clearAll(setSelectedGroupIds)} disabled={loading || saving}>
-                      {tr("Tout désélectionner", "Deselect all")}
+                    <button type="button" className="btn" onClick={() => clearAll(setSelectedGroupIds)} disabled={locked}>
+                      {tr("clearAll")}
                     </button>
                   </div>
                   <SearchablePicker
-                    label={tr("Sélection des groupes", "Group selection")}
+                    disabled={locked}
+                    label={tr("groupSelection")}
                     options={groupOptions}
                     selected={selectedGroupIds}
                     onToggle={(id) => toggle(setSelectedGroupIds, selectedGroupIds, id)}
-                    placeholder={tr("Rechercher un groupe…", "Search a group…")}
+                    placeholder={tr("searchGroup")}
                   />
                 </>
               ) : null}
@@ -975,34 +993,34 @@ export default function ManagerEventCreatePage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 900 }}>
-                    {eventType === "competition" ? "Sélection finale" : tr("Joueurs", "Players")} ({selectedPlayerIds.size})
+                    {eventType === "competition" ? tr("finalSelection") : tr("players")} ({selectedPlayerIds.size})
                   </div>
-                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, players: !prev.players }))} disabled={lockPlayerCoachSelection}>
-                    {openTargets.players ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, players: !prev.players }))} disabled={locked || lockPlayerCoachSelection}>
+                    {openTargets.players ? tr("hide") : tr("select")}
                   </button>
                 </div>
                 {lockPlayerCoachSelection ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                    {tr("Sélection automatique depuis les groupes choisis.", "Automatic selection from selected groups.")}
+                    {tr("automaticSelection")}
                   </div>
                 ) : null}
                 {openTargets.players ? (
                   <>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button type="button" className="btn" onClick={() => selectAll(setSelectedPlayerIds, playerOptions.map((option) => option.id))} disabled={loading || saving || lockPlayerCoachSelection}>
-                        {tr("Tout sélectionner", "Select all")}
+                      <button type="button" className="btn" onClick={() => selectAll(setSelectedPlayerIds, playerOptions.map((option) => option.id))} disabled={locked || lockPlayerCoachSelection}>
+                        {tr("selectAll")}
                       </button>
-                      <button type="button" className="btn" onClick={() => clearAll(setSelectedPlayerIds)} disabled={loading || saving || lockPlayerCoachSelection}>
-                        {tr("Tout désélectionner", "Deselect all")}
+                      <button type="button" className="btn" onClick={() => clearAll(setSelectedPlayerIds)} disabled={locked || lockPlayerCoachSelection}>
+                        {tr("clearAll")}
                       </button>
                     </div>
                     <SearchablePicker
-                      label={tr("Joueurs", "Players")}
+                      label={tr("players")}
                       options={playerOptions}
                       selected={selectedPlayerIds}
                       onToggle={(id) => toggle(setSelectedPlayerIds, selectedPlayerIds, id)}
-                      disabled={lockPlayerCoachSelection}
-                      placeholder={tr("Rechercher un joueur…", "Search a player…")}
+                      disabled={locked || lockPlayerCoachSelection}
+                      placeholder={tr("searchPlayer")}
                     />
                   </>
                 ) : null}
@@ -1020,51 +1038,51 @@ export default function ManagerEventCreatePage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 900 }}>
-                    {tr("Coachs", "Coaches")} ({selectedCoachIds.size}){eventType === "competition" ? " · facultatif" : ""}
+                    {tr("coaches")} ({selectedCoachIds.size}){eventType === "competition" ? tr("optional") : ""}
                   </div>
-                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, coaches: !prev.coaches }))} disabled={lockPlayerCoachSelection}>
-                    {openTargets.coaches ? tr("Masquer", "Hide") : tr("Sélectionner", "Select")}
+                  <button type="button" className="btn" onClick={() => setOpenTargets((prev) => ({ ...prev, coaches: !prev.coaches }))} disabled={locked || lockPlayerCoachSelection}>
+                    {openTargets.coaches ? tr("hide") : tr("select")}
                   </button>
                 </div>
                 {lockPlayerCoachSelection ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                    {tr("Sélection automatique depuis les groupes choisis.", "Automatic selection from selected groups.")}
+                    {tr("automaticSelection")}
                   </div>
                 ) : null}
                 {openTargets.coaches ? (
                   <>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button type="button" className="btn" onClick={() => selectAll(setSelectedCoachIds, allCoachIds)} disabled={loading || saving || lockPlayerCoachSelection}>
-                        {tr("Tout sélectionner", "Select all")}
+                      <button type="button" className="btn" onClick={() => selectAll(setSelectedCoachIds, allCoachIds)} disabled={locked || lockPlayerCoachSelection}>
+                        {tr("selectAll")}
                       </button>
-                      <button type="button" className="btn" onClick={() => clearAll(setSelectedCoachIds)} disabled={loading || saving || lockPlayerCoachSelection}>
-                        {tr("Tout désélectionner", "Deselect all")}
+                      <button type="button" className="btn" onClick={() => clearAll(setSelectedCoachIds)} disabled={locked || lockPlayerCoachSelection}>
+                        {tr("clearAll")}
                       </button>
                     </div>
                     <SearchablePicker
-                      label={tr("Coachs", "Coaches")}
+                      label={tr("coaches")}
                       options={coachOptions}
                       selected={selectedCoachIds}
                       onToggle={(id) => toggle(setSelectedCoachIds, selectedCoachIds, id)}
-                      disabled={lockPlayerCoachSelection}
-                      placeholder={tr("Rechercher un coach…", "Search a coach…")}
+                      disabled={locked || lockPlayerCoachSelection}
+                      placeholder={tr("searchCoach")}
                     />
                   </>
                 ) : null}
               </div>
 
             </div>
-          {isDirectSelectionMode ? <div className={actionStyles.successAlert} role="status">{eventType === "competition" ? "La sélection finale sera figée à la création. Elle sert uniquement à l’agenda et aux notifications, sans inscription ni contrôle de présence dans ActiviTee." : tr("Une sélection spécifique crée automatiquement un groupe privé pour cette activité. Les présences, le calendrier et les évaluations restent ainsi associés à l’activité.", "A specific selection automatically creates a private group for this activity. Attendance, calendar and evaluations remain linked to it.")}</div> : null}
+          {isDirectSelectionMode ? <div className={actionStyles.successAlert} role="status">{eventType === "competition" ? tr("competitionUse") : tr("privateGroup")}</div> : null}
         </section>
 
         <section className={styles.quickPanel} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", fontWeight: 800 }}>
             {loading
-              ? tr("Chargement des données…", "Loading data…")
-              : tr(`${clubs.length} club(s), ${groups.length} groupe(s) disponibles.`, `${clubs.length} club(s), ${groups.length} available group(s).`)}
+              ? tr("loading")
+              : fmt("counts", { clubs: clubs.length, groups: groups.length })}
           </div>
-          <button type="button" className={actionStyles.primaryButton} onClick={submit} disabled={loading || saving}>
-            <Save size={16} />{saving ? (editingEventId ? "Enregistrement…" : tr("Création en cours…", "Creating…")) : (editingEventId ? "Enregistrer la compétition" : tr("Créer l’activité", "Create activity"))}
+          <button type="button" className={actionStyles.primaryButton} onClick={submit} disabled={loading || saving || loadFailed || Boolean(savedId) || Boolean(editingEventId && uncertain)}>
+            <Save size={16} />{uncertain && !editingEventId ? tr("verify") : saving ? (editingEventId ? tr("saving") : tr("creating")) : (editingEventId ? tr("save") : tr("create"))}
           </button>
         </section>
     </main>

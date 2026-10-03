@@ -11,7 +11,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 const ROUTES = {
   home: "/coach", calendar: "/coach/calendar", groups: "/coach/groups", players: "/coach/players",
-  camps: "/coach/camps", evaluations: "/coach/calendar?view=evaluations", validations: "/coach/validations",
+  camps: "/coach/camps", evaluations: "/coach/calendar?view=evaluations&period=year", validations: "/coach/validations",
   merit: "/coach/om", rules: "/coach/rules", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
 } as const;
 

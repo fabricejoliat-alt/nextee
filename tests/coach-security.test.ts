@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -15,7 +15,10 @@ function loadModule<T>(path: string, mocks: Record<string, unknown> = {}): T {
   const compiledModule = { exports: {} };
   new Function("require", "module", "exports", "process", code)((id: string) => {
     if (id in mocks) return mocks[id];
-    if (id.startsWith("@/")) return loadModule(`${id.slice(2)}.ts`, mocks);
+    if (id.startsWith("@/") || id.startsWith(".")) {
+      const base = id.startsWith("@/") ? id.slice(2) : resolve(path, "..", id);
+      return loadModule(existsSync(resolve(root, base)) ? base : base + ".ts", mocks);
+    }
     return require(id);
   }, compiledModule, compiledModule.exports, mocks.__process ?? process);
   return compiledModule.exports as T;
@@ -33,6 +36,7 @@ function fakeDatabase(tables: Record<string, Row[]>, failureTable?: string) {
       const query = {
         select() { return query; },
         eq(key: string, value: unknown) { rows = rows.filter((row) => row[key] === value); return query; },
+        neq(key: string, value: unknown) { rows = rows.filter((row) => row[key] !== value); return query; },
         in(key: string, values: unknown[]) { rows = rows.filter((row) => values.includes(row[key])); return query; },
         lt(key: string, value: string) { rows = rows.filter((row) => String(row[key]) < value); return query; },
         gte(key: string, value: string) { rows = rows.filter((row) => String(row[key]) >= value); return query; },
@@ -91,6 +95,45 @@ function apiMocks(db: SupabaseClient) {
   };
 }
 const request = (path: string) => new Request(`http://localhost${path}`, { headers: { Authorization: "Bearer test-only" } });
+
+test("Coach camps select the stored photo only within the caller's authorized clubs", async () => {
+  const { db, reads, writes } = fakeDatabase({
+    club_camps: [
+      { id: "camp", club_id: "A", title: "Stage", image_url: "/camp-photo.jpg", head_coach_user_id: null },
+      { id: "outside", club_id: "B", title: "Outside", image_url: "/private-photo.jpg", head_coach_user_id: null },
+    ], clubs: [{ id: "A", name: "Club A" }],
+  });
+  let selectedPhoto = false;
+  const from = db.from.bind(db);
+  const scopedDb = { from(table: string) {
+    const query = from(table);
+    if (table === "club_camps") {
+      const select = query.select.bind(query);
+      query.select = ((columns: string) => {
+        selectedPhoto = columns.split(",").includes("image_url");
+        return select(columns);
+      }) as typeof query.select;
+    }
+    return query;
+  } };
+  const route = loadModule<{ GET: (req: Request) => Promise<Response> }>("app/api/coach/camps/route.ts", {
+    "next/server": { NextResponse: { json: Response.json } },
+    "@/app/api/camps/_lib": {
+      createAdminClient: () => scopedDb, getCaller: async () => ({ userId: "coach" }),
+      resolveCoachClubIds: async () => ({ clubIds: ["A"] }),
+      uniq: (values: unknown[]) => [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))],
+    },
+  });
+  assert.equal((await route.GET(new Request("http://localhost/api/coach/camps"))).status, 401);
+  assert.deepEqual(reads, []);
+  const response = await route.GET(request("/api/coach/camps"));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(selectedPhoto, true);
+  assert.equal(payload.coachClubCount, 1);
+  assert.deepEqual(payload.camps.map((row: Row) => [row.id, row.image_url]), [["camp", "/camp-photo.jpg"]]);
+  assert.deepEqual(writes, []);
+});
 
 type DeletePlanning = { deleteCoachPlanning: (req: Request, target: { eventId: string } | { seriesId: string }) => Promise<Response> };
 const deleteId = "00000000-0000-4000-8000-000000099001";

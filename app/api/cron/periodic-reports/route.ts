@@ -1,3 +1,4 @@
+import { authorizedReportRecipients } from "@/lib/server/periodicReportAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
@@ -17,7 +18,17 @@ export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const key = process.env.SUPABASE_SERVICE_ROLE_KEY; if (!url || !key) return NextResponse.json({ error: "Supabase environment missing" }, { status: 500 }); const db = createClient(url, key, { auth: { persistSession: false } }); const now = new Date();
   const due = await db.from("player_periodic_report_configs").select("*").eq("is_enabled", true).lte("next_send_at", now.toISOString()).limit(500); if (due.error) return NextResponse.json({ error: due.error.message }, { status: 500 });
-  const configs = (due.data ?? []) as ConfigRow[]; const emailMap = await authEmails(db, Array.from(new Set(configs.flatMap((row) => row.recipient_user_ids ?? [])))); const groups = new Map<string, Group>();
+  const configs: ConfigRow[] = [];
+  for (const row of (due.data ?? []) as ConfigRow[]) {
+    try {
+      const recipientIds = await authorizedReportRecipients(db, row.club_id, row.player_user_id, row.recipient_user_ids ?? []);
+      if (recipientIds.length) configs.push({ ...row, recipient_user_ids: recipientIds });
+    } catch {
+      // A failed rights lookup must never send a report using stale recipients.
+      return NextResponse.json({ error: "Vérification des destinataires indisponible." }, { status: 503 });
+    }
+  }
+  const emailMap = await authEmails(db, Array.from(new Set(configs.flatMap((row) => row.recipient_user_ids ?? [])))); const groups = new Map<string, Group>();
   for (const config of configs) { const frequency = config.frequency as ReportFrequency; const period = previousCivilPeriod(frequency, now); for (const recipientId of config.recipient_user_ids ?? []) { if (!emailMap.has(recipientId)) continue; const keyValue = `${config.club_id}|${deliveryGroupKey({ recipientId, frequency, period, sendAt: config.next_send_at, locale: config.locale })}`; const group = groups.get(keyValue) ?? { config, recipientId, rows: [], period }; group.rows.push(config); groups.set(keyValue, group); } }
   const results: ProcessResult[] = [];
   for (const group of groups.values()) { try { const existing = await db.from("player_periodic_report_deliveries").select("id,status,attempt_count").eq("club_id", group.config.club_id).eq("recipient_user_id", group.recipientId).eq("period_from", group.period.from).eq("period_to", group.period.to).eq("locale", group.config.locale).eq("delivery_mode", "automatic").maybeSingle(); if (existing.data?.status === "sent") { results.push({ recipient: group.recipientId, status: "skipped" }); continue; }
@@ -25,7 +36,12 @@ export async function GET(req: NextRequest) {
       const pendingPayload = { club_id: group.config.club_id, recipient_user_id: group.recipientId, report_ids: reportIds, player_user_ids: group.rows.map((row) => row.player_user_id), period_from: group.period.from, period_to: group.period.to, locale: group.config.locale, delivery_mode: "automatic", status: "pending", attempt_count: Number(existing.data?.attempt_count ?? 0) + 1, error_message: null };
       const pending = existing.data ? await db.from("player_periodic_report_deliveries").update(pendingPayload).eq("id", existing.data.id).select("id").single() : await db.from("player_periodic_report_deliveries").insert(pendingPayload).select("id").single(); if (pending.error) throw new Error(pending.error.message);
       try {
-        const templateResult = await db.from("club_access_invitation_mail_configs").select("periodic_report_subject,periodic_report_body").eq("club_id", group.config.club_id).maybeSingle(); const defaults = defaultFamilyMailConfig(); const juniorNames = contents.map((item) => item.playerName).join(", "); const summary = contents.map((item) => item.summary).join("\n"); const variables = { club_name: contents[0]?.clubName ?? "Club", parent_name: "Parent", period_label: contents[0]?.periodLabel ?? periodLabel(group.period), junior_names: juniorNames, summary, report_url: `${appUrl()}/parent/report-deliveries/${pending.data.id}` }; const subject = renderFamilyTemplate(templateResult.data?.periodic_report_subject ?? defaults.periodic_report_subject, variables); const body = renderFamilyTemplate(templateResult.data?.periodic_report_body ?? defaults.periodic_report_body, variables); const providerId = await send(emailMap.get(group.recipientId)!, subject, body);
+        const templateResult = await db.from("club_access_invitation_mail_configs").select("periodic_report_subject,periodic_report_body").eq("club_id", group.config.club_id).maybeSingle(); const defaults = defaultFamilyMailConfig(); const juniorNames = contents.map((item) => item.playerName).join(", "); const summary = contents.map((item) => item.summary).join("\n"); const variables = { club_name: contents[0]?.clubName ?? "Club", parent_name: "Parent", period_label: contents[0]?.periodLabel ?? periodLabel(group.period), junior_names: juniorNames, summary, report_url: `${appUrl()}/parent/report-deliveries/${pending.data.id}` }; const subject = renderFamilyTemplate(templateResult.data?.periodic_report_subject ?? defaults.periodic_report_subject, variables); const body = renderFamilyTemplate(templateResult.data?.periodic_report_body ?? defaults.periodic_report_body, variables);
+        for (const row of group.rows) {
+          const allowed = await authorizedReportRecipients(db, row.club_id, row.player_user_id, [group.recipientId]);
+          if (!allowed.length) throw new Error("Le destinataire n’est plus autorisé à consulter ce rapport.");
+        }
+        const providerId = await send(emailMap.get(group.recipientId)!, subject, body);
         const delivery = await db.from("player_periodic_report_deliveries").update({ status: "sent", provider_message_id: providerId, sent_at: now.toISOString(), error_message: null }).eq("id", pending.data.id); if (delivery.error) throw new Error(delivery.error.message);
       } catch (error) {
         await db.from("player_periodic_report_deliveries").update({ status: "failed", error_message: error instanceof Error ? error.message : "Échec de l’envoi" }).eq("id", pending.data.id);

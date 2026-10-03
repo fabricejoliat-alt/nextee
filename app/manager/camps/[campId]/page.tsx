@@ -2,8 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { managerContentPresentation } from "@/lib/managerContentPresentation";
+import { managerLocaleTag } from "@/lib/managerLocale";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
   ChevronRight,
@@ -11,6 +14,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import navigationStyles from "@/app/design-system/design-system.module.css";
 import styles from "../Camps.module.css";
 
@@ -82,13 +86,7 @@ type Camp = {
 };
 type Tab = "overview" | "days" | "participants" | "evaluations" | "options";
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "overview", label: "Vue d’ensemble" },
-  { id: "days", label: "Journées" },
-  { id: "participants", label: "Participants et présences" },
-  { id: "evaluations", label: "Évaluations" },
-  { id: "options", label: "Options" },
-];
+
 function name(profile?: Profile | null) {
   return (
     `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "—"
@@ -100,25 +98,8 @@ function initials(profile?: Profile | null) {
     "?"
   );
 }
-function optionTypeLabel(type: Camp["options"][number]["input_type"]) {
-  if (type === "yes_no") return "Oui / Non";
-  if (type === "select") return "Liste déroulante";
-  if (type === "radio") return "Boutons radio";
-  return "Case à cocher";
-}
-function optionAnswer(value: string | null, type: Camp["options"][number]["input_type"]) {
-  if (!value) return type === "checkbox" ? "Oui" : "";
-  if (type === "yes_no") return value === "yes" ? "Oui" : value === "no" ? "Non" : value;
-  if (type === "checkbox") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed.map(String).join(", ");
-    } catch {
-      return value;
-    }
-  }
-  return value;
-}
+
+
 function Avatar({ profile }: { profile?: Profile | null }) {
   return (
     <span className={styles.avatar}>
@@ -130,35 +111,66 @@ function Avatar({ profile }: { profile?: Profile | null }) {
     </span>
   );
 }
-function dayLabel(day: Day) {
-  const start = new Date(day.starts_at);
-  return new Intl.DateTimeFormat("fr-CH", {
-    timeZone: "Europe/Zurich",
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(start);
-}
-function timeRange(day: Day) {
-  const format = new Intl.DateTimeFormat("fr-CH", {
-    timeZone: "Europe/Zurich",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${format.format(new Date(day.starts_at))} – ${format.format(new Date(day.ends_at))}`;
-}
-const ATTENDANCE_LABELS: Record<Attendance, string> = {
-  expected: "Prévu",
-  present: "Présent",
-  absent: "Absent non excusé",
-  excused: "Absent excusé",
-  not_registered: "Non inscrit",
-};
+
+
+
 
 export default function CampDetailPage() {
+  const { t, locale } = useI18n();
+  const { format, count, number, errorText } = managerContentPresentation(t, locale);
+  const TABS: Array<{ id: Tab; label: string }> = [
+    { id: "overview", label: t("manager.content.overview") },
+    { id: "days", label: t("manager.content.days") },
+    { id: "participants", label: t("manager.content.participantsAttendance") },
+    { id: "evaluations", label: t("manager.content.evaluations") },
+    { id: "options", label: t("manager.content.options") },
+  ];
+  function optionTypeLabel(type: Camp["options"][number]["input_type"]) {
+    if (type === "yes_no") return t("manager.content.yesNo");
+    if (type === "select") return t("manager.content.select");
+    if (type === "radio") return t("manager.content.radio");
+    return t("manager.content.checkbox");
+  }
+  function optionAnswer(value: string | null, type: Camp["options"][number]["input_type"]) {
+    if (!value) return type === "checkbox" ? t("manager.content.yes") : "";
+    if (type === "yes_no") return value === "yes" ? t("manager.content.yes") : value === "no" ? t("manager.content.no") : value;
+    if (type === "checkbox") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed.map(String).join(", ");
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+  function dayLabel(day: Day) {
+    const start = new Date(day.starts_at);
+    return new Intl.DateTimeFormat(managerLocaleTag(locale), {
+      timeZone: "Europe/Zurich",
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(start);
+  }
+  function timeRange(day: Day) {
+    const format = new Intl.DateTimeFormat(managerLocaleTag(locale), {
+      timeZone: "Europe/Zurich",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return `${format.format(new Date(day.starts_at))} – ${format.format(new Date(day.ends_at))}`;
+  }
+  const ATTENDANCE_LABELS: Record<Attendance, string> = {
+    expected: t("manager.content.expected"),
+    present: t("manager.content.present"),
+    absent: t("manager.content.absent"),
+    excused: t("manager.content.excused"),
+    not_registered: t("manager.content.notRegistered"),
+  };
+
   const campId = String(useParams<{ campId: string }>().campId ?? "");
-  const router = useRouter();
   const search = useSearchParams();
   const tab = (search.get("tab") as Tab) || "overview";
   const [camp, setCamp] = useState<Camp | null>(null);
@@ -186,11 +198,11 @@ export default function CampDetailPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok)
-        throw new Error(String(payload?.error ?? "Chargement impossible."));
+        throw new Error(String(payload?.error ?? t("manager.content.loadFailed")));
       const found = (payload?.camps ?? []).find(
         (entry: Camp) => entry.id === campId,
       );
-      if (!found) throw new Error("Stage introuvable.");
+      if (!found) throw new Error(t("manager.content.campNotFound"));
       setCamp(found);
       const ids = Array.from(
         new Set(
@@ -217,7 +229,7 @@ export default function CampDetailPage() {
           );
       }
     } catch (cause: any) {
-      setError(cause?.message ?? "Chargement impossible.");
+      setError(cause?.message ?? t("manager.content.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -248,25 +260,25 @@ export default function CampDetailPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok)
-        throw new Error(String(payload?.error ?? "Mise à jour impossible."));
+        throw new Error(String(payload?.error ?? t("manager.content.updateError")));
       setSuccess(message);
       await load();
     } catch (cause: any) {
-      setError(cause?.message ?? "Mise à jour impossible.");
+      setError(cause?.message ?? t("manager.content.updateError"));
     } finally {
       setBusy(false);
     }
   }
   const registrations = camp?.player_registrations ?? [];
-  const alerts = useMemo(() => {
+  const alerts = (() => {
     if (!camp) return [];
     const next: string[] = [];
     if (camp.days.some((day) => !day.responsible_coach_id))
-      next.push("Une ou plusieurs journées n’ont pas de coach responsable.");
+      next.push(t("manager.content.missingDayCoach"));
     if (camp.capacity != null && camp.player_ids.length > camp.capacity)
-      next.push("La capacité du stage est dépassée.");
+      next.push(t("manager.content.capacityExceeded"));
     if (registrations.some((entry) => entry.registration_status === "invited"))
-      next.push("Des participants n’ont pas encore confirmé leur inscription.");
+      next.push(t("manager.content.pendingRegistrations"));
     if (
       camp.options.some(
         (option) =>
@@ -274,16 +286,16 @@ export default function CampDetailPage() {
           option.assigned_quantity >= option.capacity,
       )
     )
-      next.push("Une ou plusieurs options ont atteint leur capacité.");
+      next.push(t("manager.content.optionsAtCapacity"));
     if (camp.evaluation.completed < camp.evaluation.required)
       next.push(
-        `${camp.evaluation.required - camp.evaluation.completed} évaluation(s) restent à terminer.`,
+        count("pendingEvaluations", camp.evaluation.required - camp.evaluation.completed),
       );
     return next;
-  }, [camp, registrations]);
+  })();
   function exportOptions() {
     if (!camp) return;
-    const rows = [["Option", "Type", "Junior", "Réponse", "Quantité", "Note"]];
+    const rows = [[t("manager.content.option"), t("manager.content.answerType"), t("manager.content.junior"), t("manager.content.answer"), t("manager.content.quantity"), t("manager.content.note")]];
     camp.options.forEach((option) =>
       option.player_assignments.forEach((assignment) => {
         const registration = registrations.find(
@@ -291,7 +303,7 @@ export default function CampDetailPage() {
         );
         rows.push([
           option.name,
-          option.input_type,
+          optionTypeLabel(option.input_type),
           name(registration?.player),
           optionAnswer(assignment.selected_value, option.input_type),
           String(assignment.quantity),
@@ -315,14 +327,14 @@ export default function CampDetailPage() {
   }
   return (
     <main className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
-        <Link href="/manager/camps">Stages</Link>
+      <nav className={styles.breadcrumb} aria-label={t("manager.content.breadcrumb")}>
+        <Link href="/manager/camps">{t("manager.content.camps")}</Link>
         <ChevronRight size={13} />
-        <span>{camp?.title ?? "Stage"}</span>
+        <span>{camp?.title ?? t("manager.content.camp")}</span>
       </nav>
       <div className={styles.topline}>
         <div>
-          <h1>{camp?.title ?? "Stage"}</h1>
+          <h1>{camp?.title ?? t("manager.content.camp")}</h1>
         </div>
         {camp ? (
           <div className={styles.actions}>
@@ -331,7 +343,7 @@ export default function CampDetailPage() {
               href={`/manager/camps/new?campId=${camp.id}`}
             >
               <Pencil size={15} />
-              Modifier le stage
+              {t("manager.content.editCamp")}
             </Link>
           </div>
         ) : null}
@@ -339,7 +351,7 @@ export default function CampDetailPage() {
       <section className={styles.panel}>
         <nav
           className={`${navigationStyles.tabs} ${styles.detailTabs}`}
-          aria-label="Navigation du stage"
+          aria-label={t("manager.content.campNavigation")}
         >
           {TABS.map(({ id, label }) => (
             <Link
@@ -355,36 +367,37 @@ export default function CampDetailPage() {
       </section>
       {error ? (
         <div className={styles.alertError} role="alert">
-          {error}
+          {errorText(error)}
         </div>
       ) : null}
       {success ? (
         <div className={styles.alertSuccess} role="status">
-          {success}
+          {errorText(success)}
         </div>
       ) : null}
+      {loading ? <ListLoadingBlock label={t("manager.content.loadingCamps")} /> : null}
       {!loading && camp ? (
         <>
           {tab === "overview" ? (
             <>
               <section className={styles.metrics}>
                 <div className={styles.metric}>
-                  <span>Journées</span>
+                  <span>{t("manager.content.days")}</span>
                   <b>{camp.days.length}</b>
                 </div>
                 <div className={styles.metric}>
-                  <span>Participants</span>
+                  <span>{t("manager.content.participants")}</span>
                   <b>
                     {camp.player_ids.length}
                     {camp.capacity ? ` / ${camp.capacity}` : ""}
                   </b>
                 </div>
                 <div className={styles.metric}>
-                  <span>Head coach</span>
+                  <span>{t("manager.content.headCoach")}</span>
                   <b style={{ fontSize: 13 }}>{name(camp.head_coach)}</b>
                 </div>
                 <div className={styles.metric}>
-                  <span>Évaluations</span>
+                  <span>{t("manager.content.evaluations")}</span>
                   <b>
                     {camp.evaluation.completed}/{camp.evaluation.required}
                   </b>
@@ -393,8 +406,8 @@ export default function CampDetailPage() {
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
-                    <h2>Points d’attention</h2>
-                    <p>Les éléments à vérifier avant et pendant le stage.</p>
+                    <h2>{t("manager.content.attention")}</h2>
+                    <p>{t("manager.content.attentionHelp")}</p>
                   </div>
                 </div>
                 {alerts.length ? (
@@ -408,15 +421,15 @@ export default function CampDetailPage() {
                 ) : (
                   <div className={styles.alertSuccess}>
                     <CheckCircle2 size={16} />
-                    Aucun point bloquant détecté.
+                    {t("manager.content.noBlockers")}
                   </div>
                 )}
               </section>
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
                   <div>
-                    <h2>Prochaines journées</h2>
-                    <p>Organisation chronologique du stage.</p>
+                    <h2>{t("manager.content.nextDays")}</h2>
+                    <p>{t("manager.content.chronology")}</p>
                   </div>
                 </div>
                 <div className={styles.stack}>
@@ -427,13 +440,13 @@ export default function CampDetailPage() {
                           <h3>{dayLabel(day)}</h3>
                           <span className={styles.muted}>
                             {timeRange(day)} ·{" "}
-                            {day.location_text || "Lieu non disponible"}
+                            {day.location_text || t("manager.content.noLocation")}
                           </span>
                         </div>
                         <span className={styles.badge}>
                           {day.evaluation_enabled
-                            ? "Évaluable"
-                            : "Sans évaluation"}
+                            ? t("manager.content.evaluable")
+                            : t("manager.content.noEvaluation")}
                         </span>
                       </div>
                     </div>
@@ -446,9 +459,9 @@ export default function CampDetailPage() {
             <section className={styles.panel}>
               <div className={styles.panelHeader}>
                 <div>
-                  <h2>Journées du stage</h2>
+                  <h2>{t("manager.content.campDays")}</h2>
                   <p>
-                    Horaires, responsable, lieu et progression opérationnelle.
+                    {t("manager.content.dayProgressHelp")}
                   </p>
                 </div>
               </div>
@@ -458,19 +471,19 @@ export default function CampDetailPage() {
                     <div className={styles.cardHead}>
                       <div>
                         <h3>
-                          Jour {day.day_index + 1} · {dayLabel(day)}
+                          {format("dayNumber", { number: number(day.day_index + 1) })} · {dayLabel(day)}
                         </h3>
                         <span className={styles.muted}>{timeRange(day)}</span>
                       </div>
                       <span className={styles.badge}>
                         {day.evaluation_enabled
-                          ? `${day.evaluation.completed}/${day.evaluation.required} évaluations`
-                          : "Non évaluable"}
+                          ? format("evaluationsProgress", { completed: number(day.evaluation.completed), total: number(day.evaluation.required) })
+                          : t("manager.content.notEvaluable")}
                       </span>
                     </div>
                     <div className={styles.grid3}>
                       <div>
-                        <span className={styles.muted}>Coach responsable</span>
+                        <span className={styles.muted}>{t("manager.content.responsibleCoach")}</span>
                         <b style={{ display: "block" }}>
                           {name(
                             coachProfiles[day.responsible_coach_id ?? ""] ??
@@ -479,13 +492,13 @@ export default function CampDetailPage() {
                         </b>
                       </div>
                       <div>
-                        <span className={styles.muted}>Lieu</span>
+                        <span className={styles.muted}>{t("manager.content.location")}</span>
                         <b style={{ display: "block" }}>
-                          {day.location_text || "Lieu non disponible"}
+                          {day.location_text || t("manager.content.noLocation")}
                         </b>
                       </div>
                       <div>
-                        <span className={styles.muted}>Présents</span>
+                        <span className={styles.muted}>{t("manager.content.presentPlural")}</span>
                         <b style={{ display: "block" }}>
                           {day.counts?.present ?? 0}
                         </b>
@@ -503,10 +516,9 @@ export default function CampDetailPage() {
             <section className={styles.panel}>
               <div className={styles.panelHeader}>
                 <div>
-                  <h2>Participants et présences</h2>
+                  <h2>{t("manager.content.participantsAttendance")}</h2>
                   <p>
-                    Utilisable sur tablette et mobile. Corrigez chaque statut
-                    après l’appel.
+                    {t("manager.content.attendanceDetailHelp")}
                   </p>
                 </div>
               </div>
@@ -514,16 +526,17 @@ export default function CampDetailPage() {
                 <table className={styles.matrix}>
                   <thead>
                     <tr>
-                      <th>Junior</th>
-                      <th>Inscription</th>
+                      <th>{t("manager.content.junior")}</th>
+                      <th>{t("manager.content.registration")}</th>
                       {camp.days.map((day) => (
                         <th key={day.id}>
-                          Jour {day.day_index + 1}
+                          {format("dayNumber", { number: number(day.day_index + 1) })}
                           <button
                             className={styles.iconButton}
                             style={{ marginLeft: 7 }}
                             type="button"
-                            title="Tous présents"
+                            title={t("manager.content.allPresent")}
+                            aria-label={`${t("manager.content.allPresent")} · ${format("dayNumber", { number: number(day.day_index + 1) })}`}
                             disabled={busy}
                             onClick={() =>
                               void setAttendance(
@@ -538,7 +551,7 @@ export default function CampDetailPage() {
                                     player_id: entry.player_id,
                                     status: "present",
                                   })),
-                                `Tous les participants du jour ${day.day_index + 1} ont été marqués présents.`,
+                                format("allPresentDay", { number: number(day.day_index + 1) }),
                               )
                             }
                           >
@@ -559,10 +572,10 @@ export default function CampDetailPage() {
                         </td>
                         <td>
                           {registration.registration_status === "registered"
-                            ? "Inscrit"
+                            ? t("manager.content.registered")
                             : registration.registration_status === "declined"
-                              ? "Refusé"
-                              : "Invité"}
+                              ? t("manager.content.declined")
+                              : t("manager.content.invited")}
                         </td>
                         {camp.days.map((day) => {
                           const value =
@@ -572,6 +585,7 @@ export default function CampDetailPage() {
                           return (
                             <td key={day.id}>
                               <select
+                                aria-label={format("attendanceFor", { name: name(registration.player), number: number(day.day_index + 1) })}
                                 value={value}
                                 disabled={busy}
                                 onChange={(event) =>
@@ -584,7 +598,7 @@ export default function CampDetailPage() {
                                           .value as Attendance,
                                       },
                                     ],
-                                    "La présence a été mise à jour.",
+                                    t("manager.content.attendanceUpdated"),
                                   )
                                 }
                               >
@@ -610,10 +624,9 @@ export default function CampDetailPage() {
             <section className={styles.panel}>
               <div className={styles.panelHeader}>
                 <div>
-                  <h2>Évaluations</h2>
+                  <h2>{t("manager.content.evaluations")}</h2>
                   <p>
-                    Le système d’évaluation des activités existant est
-                    réutilisé, sans barème concurrent.
+                    {t("manager.content.evaluationHelp")}
                   </p>
                 </div>
               </div>
@@ -623,12 +636,12 @@ export default function CampDetailPage() {
                     <div className={styles.cardHead}>
                       <div>
                         <h3>
-                          Jour {day.day_index + 1} · {dayLabel(day)}
+                          {format("dayNumber", { number: number(day.day_index + 1) })} · {dayLabel(day)}
                         </h3>
                         <span className={styles.muted}>
                           {day.evaluation_enabled
-                            ? `${day.evaluation.completed} terminée(s) sur ${day.evaluation.required}`
-                            : "Aucune évaluation prévue"}
+                            ? format("completedProgress", { completed: number(day.evaluation.completed), total: number(day.evaluation.required) })
+                            : t("manager.content.noEvaluationPlanned")}
                         </span>
                       </div>
                       {day.evaluation_enabled ? (
@@ -636,7 +649,7 @@ export default function CampDetailPage() {
                           className={styles.secondary}
                           href={`/manager/groups/${day.group_id}/planning/${day.event_id}/players`}
                         >
-                          Ouvrir les évaluations
+                          {t("manager.content.openEvaluations")}
                         </Link>
                       ) : null}
                     </div>
@@ -649,10 +662,9 @@ export default function CampDetailPage() {
             <section className={styles.panel}>
               <div className={styles.panelHeader}>
                 <div>
-                  <h2>Options</h2>
+                  <h2>{t("manager.content.options")}</h2>
                   <p>
-                    Options valables pour tout le stage ou pour certaines
-                    journées, sans facturation.
+                    {t("manager.content.optionsDetailHelp")}
                   </p>
                 </div>
                 <button
@@ -661,11 +673,11 @@ export default function CampDetailPage() {
                   onClick={exportOptions}
                 >
                   <Download size={15} />
-                  Exporter
+                  {t("manager.content.export")}
                 </button>
               </div>
               {camp.options.length === 0 ? (
-                <div className={styles.empty}>Aucune option configurée.</div>
+                <div className={styles.empty}>{t("manager.content.noOptions")}</div>
               ) : (
                 <div className={styles.stack}>
                   {camp.options.map((option) => (
@@ -674,7 +686,7 @@ export default function CampDetailPage() {
                         <div>
                           <h3>{option.name}</h3>
                           <span className={styles.muted}>
-                            {option.description || "Sans description"}
+                            {option.description || t("manager.content.noDescription")}
                           </span>
                         </div>
                         <div className={styles.cardMeta}>
@@ -683,30 +695,28 @@ export default function CampDetailPage() {
                           </span>
                           <span className={styles.badge}>
                             {option.applies_to_all_days
-                              ? "Option de stage"
-                              : `Jour(s) ${option.day_indexes
-                                  .map((dayIndex) => dayIndex + 1)
-                                  .join(", ")}`}
+                              ? t("manager.content.campOption")
+                              : format("optionDays", { days: option.day_indexes.map((dayIndex) => number(dayIndex + 1)).join(", ") })}
                           </span>
                           <span className={styles.badge}>
-                            {option.is_active ? "Active" : "Inactive"}
+                            {option.is_active ? t("manager.content.active") : t("manager.content.inactive")}
                           </span>
                         </div>
                       </div>
                       <div className={styles.summaryGrid}>
                         <div className={styles.summaryItem}>
-                          <span>Inscriptions</span>
+                          <span>{t("manager.content.registrations")}</span>
                           <b>{option.assigned_count}</b>
                         </div>
                         <div className={styles.summaryItem}>
-                          <span>Quantité</span>
+                          <span>{t("manager.content.quantity")}</span>
                           <b>{option.assigned_quantity}</b>
                         </div>
                         <div className={styles.summaryItem}>
-                          <span>Capacité restante</span>
+                          <span>{t("manager.content.remainingCapacity")}</span>
                           <b>
                             {option.capacity == null
-                              ? "Illimitée"
+                              ? t("manager.content.unlimited")
                               : Math.max(
                                   0,
                                   option.capacity - option.assigned_quantity,

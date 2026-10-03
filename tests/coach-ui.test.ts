@@ -140,7 +140,7 @@ test("secondary Coach screens have no hard-coded visible interface text", () => 
   }
 });
 
-test("group member cards preserve mobile actions and localized data labels", () => {
+test("group member lists compact mobile rows without handicap or the role label, preserving desktop data and actions", () => {
   const page = source("app/coach/groups/[id]/page.tsx");
   const css = source("app/coach/groups/[id]/CoachGroupDetail.module.css");
   assert.equal([...page.matchAll(/detailStyles.memberList/g)].length, 2);
@@ -148,6 +148,17 @@ test("group member cards preserve mobile actions and localized data labels", () 
   assert.match(page, /data-label=\{t\("coach.group.role"\)\}/);
   assert.match(css, /\.page \.memberList\{min-width:0\}/);
   assert.match(css, /@media\(max-width:700px\)/);
-  assert.match(css, /td:last-child\{grid-column:1\/-1\}/);
-  assert.doesNotMatch(css, /td:last-child\{display:none/);
+  assert.match(css, /\.page \.playerList tbody>tr:first-child\{padding-top:0\}/);
+  assert.match(page, /className=\{detailStyles.memberHandicap\}/);
+  assert.match(page, /className=\{detailStyles.memberRole\}/);
+  assert.equal([...page.matchAll(/className=\{detailStyles.memberActions\}/g)].length, 2);
+  assert.match(css, /\.memberHandicap\{display:none\}/);
+  assert.match(css, /\.memberRole::before\{content:none\}/);
+  assert.match(css, /\.memberRole\{grid-column:3;grid-row:1;justify-self:end;text-align:right\}/);
+  assert.match(css, /\.coachList \.memberActions\{grid-column:3;grid-row:2\}/);
+  assert.match(css, /\.memberActions>div\{[^}]*flex-wrap:nowrap/);
+  assert.match(css, /\.memberActions>button\{width:44px;height:44px/);
+  assert.match(css, /@media\(max-width:420px\)/);
+  assert.match(css, /\.playerList \.memberActions\{grid-column:2;grid-row:2\}/);
+  assert.doesNotMatch(css, /\.memberActions\{display:none/);
 });

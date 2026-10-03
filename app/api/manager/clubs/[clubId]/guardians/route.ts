@@ -1,3 +1,5 @@
+import { managerMutationError } from "@/lib/server/managerMutationError";
+import { requireManagerClub, activeClubMember } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -7,41 +9,13 @@ function mustEnv(name: string) {
   return v;
 }
 
-async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
-
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token" };
-
-  const callerId = callerData.user.id;
-
-  const { data: adminRow } = await supabaseAdmin
-    .from("app_admins")
-    .select("user_id")
-    .eq("user_id", callerId)
-    .maybeSingle();
-  if (adminRow) return { ok: true as const };
-
-  const { data: membership } = await supabaseAdmin
-    .from("club_members")
-    .select("id,role,is_active")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!membership || membership.role !== "manager") return { ok: false as const, status: 403, error: "Forbidden" };
-
-  return { ok: true as const };
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const computeAge = (birthDate: string | null | undefined) => {
@@ -187,7 +161,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
@@ -197,26 +171,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     const isPrimary = Boolean(body.is_primary);
     if (!playerId || !guardianId) return NextResponse.json({ error: "Missing ids" }, { status: 400 });
 
-    if (isPrimary) {
-      const clearPrimary = await supabaseAdmin
-        .from("player_guardians")
-        .update({ is_primary: false })
-        .eq("player_id", playerId);
-      if (clearPrimary.error) return NextResponse.json({ error: clearPrimary.error.message }, { status: 400 });
+    if (!(await activeClubMember(supabaseAdmin, clubId, playerId, "player")) ||
+        !(await activeClubMember(supabaseAdmin, clubId, guardianId, "parent"))) {
+      return NextResponse.json({ error: "Junior ou parent introuvable dans ce club." }, { status: 404 });
     }
-
-    const { error } = await supabaseAdmin.from("player_guardians").upsert(
-      {
-        player_id: playerId,
-        guardian_user_id: guardianId,
-        relation,
-        is_primary: isPrimary,
-        can_view: true,
-        can_edit: true,
-      },
-      { onConflict: "player_id,guardian_user_id" }
-    );
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    const result = await supabaseAdmin.rpc("manage_player_guardian_v1", {
+      p_actor_id: auth.callerId, p_club_id: clubId, p_player_id: playerId, p_guardian_id: guardianId,
+      p_action: "upsert", p_relation: relation, p_is_primary: isPrimary,
+    });
+    if (result.error) {
+      const failure = managerMutationError(result.error);
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
+    }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
@@ -229,7 +195,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ clubId: 
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
@@ -237,12 +203,17 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ clubId: 
     const guardianId = String(body.guardian_user_id ?? "");
     if (!playerId || !guardianId) return NextResponse.json({ error: "Missing ids" }, { status: 400 });
 
-    const { error } = await supabaseAdmin
-      .from("player_guardians")
-      .delete()
-      .eq("player_id", playerId)
-      .eq("guardian_user_id", guardianId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!(await activeClubMember(supabaseAdmin, clubId, playerId, "player"))) {
+      return NextResponse.json({ error: "Junior introuvable dans ce club." }, { status: 404 });
+    }
+    const result = await supabaseAdmin.rpc("manage_player_guardian_v1", {
+      p_actor_id: auth.callerId, p_club_id: clubId, p_player_id: playerId, p_guardian_id: guardianId,
+      p_action: "delete",
+    });
+    if (result.error) {
+      const failure = managerMutationError(result.error);
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
+    }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });

@@ -1,27 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Eye, Pencil, RefreshCw, Search, Send, UsersRound, X } from "lucide-react";
-import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import ManagerClubSelect from "@/components/manager/ManagerClubSelect";
+import { useManagerClubSelection } from "@/components/manager/useManagerClubSelection";
+import { managerHeaders } from "@/components/manager/useManagerResource";
+import { managerCount, managerFormat } from "@/lib/managerLocale";
+import { managerJuniorDate } from "@/lib/managerJuniorPresentation";
+import { familyAccessPreview, familySendSummary, juniorAccessTarget, parentAccessTarget, type FamilyAccessData, type FamilyAccessTarget, type FamilySendSummary } from "@/lib/managerFamilyAccess";
+import type { AccessStatus } from "@/lib/familyAccess";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
-import { familyAccessStatusLabel, renderFamilyTemplate, type AccessStatus, type FamilyMailConfig } from "@/lib/familyAccess";
 import campStyles from "../camps/Camps.module.css";
 import familyStyles from "./AccessFamilies.module.css";
 
-type Club = { id: string; name: string };
-type Parent = { parent_user_id: string; parent_name: string; parent_username: string | null; parent_email: string | null; parent_status: AccessStatus; parent_last_sent_at: string | null; parent_last_activity_at: string | null; parent_send_count: number; linked_juniors: Array<{ junior_user_id: string; junior_name: string; relation: string | null; is_primary: boolean }> };
-type JuniorParent = { parent_user_id: string; parent_name: string; parent_email: string | null; relation: string | null; is_primary: boolean };
-type Junior = { junior_user_id: string; junior_name: string; junior_username: string | null; junior_email: string | null; parents: JuniorParent[]; recipient_kind: "junior" | "parent" | "selection_required" | "missing"; recipient_user_id: string | null; recipient_name: string | null; recipient_email: string | null; junior_status: AccessStatus; junior_last_sent_at: string | null; junior_last_activity_at: string | null; junior_send_count: number };
-type Data = { club: Club; parents: Parent[]; juniors: Junior[]; mail_config: FamilyMailConfig };
-type Selection = { key: string; kind: "parent_access" | "junior_access"; parent_user_id?: string; junior_user_id?: string; recipient_user_id?: string };
-type Preview = { title: string; recipient: string; subject: string; body: string; selection: Selection };
-
-async function authHeaders() { const { data } = await supabase.auth.getSession(); return data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {}; }
-function formatDate(value: string | null) { if (!value) return "Jamais"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "Jamais" : new Intl.DateTimeFormat("fr-CH", { dateStyle: "short", timeStyle: "short" }).format(date); }
 function stateClass(status: AccessStatus) {
   if (status === "error" || status === "not_ready") return familyStyles.statusDanger;
   if (status === "activated") return campStyles.badgeDone;
@@ -29,65 +25,169 @@ function stateClass(status: AccessStatus) {
   if (status === "expired") return campStyles.badgeArchived;
   return "";
 }
-function isReady(status: AccessStatus) { return status === "ready"; }
-
-const previewBase = { app_url: "https://www.activitee.golf/", player_guide_url: "https://www.activitee.golf/guide-junior.pdf", reset_url: "https://www.activitee.golf/reset-password?invite_token=exemple", temp_password: "Golf-2026!" };
 
 export default function ManagerAccessPage() {
-  const [clubId, setClubId] = useState(""); const [data, setData] = useState<Data | null>(null);
-  const [tab, setTab] = useState<"parents" | "juniors">("parents"); const [query, setQuery] = useState(""); const [status, setStatus] = useState<"all" | AccessStatus>("all");
-  const [selected, setSelected] = useState<Record<string, Selection>>({}); const [recipientByJunior, setRecipientByJunior] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(""); const [error, setError] = useState(""); const [message, setMessage] = useState(""); const [preview, setPreview] = useState<Preview | null>(null); const [portalReady, setPortalReady] = useState(false);
+  const { t, locale } = useI18n();
+  const { clubs, clubId, setClubId, loading: clubsLoading, error: clubsError } = useManagerClubSelection();
+  const [dataset, setDataset] = useState<FamilyAccessData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState<"parents" | "juniors">("parents");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | AccessStatus>("all");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [recipientByJunior, setRecipientByJunior] = useState<Record<string, string>>({});
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState<string[]>([]);
+  const [summary, setSummary] = useState<{ result: FamilySendSummary; failedNames: string[] } | null>(null);
+  const mutation = useRef(false);
+  const attemptedRef = useRef(new Set<string>());
+  const version = useRef(0);
+  const scope = useRef(clubId); scope.current = clubId;
+  const data = dataset?.club.id === clubId ? dataset : null;
+  const format = (key: string, values: Record<string, string | number>) => managerFormat(t, `manager.access.${key}`, values);
+  const juniorFormat = (key: string, name: string) => managerFormat(t, `manager.junior.edit.${key}`, { name });
+  const statusLabel = (value: AccessStatus) => t(`manager.junior.edit.status.${value}`);
+  const date = (value: string | null) => managerJuniorDate(t, locale, value);
 
-  async function load(id: string, silent = false) {
-    if (!id) return; if (!silent) setLoading(true); setError("");
-    try { const response = await fetch(`/api/manager/clubs/${id}/access-invitations`, { headers: await authHeaders(), cache: "no-store" }); const json = await response.json(); if (!response.ok) throw new Error(json.error ?? "Chargement impossible."); setData(json); setRecipientByJunior(Object.fromEntries((json.juniors ?? []).filter((junior: Junior) => junior.recipient_user_id).map((junior: Junior) => [junior.junior_user_id, junior.recipient_user_id]))); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Chargement impossible."); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    setDataset(null); setSelected({}); setRecipientByJunior({}); setPreviewKey(null); setSummary(null); setError("");
+    setQuery(""); setStatus("all");
+  }, [clubId]);
+
+  useEffect(() => {
+    const current = ++version.current;
+    if (!clubId) { setLoading(false); return; }
+    const controller = new AbortController();
+    setLoading(true); setError("");
+    void (async () => {
+      try {
+        const response = await fetch(`/api/manager/clubs/${encodeURIComponent(clubId)}/access-invitations`, { headers: await managerHeaders(), cache: "no-store", signal: controller.signal });
+        const json = await response.json();
+        if (!response.ok || json.club?.id !== clubId || !Array.isArray(json.parents) || !Array.isArray(json.juniors) || !json.mail_config) throw new Error("invalid_response");
+        if (controller.signal.aborted || current !== version.current) return;
+        setDataset(json); setSelected({}); setPreviewKey(null);
+        setRecipientByJunior(Object.fromEntries((json as FamilyAccessData).juniors.filter(row => row.recipient_user_id).map(row => [row.junior_user_id, row.recipient_user_id!])));
+        attemptedRef.current.clear(); setAttempted([]);
+      } catch {
+        if (!controller.signal.aborted && current === version.current) { setDataset(null); setError("manager.access.loadError"); }
+      } finally { if (!controller.signal.aborted && current === version.current) setLoading(false); }
+    })();
+    return () => { controller.abort(); version.current += 1; };
+  }, [clubId, revision]);
+
+  const targets = useMemo(() => new Map<string, FamilyAccessTarget>([
+    ...(data?.parents ?? []).map(row => parentAccessTarget(row)),
+    ...(data?.juniors ?? []).map(row => juniorAccessTarget(row, recipientByJunior[row.junior_user_id])),
+  ].map(target => [target.selection.key, target])), [data, recipientByJunior]);
+  const filtered = (value: string, state: AccessStatus) => (!query.trim() || value.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale))) && (status === "all" || state === status);
+  const parents = (data?.parents ?? []).filter(row => filtered(`${row.parent_name} ${row.parent_email ?? ""} ${row.parent_username ?? ""} ${row.linked_juniors.map(j => j.junior_name).join(" ")}`, row.parent_status));
+  const juniors = (data?.juniors ?? []).filter(row => filtered(`${row.junior_name} ${row.junior_email ?? ""} ${row.junior_username ?? ""} ${row.parents.map(p => p.parent_name).join(" ")}`, targets.get(`junior:${row.junior_user_id}`)!.status));
+  const states = [...targets.values()].map(row => row.status);
+  const counts = { ready: states.filter(value => value === "ready").length, missing: states.filter(value => value === "not_ready").length, sent: states.filter(value => value === "sent" || value === "expired").length, activated: states.filter(value => value === "activated").length };
+  const blocked = (key: string) => busy || loading || attempted.includes(key);
+  const readySelected = [...targets.values()].filter(target => selected[target.selection.key] && target.canSend && target.status === "ready" && !attempted.includes(target.selection.key));
+  const previewTarget = data && previewKey ? targets.get(previewKey) : undefined;
+  const preview = data && previewTarget ? familyAccessPreview(data, previewTarget) : null;
+
+  function toggle(target: FamilyAccessTarget, checked: boolean) {
+    if (blocked(target.selection.key) || !target.canSend || target.status !== "ready") return;
+    if (checked && Object.values(selected).filter(Boolean).length >= 100) { setError("manager.access.limit"); return; }
+    setSelected(current => ({ ...current, [target.selection.key]: checked }));
   }
 
-  useEffect(() => { setPortalReady(true); void (async () => { try { const response = await fetch("/api/manager/my-clubs", { headers: await authHeaders(), cache: "no-store" }); const json = await response.json(); if (!response.ok) throw new Error(json.error); const first = json.clubs?.[0]?.id ?? ""; setClubId(first); if (first) await load(first); else setLoading(false); } catch (cause) { setError(cause instanceof Error ? cause.message : "Chargement impossible."); setLoading(false); } })(); }, []);
-
-  const parents = useMemo(() => (data?.parents ?? []).filter((row) => { const haystack = `${row.parent_name} ${row.parent_email ?? ""} ${row.parent_username ?? ""} ${row.linked_juniors.map((junior) => junior.junior_name).join(" ")}`.toLocaleLowerCase(); return (!query || haystack.includes(query.toLocaleLowerCase())) && (status === "all" || row.parent_status === status); }), [data, query, status]);
-  const juniors = useMemo(() => (data?.juniors ?? []).filter((row) => { const haystack = `${row.junior_name} ${row.junior_email ?? ""} ${row.junior_username ?? ""} ${row.parents.map((parent) => parent.parent_name).join(" ")}`.toLocaleLowerCase(); return (!query || haystack.includes(query.toLocaleLowerCase())) && (status === "all" || row.junior_status === status); }), [data, query, status]);
-  const allRows = useMemo(() => [...(data?.parents ?? []).map((row) => row.parent_status), ...(data?.juniors ?? []).map((row) => row.junior_status)], [data]);
-  const stats = { ready: allRows.filter((value) => value === "ready").length, missing: allRows.filter((value) => value === "not_ready").length, sent: allRows.filter((value) => value === "sent" || value === "expired").length, activated: allRows.filter((value) => value === "activated").length };
-
-  function selectionForParent(parent: Parent): Selection { return { key: `parent:${parent.parent_user_id}`, kind: "parent_access", parent_user_id: parent.parent_user_id }; }
-  function selectionForJunior(junior: Junior): Selection { return { key: `junior:${junior.junior_user_id}`, kind: "junior_access", junior_user_id: junior.junior_user_id, recipient_user_id: junior.junior_email ? junior.junior_user_id : (recipientByJunior[junior.junior_user_id] || junior.recipient_user_id || undefined) }; }
-  function effectiveJuniorStatus(junior: Junior): AccessStatus { return junior.junior_status === "not_ready" && junior.junior_username && recipientByJunior[junior.junior_user_id] ? "ready" : junior.junior_status; }
-  function toggle(item: Selection, checked: boolean) { setSelected((current) => { const next = { ...current }; if (checked) next[item.key] = item; else delete next[item.key]; return next; }); }
-
-  async function send(items: Selection[]) {
-    if (!clubId || items.length === 0) return;
-    if (items.length > 1 && !window.confirm(`Confirmer l’envoi groupé de ${items.length} messages ?`)) return;
-    setBusy(items.length > 1 ? "bulk" : items[0].key); setError(""); setMessage("");
-    try { const response = await fetch(`/api/manager/clubs/${clubId}/access-invitations`, { method: "POST", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify(items.length === 1 ? items[0] : { items }) }); const json = await response.json(); if (!response.ok && response.status !== 207) throw new Error(json.error ?? "Envoi impossible."); const summary = json.summary ?? { sent: 0, skipped: 0, errors: [] }; setMessage(`Résultat : ${summary.sent} envoyé(s), ${summary.skipped} ignoré(s), ${summary.errors?.length ?? 0} erreur(s).`); setSelected({}); await load(clubId, true); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Envoi impossible."); }
-    finally { setBusy(""); setPreview(null); }
+  async function send(keys: string[], bulk = false) {
+    if (mutation.current || loading || !data || !clubId || scope.current !== clubId || !keys.length) return;
+    const unique = [...new Set(keys)];
+    const items = unique.map(key => targets.get(key));
+    if (items.length > 100) { setError("manager.access.limit"); return; }
+    if (items.some(target => !target?.canSend || (bulk && target.status !== "ready") || attemptedRef.current.has(`${clubId}|${target.selection.key}`))) { setError("manager.access.selectionInvalid"); return; }
+    if (items.length > 1 && !window.confirm(format("confirmBulk", { count: items.length }))) return;
+    mutation.current = true;
+    const current = version.current;
+    const checked = items as FamilyAccessTarget[];
+    checked.forEach(target => attemptedRef.current.add(`${clubId}|${target.selection.key}`));
+    setAttempted(previous => [...new Set([...previous, ...unique])]);
+    setBusy(true); setError(""); setSummary(null);
+    try {
+      const payloads = checked.map(target => target.selection);
+      const response = await fetch(`/api/manager/clubs/${encodeURIComponent(clubId)}/access-invitations`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...await managerHeaders() },
+        body: JSON.stringify(payloads.length === 1 ? payloads[0] : { items: payloads }),
+      });
+      const json = await response.json();
+      const result = familySendSummary(json.summary, checked.length);
+      if ((!response.ok && response.status !== 207) || !result) throw new Error("unconfirmed_delivery");
+      if (current !== version.current || scope.current !== clubId) return;
+      setSummary({ result, failedNames: result.errors.map(row => checked[row.index].name) });
+      setSelected({}); setPreviewKey(null); setRevision(value => value + 1);
+    } catch { if (current === version.current && scope.current === clubId) setError("manager.access.sendError"); }
+    finally { mutation.current = false; setBusy(false); }
   }
 
-  function parentPreview(parent: Parent) { if (!data) return; const variables = { ...previewBase, club_name: data.club.name, parent_name: parent.parent_name, parent_username: parent.parent_username ?? "", parent_username_or_existing: parent.parent_username ?? "votre compte existant" }; setPreview({ title: `Invitation de ${parent.parent_name}`, recipient: parent.parent_email ?? "Adresse manquante", subject: renderFamilyTemplate(data.mail_config.parent_subject, variables), body: renderFamilyTemplate(data.mail_config.parent_body, variables), selection: selectionForParent(parent) }); }
-  function juniorPreview(junior: Junior) { if (!data) return; const chosen = junior.parents.find((parent) => parent.parent_user_id === recipientByJunior[junior.junior_user_id]) ?? junior.parents.find((parent) => parent.parent_user_id === junior.recipient_user_id); const direct = Boolean(junior.junior_email); const variables = { ...previewBase, club_name: data.club.name, junior_name: junior.junior_name, junior_username: junior.junior_username ?? "non renseigné", parent_name: chosen?.parent_name ?? "" }; setPreview({ title: `Accès de ${junior.junior_name}`, recipient: junior.junior_email ?? chosen?.parent_email ?? "Destinataire à sélectionner", subject: renderFamilyTemplate(direct ? data.mail_config.junior_direct_subject : data.mail_config.junior_parent_subject, variables), body: renderFamilyTemplate(direct ? data.mail_config.junior_direct_body : data.mail_config.junior_parent_body, variables), selection: selectionForJunior(junior) }); }
+  function selectionCell(target: FamilyAccessTarget) {
+    return <td data-label={t("manager.access.selection")}><input type="checkbox" aria-label={format("selectName", { name: target.name })} checked={Boolean(selected[target.selection.key])} disabled={blocked(target.selection.key) || !target.canSend || target.status !== "ready"} onChange={event => toggle(target, event.target.checked)} /></td>;
+  }
+  function badge(value: AccessStatus) { return <span className={`${campStyles.badge} ${stateClass(value)}`}>{statusLabel(value)}</span>; }
+  function actions(target: FamilyAccessTarget) {
+    const parent = target.selection.kind === "parent_access";
+    return <td data-label={t("manager.content.actions")}><div className={campStyles.actions}>
+      <button type="button" className={campStyles.iconButton} title={t("manager.administration.criteria.previewName")} aria-label={juniorFormat(parent ? "previewParent" : "previewJunior", target.name)} disabled={busy} onClick={() => setPreviewKey(target.selection.key)}><Eye size={15} /></button>
+      {!parent && target.status === "not_ready" ? <Link className={campStyles.iconButton} title={t("manager.access.complete")} aria-label={format("completeName", { name: target.name })} href={`/manager/user-management/players/${target.selection.junior_user_id}?club=${encodeURIComponent(clubId)}`}><Pencil size={15} /></Link> :
+        <button type="button" className={campStyles.iconButton} title={t(target.sendCount ? "manager.junior.edit.resend" : "manager.junior.edit.send")} aria-label={juniorFormat(`${target.sendCount ? "resend" : "send"}${parent ? "Parent" : "Junior"}`, target.name)} disabled={blocked(target.selection.key) || !target.canSend} onClick={() => void send([target.selection.key])}>{target.sendCount ? <RefreshCw size={15} /> : <Send size={15} />}</button>}
+    </div></td>;
+  }
 
-  const readySelected = Object.values(selected).filter((item) => { if (item.kind === "parent_access") return data?.parents.some((row) => row.parent_user_id === item.parent_user_id && isReady(row.parent_status)); return data?.juniors.some((row) => row.junior_user_id === item.junior_user_id && isReady(effectiveJuniorStatus(row)) && item.recipient_user_id); });
-
-  return <div className={styles.page}>
-    <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>Gestion des utilisateurs / Accès aux familles</nav>
-    <div className={styles.topline}><div><h1>Accès aux familles</h1><p className={styles.lead}>Préparez, envoyez et suivez les accès des parents et des juniors.</p></div></div>
-    {error ? <div className={styles.errorAlert} role="alert">{error}</div> : null}{message ? <div className={actionStyles.successAlert} role="status">{message}</div> : null}
-    {loading ? <section className={styles.overview}><ListLoadingBlock label="Chargement des accès…" /></section> : <>
-      <section className={styles.overview}><div className={styles.statsGrid}><article className={styles.statCard}><span>Prêts à envoyer</span><b>{stats.ready}</b><small>accès complets</small></article><article className={styles.statCard}><span>Informations manquantes</span><b>{stats.missing}</b><small>à compléter</small></article><article className={styles.statCard}><span>Invitations envoyées</span><b>{stats.sent}</b><small>y compris expirées</small></article><article className={styles.statCard}><span>Comptes activés</span><b>{stats.activated}</b><small>connexion détectée</small></article></div></section>
+  return <main className={styles.page}>
+    <nav aria-label={t("manager.content.breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>{t("manager.access.breadcrumb")}</nav>
+    <div className={styles.topline}><div><h1>{t("manager.access.title")}</h1><p className={styles.lead}>{t("manager.access.lead")}</p></div></div>
+    <div className={familyStyles.scope}><ManagerClubSelect clubs={clubs} clubId={clubId} onChange={setClubId} disabled={busy || clubsLoading} /><button type="button" className={campStyles.secondary} disabled={!clubId || busy || loading} onClick={() => setRevision(value => value + 1)}><RefreshCw size={15} />{t("manager.access.refresh")}</button></div>
+    {clubsError || error ? <div className={styles.errorAlert} role="alert">{clubsError ? t("manager.access.loadError") : t(error)}</div> : null}
+    {summary ? <div className={summary.result.errors.length || summary.result.skipped ? styles.errorAlert : actionStyles.successAlert} role="status">{format("result", { sent: summary.result.sent, skipped: summary.result.skipped, errors: summary.result.errors.length })}{summary.failedNames.length ? <ul>{summary.failedNames.map((name, index) => <li key={index}>{format("failedName", { name })}</li>)}</ul> : null}</div> : null}
+    {clubsLoading || loading ? <section className={styles.overview}><ListLoadingBlock label={t("manager.access.loading")} /></section> : !data ? <div className={campStyles.empty}>{t(clubId ? "common.noData" : "manager.noClub")}</div> : <>
+      <section className={styles.overview}><div className={`${styles.statsGrid} ${familyStyles.stats}`}>{(["ready", "missing", "sent", "activated"] as const).map(key => <article className={styles.statCard} key={key}><span>{t(`manager.access.${key}`)}</span><b>{counts[key]}</b><small>{t(`manager.access.${key}Help`)}</small></article>)}</div></section>
       <section className={campStyles.panel}>
-        <div className={campStyles.panelHeader}><div><h2>Envois</h2><p>Un aperçu ne déclenche jamais d’envoi.</p></div><button className={campStyles.primary} type="button" disabled={!readySelected.length || Boolean(busy)} onClick={() => void send(readySelected)}>{busy === "bulk" ? <RefreshCw size={15} className={styles.spin} /> : <Send size={15} />}Envoyer la sélection ({readySelected.length})</button></div>
-        <div className={campStyles.toolbar}><label className={campStyles.field}><span>Rechercher</span><span style={{ position: "relative" }}><Search size={15} style={{ position: "absolute", left: 11, top: 13, color: "#7a857b" }} /><input value={query} onChange={(event) => setQuery(event.target.value)} style={{ paddingLeft: 34 }} placeholder="Nom, e-mail ou identifiant" /></span></label><label className={campStyles.field}><span>État d’accès</span><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="all">Tous les états</option>{(["not_ready", "ready", "sent", "expired", "activated", "error"] as AccessStatus[]).map((value) => <option value={value} key={value}>{familyAccessStatusLabel(value)}</option>)}</select></label></div>
-        <div className="user-mgmt-chip-list" role="tablist" aria-label="Type de compte"><button type="button" className={`btn ${tab === "parents" ? "active" : ""}`} role="tab" aria-selected={tab === "parents"} onClick={() => setTab("parents")}><UsersRound size={15} />Parents ({data?.parents.length ?? 0})</button><button type="button" className={`btn ${tab === "juniors" ? "active" : ""}`} role="tab" aria-selected={tab === "juniors"} onClick={() => setTab("juniors")}>Juniors ({data?.juniors.length ?? 0})</button></div>
+        <div className={campStyles.panelHeader}><div><h2>{t("manager.access.deliveries")}</h2><p>{t("manager.access.previewHelp")}</p></div><button className={campStyles.primary} type="button" disabled={!readySelected.length || busy} onClick={() => void send(readySelected.map(target => target.selection.key), true)}>{busy ? <RefreshCw size={15} className={styles.spin} /> : <Send size={15} />}{format("sendSelected", { count: readySelected.length })}</button></div>
+        <div className={campStyles.toolbar}>
+          <label className={campStyles.field}><span>{t("manager.access.search")}</span><span style={{ position: "relative" }}><Search size={15} style={{ position: "absolute", left: 11, top: 13, color: "#7a857b" }} /><input value={query} onChange={event => setQuery(event.target.value)} style={{ paddingLeft: 34 }} placeholder={t("manager.access.searchPlaceholder")} /></span></label>
+          <label className={campStyles.field}><span>{t("manager.access.status")}</span><select value={status} onChange={event => setStatus(event.target.value as typeof status)}><option value="all">{t("manager.access.allStatuses")}</option>{(["not_ready", "ready", "sent", "expired", "activated", "error"] as const).map(value => <option value={value} key={value}>{statusLabel(value)}</option>)}</select></label>
+        </div>
+        <div className="user-mgmt-chip-list" role="group" aria-label={t("manager.access.accountType")}>
+          <button type="button" className={`btn ${tab === "parents" ? "active" : ""}`} aria-pressed={tab === "parents"} onClick={() => setTab("parents")}><UsersRound size={15} />{t("manager.access.parents")} ({data.parents.length})</button>
+          <button type="button" className={`btn ${tab === "juniors" ? "active" : ""}`} aria-pressed={tab === "juniors"} onClick={() => setTab("juniors")}>{t("manager.access.juniors")} ({data.juniors.length})</button>
+        </div>
         <div className={campStyles.tableWrap}>
-          {tab === "parents" ? <table className={`${campStyles.table} ${familyStyles.table}`}><thead><tr><th aria-label="Sélection" /><th>Parent</th><th>Juniors liés</th><th>État</th><th>Dernier envoi</th><th>Dernière activité</th><th>Actions</th></tr></thead><tbody>{parents.length ? parents.map((parent) => { const item = selectionForParent(parent); return <tr key={parent.parent_user_id}><td data-label="Sélection"><input type="checkbox" aria-label={`Sélectionner ${parent.parent_name}`} checked={Boolean(selected[item.key])} disabled={!isReady(parent.parent_status)} onChange={(event) => toggle(item, event.target.checked)} /></td><td data-label="Parent"><div className={campStyles.titleCell}><b>{parent.parent_name}</b><span className={campStyles.muted}>{parent.parent_email ?? "Adresse e-mail manquante"} · {parent.parent_username ?? "Identifiant manquant"}</span></div></td><td data-label="Juniors liés">{parent.linked_juniors.map((junior) => junior.junior_name).join(", ") || "—"}</td><td data-label="État"><span className={`${campStyles.badge} ${stateClass(parent.parent_status)}`}>{familyAccessStatusLabel(parent.parent_status)}</span></td><td data-label="Dernier envoi">{formatDate(parent.parent_last_sent_at)}<span className={campStyles.muted} style={{ display: "block" }}>{parent.parent_send_count} envoi(s)</span></td><td data-label="Dernière activité">{formatDate(parent.parent_last_activity_at)}</td><td data-label="Actions"><div className={campStyles.actions}><button type="button" className={campStyles.iconButton} title="Aperçu" aria-label={`Aperçu de l’invitation de ${parent.parent_name}`} onClick={() => parentPreview(parent)}><Eye size={15} /></button><button type="button" className={campStyles.iconButton} title={parent.parent_send_count ? "Renvoyer" : "Envoyer"} aria-label={`${parent.parent_send_count ? "Renvoyer" : "Envoyer"} l’invitation de ${parent.parent_name}`} disabled={parent.parent_status === "not_ready" || Boolean(busy)} onClick={() => void send([item])}>{parent.parent_send_count ? <RefreshCw size={15} /> : <Send size={15} />}</button></div></td></tr>; }) : <tr><td colSpan={7}><div className={campStyles.empty}>Aucun parent ne correspond aux critères.</div></td></tr>}</tbody></table> :
-          <table className={`${campStyles.table} ${familyStyles.table}`}><thead><tr><th aria-label="Sélection" /><th>Junior</th><th>Parent(s)</th><th>Destinataire</th><th>État</th><th>Dernier envoi</th><th>Actions</th></tr></thead><tbody>{juniors.length ? juniors.map((junior) => { const item = selectionForJunior(junior); const usableParents = junior.parents.filter((parent) => parent.parent_email); const effectiveStatus = effectiveJuniorStatus(junior); return <tr key={junior.junior_user_id}><td data-label="Sélection"><input type="checkbox" aria-label={`Sélectionner ${junior.junior_name}`} checked={Boolean(selected[item.key])} disabled={!isReady(effectiveStatus) || !item.recipient_user_id} onChange={(event) => toggle(item, event.target.checked)} /></td><td data-label="Junior"><div className={campStyles.titleCell}><b>{junior.junior_name}</b><span className={campStyles.muted}>{junior.junior_username ?? "Identifiant manquant"}{junior.junior_email ? ` · ${junior.junior_email}` : ""}</span></div></td><td data-label="Parent(s)">{junior.parents.map((parent) => `${parent.parent_name}${parent.is_primary ? " (principal)" : ""}`).join(", ") || "Aucun parent"}</td><td data-label="Destinataire">{junior.junior_email ? <span>{junior.junior_email}<span className={campStyles.muted} style={{ display: "block" }}>Envoi direct au junior</span></span> : usableParents.length > 1 && !junior.parents.some((parent) => parent.is_primary && parent.parent_email) ? <label className={`${campStyles.field} ${familyStyles.recipientField}`}><span>Choisir un parent</span><select value={recipientByJunior[junior.junior_user_id] ?? ""} onChange={(event) => { setRecipientByJunior((current) => ({ ...current, [junior.junior_user_id]: event.target.value })); setSelected((current) => { const next = { ...current }; delete next[`junior:${junior.junior_user_id}`]; return next; }); }}><option value="">Sélectionner</option>{usableParents.map((parent) => <option key={parent.parent_user_id} value={parent.parent_user_id}>{parent.parent_name} · {parent.parent_email}</option>)}</select></label> : <span>{junior.recipient_email ?? "Informations à compléter"}<span className={campStyles.muted} style={{ display: "block" }}>{junior.recipient_name ? `Transmis à ${junior.recipient_name}` : "Aucune adresse exploitable"}</span></span>}</td><td data-label="État"><span className={`${campStyles.badge} ${stateClass(effectiveStatus)}`}>{familyAccessStatusLabel(effectiveStatus)}</span></td><td data-label="Dernier envoi">{formatDate(junior.junior_last_sent_at)}<span className={campStyles.muted} style={{ display: "block" }}>{junior.junior_send_count} envoi(s)</span></td><td data-label="Actions"><div className={campStyles.actions}><button type="button" className={campStyles.iconButton} title="Aperçu" aria-label={`Aperçu des accès de ${junior.junior_name}`} onClick={() => juniorPreview(junior)}><Eye size={15} /></button>{effectiveStatus === "not_ready" ? <Link className={campStyles.iconButton} title="Compléter" aria-label={`Compléter la fiche de ${junior.junior_name}`} href={`/manager/user-management/players/${junior.junior_user_id}?club=${clubId}`}><Pencil size={15} /></Link> : <button type="button" className={campStyles.iconButton} title={junior.junior_send_count ? "Renvoyer" : "Envoyer"} aria-label={`${junior.junior_send_count ? "Renvoyer" : "Envoyer"} les accès de ${junior.junior_name}`} disabled={!item.recipient_user_id || Boolean(busy)} onClick={() => void send([item])}>{junior.junior_send_count ? <RefreshCw size={15} /> : <Send size={15} />}</button>}</div></td></tr>; }) : <tr><td colSpan={7}><div className={campStyles.empty}>Aucun junior ne correspond aux critères.</div></td></tr>}</tbody></table>}
+          {tab === "parents" ? <table className={`${campStyles.table} ${familyStyles.table}`}><thead><tr><th aria-label={t("manager.access.selection")} /><th>{t("manager.access.parent")}</th><th>{t("manager.access.linkedJuniors")}</th><th>{t("manager.content.state")}</th><th>{t("manager.junior.edit.lastSent")}</th><th>{t("manager.access.lastActivity")}</th><th>{t("manager.content.actions")}</th></tr></thead><tbody>
+            {parents.length ? parents.map(parent => { const target = targets.get(`parent:${parent.parent_user_id}`)!; return <tr key={parent.parent_user_id}>
+              {selectionCell(target)}
+              <td data-label={t("manager.access.parent")}><div className={campStyles.titleCell}><b>{parent.parent_name}</b><span className={campStyles.muted}>{parent.parent_email ?? t("manager.access.emailMissing")} · {parent.parent_username ?? t("manager.access.usernameMissing")}</span></div></td>
+              <td data-label={t("manager.access.linkedJuniors")}>{parent.linked_juniors.map(junior => junior.junior_name).join(", ") || "—"}</td>
+              <td data-label={t("manager.content.state")}>{badge(target.status)}</td>
+              <td data-label={t("manager.junior.edit.lastSent")}>{date(parent.parent_last_sent_at)}<span className={campStyles.muted} style={{ display: "block" }}>{managerCount(t, locale, "manager.junior.edit.sentCount", parent.parent_send_count)}</span></td>
+              <td data-label={t("manager.access.lastActivity")}>{date(parent.parent_last_activity_at)}</td>{actions(target)}
+            </tr>; }) : <tr><td colSpan={7}><div className={campStyles.empty}>{t("manager.access.noParents")}</div></td></tr>}
+          </tbody></table> : <table className={`${campStyles.table} ${familyStyles.table}`}><thead><tr><th aria-label={t("manager.access.selection")} /><th>{t("manager.access.junior")}</th><th>{t("manager.access.parents")}</th><th>{t("manager.junior.edit.recipient")}</th><th>{t("manager.content.state")}</th><th>{t("manager.junior.edit.lastSent")}</th><th>{t("manager.content.actions")}</th></tr></thead><tbody>
+            {juniors.length ? juniors.map(junior => { const target = targets.get(`junior:${junior.junior_user_id}`)!; const usableParents = junior.parents.filter(parent => parent.parent_email); return <tr key={junior.junior_user_id}>
+              {selectionCell(target)}
+              <td data-label={t("manager.access.junior")}><div className={campStyles.titleCell}><b>{junior.junior_name}</b><span className={campStyles.muted}>{junior.junior_username ?? t("manager.access.usernameMissing")}{junior.junior_email ? ` · ${junior.junior_email}` : ""}</span></div></td>
+              <td data-label={t("manager.access.parents")}>{junior.parents.map(parent => parent.is_primary ? format("primary", { name: parent.parent_name }) : parent.parent_name).join(", ") || t("manager.access.noParent")}</td>
+              <td data-label={t("manager.junior.edit.recipient")}>{junior.recipient_kind === "selection_required" ? <label className={`${campStyles.field} ${familyStyles.recipientField}`}><span>{t("manager.access.chooseParent")}</span><select aria-label={format("chooseParentFor", { name: junior.junior_name })} disabled={busy} value={recipientByJunior[junior.junior_user_id] ?? ""} onChange={event => {
+                setRecipientByJunior(current => ({ ...current, [junior.junior_user_id]: event.target.value }));
+                setSelected(current => ({ ...current, [`junior:${junior.junior_user_id}`]: false }));
+              }}><option value="">{t("manager.access.choose")}</option>{usableParents.map(parent => <option key={parent.parent_user_id} value={parent.parent_user_id}>{parent.parent_name} · {parent.parent_email}</option>)}</select></label> : <span>{target.recipient ?? t("manager.access.emailMissing")}<span className={campStyles.muted} style={{ display: "block" }}>{junior.junior_email ? t("manager.access.direct") : target.recipientName ? format("viaParent", { name: target.recipientName }) : t("manager.access.recipientMissing")}</span></span>}</td>
+              <td data-label={t("manager.content.state")}>{badge(target.status)}</td>
+              <td data-label={t("manager.junior.edit.lastSent")}>{date(junior.junior_last_sent_at)}<span className={campStyles.muted} style={{ display: "block" }}>{managerCount(t, locale, "manager.junior.edit.sentCount", junior.junior_send_count)}</span></td>{actions(target)}
+            </tr>; }) : <tr><td colSpan={7}><div className={campStyles.empty}>{t("manager.access.noJuniors")}</div></td></tr>}
+          </tbody></table>}
         </div>
       </section>
     </>}
-    {portalReady && preview ? createPortal(<div className={familyStyles.modalBackdrop} role="presentation" onClick={() => setPreview(null)}><section className={familyStyles.modal} role="dialog" aria-modal="true" aria-labelledby="family-preview-title" onClick={(event) => event.stopPropagation()}><div className={familyStyles.modalHead}><div><h2 id="family-preview-title">{preview.title}</h2><p>À : {preview.recipient}</p></div><button type="button" className="btn" aria-label="Fermer l’aperçu" onClick={() => setPreview(null)}><X size={16} /></button></div><div className={familyStyles.modalBody}><div className={familyStyles.previewSubject}>{preview.subject}</div><div className={familyStyles.previewBody}>{preview.body}</div></div><div className={familyStyles.modalActions}><button type="button" className="btn" onClick={() => setPreview(null)}>Fermer</button><button type="button" className={`${actionStyles.primaryButton} ${familyStyles.modalPrimaryButton}`} disabled={Boolean(busy) || preview.recipient.includes("manquant") || preview.recipient.includes("sélectionner")} onClick={() => void send([preview.selection])}><CheckCircle2 size={15} />Confirmer l’envoi</button></div></section></div>, document.body) : null}
-  </div>;
+    {preview && previewTarget && !loading ? <AccessibleDialog className={familyStyles.modal} labelledBy="family-preview-title" onClose={() => { if (!busy) setPreviewKey(null); }}>
+      <div className={familyStyles.modalHead}><div><h2 id="family-preview-title">{juniorFormat(previewTarget.selection.kind === "parent_access" ? "parentInvitation" : "juniorInvitation", previewTarget.name)}</h2><p>{t("manager.junior.edit.toPrefix")} {previewTarget.recipient || t("manager.access.recipientMissing")}</p></div><button type="button" className="btn" disabled={busy} aria-label={t("manager.access.closePreview")} onClick={() => setPreviewKey(null)}><X size={16} /></button></div>
+      <div className={familyStyles.modalBody}><p className={familyStyles.previewHelp}>{t("manager.access.previewLinks")}</p><div className={familyStyles.previewSubject}>{preview.subject}</div><div className={familyStyles.previewBody}>{preview.body}</div>{error ? <p role="alert">{t(error)}</p> : null}</div>
+      <div className={familyStyles.modalActions}><button type="button" className="btn" disabled={busy} onClick={() => setPreviewKey(null)}>{t("common.close")}</button><button type="button" className={`${actionStyles.primaryButton} ${familyStyles.modalPrimaryButton}`} disabled={!previewTarget.canSend || blocked(previewTarget.selection.key)} onClick={() => void send([previewTarget.selection.key])}><CheckCircle2 size={15} />{t("manager.junior.edit.confirmSend")}</button></div>
+    </AccessibleDialog> : null}
+  </main>;
 }

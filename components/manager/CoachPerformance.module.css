@@ -37,3 +37,8 @@
   font-size: 12px;
   font-weight: 700;
 }
+
+@media(max-width:640px){
+  .groupTable.groupTable td:last-child{justify-content:space-between;padding-top:5px}
+  .groupTable.groupTable td:last-child::before{display:block}
+}

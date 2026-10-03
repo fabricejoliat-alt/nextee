@@ -1,0 +1,39 @@
+.page { min-width: 0; }
+.page :global(.user-mgmt-field), .page :global(.user-mgmt-field input) { min-width: 0; }
+.context { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.partial { display: grid; gap: 10px; margin-bottom: 16px; }
+.draft { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 18px; }
+@media (max-width: 700px) {
+  .page :global(.user-mgmt-toolbar) { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .page :global(.user-mgmt-toolbar .user-mgmt-field) { width: 100%; min-width: 0 !important; }
+  .page :global(.groups-season-nav-select) { flex: 1 1 180px; min-width: 0; }
+  .page :global(.user-mgmt-table--groups),
+  .page :global(.user-mgmt-table--groups tbody) { display: block; width: 100%; min-width: 0; }
+  .page :global(.user-mgmt-table--groups thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .page :global(.user-mgmt-table--groups tr) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; padding: 14px 0; border-bottom: 1px solid #e5e9e1; }
+  .page :global(.user-mgmt-table--groups td) { display: block; width: auto; min-width: 0; padding: 4px 0; border: 0; white-space: normal; overflow-wrap: anywhere; }
+  .page :global(.user-mgmt-table--groups td:first-child) { grid-column: 1; grid-row: 1; align-self: center; }
+  .page :global(.user-mgmt-table--groups td[colspan]) { grid-column: 1 / -1; }
+  .page :global(.user-mgmt-table--groups td[data-label])::before { content: attr(data-label); display: block; margin-bottom: 5px; color: #6d786e; font-size: 11px; font-weight: 700; }
+  .page :global(.user-mgmt-table--groups td:last-child) { grid-column: 2; grid-row: 1; justify-self: end; text-align: end; }
+  .page :global(.user-mgmt-table--group-selection) { min-width: 0; }
+  .page :global(.user-mgmt-table--group-selection td:nth-child(2)) { white-space: normal; overflow-wrap: anywhere; }
+  .page :global(.user-mgmt-table--group-selection td > button) { white-space: normal; }
+}
+
+@media (max-width: 700px) {
+  .page :global(.user-mgmt-table--group-selection), .page :global(.user-mgmt-table--group-selection tbody) { display: block; width: 100%; }
+  .page :global(.user-mgmt-table--group-selection thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .page :global(.user-mgmt-table--group-selection tr) { display: grid; grid-template-columns: 36px minmax(0, 1fr) 44px; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid #e7ece6; }
+  .page :global(.user-mgmt-table--group-selection td) { display: block; min-width: 0; width: auto; padding: 0; border: 0; text-align: left; white-space: normal; }
+  .page :global(.user-mgmt-table--group-selection td:first-child) { grid-column: 1; grid-row: 1; }
+  .page :global(.user-mgmt-table--group-selection td:nth-child(2)) { grid-column: 2; grid-row: 1; }
+  .page :global(.user-mgmt-table--group-selection td:last-child) { grid-column: 3; grid-row: 1; justify-self: end; }
+  .page :global(.user-mgmt-table--group-selection td[data-label]) { grid-column: 2 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .page :global(.user-mgmt-table--group-selection td[data-label])::before { content: attr(data-label); color: #6d786e; font-size: 11px; font-weight: 700; }
+}
+
+@media (max-width: 700px) {
+  .activityPage :global(.user-mgmt-table--group-selection td:last-child:has(.user-mgmt-card-actions)) { grid-column: 2 / -1; grid-row: 3; justify-self: start; }
+  .activityPage :global(.user-mgmt-table--group-selection td[colspan]) { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; }
+}

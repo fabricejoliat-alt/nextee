@@ -1,3 +1,4 @@
+import { requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -48,34 +49,6 @@ function sanitizeMonths(value: unknown): number[] {
   return Array.from(uniq);
 }
 
-async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: SupabaseClient, clubId: string) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
-
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token" };
-
-  const callerId = callerData.user.id;
-
-  const { data: adminRow } = await supabaseAdmin
-    .from("app_admins")
-    .select("user_id")
-    .eq("user_id", callerId)
-    .maybeSingle();
-  if (adminRow) return { ok: true as const };
-
-  const { data: membership } = await supabaseAdmin
-    .from("club_members")
-    .select("id,role,is_active")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!membership || membership.role !== "manager") return { ok: false as const, status: 403, error: "Forbidden" };
-
-  return { ok: true as const };
-}
-
 async function ensureDefaults(supabaseAdmin: SupabaseClient, clubId: string) {
   const settingsRes = await supabaseAdmin
     .from("training_volume_settings")
@@ -112,7 +85,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     await ensureDefaults(supabaseAdmin, clubId);
@@ -160,7 +133,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));

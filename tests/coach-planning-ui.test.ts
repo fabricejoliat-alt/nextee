@@ -20,9 +20,16 @@ const responseData = (events = [event("future", { starts_at: "2099-01-01T08:00:0
 const find = (tree: Element, predicate: (node: Element) => boolean) => {
   const node = elements(tree).find(predicate); assert.ok(node, "Expected UI element"); return node;
 };
-const button = (tree: Element, label: string) => find(tree, (node) => node.type === "button" && textContent(node) === label);
+const button = (tree: Element, label: string) => find(tree, (node) => node.type === "button" && textContent(node).trim() === label);
 const dialog = (tree: Element) => find(tree, (node) => node.type === "dialog");
-const openDelete = (tree: Element) => find(tree, (node) => node.type === "button" && Boolean(node.props["aria-label"])).props.onClick();
+const openDelete = (harness: ReturnType<typeof coachComponentHarness>) => {
+  let tree = harness.render();
+  if (!elements(tree).some((node) => node.type === "button" && textContent(node).trim() === messages.fr["common.delete"])) {
+    find(tree, (node) => node.type === "button" && node.props["aria-expanded"] === false).props.onClick();
+    tree = harness.render();
+  }
+  button(tree, messages.fr["common.delete"]).props.onClick();
+};
 const tabs = (tree: Element) => find(tree, (node) => node.type === "tabs");
 const init = async (fetch: typeof globalThis.fetch, dataOptions = {}) => {
   const harness = coachComponentHarness(page, { params: { id: "group" }, fetch, ...dataOptions });
@@ -57,18 +64,39 @@ test("planning never mistakes an invitation or an unrecorded presence for manual
   assert.equal(coachPlanningAttendanceKey({ status: "present", coach_recorded_status: "absent" }), "coach.camps.absent");
 });
 
+test("planning activities stack independently without a surrounding panel", async () => {
+  const future = { starts_at: "2099-01-01T08:00:00Z", ends_at: "2099-01-01T09:00:00Z" };
+  const harness = await init(async () => Response.json(responseData([event("one", future), event("two", future)])), {
+    modules: {
+      "./CoachGroupPlanning.module.css": { default: { activities: "activities", list: "activity-list" } },
+      "@/components/admin/AdminHomeStats.module.css": { default: { quickPanel: "panel" } },
+      "./CoachActivityCard.module.css": { default: { card: "activity-card" } },
+    },
+  });
+  try {
+    const tree = harness.render();
+    const section = find(tree, (node) => node.type === "section" && node.props["aria-labelledby"] === "planning-activities-title");
+    assert.equal(section.props.className, "activities");
+    assert.equal(elements(section).filter((node) => node.type === "article" && node.props.className === "activity-card").length, 2);
+    assert.equal(elements(section).filter((node) => node.props.className === "panel").length, 0);
+    assert.equal(elements(tree).filter((node) => node.type === "section" && node.props.className === "panel").length, 1, "filter panel is preserved");
+  } finally { harness.cleanup(); }
+});
+
 test("planning filters and languages preserve the current choice without additional reads or writes", async () => {
   let calls = 0;
   const harness = await init(async () => { calls++; return Response.json(responseData([event("pending", { ends_at: "2000-01-01T09:00:00Z" })])); });
   try {
     tabs(harness.render()).props.onChange("pending");
     let tree = harness.render();
+    find(tree, (node) => node.type === "button" && node.props["aria-expanded"] === false).props.onClick();
+    tree = harness.render();
     assert.ok(elements(tree).some((node) => node.type === "a" && node.props.href === "/coach/groups/group/planning/pending/debrief"));
     for (const locale of ["fr", "en", "de", "it"] as const) {
       harness.setLocale(locale); tree = harness.render();
       assert.equal(tabs(tree).props.value, "pending");
       assert.ok(textContent(tree).includes(messages[locale]["coach.planning.expected"]));
-      assert.ok(textContent(tree).includes(messages[locale]["coach.planning.evaluate"]));
+      assert.ok(elements(tree).some((node) => node.props.title === messages[locale]["coachCalendar.toEvaluate"]));
       assert.ok(textContent(tree).includes("Junior Témoin"));
     }
     find(tree, (node) => node.type === "select").props.onChange({ target: { value: "camp" } });
@@ -83,12 +111,12 @@ test("opening and cancelling deletion performs no write and always resets to one
   let writes = 0;
   const harness = await init(async (_url, init) => { if (init?.method) writes++; return Response.json(responseData()); });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     let tree = harness.render();
     elements(dialog(tree)).filter((node) => node.type === "input")[1].props.onChange();
     button(harness.render(), messages.fr["coach.directory.cancel"]).props.onClick();
     assert.ok(!elements(harness.render()).some((node) => node.type === "dialog"));
-    openDelete(harness.render()); tree = harness.render();
+    openDelete(harness); tree = harness.render();
     assert.equal(elements(dialog(tree)).filter((node) => node.type === "input")[0].props.checked, true);
     dialog(tree).props.onClose();
     assert.equal(writes, 0);
@@ -102,7 +130,7 @@ test("default delete targets only the occurrence and blocks duplicate sends and 
     reads++; return Response.json(responseData());
   });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     const confirm = button(harness.render(), messages.fr["coach.planning.deleteConfirmOccurrence"]);
     confirm.props.onClick(); confirm.props.onClick(); await flush();
     let tree = harness.render();
@@ -125,7 +153,7 @@ test("whole-series deletion requires an explicit selection that survives a langu
     return Response.json(responseData());
   });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     elements(dialog(harness.render())).filter((node) => node.type === "input")[1].props.onChange();
     harness.setLocale("de");
     const tree = harness.render();
@@ -143,7 +171,7 @@ test("uncertain deletion keeps its scope, hides raw errors and requires a read r
     reads++; return Response.json(responseData());
   });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     elements(dialog(harness.render())).filter((node) => node.type === "input")[1].props.onChange();
     button(harness.render(), messages.fr["coach.planning.deleteConfirmSeries"]).props.onClick(); await flush();
     let tree = harness.render();
@@ -166,7 +194,7 @@ test("successful deletion with failed refresh is not presented as a failed delet
     reads++; return reads === 1 ? Response.json(responseData()) : Response.json({ error: "SQL detail" }, { status: 500 });
   });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     button(harness.render(), messages.fr["coach.planning.deleteConfirmOccurrence"]).props.onClick(); await flush();
     const tree = harness.render();
     assert.ok(textContent(tree).includes(messages.fr["coach.error.planningRefresh"]));
@@ -183,7 +211,7 @@ test("cancelling during a deletion refresh cannot reopen the dialog after its re
     return ++reads === 1 ? Response.json(responseData()) : refreshed.promise;
   });
   try {
-    openDelete(harness.render());
+    openDelete(harness);
     button(harness.render(), messages.fr["coach.planning.deleteConfirmOccurrence"]).props.onClick(); await flush();
     button(harness.render(), messages.fr["coach.planning.refresh"]).props.onClick(); await flush();
     button(harness.render(), messages.fr["coach.directory.cancel"]).props.onClick();
@@ -204,7 +232,7 @@ test("a refreshed event cannot silently transfer series deletion approval to a c
       return Response.json(data);
     });
     try {
-      openDelete(harness.render());
+      openDelete(harness);
       elements(dialog(harness.render())).filter((node) => node.type === "input")[1].props.onChange();
       button(harness.render(), messages.fr["coach.planning.deleteConfirmSeries"]).props.onClick(); await flush();
       button(harness.render(), messages.fr["coach.planning.refresh"]).props.onClick(); await flush();
@@ -238,7 +266,7 @@ test("readonly planning cannot expose mutation controls and more results require
   try {
     let tree = harness.render();
     assert.equal(elements(tree).filter((node) => node.type === "article").length, 50);
-    assert.ok(!elements(tree).some((node) => node.type === "button" && node.props["aria-label"]));
+    assert.ok(!elements(tree).some((node) => node.type === "button" && textContent(node).trim() === messages.fr["common.delete"]));
     assert.ok(!elements(tree).some((node) => node.type === "a" && /\/(edit|add)$/.test(node.props.href)));
     button(tree, messages.fr["coach.planning.showMore"]).props.onClick(); tree = harness.render();
     assert.equal(elements(tree).filter((node) => node.type === "article").length, 51);

@@ -1,18 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { managerEditorFormat, managerEditorSaveError } from "@/lib/managerEditorPresentation";
+import { managerPlanningFeedback } from "@/lib/managerPlanningPresentation";
+import { managerActivityLabel, managerLocaleTag, managerFormat, type ManagerTranslate } from "@/lib/managerLocale";
+import type { AppLocale } from "@/lib/i18n/messages";
+import groupStyles from "@/components/manager/GroupsManagement.module.css";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { ArrowLeft, Repeat, Trash2, PlusCircle, Search } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import EventCriteriaSelector, { replaceEventCriteria } from "@/components/evaluations/EventCriteriaSelector";
+import EventCriteriaSelector from "@/components/evaluations/EventCriteriaSelector";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+
+type PlanningSnapshot = {
+  event: EventRow;
+  coach_ids: string[];
+  player_ids: string[];
+  structure: Array<{ category: string; minutes: number; note: string | null; position: number }>;
+  criterion_ids: string[];
+  camp_day?: { camp_id: string } | null;
+  series?: SeriesRow;
+  future?: PlanningSnapshot[];
+};
+
+
 
 type GroupRow = { id: string; name: string | null; club_id: string };
 type ClubRow = { id: string; name: string | null };
@@ -134,24 +151,6 @@ function avatarNode(p?: ProfileLite | null) {
   return initials(p);
 }
 
-function weekdayFromDate(d: Date) {
-  // JS: 0=Sun..6=Sat
-  return d.getDay();
-}
-
-function nextWeekdayOnOrAfter(start: Date, targetWeekday: number) {
-  const d = new Date(start);
-  const w = weekdayFromDate(d);
-  const diff = (targetWeekday - w + 7) % 7;
-  d.setDate(d.getDate() + diff);
-  return d;
-}
-
-function combineDateAndTime(localYMD: string, hhmm: string) {
-  const t = hhmm.length === 5 ? `${hhmm}:00` : hhmm;
-  return new Date(`${localYMD}T${t}`);
-}
-
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
@@ -181,20 +180,7 @@ const TRAINING_CATEGORY_VALUES = [
   "fitness",
   "other",
 ] as const;
-const TRAINING_CATEGORY_LABELS: Record<string, string> = {
-  warmup_mobility: "Échauffement / mobilité",
-  long_game: "Long jeu",
-  short_game_all: "Petit jeu (tout secteur)",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Mental",
-  fitness: "Fitness",
-  other: "Autre",
-};
+
 function buildMinuteOptions() {
   const out: number[] = [];
   for (let m = 5; m <= 300; m += 5) out.push(m);
@@ -218,32 +204,13 @@ function buildQuarterHourOptions() {
 }
 const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
 
-function memberRoleLabel(role: string | null | undefined) {
-  switch (role) {
-    case "owner":
-      return "Propriétaire";
-    case "admin":
-      return "Admin";
-    case "manager":
-      return "Manager";
-    case "coach":
-      return "Coach";
-    case "player":
-      return "Joueur";
-    case "parent":
-      return "Parent";
-    case "captain":
-      return "Capitaine";
-    case "staff":
-      return "Staff";
-    default:
-      return "Membre";
-  }
+function memberRoleLabel(t: ManagerTranslate, role: string | null | undefined) {
+  return t(`coach.form.role.${role && ["owner","admin","manager","coach","player","parent","captain","staff"].includes(role) ? role : "member"}`);
 }
 
-function fmtDateTime(iso: string, locale: string) {
+function fmtDateTime(iso: string, locale: AppLocale) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US", {
+  return new Intl.DateTimeFormat(locale === "fr" ? managerLocaleTag(locale) : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US", {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -253,12 +220,12 @@ function fmtDateTime(iso: string, locale: string) {
   }).format(d);
 }
 
-function fmtDateTimeRange(startIso: string, endIso: string | null, locale: string) {
+function fmtDateTimeRange(startIso: string, endIso: string | null, locale: AppLocale) {
   if (!endIso) return fmtDateTime(startIso, locale);
   const start = new Date(startIso);
   const end = new Date(endIso);
   const sameDay = start.toDateString() === end.toDateString();
-  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
+  const localeTag = locale === "fr" ? managerLocaleTag(locale) : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
 
   if (sameDay) {
     const datePart = new Intl.DateTimeFormat(localeTag, {
@@ -273,37 +240,15 @@ function fmtDateTimeRange(startIso: string, endIso: string | null, locale: strin
   return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
 }
 
-function fmtTrainingMoment(iso: string, locale: string) {
-  const d = new Date(iso);
-  const localeTag = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
-  const datePart = new Intl.DateTimeFormat(localeTag, {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(d);
-  const timePart = new Intl.DateTimeFormat(localeTag, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  })
-    .format(d)
-    .replace(":", "h");
-  return `${datePart} à ${timePart}`;
-}
 
-function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
-  if (v === "training") return pickLocaleText(locale, "Entraînement", "Training");
-  if (v === "interclub") return pickLocaleText(locale, "Interclub", "Interclub");
-  if (v === "camp") return pickLocaleText(locale, "Stage/Camp", "Camp");
-  if (v === "session") return pickLocaleText(locale, "Séance", "Session");
-  return pickLocaleText(locale, "Événement", "Event");
-}
-
-export default function CoachEventEditPage() {
+export default function ManagerEventEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string }>();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const groupId = String(params?.id ?? "").trim();
+  const seasonId = useSearchParams().get("season");
+  const seasonQuery = seasonId ? `?season=${encodeURIComponent(seasonId)}` : "";
+  const planningHref = `/manager/groups/${groupId}/planning${seasonQuery}`;
   const eventId = String(params?.eventId ?? "").trim();
 
   const [loading, setLoading] = useState(true);
@@ -312,7 +257,7 @@ export default function CoachEventEditPage() {
 
   const [meId, setMeId] = useState("");
   const [group, setGroup] = useState<GroupRow | null>(null);
-  const [clubName, setClubName] = useState("");
+  const [, setClubName] = useState("");
 
   const [event, setEvent] = useState<EventRow | null>(null);
   const [series, setSeries] = useState<SeriesRow | null>(null);
@@ -350,7 +295,11 @@ export default function CoachEventEditPage() {
   const [selectedPlayers, setSelectedPlayers] = useState<Record<string, ProfileLite>>({});
   const [queryGuests, setQueryGuests] = useState("");
   const [selectedGuests, setSelectedGuests] = useState<Record<string, ClubMemberLite>>({});
-  const [initialSelectedAttendeeIds, setInitialSelectedAttendeeIds] = useState<string[]>([]);
+  const [editSnapshot, setEditSnapshot] = useState<PlanningSnapshot | null>(null);
+  const [saveCommitted, setSaveCommitted] = useState(false);
+  const mutationInFlight = useRef(false);
+  const loadVersion = useRef(0);
+  const [deleteCommitted, setDeleteCommitted] = useState(false);
   const [structureItems, setStructureItems] = useState<TrainingItemDraft[]>([]);
 
   const occDate = useMemo(() => {
@@ -419,68 +368,12 @@ export default function CoachEventEditPage() {
     setStructureItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
-  async function replaceStructureForEvent(targetEventId: string) {
-    const del = await supabase.from("club_event_structure_items").delete().eq("event_id", targetEventId);
-    if (del.error) throw new Error(del.error.message);
-
-    const payload = structureItems
-      .map((it, idx) => {
-        const minutes = Number(it.minutes);
-        if (!it.category || !Number.isFinite(minutes) || minutes <= 0) return null;
-        return {
-          event_id: targetEventId,
-          category: it.category,
-          minutes,
-          note: it.note?.trim() || null,
-          position: idx,
-        };
-      })
-      .filter(
-        (x): x is { event_id: string; category: string; minutes: number; note: string | null; position: number } =>
-          Boolean(x)
-      );
-
-    if (payload.length === 0) return;
-    const ins = await supabase.from("club_event_structure_items").insert(payload);
-    if (ins.error) throw new Error(ins.error.message);
-  }
-
-  async function applyStructureForEvents(eventIds: string[]) {
-    if (eventIds.length === 0) return;
-    for (const eid of eventIds) {
-      await replaceStructureForEvent(eid);
-    }
-  }
-
-  async function replaceCoachesForEvents(eventIds: string[]) {
-    const targetEventIds = Array.from(new Set(eventIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
-    if (targetEventIds.length === 0) return;
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token ?? "";
-    if (!token) throw new Error("Session invalide.");
-
-    const res = await fetch("/api/manager/events/coaches/bulk", {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        event_ids: targetEventIds,
-        coach_ids: coachIdsSelected,
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(String(json?.error ?? "Impossible de mettre à jour les coachs."));
-  }
-
   const selectedPlayersList = useMemo(
     () =>
       Object.values(selectedPlayers).sort((a, b) =>
-        fullName(a).localeCompare(fullName(b), "fr")
+        fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))
       ),
-    [selectedPlayers]
+    [selectedPlayers, locale]
   );
 
   const candidatesPlayers = useMemo(() => {
@@ -508,16 +401,16 @@ export default function CoachEventEditPage() {
     () =>
       coaches
         .filter((c) => coachIdsSelected.includes(c.id))
-        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), managerLocaleTag(locale))),
+    [coaches, coachIdsSelected, locale]
   );
 
   const candidateCoaches = useMemo(
     () =>
       coaches
         .filter((c) => !coachIdsSelected.includes(c.id))
-        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), managerLocaleTag(locale))),
+    [coaches, coachIdsSelected, locale]
   );
 
   const allCoachesSelected = useMemo(() => {
@@ -529,13 +422,13 @@ export default function CoachEventEditPage() {
   const guestBlockedIds = useMemo(() => {
     const blocked = new Set<string>();
     players.forEach((p) => blocked.add(p.id));
-    coaches.forEach((c) => blocked.add(c.id));
+
     return blocked;
-  }, [players, coaches]);
+  }, [players]);
 
   const selectedGuestsList = useMemo(
-    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedGuests]
+    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [selectedGuests, locale]
   );
 
   const candidateGuests = useMemo(() => {
@@ -545,11 +438,11 @@ export default function CoachEventEditPage() {
     return base
       .filter((m) => {
         const n = fullName(m).toLowerCase();
-        const role = memberRoleLabel(m.role).toLowerCase();
+        const role = memberRoleLabel(t, m.role).toLowerCase();
         return n.includes(q) || role.includes(q);
       })
       .slice(0, 30);
-  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests]);
+  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests, t]);
 
   useEffect(() => {
     setSelectedGuests((prev) => {
@@ -562,26 +455,30 @@ export default function CoachEventEditPage() {
   }, [guestBlockedIds]);
 
   async function load() {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
 
     try {
-      if (!groupId || !eventId) throw new Error("Missing parameters.");
+      if (!groupId || !eventId) throw new Error("manager.planning.eventMissing");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
+      if (version !== loadVersion.current) return;
+      if (uErr || !uRes.user) throw new Error("manager.home.invalidSession");
       setMeId(uRes.user.id);
 
-      // event
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
-        .eq("id", eventId)
-        .maybeSingle();
-
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Événement introuvable.");
-      const ev = eRes.data as EventRow;
+      const snapshotResult = await supabase.rpc("get_manager_planning_snapshot_v1", { p_event_id: eventId });
+      if (version !== loadVersion.current) return;
+      if (snapshotResult.error || !snapshotResult.data?.event) throw snapshotResult.error ?? new Error("manager.planning.eventNotFound");
+      const snapshot = snapshotResult.data as PlanningSnapshot;
+      const ev = snapshot.event;
+      if (snapshot.camp_day) {
+        router.push(`/manager/camps/new?campId=${encodeURIComponent(snapshot.camp_day.camp_id)}`);
+        return;
+      }
+      if (ev.group_id !== groupId) throw new Error("manager.groups.notFound");
+      setEditSnapshot(snapshot);
+      setSaveCommitted(false);
       setEvent(ev);
 
       setStartsAtLocal(isoToLocalInput(ev.starts_at));
@@ -592,19 +489,13 @@ export default function CoachEventEditPage() {
       setLocationText(ev.location_text ?? "");
       setCoachNote(ev.coach_note ?? "");
       setRequiresEvaluation(Boolean(ev.requires_evaluation));
-      const criterionLinks = await supabase
-        .from("club_event_evaluation_criteria")
-        .select("criterion_id,position")
-        .eq("event_id", eventId)
-        .eq("is_enabled", true)
-        .order("position");
-      if (criterionLinks.error) throw new Error(criterionLinks.error.message);
-      setEvaluationCriterionIds((criterionLinks.data ?? []).map((row: any) => String(row.criterion_id ?? "")).filter(Boolean));
+      setEvaluationCriterionIds(snapshot.criterion_ids);
 
       // group
       const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
+      if (version !== loadVersion.current) return;
       if (gRes.error) throw new Error(gRes.error.message);
-      if (!gRes.data) throw new Error("Groupe introuvable.");
+      if (!gRes.data) throw new Error("manager.groups.notFound");
       setGroup(gRes.data as GroupRow);
       const isSpecificGroup =
         String(gRes.data.name ?? "").trim() === "Groupe spécifique" ||
@@ -612,8 +503,9 @@ export default function CoachEventEditPage() {
 
       // club name
       const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
-      if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
-      else setClubName("Club");
+      if (version !== loadVersion.current) return;
+      if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? t("common.club"));
+      else setClubName(t("common.club"));
 
       // all active club members (for guests)
       const cmRes = await supabase
@@ -621,6 +513,7 @@ export default function CoachEventEditPage() {
         .select("user_id, role")
         .eq("club_id", gRes.data.club_id)
         .eq("is_active", true);
+      if (version !== loadVersion.current) return;
       if (cmRes.error) throw new Error(cmRes.error.message);
       const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
       const memberIds = Array.from(new Set(cmRows.map((r) => r.user_id).filter(Boolean)));
@@ -630,6 +523,7 @@ export default function CoachEventEditPage() {
       >();
       if (memberIds.length > 0) {
         const profRes = await supabase.from("profiles").select("id, first_name, last_name, avatar_url").in("id", memberIds);
+        if (version !== loadVersion.current) return;
         if (profRes.error) throw new Error(profRes.error.message);
         ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>).forEach((p) => {
           profilesById.set(p.id, p);
@@ -645,21 +539,12 @@ export default function CoachEventEditPage() {
           role: r.role ?? null,
         };
       });
-      cmList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      cmList.sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale)));
       setClubMembers(cmList);
 
       // series
       if (ev.series_id) {
-        const sRes = await supabase
-          .from("club_event_series")
-          .select(
-            "id,group_id,club_id,event_type,title,location_text,coach_note,duration_minutes,weekday,time_of_day,interval_weeks,start_date,end_date,is_active,created_by"
-          )
-          .eq("id", ev.series_id)
-          .maybeSingle();
-
-        if (sRes.error) throw new Error(sRes.error.message);
-        const s = (sRes.data ?? null) as SeriesRow | null;
+        const s = snapshot.series ?? null;
         setSeries(s);
 
         if (s) {
@@ -670,9 +555,7 @@ export default function CoachEventEditPage() {
           setStartDate(s.start_date ?? ymdToday());
           setEndDate(s.end_date ?? toYMD(addDays(new Date(), 60)));
           setSeriesActive(!!s.is_active);
-          setEventType(s.event_type ?? ev.event_type ?? "training");
-          setEventTitle(s.title ?? ev.title ?? "");
-          setCoachNote(s.coach_note ?? ev.coach_note ?? "");
+          // Keep the selected occurrence as the draft, including its individual changes.
         } else {
           setEditScope("occurrence");
         }
@@ -708,9 +591,10 @@ export default function CoachEventEditPage() {
           .from("coach_group_players")
           .select("player_user_id, profiles:player_user_id ( id, first_name, last_name, handicap, avatar_url )")
           .eq("group_id", groupId);
+        if (version !== loadVersion.current) return;
 
         if (plRes.error) throw new Error(plRes.error.message);
-        plList = (plRes.data ?? []).map((r: any) => ({
+        plList = ((plRes.data ?? []) as unknown as Array<{ player_user_id: string; profiles: ProfileLite | null }>).map((r) => ({
           id: r.profiles?.id ?? r.player_user_id,
           first_name: r.profiles?.first_name ?? null,
           last_name: r.profiles?.last_name ?? null,
@@ -718,18 +602,18 @@ export default function CoachEventEditPage() {
           avatar_url: r.profiles?.avatar_url ?? null,
         }));
       }
-      plList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+      plList.sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale)));
       setPlayers(plList);
 
       // selected coaches on event (BD: club_event_coaches.coach_id)
-      const ecRes = await supabase.from("club_event_coaches").select("coach_id").eq("event_id", eventId);
-      const selectedCoachIds = !ecRes.error ? (ecRes.data ?? []).map((r: any) => r.coach_id as string) : [];
+      const selectedCoachIds = snapshot.coach_ids;
       const missingCoachIds = selectedCoachIds.filter((id) => !coList.some((c) => c.id === id));
       if (missingCoachIds.length > 0) {
         const missingCoachProfiles = await supabase
           .from("profiles")
           .select("id,first_name,last_name,avatar_url")
           .in("id", missingCoachIds);
+        if (version !== loadVersion.current) return;
         if (missingCoachProfiles.error) throw new Error(missingCoachProfiles.error.message);
         coList = [
           ...coList,
@@ -746,15 +630,21 @@ export default function CoachEventEditPage() {
           })),
         ];
       }
-      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), "fr"));
+      coList.sort((a, b) => nameOf(a.first_name, a.last_name).localeCompare(nameOf(b.first_name, b.last_name), managerLocaleTag(locale)));
       setCoaches(coList);
-      if (!ecRes.error) setCoachIdsSelected(selectedCoachIds);
-      else setCoachIdsSelected([]);
+      setCoachIdsSelected(selectedCoachIds);
 
       // selected attendees -> selectedPlayers map
-      const eaRes = await supabase.from("club_event_attendees").select("player_id").eq("event_id", eventId);
-      const selectedIds = !eaRes.error ? (eaRes.data ?? []).map((r: any) => r.player_id as string) : [];
-      setInitialSelectedAttendeeIds(selectedIds);
+      const selectedIds = snapshot.player_ids;
+      // Keep historical members visible, including people no longer active in the club.
+      const missingPlayers = selectedIds.filter((id) => !plList.some((p) => p.id === id) && !cmList.some((m) => m.id === id));
+      if (missingPlayers.length) {
+        const result = await supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").in("id", missingPlayers);
+        if (version !== loadVersion.current) return;
+        if (result.error) throw result.error;
+        plList = [...plList, ...(result.data ?? [])];
+        setPlayers(plList);
+      }
 
       const defaultSelected: Record<string, ProfileLite> = {};
       plList.forEach((p) => {
@@ -764,28 +654,18 @@ export default function CoachEventEditPage() {
 
       const guestsSelected: Record<string, ClubMemberLite> = {};
       cmList.forEach((m) => {
-        if (selectedIds.includes(m.id) && !plList.some((p) => p.id === m.id) && !coList.some((c) => c.id === m.id)) {
+        if (selectedIds.includes(m.id) && !plList.some((p) => p.id === m.id)) {
           guestsSelected[m.id] = m;
         }
       });
       setSelectedGuests(guestsSelected);
 
-      const structRes = await supabase
-        .from("club_event_structure_items")
-        .select("category,minutes,note,position")
-        .eq("event_id", eventId)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (!structRes.error) {
-        const rows = (structRes.data ?? []) as Array<{ category: string; minutes: number; note: string | null }>;
-        setStructureItems(rows.map((r) => ({ category: r.category ?? "", minutes: String(r.minutes ?? ""), note: r.note ?? "" })));
-      } else {
-        setStructureItems([]);
-      }
+      setStructureItems(snapshot.structure.map((r) => ({ category: r.category, minutes: String(r.minutes), note: r.note ?? "" })));
 
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+    } catch (cause) {
+      if (version !== loadVersion.current) return;
+      setError(cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "common.errorLoading");
       setGroup(null);
       setClubName("");
       setEvent(null);
@@ -796,83 +676,34 @@ export default function CoachEventEditPage() {
       setCoachIdsSelected([]);
       setSelectedPlayers({});
       setSelectedGuests({});
-      setInitialSelectedAttendeeIds([]);
+      setEditSnapshot(null);
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    setEvent(null); setGroup(null); setEditSnapshot(null); setSaveCommitted(false); setDeleteCommitted(false); setBusy(false);
+    mutationInFlight.current = false;
+    void load();
+    return () => { loadVersion.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [groupId, eventId]);
 
   const attendeeIdsSelected = useMemo(
     () => Array.from(new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)])),
     [selectedPlayers, selectedGuests]
   );
 
-  const attendeesAddedOnSave = useMemo(() => {
-    const initial = new Set(initialSelectedAttendeeIds);
-    return attendeeIdsSelected.filter((id) => !initial.has(id));
-  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
-
-  const attendeesRemovedOnSave = useMemo(() => {
-    const current = new Set(attendeeIdsSelected);
-    return initialSelectedAttendeeIds.filter((id) => !current.has(id));
-  }, [initialSelectedAttendeeIds, attendeeIdsSelected]);
-
-  async function syncPlayerChangesOnFuturePlannedEvents() {
-    if (!groupId) return;
-    if (attendeesAddedOnSave.length === 0 && attendeesRemovedOnSave.length === 0) return;
-
-    const nowIso = new Date().toISOString();
-    const futureRes = await supabase
-      .from("club_events")
-      .select("id")
-      .eq("group_id", groupId)
-      .eq("status", "scheduled")
-      .gte("starts_at", nowIso);
-
-    if (futureRes.error) throw new Error(futureRes.error.message);
-
-    const futureEventIds = ((futureRes.data ?? []) as Array<{ id: string }>)
-      .map((r) => String(r.id ?? ""))
-      .filter(Boolean);
-    if (futureEventIds.length === 0) return;
-
-    if (attendeesAddedOnSave.length > 0) {
-      const addRows = futureEventIds.flatMap((eid) =>
-        attendeesAddedOnSave.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-      );
-
-      const addRes = await supabase
-        .from("club_event_attendees")
-        .upsert(addRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-
-      if (addRes.error) throw new Error(addRes.error.message);
-    }
-
-    if (attendeesRemovedOnSave.length > 0) {
-      const delRes = await supabase
-        .from("club_event_attendees")
-        .delete()
-        .in("event_id", futureEventIds)
-        .in("player_id", attendeesRemovedOnSave);
-
-      if (delRes.error) throw new Error(delRes.error.message);
-    }
-  }
-
   const canSaveOccurrence = useMemo(() => {
-    if (busy || loading) return false;
+    if (busy || loading || saveCommitted || !editSnapshot) return false;
     if (!event) return false;
     if (!startsAtLocal) return false;
     if (eventType !== "training" && !endsAtLocal) return false;
     return true;
-  }, [busy, loading, event, startsAtLocal, endsAtLocal, eventType]);
+  }, [busy, loading, saveCommitted, editSnapshot, event, startsAtLocal, endsAtLocal, eventType]);
 
   const canSaveSeries = useMemo(() => {
-    if (busy || loading) return false;
+    if (busy || loading || saveCommitted || !editSnapshot) return false;
     if (!event?.series_id) return false;
     if (!series) return false;
     if (!startDate || !endDate) return false;
@@ -880,41 +711,22 @@ export default function CoachEventEditPage() {
     if (!timeOfDay) return false;
     if (intervalWeeks < 1) return false;
     return true;
-  }, [busy, loading, event?.series_id, series, startDate, endDate, timeOfDay, intervalWeeks]);
+  }, [busy, loading, saveCommitted, editSnapshot, event?.series_id, series, startDate, endDate, timeOfDay, intervalWeeks]);
 
   async function saveOccurrenceOnly() {
-    if (!event) return;
+    if (!event || !editSnapshot || saveCommitted || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    const version = loadVersion.current;
+    let dataSaved = false;
     setBusy(true);
     setError(null);
 
     try {
       if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(
-          eventType === "session"
-            ? "Nom de la séance requis."
-            : eventType === "camp"
-            ? "Nom du stage/camp requis."
-            : "Nom de l’événement requis."
-        );
+        throw new Error("coach.error.planningTitle");
       }
-      const attendeeStatusRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id,status")
-        .eq("event_id", eventId);
-      if (attendeeStatusRes.error) throw new Error(attendeeStatusRes.error.message);
-      const statusRows = (attendeeStatusRes.data ?? []) as Array<{
-        player_id: string | null;
-        status: string | null;
-      }>;
-      const absentBeforeSave = new Set(
-        statusRows
-          .filter((r) => String(r.status ?? "expected") === "absent")
-          .map((r) => String(r.player_id ?? "").trim())
-          .filter(Boolean)
-      );
-
       const startDt = new Date(startsAtLocal);
-      if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
+      if (Number.isNaN(startDt.getTime())) throw new Error("manager.planning.invalidDate");
       let endDt = new Date(endsAtLocal);
       let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       if (eventType === "training") {
@@ -922,8 +734,8 @@ export default function CoachEventEditPage() {
         endDt = new Date(startDt);
         endDt.setMinutes(endDt.getMinutes() + computedDuration);
       } else {
-        if (Number.isNaN(endDt.getTime())) throw new Error("Date/heure invalide.");
-        if (endDt <= startDt) throw new Error("La fin doit être après le début.");
+        if (Number.isNaN(endDt.getTime())) throw new Error("manager.planning.invalidDate");
+        if (endDt <= startDt) throw new Error("coach.error.planningDates");
         computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
       }
       const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
@@ -949,7 +761,9 @@ export default function CoachEventEditPage() {
         prevLocRaw !== nextLocRaw ||
         prevNote !== nextNote;
 
-      const eventUpdatePayload: Record<string, any> = {
+      const eventUpdatePayload = {
+        event_type: eventType,
+        title: eventTitle.trim() || null,
         starts_at: nextStartIso,
         ends_at: nextEndIso,
         duration_minutes: durationForDb,
@@ -957,33 +771,20 @@ export default function CoachEventEditPage() {
         coach_note: coachNote.trim() || null,
         requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
       };
-      if (event.event_type !== eventType) eventUpdatePayload.event_type = eventType;
-      if ((event.title ?? null) !== (eventTitle.trim() || null)) eventUpdatePayload.title = eventTitle.trim() || null;
-
-      const upd = await supabase.from("club_events").update(eventUpdatePayload).eq("id", eventId);
-
-      if (upd.error) throw new Error(upd.error.message);
-
-      await replaceCoachesForEvents([eventId]);
-
-      // replace attendees
-      const delA = await supabase.from("club_event_attendees").delete().eq("event_id", eventId);
-      if (delA.error) throw new Error(delA.error.message);
-      if (attendeeIdsSelected.length > 0) {
-        const insA = await supabase
-          .from("club_event_attendees")
-          .upsert(
-            attendeeIdsSelected.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" })),
-            { onConflict: "event_id,player_id", ignoreDuplicates: true }
-          );
-        if (insA.error) throw new Error(insA.error.message);
-      }
-
-      await replaceStructureForEvent(eventId);
-      await replaceEventCriteria([eventId], requiresEvaluation ? evaluationCriterionIds : []);
+      const saved = await supabase.rpc("update_manager_event_occurrence_v1", {
+        p_event_id: eventId, p_expected: editSnapshot, p_changes: eventUpdatePayload,
+        p_coach_ids: coachIdsSelected, p_player_ids: editSnapshot.camp_day ? null : attendeeIdsSelected,
+        p_structure: structureItems.map((item) => ({ category: item.category, minutes: Number(item.minutes), note: item.note.trim() || null })),
+        p_criterion_ids: eventUpdatePayload.requires_evaluation ? evaluationCriterionIds : [],
+      });
+      if (saved.error) throw saved.error;
+      if (saved.data?.ok !== true) throw new Error("unconfirmed_save");
+      dataSaved = true;
+      if (version !== loadVersion.current) return;
+      setSaveCommitted(true);
 
       if (hasPlayerVisibleChange && attendeeIdsSelected.length > 0 && meId) {
-        const recipientIds = attendeeIdsSelected.filter((id) => !absentBeforeSave.has(id));
+        const recipientIds: string[] = saved.data.recipient_ids ?? [];
         if (recipientIds.length > 0) {
           const oldStart = new Date(event.starts_at);
           const oldEnd = event.ends_at
@@ -993,225 +794,75 @@ export default function CoachEventEditPage() {
           const newRange = fmtDateTimeRange(startDt.toISOString(), endDt.toISOString(), locale);
           const oldLocRaw = prevLocRaw;
           const newLocRaw = nextLocRaw;
-          const oldLoc = oldLocRaw || "Lieu à définir";
-          const newLoc = newLocRaw || "Lieu à définir";
+          const oldLoc = oldLocRaw || t("manager.content.noLocation");
+          const newLoc = newLocRaw || t("manager.content.noLocation");
 
-          const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
-          if (isTrainingOrInterclub) {
-            const changePieces: string[] = [];
-            if (prevTitle !== nextTitle) {
-              changePieces.push(`Nom: ${prevTitle || "Sans titre"} -> ${nextTitle || "Sans titre"}`);
-            }
-            if (event.starts_at !== nextStartIso) {
-              changePieces.push(`Horaire: ${fmtTrainingMoment(event.starts_at, locale)} -> ${fmtTrainingMoment(nextStartIso, locale)}`);
-            }
-            if (oldDuration !== newDuration) {
-              changePieces.push(`Durée: ${oldDuration} min -> ${newDuration} min`);
-            }
-            if (oldLocRaw !== newLocRaw) {
-              changePieces.push(`Lieu: ${oldLoc} -> ${newLoc}`);
-            }
-            if (prevNote !== nextNote) {
-              changePieces.push(`Note coach: ${prevNote || "Aucune"} -> ${nextNote || "Aucune"}`);
-            }
+          const pieces: string[] = [];
+          if (prevTitle !== nextTitle) pieces.push(managerEditorFormat(t, "changedName", { before: prevTitle || "—", after: nextTitle || "—" }));
+          if (prevType !== nextType || event.starts_at !== nextStartIso || event.ends_at !== nextEndIso) pieces.push(managerEditorFormat(t, "changedTime", { before: oldRange, after: newRange }));
+          if (oldDuration !== newDuration) pieces.push(managerEditorFormat(t, "changedDuration", { before: oldDuration, after: newDuration }));
+          if (oldLocRaw !== newLocRaw) pieces.push(managerEditorFormat(t, "changedLocation", { before: oldLoc, after: newLoc }));
+          if (prevNote !== nextNote) pieces.push(managerEditorFormat(t, "changedNote", { before: prevNote || "—", after: nextNote || "—" }));
+          const msg = await getNotificationMessage("notif.coachEventUpdated", locale, { changesSummary: pieces.join(" · ") });
+          await createAppNotification({ actorUserId: meId, kind: "coach_event_updated", title: msg.title, body: msg.body,
+            data: { event_id: eventId, group_id: groupId, url: `/player/golf/trainings/new?club_event_id=${eventId}` }, recipientUserIds: recipientIds });
 
-            const title =
-              eventType === "interclub"
-                ? `L'interclub du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`
-                : `L'entrainement du ${fmtTrainingMoment(event.starts_at, locale)} a été modifié`;
-            const body = changePieces.length > 0 ? changePieces.join(" • ") : undefined;
-            await createAppNotification({
-              actorUserId: meId,
-              kind: "coach_event_updated",
-              title,
-              body,
-              data: {
-                event_id: eventId,
-                group_id: groupId,
-                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-              },
-              recipientUserIds: recipientIds,
-            });
-          } else {
-            const pieces =
-              locale === "fr"
-                ? [
-                    `Date/heure: ${oldRange} -> ${newRange}`,
-                    `Durée: ${oldDuration} min -> ${newDuration} min`,
-                    `Lieu: ${oldLoc} -> ${newLoc}`,
-                  ]
-                : [
-                    `Date/time: ${oldRange} -> ${newRange}`,
-                    `Duration: ${oldDuration} min -> ${newDuration} min`,
-                    `Location: ${oldLoc} -> ${newLoc}`,
-                  ];
-            const msg = await getNotificationMessage("notif.coachEventUpdated", locale, {
-              changesSummary: pieces.join(" · "),
-            });
-            await createAppNotification({
-              actorUserId: meId,
-              kind: "coach_event_updated",
-              title: msg.title,
-              body: msg.body,
-              data: {
-                event_id: eventId,
-                group_id: groupId,
-                url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-              },
-              recipientUserIds: recipientIds,
-            });
-          }
         }
       }
 
+      if (version !== loadVersion.current) return;
       setBusy(false);
-      router.push(`/manager/groups/${groupId}/planning/${eventId}`);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur sauvegarde.");
-      setBusy(false);
+      router.push(`/manager/groups/${groupId}/planning/${eventId}${seasonQuery}`);
+    } catch (e: unknown) {
+      if (version !== loadVersion.current) return;
+      setError(dataSaved ? "coach.error.planningNotification" : managerEditorSaveError(e));
+    } finally {
+      if (version === loadVersion.current) { setBusy(false); if (!dataSaved) mutationInFlight.current = false; }
     }
   }
 
-  async function saveSeriesAndRegenerateFuture() {
-    if (!event?.series_id || !series || !group) return;
+  async function saveFutureSeries() {
+    if (!event?.series_id || !series || !group || !editSnapshot || saveCommitted || mutationInFlight.current) return;
 
     const ok = window.confirm(
-      "Update recurrence?\n\n⚠️ This will delete all FUTURE occurrences of this recurrence (from today), then recreate them with the new settings."
+      t("coach.form.seriesConfirmHint")
     );
     if (!ok) return;
 
+    mutationInFlight.current = true;
+    const version = loadVersion.current;
+    let dataSaved = false;
     setBusy(true);
     setError(null);
 
     try {
       if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(
-          eventType === "session"
-            ? "Nom de la séance requis."
-            : eventType === "camp"
-            ? "Nom du stage/camp requis."
-            : "Nom de l’événement requis."
-        );
+        throw new Error("coach.error.planningTitle");
       }
-      if (!startDate || !endDate) throw new Error("Missing recurrence dates.");
-      if (endDate < startDate) throw new Error("End date must be after start date.");
+      if (!startDate || !endDate) throw new Error("coach.error.planningRecurrence");
+      if (endDate < startDate) throw new Error("coach.error.planningRecurrence");
 
-      // 1) update series template
-      const updS = await supabase
-        .from("club_event_series")
-        .update({
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          weekday,
-          time_of_day: timeOfDay.length === 5 ? `${timeOfDay}:00` : timeOfDay,
-          interval_weeks: intervalWeeks,
-          start_date: startDate,
-          end_date: endDate,
-          duration_minutes: durationMinutes,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-          is_active: seriesActive,
-        })
-        .eq("id", event.series_id);
+      const saved = await supabase.rpc("update_manager_event_series_v1", {
+        p_event_id: eventId, p_expected: editSnapshot,
+        p_series: { event_type: eventType, title: eventTitle.trim() || null, weekday, time_of_day: timeOfDay,
+          interval_weeks: intervalWeeks, start_date: startDate, end_date: endDate, duration_minutes: durationMinutes,
+          location_text: locationText.trim() || null, coach_note: coachNote.trim() || null, is_active: seriesActive,
+          requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation },
+        p_coach_ids: coachIdsSelected, p_player_ids: attendeeIdsSelected,
+        p_structure: structureItems.map((item) => ({ category: item.category, minutes: Number(item.minutes), note: item.note.trim() || null })),
+        p_criterion_ids: requiresEvaluation ? evaluationCriterionIds : [],
+        p_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      if (saved.error) throw saved.error;
+      if (saved.data?.ok !== true) throw new Error("unconfirmed_save");
+      dataSaved = true;
+      if (version !== loadVersion.current) return;
+      setSaveCommitted(true);
+      const recipientIds: string[] = saved.data.recipient_ids ?? [];
 
-      if (updS.error) throw new Error(updS.error.message);
-
-      // 2) delete future occurrences for this series
-      const nowIso = new Date().toISOString();
-      const futureEventsRes = await supabase
-        .from("club_events")
-        .select("id")
-        .eq("series_id", event.series_id)
-        .gte("starts_at", nowIso);
-      if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
-      const futureEventIds = (futureEventsRes.data ?? []).map((row: any) => String(row.id ?? "").trim()).filter(Boolean);
-
-      if (futureEventIds.length > 0) {
-        const delThreads = await supabase.from("message_threads").delete().in("event_id", futureEventIds);
-        if (delThreads.error) throw new Error(delThreads.error.message);
-      }
-
-      const delFuture = await supabase
-        .from("club_events")
-        .delete()
-        .eq("series_id", event.series_id)
-        .gte("starts_at", nowIso);
-
-      if (delFuture.error) throw new Error(delFuture.error.message);
-
-      // 3) regenerate occurrences (cap 80)
-      const startLocal = new Date(`${startDate}T00:00:00`);
-      const endLocal = new Date(`${endDate}T23:59:59`);
-
-      let cursor = nextWeekdayOnOrAfter(startLocal, weekday);
-      let count = 0;
-
-      const occurrences: any[] = [];
-      while (cursor <= endLocal) {
-        const dt = combineDateAndTime(toYMD(cursor), timeOfDay);
-        const startsIso = dt.toISOString();
-
-        if (startsIso >= nowIso) {
-          const endDt = new Date(dt);
-          endDt.setMinutes(endDt.getMinutes() + durationMinutes);
-          occurrences.push({
-            group_id: group.id,
-            club_id: group.club_id,
-            event_type: eventType,
-            starts_at: startsIso,
-            ends_at: endDt.toISOString(),
-            duration_minutes: durationMinutes,
-            location_text: locationText.trim() || null,
-            coach_note: coachNote.trim() || null,
-            requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
-            series_id: event.series_id,
-            created_by: meId || series.created_by,
-          });
-
-          count += 1;
-          if (count >= 80) break;
-        }
-
-        cursor = addDays(cursor, intervalWeeks * 7);
-      }
-
-      if (seriesActive && occurrences.length === 0) {
-        throw new Error("No future occurrence generated (check date/day/time).");
-      }
-
-      let createdEventIds: string[] = [];
-      if (seriesActive && occurrences.length > 0) {
-        const eIns = await supabase.from("club_events").insert(occurrences).select("id");
-        if (eIns.error) throw new Error(eIns.error.message);
-        createdEventIds = (eIns.data ?? []).map((r: any) => r.id as string);
-      }
-
-      // 4) apply coaches/attendees to regenerated events
-      if (seriesActive && createdEventIds.length > 0) {
-        await replaceCoachesForEvents(createdEventIds);
-
-        if (attendeeIdsSelected.length > 0) {
-          const attRows = createdEventIds.flatMap((eid) =>
-            attendeeIdsSelected.map((pid) => ({ event_id: eid, player_id: pid, status: "present" }))
-          );
-          const aIns = await supabase
-            .from("club_event_attendees")
-            .upsert(attRows, { onConflict: "event_id,player_id", ignoreDuplicates: true });
-          if (aIns.error) throw new Error(aIns.error.message);
-        }
-
-        await applyStructureForEvents(createdEventIds);
-        await replaceEventCriteria(createdEventIds, requiresEvaluation ? evaluationCriterionIds : []);
-      }
-
-      await syncPlayerChangesOnFuturePlannedEvents();
-
-      if (attendeeIdsSelected.length > 0 && meId) {
+      if (recipientIds.length > 0 && meId) {
         const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
-        const summary =
-          locale === "fr"
-            ? `Nouvelle récurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "sans lieu"}`
-            : `New recurrence: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min · ${locationText.trim() || "no location"}`;
+        const summary = managerFormat(t, "coach.form.updatedSummary", { type: managerActivityLabel(t, eventType), when: `${startDate} → ${endDate} · ${seriesTime}`, minutes: durationMinutes, place: locationText.trim() || t("manager.content.noLocation") });
         const msg = await getNotificationMessage("notif.coachSeriesUpdated", locale, {
           changesSummary: summary,
         });
@@ -1221,171 +872,98 @@ export default function CoachEventEditPage() {
           title: msg.title,
           body: msg.body,
           data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
-          recipientUserIds: attendeeIdsSelected,
+          recipientUserIds: recipientIds,
         });
       }
 
+      if (version !== loadVersion.current) return;
       setBusy(false);
-      router.push(`/manager/groups/${groupId}/planning`);
-    } catch (e: any) {
-      setError(e?.message ?? "Recurrence update error.");
-      setBusy(false);
+      router.push(planningHref);
+    } catch (e: unknown) {
+      if (version !== loadVersion.current) return;
+      setError(dataSaved ? "coach.error.planningNotification" : managerEditorSaveError(e));
+    } finally {
+      if (version === loadVersion.current) { setBusy(false); if (!dataSaved) mutationInFlight.current = false; }
     }
   }
 
-  async function removeThisEvent() {
-    const ok = window.confirm("Supprimer CET événement planifié ? (irréversible)");
-    if (!ok) return;
-
-    setBusy(true);
-    setError(null);
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token ?? "";
-    if (!token) {
-      setError("Session invalide.");
-      setBusy(false);
-      return;
-    }
-
-    const delRes = await fetch(`/api/manager/events/${encodeURIComponent(eventId)}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const delJson = await delRes.json().catch(() => ({}));
-    if (!delRes.ok) setError(String(delJson?.error ?? "Suppression impossible."));
-
-    setBusy(false);
-    if (delRes.ok) router.push(`/manager/groups/${groupId}/planning`);
-  }
-
-  async function removeWholeSeries() {
-    if (!event?.series_id) return;
-
-    const ok = window.confirm(
-      "Delete full RECURRENCE?\n\n⚠️ This deletes the series and all its occurrences (past and future)."
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setError(null);
-
+  async function removeEvent(scope: "occurrence" | "series") {
+    if (!event || busy || saveCommitted || mutationInFlight.current) return;
+    if (scope === "series" && !event.series_id) return;
+    if (!window.confirm(t(scope === "series" ? "manager.editor.deleteSeriesConfirm" : "manager.planning.confirmDelete"))) return;
+    mutationInFlight.current = true;
+    const version = loadVersion.current;
+    setBusy(true); setError(null);
+    let committed = false;
     try {
-      const seriesEventsRes = await supabase.from("club_events").select("id").eq("series_id", event.series_id);
-      if (seriesEventsRes.error) throw new Error(seriesEventsRes.error.message);
-      const seriesEventIds = (seriesEventsRes.data ?? [])
-        .map((r) => String(r.id ?? "").trim())
-        .filter(Boolean);
-
-      let recipients: string[] = [];
-      if (seriesEventIds.length > 0) {
-        const attRes = await supabase
-          .from("club_event_attendees")
-          .select("player_id,event_id,status")
-          .in("event_id", seriesEventIds);
-        if (attRes.error) throw new Error(attRes.error.message);
-        const attendeeRows = (attRes.data ?? []) as Array<{
-          player_id: string | null;
-          status: string | null;
-        }>;
-        recipients = Array.from(
-          new Set(
-            attendeeRows
-              .filter((r) => String(r.status ?? "expected") !== "absent")
-              .map((r) => String(r.player_id ?? "").trim())
-              .filter(Boolean)
-          )
-        );
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token ?? "";
-      if (!token) throw new Error("Session invalide.");
-      const delRes = await fetch(`/api/manager/events/series/${encodeURIComponent(event.series_id)}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const delJson = await delRes.json().catch(() => ({}));
-      if (!delRes.ok) throw new Error(String(delJson?.error ?? "Suppression impossible."));
-
-      if (recipients.length > 0 && meId) {
-        const summary =
-          locale === "fr"
-            ? `Récurrence supprimée: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`
-            : `Recurrence deleted: ${eventTypeLabelLocalized(eventType, locale)} · ${startDate} -> ${endDate} · ${timeOfDay.slice(0, 5)} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`;
-        const msg = await getNotificationMessage("notif.coachSeriesDeleted", locale, {
-          changesSummary: summary,
-        });
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_deleted",
-          title: msg.title,
-          body: msg.body,
-          data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
-          recipientUserIds: recipients,
-        });
-      }
-
-      setBusy(false);
-      router.push(`/manager/groups/${groupId}/planning`);
-    } catch (e: any) {
-      setError(e?.message ?? "Recurrence deletion error.");
-      setBusy(false);
-    }
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) throw new Error("manager.home.invalidSession");
+      const path = scope === "series" ? `/api/manager/events/series/${encodeURIComponent(event.series_id!)}` : `/api/manager/events/${encodeURIComponent(eventId)}?scope=occurrence`;
+      const response = await fetch(path, { method: "DELETE", headers: { Authorization: `Bearer ${data.session.access_token}` } });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true) throw new Error(result.error === "forbidden" ? "manager.settings.forbidden" : "manager.editor.deleteFailed");
+      committed = true;
+      if (version !== loadVersion.current) return;
+      setSaveCommitted(true); setDeleteCommitted(true);
+      if (result.notification_warning) setError("manager.editor.deleteNotification");
+      else router.push(planningHref);
+    } catch (cause) {
+      if (version !== loadVersion.current) return;
+      setError(cause instanceof Error && /^(manager|coach)\./.test(cause.message) ? cause.message : "manager.editor.deleteFailed");
+    } finally { if (version === loadVersion.current) { setBusy(false); if (!committed) mutationInFlight.current = false; } }
   }
 
   return (
-    <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
-        <Link href="/manager/groups">Groupes</Link>
+    <main className={`${styles.page} ${groupStyles.page}`}>
+      <nav aria-label={t("manager.content.breadcrumb")} style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">{t("manager.content.groups")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? "Groupe"}</Link>
+        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? t("coachHome.groupFallback")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <Link href={`/manager/groups/${groupId}/planning`}>Planification</Link>
+        <Link href={planningHref}>{t("manager.groups.planning")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <Link href={`/manager/groups/${groupId}/planning/${eventId}`}>Activité</Link>
+        <Link href={`/manager/groups/${groupId}/planning/${eventId}${seasonQuery}`}>{t("coach.activity.other")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <span>Modifier</span>
+        <span>{t("manager.content.edit")}</span>
       </nav>
 
       <div className={styles.topline}>
         <div>
-          <h1>Modifier l’activité</h1>
-          <p className={styles.lead}>Modifiez les informations et les participants de l’activité du groupe {group?.name ?? ""}.</p>
+          <h1>{t("manager.editor.editTitle")}</h1>
+          <p className={styles.lead}>{managerEditorFormat(t, "editLead", { name: group?.name ?? "" })}</p>
         </div>
-        <Link className={actionStyles.backButton} href={`/manager/groups/${groupId}/planning/${eventId}`}>
+        <Link className={actionStyles.backButton} href={deleteCommitted ? planningHref : `/manager/groups/${groupId}/planning/${eventId}${seasonQuery}`}>
           <ArrowLeft size={16} aria-hidden="true" />
-          Retour à l’activité
-        </Link>
+          {t(deleteCommitted ? "coach.form.backPlanning" : "manager.editor.backActivity")}</Link>
       </div>
 
-      {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
+      {error && <div className={actionStyles.errorAlert} role="alert">{managerPlanningFeedback(t, error)}</div>}
 
       {loading ? (
-        <section className={styles.quickPanel}><CompactLoadingBlock label="Chargement..." /></section>
+        <section className={styles.quickPanel}><CompactLoadingBlock label={t("manager.content.loading")} /></section>
       ) : !event ? (
-        <section className={styles.quickPanel}><div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune activité trouvée.</div></section>
+        <section className={styles.quickPanel}><div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("manager.planning.eventNotFound")}</div></section>
             ) : (
               <>
                 <section className={styles.quickPanel}>
                   <div className={styles.sectionHeading}>
-                    <div><h2>Informations de l’activité</h2><p>Définissez le type, l’horaire et les informations pratiques.</p></div>
+                    <div><h2>{t("manager.editor.information")}</h2><p>{t("manager.editor.informationHelp")}</p></div>
                   </div>
                   {/* Recurrence scope */}
                   {
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Récurrence</span>
-                      <div className="mode-radio-group" role="radiogroup" aria-label="Récurrence">
+                      <span style={fieldLabelStyle}>{t("coach.form.recurrence")}</span>
+                      <div className="mode-radio-group" role="radiogroup" aria-label={t("coach.form.recurrence")}>
                         <label className={`mode-radio-option ${editScope === "occurrence" ? "is-active" : ""}`}>
                           <input type="radio" name="edit-scope" checked={editScope === "occurrence"} onChange={() => setEditScope("occurrence")} disabled={busy} />
-                          <span>Unique</span>
+                          <span>{t("coach.form.single")}</span>
                         </label>
                         <label className={`mode-radio-option ${editScope === "series" ? "is-active" : ""}`}>
                           <input type="radio" name="edit-scope" checked={editScope === "series"} onChange={() => setEditScope("series")} disabled={busy || !series} />
-                          <span><Repeat size={16} />Récurrent</span>
+                          <span><Repeat size={16} />{t("coach.form.recurring")}</span>
                         </label>
                       </div>
-                      {event.series_id ? <p style={{ margin: 0, color: "#778278", fontSize: 12, lineHeight: 1.45 }}>La modification de la récurrence met à jour les occurrences futures.</p> : null}
+                      {event.series_id ? <p style={{ margin: 0, color: "#778278", fontSize: 12, lineHeight: 1.45 }}>{t("manager.editor.futureHint")}</p> : null}
                     </label>
                   }
 
@@ -1395,11 +973,11 @@ export default function CoachEventEditPage() {
                   {editScope === "occurrence" ? (
                     <div style={{ display: "grid", gap: 12 }}>
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Type d’événement</span>
-                        <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                        <span style={fieldLabelStyle}>{t("coach.form.eventType")}</span>
+                        <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} disabled={busy}>
                           {EVENT_TYPE_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
-                              {opt.label}
+                              {managerActivityLabel(t, opt.value)}
                             </option>
                           ))}
                         </select>
@@ -1408,25 +986,25 @@ export default function CoachEventEditPage() {
                       {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                         <label style={{ display: "grid", gap: 6 }}>
                           <span style={fieldLabelStyle}>
-                            {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                            {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                           </span>
                           <input
                             value={eventTitle}
                             onChange={(e) => setEventTitle(e.target.value)}
                             disabled={busy}
-                            placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                            placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                           />
                         </label>
                       ) : null}
 
                       <div className="grid-2">
                         <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Date de début</span>
+                          <span style={fieldLabelStyle}>{t("coach.form.startDate")}</span>
                           <input type="date" value={occDate} onChange={(e) => updateOccDate(e.target.value)} disabled={busy} />
                         </label>
 
                         <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Heure de début</span>
+                          <span style={fieldLabelStyle}>{t("coach.form.startTime")}</span>
                           <select value={occTime} onChange={(e) => updateOccTime(e.target.value)} disabled={busy}>
                             {QUARTER_HOUR_OPTIONS.map((t) => (
                               <option key={t} value={t}>
@@ -1439,24 +1017,23 @@ export default function CoachEventEditPage() {
 
                       {eventType === "training" ? (
                         <label style={{ display: "grid", gap: 6 }}>
-                          <span style={fieldLabelStyle}>Durée</span>
+                          <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                           <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                             {DURATION_OPTIONS.map((m) => (
                               <option key={m} value={m}>
-                                {m} min
-                              </option>
+                                {m} {t("common.min")}</option>
                             ))}
                           </select>
                         </label>
                       ) : (
                         <div className="grid-2">
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Date de fin</span>
+                            <span style={fieldLabelStyle}>{t("coach.form.endDate")}</span>
                             <input type="date" value={occEndDate} onChange={(e) => updateOccEndDate(e.target.value)} disabled={busy} />
                           </label>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Heure de fin</span>
+                            <span style={fieldLabelStyle}>{t("coach.form.endTime")}</span>
                             <select value={occEndTime} onChange={(e) => updateOccEndTime(e.target.value)} disabled={busy}>
                               {QUARTER_HOUR_OPTIONS.map((t) => (
                                 <option key={t} value={t}>
@@ -1469,17 +1046,17 @@ export default function CoachEventEditPage() {
                       )}
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                        <span style={fieldLabelStyle}>{t("coach.form.location")}</span>
                         <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                        <span style={fieldLabelStyle}>{t("coach.form.notes")}</span>
                         <textarea
                           value={coachNote}
                           onChange={(e) => setCoachNote(e.target.value)}
                           disabled={busy}
-                          placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                          placeholder={t("coach.form.notesExample")}
                           style={{ minHeight: 96 }}
                         />
                       </label>
@@ -1492,7 +1069,7 @@ export default function CoachEventEditPage() {
                             onChange={(e) => setRequiresEvaluation(e.target.checked)}
                             disabled={busy}
                           />
-                          <span><b>Activité à évaluer</b></span>
+                          <span><b>{t("manager.editor.evaluation")}</b></span>
                         </label>
                       ) : null}
                       {(eventType === "training" || eventType === "camp") && requiresEvaluation && group ? (
@@ -1506,16 +1083,15 @@ export default function CoachEventEditPage() {
                     <div style={{ display: "grid", gap: 12 }}>
                       {!series ? (
                         <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                          Série introuvable. Tu peux modifier l’occurrence uniquement.
-                        </div>
+                          {t("coach.form.seriesMissing")}</div>
                       ) : (
                         <div style={{ display: "grid", gap: 10 }}>
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Type d’événement</span>
-                            <select value={eventType} onChange={(e) => setEventType(e.target.value as any)} disabled={busy}>
+                            <span style={fieldLabelStyle}>{t("coach.form.eventType")}</span>
+                            <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} disabled={busy}>
                               {EVENT_TYPE_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
-                                  {opt.label}
+                                  {managerActivityLabel(t, opt.value)}
                                 </option>
                               ))}
                             </select>
@@ -1524,33 +1100,33 @@ export default function CoachEventEditPage() {
                           {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                             <label style={{ display: "grid", gap: 6 }}>
                               <span style={fieldLabelStyle}>
-                                {eventType === "session" ? "Nom de la séance" : eventType === "camp" ? "Nom du stage/camp" : "Nom de l’événement"}
+                                {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                               </span>
                               <input
                                 value={eventTitle}
                                 onChange={(e) => setEventTitle(e.target.value)}
                                 disabled={busy}
-                                placeholder={eventType === "session" ? "Ex: Séance putting junior" : eventType === "camp" ? "Ex: Stage de Pâques" : "Ex: Rencontre de printemps"}
+                                placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                               />
                             </label>
                           ) : null}
 
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Jour</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.day")}</span>
                               <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                                <option value={1}>{pickLocaleText(locale, "Lundi", "Monday")}</option>
-                                <option value={2}>{pickLocaleText(locale, "Mardi", "Tuesday")}</option>
-                                <option value={3}>{pickLocaleText(locale, "Mercredi", "Wednesday")}</option>
-                                <option value={4}>{pickLocaleText(locale, "Jeudi", "Thursday")}</option>
-                                <option value={5}>{pickLocaleText(locale, "Vendredi", "Friday")}</option>
-                                <option value={6}>{pickLocaleText(locale, "Samedi", "Saturday")}</option>
-                                <option value={0}>{pickLocaleText(locale, "Dimanche", "Sunday")}</option>
+                                <option value={1}>{t("coach.form.monday")}</option>
+                                <option value={2}>{t("coach.form.tuesday")}</option>
+                                <option value={3}>{t("coach.form.wednesday")}</option>
+                                <option value={4}>{t("coach.form.thursday")}</option>
+                                <option value={5}>{t("coach.form.friday")}</option>
+                                <option value={6}>{t("coach.form.saturday")}</option>
+                                <option value={0}>{t("coach.form.sunday")}</option>
                               </select>
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Heure</span>
+                              <span style={fieldLabelStyle}>{t("common.time")}</span>
                               <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy}>
                                 {QUARTER_HOUR_OPTIONS.map((t) => (
                                   <option key={t} value={t}>
@@ -1563,7 +1139,7 @@ export default function CoachEventEditPage() {
 
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Du</span>
+                              <span style={fieldLabelStyle}>{t("manager.performance.from")}</span>
                               <input
                                 type="date"
                                 value={startDate}
@@ -1573,7 +1149,7 @@ export default function CoachEventEditPage() {
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Au</span>
+                              <span style={fieldLabelStyle}>{t("manager.performance.to")}</span>
                               <input
                                 type="date"
                                 value={endDate}
@@ -1585,7 +1161,7 @@ export default function CoachEventEditPage() {
 
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Durée</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                               <select
                                 value={durationMinutes}
                                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
@@ -1593,14 +1169,13 @@ export default function CoachEventEditPage() {
                               >
                                 {DURATION_OPTIONS.map((m) => (
                                   <option key={m} value={m}>
-                                    {m} min
-                                  </option>
+                                    {m} {t("common.min")}</option>
                                 ))}
                               </select>
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Rythme</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.frequency")}</span>
                               <select
                                 value={intervalWeeks}
                                 onChange={(e) => setIntervalWeeks(Number(e.target.value))}
@@ -1608,7 +1183,7 @@ export default function CoachEventEditPage() {
                               >
                                 {[1, 2, 3, 4].map((w) => (
                                   <option key={w} value={w}>
-                                    Toutes les {w} semaine{w > 1 ? "s" : ""}
+                                    {w === 1 ? t("coach.form.everyWeek") : managerFormat(t, "coach.form.everyWeeks", { count: w })}
                                   </option>
                                 ))}
                               </select>
@@ -1616,17 +1191,17 @@ export default function CoachEventEditPage() {
                           </div>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Lieu (optionnel)</span>
+                            <span style={fieldLabelStyle}>{t("coach.form.location")}</span>
                             <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} />
                           </label>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>Renseignements événement (optionnel)</span>
+                            <span style={fieldLabelStyle}>{t("coach.form.notes")}</span>
                             <textarea
                               value={coachNote}
                               onChange={(e) => setCoachNote(e.target.value)}
                               disabled={busy}
-                              placeholder="Ex: matériel à prévoir, tenue, consignes logistiques…"
+                              placeholder={t("coach.form.notesExample")}
                               style={{ minHeight: 96 }}
                             />
                           </label>
@@ -1639,7 +1214,7 @@ export default function CoachEventEditPage() {
                                 onChange={(e) => setRequiresEvaluation(e.target.checked)}
                                 disabled={busy}
                               />
-                              <span><b>Activité à évaluer</b></span>
+                              <span><b>{t("manager.editor.evaluation")}</b></span>
                             </label>
                           ) : null}
                           {(eventType === "training" || eventType === "camp") && requiresEvaluation && group ? (
@@ -1653,12 +1228,11 @@ export default function CoachEventEditPage() {
                               onChange={(e) => setSeriesActive(e.target.checked)}
                               disabled={busy}
                             />
-                            <span><b>Récurrence active</b></span>
+                            <span><b>{t("coach.form.seriesActive")}</b></span>
                           </label>
 
                           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                            ⚠️ En enregistrant, on supprime toutes les occurrences futures de cette récurrence et on les recrée (max 80).
-                          </div>
+                            {t("coach.form.futureHint")}</div>
                         </div>
                       )}
                     </div>
@@ -1667,12 +1241,11 @@ export default function CoachEventEditPage() {
 
                 {eventType === "training" ? (
                 <section className={styles.quickPanel}>
-                  <div className={styles.sectionHeading}><div><h2>Structure de l’entraînement</h2><p>Préparez les postes de travail à transmettre aux juniors.</p></div></div>
+                  <div className={styles.sectionHeading}><div><h2>{t("manager.editor.structure")}</h2><p>{t("manager.editor.structureHelp")}</p></div></div>
 
                   {structureItems.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Aucun poste configuré pour cet entraînement.
-                    </div>
+                      {t("coach.form.emptyStructure")}</div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
                       {structureItems.map((it, idx) => (
@@ -1680,39 +1253,37 @@ export default function CoachEventEditPage() {
                           <div style={{ display: "grid", gap: 10, width: "100%" }}>
                             <div className="grid-2">
                               <label style={{ display: "grid", gap: 6 }}>
-                                <span style={fieldLabelStyle}>Poste</span>
+                                <span style={fieldLabelStyle}>{t("coach.form.station")}</span>
                                 <select value={it.category} onChange={(e) => updateStructureLine(idx, { category: e.target.value })} disabled={busy}>
                                   <option value="">-</option>
                                   {TRAINING_CATEGORY_VALUES.map((cat) => (
                                     <option key={cat} value={cat}>
-                                      {TRAINING_CATEGORY_LABELS[cat] ?? cat}
+                                      {t(`coach.form.category.${cat}`)}
                                     </option>
                                   ))}
                                 </select>
                               </label>
 
                               <label style={{ display: "grid", gap: 6 }}>
-                                <span style={fieldLabelStyle}>Durée</span>
+                                <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                                 <select value={it.minutes} onChange={(e) => updateStructureLine(idx, { minutes: e.target.value })} disabled={busy}>
                                   <option value="">-</option>
                                   {MINUTE_OPTIONS.map((m) => (
                                     <option key={m} value={String(m)}>
-                                      {m} min
-                                    </option>
+                                      {m} {t("common.min")}</option>
                                   ))}
                                 </select>
                               </label>
                             </div>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>Note (optionnel)</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.note")}</span>
                               <input value={it.note} onChange={(e) => updateStructureLine(idx, { note: e.target.value })} disabled={busy} />
                             </label>
 
                             <div style={{ display: "flex", justifyContent: "flex-end" }}>
                               <button type="button" className="btn btn-danger soft" onClick={() => removeStructureLine(idx)} disabled={busy}>
-                                Supprimer
-                              </button>
+                                {t("manager.content.delete")}</button>
                             </div>
                           </div>
                         </div>
@@ -1722,15 +1293,14 @@ export default function CoachEventEditPage() {
 
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <button type="button" className="btn" onClick={addStructureLine} disabled={busy}>
-                      + Ajouter un poste
-                    </button>
+                      {t("coach.form.addStation")}</button>
                   </div>
                 </section>
                 ) : null}
 
                 {/* Coachs attendus */}
                 <section className={styles.quickPanel}>
-                  <div className={styles.sectionHeading}><div><h2>Coachs attendus</h2><p>Sélectionnez les coachs attendus à cette activité.</p></div></div>
+                  <div className={styles.sectionHeading}><div><h2>{t("coach.form.coaches")}</h2><p>{t("manager.editor.coachesHelp")}</p></div></div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
@@ -1739,31 +1309,29 @@ export default function CoachEventEditPage() {
                       disabled={busy || coaches.length === 0 || allCoachesSelected}
                       onClick={() => setCoachIdsSelected(coaches.map((c) => c.id))}
                     >
-                      Tout sélectionner
-                    </button>
+                      {t("coach.form.selectAll")}</button>
                     <button
                       type="button"
                       className="btn"
                       disabled={busy || coaches.length === 0 || coachIdsSelected.length === 0}
                       onClick={() => setCoachIdsSelected([])}
                     >
-                      Tout désélectionner
-                    </button>
+                      {t("coach.form.deselectAll")}</button>
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedCoachesList.length})</div>
+                    <div className="pill-soft">{t("coach.form.selection")} ({selectedCoachesList.length})</div>
                     {coaches.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach dans ce groupe.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noCoaches")}</div>
                     ) : selectedCoachesList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun coach sélectionné.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noSelectedCoaches")}</div>
                     ) : (
                       <div className="user-mgmt-table-wrap">
                         <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                           <tbody>
                         {selectedCoachesList.map((c) => (
-                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label="Retirer coach" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
+                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(c) })} title={t("coach.group.remove")} style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
                         ))}
                           </tbody>
                         </table>
@@ -1772,16 +1340,16 @@ export default function CoachEventEditPage() {
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Ajouter ({candidateCoaches.length})</div>
+                    <div className="pill-soft">{t("common.add")} ({candidateCoaches.length})</div>
                     {coaches.length > 0 && candidateCoaches.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                     ) : candidateCoaches.length > 0 ? (
                       <div className="user-mgmt-table-wrap">
                         <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                           <tbody>
                         {candidateCoaches.map((c) => (
-                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label="Ajouter coach" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
+                          <tr key={c.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td><td><b>{fullName(c)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label={managerFormat(t, "coach.form.addNamed", { name: fullName(c) })} title={t("common.add")} style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
                         ))}
                           </tbody>
                         </table>
@@ -1792,7 +1360,7 @@ export default function CoachEventEditPage() {
 
                 {/* Joueurs attendus */}
                 <section className={styles.quickPanel}>
-                  <div className={styles.sectionHeading}><div><h2>Juniors attendus</h2><p>Choisissez les juniors attendus à cette activité.</p></div></div>
+                  <div className={styles.sectionHeading}><div><h2>{t("manager.editor.players")}</h2><p>{t("manager.editor.playersHelp")}</p></div></div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
@@ -1805,8 +1373,7 @@ export default function CoachEventEditPage() {
                         setSelectedPlayers(map);
                       }}
                     >
-                      Tout sélectionner
-                    </button>
+                      {t("coach.form.selectAll")}</button>
 
                     <button
                       type="button"
@@ -1814,8 +1381,7 @@ export default function CoachEventEditPage() {
                       disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
                       onClick={() => setSelectedPlayers({})}
                     >
-                      Tout désélectionner
-                    </button>
+                      {t("coach.form.deselectAll")}</button>
                   </div>
 
                   <div style={{ position: "relative" }}>
@@ -1833,25 +1399,25 @@ export default function CoachEventEditPage() {
                       value={queryPlayers}
                       onChange={(e) => setQueryPlayers(e.target.value)}
                       disabled={busy}
-                      placeholder="Rechercher un joueur (nom, handicap)…"
+                      placeholder={t("coach.form.searchPlayers")}
                       style={{ paddingLeft: 44 }}
                     />
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedPlayersList.length})</div>
+                    <div className="pill-soft">{t("coach.form.selection")} ({selectedPlayersList.length})</div>
 
                     {players.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur dans ce groupe.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noPlayers")}</div>
                     ) : selectedPlayersList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun joueur sélectionné.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noSelectedPlayers")}</div>
                     ) : (
                       <div className="user-mgmt-table-wrap">
                         <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                           <tbody>
                         {selectedPlayersList.map((p) => (
-                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Retirer junior" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
+                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(p) })} title={t("coach.group.remove")} style={compactGreenButtonStyle}><Trash2 size={16} /></button></td></tr>
                         ))}
                           </tbody>
                         </table>
@@ -1860,17 +1426,17 @@ export default function CoachEventEditPage() {
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Ajouter ({candidatesPlayers.length})</div>
+                    <div className="pill-soft">{t("common.add")} ({candidatesPlayers.length})</div>
 
                     {players.length > 0 && candidatesPlayers.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                     ) : candidatesPlayers.length > 0 ? (
                       <div className="user-mgmt-table-wrap">
                         <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                          <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                          <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                           <tbody>
                         {candidatesPlayers.map((p) => (
-                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Ajouter junior" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
+                          <tr key={p.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td><td><b>{fullName(p)}</b></td><td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label={managerFormat(t, "coach.form.addNamed", { name: fullName(p) })} title={t("common.add")} style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td></tr>
                         ))}
                           </tbody>
                         </table>
@@ -1881,7 +1447,7 @@ export default function CoachEventEditPage() {
 
                 {/* Invités */}
                 <section className={styles.quickPanel}>
-                  <div className={styles.sectionHeading}><div><h2>Invités</h2><p>Ajoutez des membres du club en complément du groupe.</p></div></div>
+                  <div className={styles.sectionHeading}><div><h2>{t("coach.form.guests")}</h2><p>{t("manager.editor.guestsHelp")}</p></div></div>
 
                   <div style={{ position: "relative" }}>
                     <Search
@@ -1898,26 +1464,26 @@ export default function CoachEventEditPage() {
                       value={queryGuests}
                       onChange={(e) => setQueryGuests(e.target.value)}
                       disabled={busy}
-                      placeholder="Rechercher un invité (nom, rôle)…"
+                      placeholder={t("coach.form.searchGuests")}
                       style={{ paddingLeft: 44 }}
                     />
                   </div>
 
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div className="pill-soft">Sélection ({selectedGuestsList.length})</div>
+                    <div className="pill-soft">{t("coach.form.selection")} ({selectedGuestsList.length})</div>
                     {selectedGuestsList.length === 0 ? (
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun invité sélectionné.</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noGuests")}</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
                         {selectedGuestsList.map((m) => (
                           <div key={m.id} style={lightRowCardStyle}>
                             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                               <div style={avatarBoxStyle} aria-hidden="true">
-                                {avatarNode(m as any)}
+                                {avatarNode(m)}
                               </div>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(t, m.role)}</div>
                               </div>
                             </div>
 
@@ -1927,8 +1493,8 @@ export default function CoachEventEditPage() {
                               onClick={() => toggleSelectedGuest(m)}
                               disabled={busy}
                               style={{ padding: "10px 12px" }}
-                              aria-label="Retirer invité"
-                              title="Retirer"
+                              aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(m) })}
+                              title={t("coach.group.remove")}
                             >
                               <Trash2 size={18} />
                             </button>
@@ -1940,20 +1506,20 @@ export default function CoachEventEditPage() {
 
                   {queryGuests.trim().length > 0 ? (
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div className="pill-soft">Ajouter ({candidateGuests.length})</div>
+                      <div className="pill-soft">{t("common.add")} ({candidateGuests.length})</div>
                       {candidateGuests.length === 0 ? (
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>Aucun résultat.</div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                       ) : (
                         <div style={{ display: "grid", gap: 10 }}>
                           {candidateGuests.map((m) => (
                             <div key={m.id} style={lightRowCardStyle}>
                               <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                                 <div style={avatarBoxStyle} aria-hidden="true">
-                                  {avatarNode(m as any)}
+                                  {avatarNode(m)}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                                  <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(t, m.role)}</div>
                                 </div>
                               </div>
 
@@ -1971,8 +1537,8 @@ export default function CoachEventEditPage() {
                                   background: "rgba(255,255,255,0.70)",
                                   border: "1px solid rgba(0,0,0,0.08)",
                                 }}
-                                aria-label="Ajouter invité"
-                                title="Ajouter"
+                                aria-label={t("common.add")}
+                                title={t("common.add")}
                               >
                                 <PlusCircle size={18} />
                               </button>
@@ -1983,19 +1549,18 @@ export default function CoachEventEditPage() {
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                      Saisis une recherche pour ajouter des invités.
-                    </div>
+                      {t("coach.form.guestsHint")}</div>
                   )}
                 </section>
 
                 <div className="user-mgmt-card-actions" style={{ paddingBottom: 8 }}>
                   {editScope === "occurrence" ? (
                     <button type="button" className={actionStyles.primaryButton} disabled={!canSaveOccurrence} onClick={saveOccurrenceOnly}>
-                      {busy ? "Enregistrement…" : "Enregistrer cette occurrence"}
+                      {busy ? t("coachDebrief.saving") : t("coach.editor.saveOccurrence")}
                     </button>
                   ) : (
-                    <button type="button" className={actionStyles.primaryButton} disabled={!canSaveSeries} onClick={saveSeriesAndRegenerateFuture}>
-                      {busy ? "Enregistrement…" : "Enregistrer la récurrence"}
+                    <button type="button" className={actionStyles.primaryButton} disabled={!canSaveSeries} onClick={saveFutureSeries}>
+                      {busy ? t("coachDebrief.saving") : t("coach.editor.saveSeries")}
                     </button>
                   )}
                 </div>
@@ -2003,13 +1568,12 @@ export default function CoachEventEditPage() {
                 <section className={actionStyles.dangerZone}>
                   <div>
                     <div className={actionStyles.dangerIcon}><Trash2 size={18} aria-hidden="true" /></div>
-                    <div><h2>Suppression</h2><p>Cette action est irréversible.</p></div>
+                    <div><h2>{t("manager.editor.deleteTitle")}</h2><p>{t("manager.editor.deleteWarning")}</p></div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button type="button" className={actionStyles.dangerButton} disabled={busy} onClick={removeThisEvent}>
-                      Supprimer cette occurrence
-                    </button>
-                    {event.series_id ? <button type="button" className={actionStyles.dangerButton} disabled={busy} onClick={removeWholeSeries}>Supprimer la récurrence</button> : null}
+                    <button type="button" className={actionStyles.dangerButton} disabled={busy || saveCommitted} onClick={() => removeEvent("occurrence")}>
+                      {t("coach.form.deleteOccurrence")}</button>
+                    {event.series_id ? <button type="button" className={actionStyles.dangerButton} disabled={busy || saveCommitted} onClick={() => removeEvent("series")}>{t("coach.form.deleteSeries")}</button> : null}
                   </div>
                 </section>
               </>

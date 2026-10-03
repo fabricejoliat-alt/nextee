@@ -1,3 +1,4 @@
+import { encodeMemberFieldValue, decodeMemberFieldValue, type MemberFieldValue } from "@/lib/memberFieldValues";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -268,7 +269,7 @@ export async function GET(req: NextRequest) {
     }
 
     const valueFieldIds = fields.filter((field) => fieldScope(field) === "permanent" && !field.legacy_binding).map((field) => field.id);
-    const valuesByMemberId = new Map<string, Record<string, string | boolean | null>>();
+    const valuesByMemberId = new Map<string, Record<string, MemberFieldValue>>();
     if (memberIds.length > 0 && valueFieldIds.length > 0) {
       const { data: valueRows, error: valuesError } = await supabaseAdmin
         .from("club_member_player_field_values")
@@ -282,18 +283,12 @@ export async function GET(req: NextRequest) {
         const fieldId = String(row.field_id ?? "");
         if (!memberId || !fieldId) continue;
         const current = valuesByMemberId.get(memberId) ?? {};
-        current[fieldId] = row.value_option != null
-          ? String(row.value_option)
-          : row.value_bool != null
-            ? Boolean(row.value_bool)
-            : row.value_text != null
-              ? String(row.value_text)
-              : null;
+        current[fieldId] = decodeMemberFieldValue(fields.find((field) => field.id === fieldId), row);
         valuesByMemberId.set(memberId, current);
       }
     }
 
-    const seasonValueByRecordId = new Map<string, Record<string, string | boolean | null>>();
+    const seasonValueByRecordId = new Map<string, Record<string, MemberFieldValue>>();
     const seasonRecordIds = Array.from(seasonRecordByMemberId.values()).map((record) => record.id);
     const seasonFieldIds = fields.filter((field) => fieldScope(field) === "season" && !field.legacy_binding).map((field) => field.id);
     if (seasonRecordIds.length > 0 && seasonFieldIds.length > 0) {
@@ -457,6 +452,24 @@ export async function PATCH(req: NextRequest) {
       for (const record of (seasonRecordRows ?? []) as PlayerSeasonRecordRow[]) seasonRecordByMemberId.set(record.club_member_id, record);
     }
 
+    // Validate the whole payload before the first mutation (including seasonal values).
+    try {
+      for (const update of updates) {
+        const membership = membershipById.get(String(update?.member_id ?? ""));
+        if (!membership) continue;
+        for (const [id, raw] of Object.entries(update?.values ?? {})) {
+          const field = fieldById.get(id);
+          if (!field || field.club_id !== membership.club_id || !fieldAppliesToRole(field, membership.role)) continue;
+          const permissions = roleProfilePermissions(field, membership.role);
+          if (!field.is_active || !permissions.visible || !permissions.editable) continue;
+          encodeMemberFieldValue(field, raw);
+          if (fieldScope(field) === "season" && !currentSeasonByClubId.has(membership.club_id)) throw new Error(`Aucune saison courante pour ${field.label}`);
+        }
+      }
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Champ invalide" }, { status: 400 });
+    }
+
     for (const update of updates) {
       const memberId = String(update?.member_id ?? "");
       const values = update?.values && typeof update.values === "object" ? (update.values as Record<string, unknown>) : {};
@@ -548,10 +561,8 @@ export async function PATCH(req: NextRequest) {
           continue;
         }
 
-        const isEmpty =
-          rawValue == null ||
-          (typeof rawValue === "string" && rawValue.trim() === "") ||
-          (field.field_type === "select" && String(rawValue ?? "").trim() === "");
+        const encoded = encodeMemberFieldValue(field, rawValue);
+        const isEmpty = encoded === null;
 
         if (isEmpty) {
           const { error } = await supabaseAdmin
@@ -563,25 +574,7 @@ export async function PATCH(req: NextRequest) {
           continue;
         }
 
-        const valuePatch: Record<string, string | boolean | null> & { club_member_id: string; field_id: string } = {
-          club_member_id: memberId,
-          field_id: fieldId,
-          value_text: null,
-          value_bool: null,
-          value_option: null,
-        };
-
-        if (["text", "short_text", "long_text", "number", "date", "checkbox"].includes(field.field_type)) {
-          valuePatch.value_text = String(rawValue).trim();
-        } else if (field.field_type === "boolean") {
-          valuePatch.value_bool = Boolean(rawValue);
-        } else if (field.field_type === "select" || field.field_type === "radio") {
-          const option = String(rawValue).trim();
-          if (field.options_json.length > 0 && !field.options_json.includes(option)) {
-            return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
-          }
-          valuePatch.value_option = option;
-        }
+        const valuePatch = { club_member_id: memberId, field_id: fieldId, ...encoded };
 
         const { error } = await supabaseAdmin
           .from("club_member_player_field_values")

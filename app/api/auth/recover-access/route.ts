@@ -128,6 +128,7 @@ async function issueAccountRecoveryToken(args: {
     club_id: args.clubId,
     user_id: args.userId,
     invitation_kind: "account_recovery",
+    recipient_user_id: args.sentBy,
     sent_to_email: args.sentToEmail,
     token_hash: tokenHash,
     expires_at: expiresAt,

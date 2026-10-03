@@ -6,13 +6,15 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import CoachActivityCard from "@/components/coach/CoachActivityCard";
+import type { CoachPreparationInsight } from "@/lib/coachPreparationInsights";
 import { coachPlanningTitle } from "@/lib/coachPlanning";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import eventStyles from "./CoachEventDetail.module.css";
-import { ClipboardCheck, Pencil, PlusCircle, Trash2, ArrowLeft, MapPin, Sparkles } from "lucide-react";
+import { ClipboardCheck, Pencil, PlusCircle, Trash2, ArrowLeft, Eye, Check, Sparkles } from "lucide-react";
 
 type EventRow = {
   id: string;
@@ -82,12 +84,7 @@ type PlayerEvaluationSummary = {
   coach_id: string | null;
   coach_name: string | null;
 };
-type PlayerPreparationInsight = {
-  player_id: string;
-  points: Array<{ text: string }>;
-  source_event_count: number;
-  generated_at: string;
-};
+type PlayerPreparationInsight = CoachPreparationInsight;
 type EventStructureItemRow = {
   category: string;
   minutes: number;
@@ -274,11 +271,54 @@ export default function CoachEventDetailPage() {
   const [preparationInsightsLoading, setPreparationInsightsLoading] = useState(false);
   const [preparationInsightsError, setPreparationInsightsError] = useState(false);
   const preparationRequestRef = useRef(0);
+  const [coachClubCount, setCoachClubCount] = useState(1);
+  const [readTrackingAvailable, setReadTrackingAvailable] = useState(false);
+  const [seenBusy, setSeenBusy] = useState<Record<string, boolean>>({});
+  const [seenError, setSeenError] = useState<Record<string, string>>({});
+  const seenInFlight = useRef(new Set<string>());
+
+  async function markPreparationSeen(insight: PlayerPreparationInsight) {
+    if (!event || insight.seen_at || !readTrackingAvailable) return;
+    const request = preparationRequestRef.current;
+    const flightKey = `${event.id}:${insight.player_id}:${request}`;
+    if (seenInFlight.current.has(flightKey)) return;
+    seenInFlight.current.add(flightKey);
+    setSeenBusy((state) => ({ ...state, [insight.player_id]: true }));
+    setSeenError((state) => ({ ...state, [insight.player_id]: "" }));
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) throw new Error("coach.preparation.saveError");
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}/preparation-seen`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ player_id: insight.player_id, source_fingerprint: insight.source_fingerprint }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true || !result.seen_at) throw new Error(response.status === 409 ? "coach.preparation.changed" : "coach.preparation.saveError");
+      if (request !== preparationRequestRef.current) return;
+      setPreparationInsightsByPlayerId((current) => {
+        const next = new Map(current);
+        if (next.get(insight.player_id)?.source_fingerprint === insight.source_fingerprint) {
+          next.set(insight.player_id, { ...insight, seen_at: result.seen_at });
+        }
+        return next;
+      });
+    } catch (cause) {
+      if (request === preparationRequestRef.current) setSeenError((state) => ({
+        ...state, [insight.player_id]: cause instanceof Error ? cause.message : "coach.preparation.saveError",
+      }));
+    } finally {
+      seenInFlight.current.delete(flightKey);
+      if (request === preparationRequestRef.current) setSeenBusy((state) => ({ ...state, [insight.player_id]: false }));
+    }
+  }
 
   async function loadPreparationInsights(token: string, targetEvent: EventRow, assistanceEnabled: boolean) {
     const requestId = ++preparationRequestRef.current;
     setPreparationInsightsByPlayerId(new Map());
     setPreparationInsightsError(false);
+    setReadTrackingAvailable(false);
     const startsAt = new Date(targetEvent.starts_at).getTime();
     if (!assistanceEnabled || targetEvent.event_type !== "training" || !Number.isFinite(startsAt) || startsAt <= Date.now()) {
       setPreparationInsightsLoading(false);
@@ -295,6 +335,7 @@ export default function CoachEventDetailPage() {
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(json?.error ?? "Preparation insights unavailable"));
       if (requestId !== preparationRequestRef.current) return;
+      setReadTrackingAvailable(json.read_tracking_available === true);
       const insights = Array.isArray(json?.insights) ? (json.insights as PlayerPreparationInsight[]) : [];
       setPreparationInsightsByPlayerId(
         new Map(
@@ -405,6 +446,7 @@ export default function CoachEventDetailPage() {
       setEvent(ev);
       setCampDay((detailJson?.campDay ?? null) as CampDayRow | null);
       setClubName(String(detailJson?.clubName ?? "Club"));
+      setCoachClubCount(Number(detailJson?.coachClubCount ?? 1));
       setGroupName(String(detailJson?.groupName ?? "Groupe"));
       setMeId(String(detailJson?.meId ?? ""));
       setCanManageActivity(detailJson?.canManageActivity === true);
@@ -510,7 +552,9 @@ export default function CoachEventDetailPage() {
   }
 
   useEffect(() => {
-    load();
+    setSeenBusy({}); setSeenError({}); seenInFlight.current.clear();
+    void load();
+    return () => { preparationRequestRef.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -537,7 +581,7 @@ export default function CoachEventDetailPage() {
           : null;
       return dayLabel ? `${campTitle} • ${dayLabel}` : campTitle;
     }
-    return coachPlanningTitle(event.title, `${eventTypeLabelLocalized(event.event_type, locale)} — ${groupName || pickLocaleText(locale, "Groupe", "Group")}`);
+    return coachPlanningTitle(event.title, eventTypeLabelLocalized(event.event_type, locale));
   }, [campDay, event, groupName, locale]);
 
   async function addCoach(coachId: string) {
@@ -648,11 +692,9 @@ export default function CoachEventDetailPage() {
     return <main className={styles.page}><section className={styles.quickPanel}>{error ?? t("common.noData")}</section></main>;
   }
 
-  const date = eventDateSummary(event.starts_at, event.ends_at);
   const isEventPast = new Date(event.starts_at).getTime() < Date.now();
   const isTrainingPast = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
   const showPreparationInsights = coachTrainingAssistanceEnabled && event.event_type === "training" && !isEventPast;
-  const isSpecific = groupName === "Groupe spécifique" || event.title?.trim() === "Activité spécifique";
 
   return (
     <main className={styles.page}>
@@ -671,11 +713,7 @@ export default function CoachEventDetailPage() {
           <h1>{eventTypeLabelLocalized(event.event_type, locale)}</h1>
           <p className={styles.lead}>{groupName} · {clubName}</p>
         </div>
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}/planning`}>
-            <ArrowLeft size={16} aria-hidden="true" />
-            {tr("Retour à la planification", "Back to planning")}
-          </Link>
+        <div className={eventStyles.pageActions}>
           {canManageActivity ? (
             <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
               <Pencil size={16} aria-hidden="true" />
@@ -688,45 +726,23 @@ export default function CoachEventDetailPage() {
               {coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")}
             </Link>
           ) : null}
+          <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}/planning`}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            {tr("Retour à la planification", "Back to planning")}
+          </Link>
         </div>
       </div>
 
       {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
 
-      <article className="planning-event-card">
-        <div className="planning-event-card-inner">
-          <div className="planning-event-date">
-            <div className="planning-event-day">{date.day}</div>
-            <div className="planning-event-number">{date.date}</div>
-            <div className="planning-event-month">{date.month}</div>
-            <div className="planning-event-time-divider" />
-            <div className="planning-event-times">
-              <span>{date.startTime}</span>
-              {date.endTime ? <span>{date.endTime}</span> : null}
-            </div>
-          </div>
-          <div className="planning-event-content" style={{ display: "grid", gap: 14 }}>
-            <div className="planning-event-title-row">
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 className="planning-event-title">{eventCardTitle}</h2>
-                <span className="pill-soft">{event.series_id ? tr("Récurrent", "Recurring") : tr("Unique", "Single")}</span>
-                {isSpecific ? <span className="pill-soft">{tr("Activité spécifique", "Specific activity")}</span> : null}
-                {event.status === "cancelled" ? <span className="pill-soft">{tr("Annulée", "Cancelled")}</span> : null}
-              </div>
-              <span className="pill-soft">{event.duration_minutes} {t("common.min")}</span>
-            </div>
-            <div className="manager-calendar-detail-grid">
-              <div><span>{tr("Groupe", "Group")}</span><b>{groupName}</b></div>
-              <div><span>{tr("Club", "Club")}</span><b>{clubName}</b></div>
-              <div><span>{tr("Type", "Type")}</span><b>{eventTypeLabelLocalized(event.event_type, locale)}</b></div>
-            </div>
-            {event.coach_note?.trim() ? <p className="manager-calendar-detail-note">{event.coach_note}</p> : null}
-            <div className="planning-event-footer">
-              <span className="planning-event-location"><MapPin size={16} aria-hidden="true" /><span>{event.location_text?.trim() || tr("Lieu non disponible", "Location unavailable")}</span></span>
-            </div>
-          </div>
-        </div>
-      </article>
+      <CoachActivityCard startsAt={event.starts_at} endsAt={event.ends_at}
+        typeLabel={eventTypeLabelLocalized(event.event_type, locale)} title={eventCardTitle}
+        groupName={groupName} clubName={clubName} showClub={coachClubCount > 1} location={event.location_text}>
+        {event.status === "cancelled" || event.coach_note?.trim() ? <div>
+          {event.status === "cancelled" ? <span className="pill-soft">{t("coach.planning.cancelled")}</span> : null}
+          {event.coach_note?.trim() ? <p className="manager-calendar-detail-note">{event.coach_note}</p> : null}
+        </div> : null}
+      </CoachActivityCard>
 
       <section className={styles.quickPanel}>
         <div className={styles.sectionHeading}>
@@ -758,6 +774,8 @@ export default function CoachEventDetailPage() {
           <div><h2>{tr("Joueurs attendus", "Expected players")}</h2><p>{showPreparationInsights ? tr("Présence et points d’attention générés uniquement à partir des notes privées des cinq derniers entraînements.", "Attendance and focus points generated only from private notes from the last five training sessions.") : tr("Présence et évaluation des juniors de l’activité.", "Attendance and evaluation for the activity's juniors.")}</p></div>
         </div>
         <div className={eventStyles.playerList}>
+          {showPreparationInsights && !preparationInsightsLoading && preparationInsightsByPlayerId.size > 0 && !readTrackingAvailable
+            ? <p className={eventStyles.preparationEmpty} role="status">{t("coach.preparation.unavailable")}</p> : null}
           {attendees.map((attendee) => {
             const player = attendee.profile ?? null;
             const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
@@ -769,9 +787,24 @@ export default function CoachEventDetailPage() {
             return (
               <article key={attendee.player_id} className={eventStyles.playerRow}>
                 <div className={eventStyles.playerMain}>
+                  <div className={eventStyles.playerHeader}>
                   <div className={eventStyles.playerIdentity}>
                     <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span>
                     <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
+                  </div>
+                <div className={eventStyles.attendance}>
+                  {isTrainingPast ? (
+                    <span className="pill-soft">
+                      {attendanceStatus === "present"
+                        ? t("coachDebrief.present")
+                        : attendanceStatus === "absent"
+                          ? t("coachDebrief.absent")
+                          : t("coachDebrief.noPreset")}
+                    </span>
+                  ) : (
+                    <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                  )}
+                </div>
                   </div>
                   {showPreparationInsights ? (
                     <div className={eventStyles.preparationInsight}>
@@ -791,20 +824,17 @@ export default function CoachEventDetailPage() {
                     </div>
                   ) : null}
                 </div>
-                <div className={eventStyles.attendance}>
-                  {isTrainingPast ? (
-                    <span className="pill-soft">
-                      {attendanceStatus === "present"
-                        ? t("coachDebrief.present")
-                        : attendanceStatus === "absent"
-                          ? t("coachDebrief.absent")
-                          : t("coachDebrief.noPreset")}
-                    </span>
-                  ) : (
-                    <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
-                  )}
-                </div>
+                {seenError[attendee.player_id] ? <p className={eventStyles.readError} role="alert">{t(seenError[attendee.player_id])}</p> : null}
                 <div className={eventStyles.playerActions}>
+                  {showPreparationInsights && preparationInsight ? <button type="button"
+                    className={`${eventStyles.seenButton} ${preparationInsight.seen_at ? eventStyles.isSeen : ""}`}
+                    aria-pressed={Boolean(preparationInsight.seen_at)}
+                    title={!readTrackingAvailable ? t("coach.preparation.unavailable") : undefined}
+                    disabled={!readTrackingAvailable || Boolean(preparationInsight.seen_at) || seenBusy[attendee.player_id]}
+                    onClick={() => void markPreparationSeen(preparationInsight)}>
+                    {preparationInsight.seen_at ? <Check size={16} aria-hidden="true"/> : <Eye size={16} aria-hidden="true"/>}
+                    {t(preparationInsight.seen_at ? "coach.preparation.seen" : "coach.preparation.markSeen")}
+                  </button> : null}
                   {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}

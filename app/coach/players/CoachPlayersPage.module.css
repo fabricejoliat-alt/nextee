@@ -1,52 +1,49 @@
-@media (max-width: 640px) {
-  .mobileTableWrap {
-    overflow: visible;
-  }
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 
-  .mobileTable tbody {
-    display: grid;
-  }
+.list .row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 0;
+}
 
-  .mobileTable tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px;
-    min-height: 68px;
-    padding: 12px 0;
-  }
+.row + .row {
+  border-top: 1px solid #e7ece6;
+}
 
-  .mobileTable td {
-    display: none;
-  }
+.row:first-child { padding-top: 0; }
+.row:last-child { padding-bottom: 0; }
 
-  .mobileTable td:first-child,
-  .mobileTable td:last-child {
-    display: flex;
-    width: auto;
-    padding: 0;
-  }
+.row .avatar {
+  width: 34px;
+  height: 34px;
+}
 
-  .mobileTable td:first-child {
-    min-width: 0;
-  }
+.identity {
+  min-width: 0;
+  color: #2f4135;
+  font: 650 14px/1.4 var(--font-inter), sans-serif;
+  overflow-wrap: anywhere;
+}
 
-  .mobileTable td:last-child {
-    justify-content: flex-end;
-  }
+.identity b { font-weight: 750; }
 
-  .mobileTable td::before {
-    display: none;
-  }
+.handicap {
+  color: #718078;
+  font-weight: 500;
+  white-space: nowrap;
+}
 
-  .mobileTable td:first-child > div {
-    min-width: 0;
-  }
-
-  .mobileTable td:first-child b {
-    overflow: hidden;
-    font-size: 14px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.row .viewButton {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  justify-self: end;
 }

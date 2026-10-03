@@ -1,0 +1,20 @@
+.card{min-width:0;border:1px solid #e1e8df;border-radius:14px;background:#fff;overflow:hidden}
+.listItem{min-width:0;border:0;border-radius:0;background:transparent}
+.listItem+.listItem{border-top:1px solid #edf1eb}
+.row{display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:14px;padding:14px}
+.date{display:grid;justify-items:center;align-content:center;gap:2px;min-height:94px;padding:8px 5px;border-radius:11px;background:#e8f1e5;color:#35483b;text-align:center}
+.date>span{font-size:10px;font-weight:850;text-transform:uppercase}.date>b{font-size:26px;line-height:1.1}.date time{font-size:11px;font-weight:800}.date time:first-of-type{margin-top:4px;padding-top:4px;border-top:1px solid #cbdcc5;width:100%}
+.body{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}.title{margin:0;color:#35483b;font-size:14px;font-weight:800;line-height:1.35;text-decoration:none}.title:hover{text-decoration:underline}.meta{color:#647167;font-size:12px;line-height:1.4}.location{display:flex;align-items:flex-start;gap:5px;color:#758078;font-size:12px;line-height:1.4}.location svg{flex:0 0 auto;margin-top:1px;color:#c84a40}
+.actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}.action{display:grid;place-items:center;width:44px;min-height:44px;flex:0 0 44px;border:0;border-radius:10px;text-decoration:none;cursor:pointer}.view{background:#e8f3e6;color:#3f6b43}.pending{background:#fff2c8;color:#7b5e0b}.prepare{background:#e7f0fb;color:#35658e}.action:hover{filter:brightness(.96)}.action:focus-visible,.title:focus-visible{outline:2px solid #526b50;outline-offset:3px}
+.details{display:grid;gap:14px;padding:16px;border-top:1px solid #e7ede4}.details:empty,.details:has(> [hidden]:only-child){display:none}
+@media(max-width:640px){.row{grid-template-columns:64px minmax(0,1fr) auto;gap:9px;padding:11px}.date{min-height:88px}.title{font-size:13px}.meta,.location{font-size:11px}.actions{flex-direction:column}.details{padding:12px}}
+
+/* Dashboard rows sit inside a parent card: only a fine separator between activities. */
+.listItem .row{grid-template-columns:72px minmax(0,1fr) auto;gap:10px;padding:8px 0}
+.listItem .date{min-height:72px;padding:7px 5px;border-radius:10px;background:linear-gradient(180deg,#edf4ea,#e6efe3)}
+.listItem .date>span{font-size:8px;letter-spacing:.07em;color:#6b776e}
+.listItem .date>b{margin:3px 0;font:850 23px/.9 var(--font-inter-tight),var(--font-inter),sans-serif;letter-spacing:-.05em}
+.listItem .date time{font-size:9px;color:#526456}
+.listItem .body{gap:4px}
+.listItem .title{font-size:12px;font-weight:750;color:#2f4135}
+.listItem .meta,.listItem .location{font-size:10px;line-height:1.35;color:#7a857c}

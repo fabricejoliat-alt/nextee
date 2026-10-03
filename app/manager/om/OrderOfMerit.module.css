@@ -604,3 +604,22 @@
     display: none;
   }
 }
+
+.formFields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.page { min-width: 0; padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+.breadcrumb { flex-wrap: wrap; }
+.topline > div, .panel, .detailPanel, .tableWrap { min-width: 0; }
+.titleCell, .topline h1, .badge { overflow-wrap: anywhere; }
+.badge { max-width: 100%; width: fit-content; }
+.primary, .secondary, .danger { height: auto; min-height: 42px; padding-top: 9px; padding-bottom: 9px; text-align: center; }
+.page button:focus-visible, .page a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.field input[type="date"] { min-width: 0; max-width: 100%; }
+@media (max-width: 640px) {
+ .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+ .stat { padding: 13px; }
+ .table td { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; }
+ .tableControl { min-width: 0; max-width: 75%; }
+ .titleCell { min-width: 0; text-align: right; }
+ .panelHeader { flex-wrap: wrap; }
+ .field input[type="date"] { appearance: none; display: block; }
+}

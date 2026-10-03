@@ -1,8 +1,11 @@
 "use client";
 
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { managerJuniorFeedback } from "@/lib/managerJuniorPresentation";
+
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, RefreshCw, Save } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -52,7 +55,11 @@ function isEmpty(value: FieldValue | undefined) {
 }
 
 export default function PlayerCreatePage() {
+  const { t } = useI18n();
   const router = useRouter();
+  const params = useSearchParams();
+  const requestedClubId = params.get("club") ?? "";
+  const requestedSeasonId = params.get("season") ?? "";
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubId, setClubId] = useState("");
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -63,6 +70,8 @@ export default function PlayerCreatePage() {
   const [seasonValues, setSeasonValues] = useState<Record<string, FieldValue>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [createdMemberId, setCreatedMemberId] = useState("");
   const [error, setError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -75,7 +84,7 @@ export default function PlayerCreatePage() {
     [fields]
   );
 
-  async function loadClub(id: string) {
+  async function loadClub(id: string, preferredSeasonId = "") {
     if (!id) return;
     setLoading(true);
     setError("");
@@ -87,16 +96,16 @@ export default function PlayerCreatePage() {
       ]);
       const membersJson = await membersResponse.json();
       const seasonsJson = await seasonsResponse.json();
-      if (!membersResponse.ok) throw new Error(membersJson.error ?? "Impossible de charger les champs.");
-      if (!seasonsResponse.ok) throw new Error(seasonsJson.error ?? "Impossible de charger les saisons.");
+      if (!membersResponse.ok) throw new Error(membersJson.error ?? t("manager.junior.fieldsError"));
+      if (!seasonsResponse.ok) throw new Error(seasonsJson.error ?? t("manager.settings.seasons.loadError"));
       const nextSeasons = (seasonsJson.seasons ?? []) as Season[];
       setFields(((membersJson.playerFields ?? []) as Field[]).filter((field) => field.is_active && !field.legacy_binding));
       setSeasons(nextSeasons);
-      setSeasonId("");
+      setSeasonId(nextSeasons.some((season) => season.id === preferredSeasonId) ? preferredSeasonId : "");
       setPermanentValues({});
       setSeasonValues({});
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Impossible de préparer le formulaire.");
+      setError(cause instanceof Error ? cause.message : t("manager.junior.formError"));
     } finally {
       setLoading(false);
     }
@@ -107,35 +116,39 @@ export default function PlayerCreatePage() {
       try {
         const response = await fetch("/api/manager/my-clubs", { headers: await authHeaders() });
         const json = await response.json();
-        if (!response.ok) throw new Error(json.error ?? "Impossible de charger les clubs.");
+        if (!response.ok) throw new Error(json.error ?? t("manager.administration.clubsError"));
         const nextClubs = (json.clubs ?? []) as Club[];
-        const firstClubId = nextClubs[0]?.id ?? "";
+        const firstClubId = nextClubs.find((club) => club.id === requestedClubId)?.id ?? nextClubs[0]?.id ?? "";
         setClubs(nextClubs);
         setClubId(firstClubId);
-        if (firstClubId) await loadClub(firstClubId);
+        if (firstClubId) await loadClub(firstClubId, requestedSeasonId);
         else setLoading(false);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Impossible de charger les clubs.");
+        setError(cause instanceof Error ? cause.message : t("manager.administration.clubsError"));
         setLoading(false);
       }
     })();
+  // Load once: changing the interface language must preserve the current draft.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const backUrl = `/manager/user-management/players${clubId ? `?club=${clubId}${seasonId ? `&season=${seasonId}` : ""}` : ""}`;
 
   function validate() {
     const nextErrors: Record<string, string> = {};
-    if (!profile.first_name.trim()) nextErrors.first_name = "Le prénom est obligatoire.";
-    if (!profile.last_name.trim()) nextErrors.last_name = "Le nom est obligatoire.";
-    if (!profile.birth_date) nextErrors.birth_date = "La date de naissance est obligatoire.";
-    if (profile.email.trim() && !/^\S+@\S+\.\S+$/.test(profile.email.trim())) nextErrors.email = "Saisissez une adresse e-mail valide.";
+    if (!profile.first_name.trim()) nextErrors.first_name = t("manager.administration.firstNameRequired");
+    if (!profile.last_name.trim()) nextErrors.last_name = t("manager.administration.lastNameRequired");
+    if (!profile.birth_date) nextErrors.birth_date = t("manager.junior.birthRequired");
+    if (profile.email.trim() && !/^\S+@\S+\.\S+$/.test(profile.email.trim())) nextErrors.email = t("manager.administration.validEmail");
     for (const field of permanentFields) {
       if (field.is_required && !field.is_sensitive && isEmpty(permanentValues[field.id])) {
-        nextErrors[`permanent:${field.id}`] = "Ce champ est obligatoire.";
+        nextErrors[`permanent:${field.id}`] = t("manager.junior.fieldRequired");
       }
     }
     if (seasonId) {
       for (const field of seasonFields) {
         if (field.is_required && !field.is_sensitive && isEmpty(seasonValues[field.id])) {
-          nextErrors[`season:${field.id}`] = "Ce champ est obligatoire.";
+          nextErrors[`season:${field.id}`] = t("manager.junior.fieldRequired");
         }
       }
     }
@@ -145,7 +158,8 @@ export default function PlayerCreatePage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!validate() || !clubId) return;
+    if (savingRef.current || !validate() || !clubId) return;
+    savingRef.current = true;
     setSaving(true);
     setError("");
     try {
@@ -154,20 +168,24 @@ export default function PlayerCreatePage() {
           .filter((field) => !field.is_sensitive && !isEmpty(permanentValues[field.id]))
           .map((field) => [field.id, permanentValues[field.id]])
       );
-      const response = await fetch(`/api/admin/clubs/${clubId}/create-member`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({
-          role: "player",
-          ...profile,
-          handicap: profile.handicap || null,
-          player_field_values: safePermanentValues,
-        }),
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Impossible de créer le junior.");
-      const memberId = String(json.member?.id ?? "");
-      if (!memberId) throw new Error("Le dossier junior n’a pas été créé.");
+      let memberId = createdMemberId;
+      if (!memberId) {
+        const response = await fetch(`/api/admin/clubs/${clubId}/create-member`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({
+            role: "player",
+            ...profile,
+            handicap: profile.handicap || null,
+            player_field_values: safePermanentValues,
+          }),
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error ?? t("manager.junior.createError"));
+        memberId = String(json.member?.id ?? "");
+        if (!memberId) throw new Error(t("manager.junior.missingMember"));
+        setCreatedMemberId(memberId);
+      }
 
       if (seasonId) {
         const safeSeasonValues = Object.fromEntries(
@@ -182,70 +200,74 @@ export default function PlayerCreatePage() {
         });
         const seasonJson = await seasonResponse.json();
         if (!seasonResponse.ok) {
-          throw new Error(seasonJson.error ?? "Le junior est créé, mais ses paramètres de saison n’ont pas pu être enregistrés.");
+          throw new Error(seasonJson.error ?? t("manager.junior.seasonError"));
         }
       }
       router.push(`/manager/user-management/players/${memberId}?club=${clubId}&season=${seasonId}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Impossible de créer le junior.");
+      setError(cause instanceof Error ? cause.message : t("manager.junior.createError"));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
 
   return (
     <div className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
-        <Link href="/manager/user-management/players">Juniors</Link> / Nouveau junior
+      <nav aria-label={t("manager.content.breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
+        <Link href={backUrl}>{t("manager.fields.player")}</Link> / {t("manager.junior.new")}
       </nav>
       <div className={styles.topline}>
-        <div><h1>Nouveau junior</h1><p className={styles.lead}>Ajoutez les informations connues. Le groupe et les parents pourront être renseignés ensuite.</p></div>
+        <div><h1>{t("manager.junior.new")}</h1><p className={styles.lead}>{t("manager.junior.createLead")}</p></div>
         <div className={actionStyles.topActions}>
-          <Link className={actionStyles.backButton} href="/manager/user-management/players"><ArrowLeft size={16} />Retour à la liste</Link>
+          <Link className={actionStyles.backButton} href={backUrl}><ArrowLeft size={16} />{t("manager.administration.backToList")}</Link>
         </div>
       </div>
-      {error ? <div className={styles.errorAlert} role="alert">{error}</div> : null}
+      {error ? <div className={styles.errorAlert} role="alert">{managerJuniorFeedback(t, error)}</div> : null}
+      {createdMemberId ? <div className="notice-card" role="status">{t("manager.junior.createdHelp")} <Link href={`/manager/user-management/players/${createdMemberId}?club=${clubId}&season=${seasonId}`}>{t("manager.junior.openProfile")}</Link></div> : null}
       {loading ? (
-        <section className={styles.overview}><ListLoadingBlock label="Préparation du formulaire…" /></section>
+        <section className={styles.overview}><ListLoadingBlock label={t("manager.content.preparingForm")} /></section>
       ) : (
         <form onSubmit={submit} style={{ display: "grid", gap: 18 }}>
+          <fieldset disabled={saving || Boolean(createdMemberId)} style={{ display: "grid", gap: 18, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <section className={styles.overview}>
-            <div className={styles.sectionHeading}>
-              <div><h2>Profil permanent</h2><p>Les champs marqués d’un astérisque sont requis.</p></div>
-              <label className="user-mgmt-field"><span className="user-mgmt-field-label">Club</span><select value={clubId} onChange={(event) => { setClubId(event.target.value); void loadClub(event.target.value); }}>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}</select></label>
+            <div className={`${styles.sectionHeading} ${styles.staffFormHeading}`}>
+              <div><h2>{t("manager.junior.permanent")}</h2><p>{t("manager.administration.requiredHelp")}</p></div>
+              <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.settings.club")}</span><select value={clubId} onChange={(event) => { setClubId(event.target.value); void loadClub(event.target.value); }}>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}</select></label>
             </div>
             <div className="user-mgmt-form-grid">
-              <FieldInput label="Prénom *" value={profile.first_name} onChange={(value) => setProfile({ ...profile, first_name: value })} error={errors.first_name} required />
-              <FieldInput label="Nom *" value={profile.last_name} onChange={(value) => setProfile({ ...profile, last_name: value })} error={errors.last_name} required />
-              <FieldInput label="Adresse e-mail du junior" type="email" value={profile.email} onChange={(value) => setProfile({ ...profile, email: value })} error={errors.email} />
-              <FieldInput label="Date de naissance *" type="date" value={profile.birth_date} onChange={(value) => setProfile({ ...profile, birth_date: value })} error={errors.birth_date} required />
-              <FieldInput label="Téléphone" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
-              <FieldInput label="Adresse" full value={profile.address} onChange={(value) => setProfile({ ...profile, address: value })} />
-              <FieldInput label="Code postal" value={profile.postal_code} onChange={(value) => setProfile({ ...profile, postal_code: value })} />
-              <FieldInput label="Ville" value={profile.city} onChange={(value) => setProfile({ ...profile, city: value })} />
-              <FieldInput label="Numéro AVS" value={profile.avs_no} onChange={(value) => setProfile({ ...profile, avs_no: value })} />
-              <label className="user-mgmt-field"><span className="user-mgmt-field-label">Latéralité</span><select value={profile.handedness} onChange={(event) => setProfile({ ...profile, handedness: event.target.value })}><option value="">Non définie</option><option value="right">Droitier</option><option value="left">Gaucher</option></select></label>
-              <FieldInput label="Handicap" value={profile.handicap} onChange={(value) => setProfile({ ...profile, handicap: value })} />
+              <FieldInput label={t("manager.junior.firstRequired")} value={profile.first_name} onChange={(value) => setProfile({ ...profile, first_name: value })} error={errors.first_name} required />
+              <FieldInput label={t("manager.junior.lastRequired")} value={profile.last_name} onChange={(value) => setProfile({ ...profile, last_name: value })} error={errors.last_name} required />
+              <FieldInput label={t("manager.junior.email")} type="email" value={profile.email} onChange={(value) => setProfile({ ...profile, email: value })} error={errors.email} />
+              <FieldInput label={t("manager.junior.birthRequiredLabel")} type="date" value={profile.birth_date} onChange={(value) => setProfile({ ...profile, birth_date: value })} error={errors.birth_date} required />
+              <FieldInput label={t("manager.profile.phone")} value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
+              <FieldInput label={t("manager.profile.address")} full value={profile.address} onChange={(value) => setProfile({ ...profile, address: value })} />
+              <FieldInput label={t("manager.profile.postalCode")} value={profile.postal_code} onChange={(value) => setProfile({ ...profile, postal_code: value })} />
+              <FieldInput label={t("manager.profile.city")} value={profile.city} onChange={(value) => setProfile({ ...profile, city: value })} />
+              <FieldInput label={t("manager.junior.avs")} value={profile.avs_no} onChange={(value) => setProfile({ ...profile, avs_no: value })} />
+              <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.profile.handedness")}</span><select value={profile.handedness} onChange={(event) => setProfile({ ...profile, handedness: event.target.value })}><option value="">{t("manager.content.undefinedCapacity")}</option><option value="right">{t("manager.junior.right")}</option><option value="left">{t("manager.junior.left")}</option></select></label>
+              <FieldInput label={t("manager.settings.volume.handicap")} value={profile.handicap} onChange={(value) => setProfile({ ...profile, handicap: value })} />
             </div>
           </section>
 
           <section className={styles.quickPanel}>
-            <div className={styles.sectionHeading}><div><h2>Informations complémentaires</h2><p>Champs permanents configurés pour ce club.</p></div></div>
+            <div className={styles.sectionHeading}><div><h2>{t("manager.junior.additional")}</h2><p>{t("manager.junior.permanentHelp")}</p></div></div>
             <FieldCollection fields={permanentFields} values={permanentValues} setValues={setPermanentValues} errors={errors} errorPrefix="permanent" />
           </section>
+          </fieldset>
 
-          <section className={styles.quickPanel}>
-            <div className={styles.sectionHeading}>
-              <h2>Paramètre de saison</h2>
-              <label className="user-mgmt-field"><span className="user-mgmt-field-label">Saison</span><select value={seasonId} onChange={(event) => setSeasonId(event.target.value)}><option value="">Aucune saison</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? " · En cours" : ""}</option>)}</select></label>
+          <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><section className={styles.quickPanel}>
+            <div className={`${styles.sectionHeading} ${styles.staffFormHeading}`}>
+              <h2>{t("manager.junior.seasonSettings")}</h2>
+              <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.season")}</span><select value={seasonId} onChange={(event) => setSeasonId(event.target.value)}><option value="">{t("manager.junior.noSeason")}</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}{season.is_current ? t("manager.settings.seasons.currentSuffix") : ""}</option>)}</select></label>
             </div>
-            {!seasonId ? <div className="marketplace-empty">Sélectionnez une saison pour renseigner ses paramètres.</div> : <FieldCollection fields={seasonFields} values={seasonValues} setValues={setSeasonValues} errors={errors} errorPrefix="season" />}
-          </section>
+            {!seasonId ? <div className="marketplace-empty">{t("manager.junior.selectSeason")}</div> : <FieldCollection fields={seasonFields} values={seasonValues} setValues={setSeasonValues} errors={errors} errorPrefix="season" />}
+          </section></fieldset>
 
           <div className={actionStyles.stickySave}>
-            <button type="submit" className={actionStyles.primaryButton} disabled={saving}>
+            <button type="submit" className={actionStyles.primaryButton} disabled={saving || !clubId}>
               {saving ? <RefreshCw size={16} className={styles.spin} /> : <Save size={16} />}
-              {saving ? "Création…" : "Créer le junior"}
+              {saving ? t(createdMemberId ? "manager.saving" : "manager.settings.seasons.creating") : t(createdMemberId ? "manager.junior.retrySeason" : "manager.junior.create")}
             </button>
           </div>
         </form>
@@ -255,23 +277,26 @@ export default function PlayerCreatePage() {
 }
 
 function FieldCollection({ fields, values, setValues, errors, errorPrefix }: { fields: Field[]; values: Record<string, FieldValue>; setValues: React.Dispatch<React.SetStateAction<Record<string, FieldValue>>>; errors: Record<string, string>; errorPrefix: string }) {
-  if (fields.length === 0) return <div className="marketplace-empty">Aucun champ configuré pour cette zone.</div>;
+  const { t } = useI18n();
+  if (fields.length === 0) return <div className="marketplace-empty">{t("manager.junior.noFields")}</div>;
   return <div className="user-mgmt-form-grid">{fields.map((field) => <DynamicField key={field.id} field={field} value={values[field.id]} onChange={(value) => setValues((current) => ({ ...current, [field.id]: value }))} error={errors[`${errorPrefix}:${field.id}`]} />)}</div>;
 }
 
 function DynamicField({ field, value, onChange, error }: { field: Field; value: FieldValue | undefined; onChange: (value: FieldValue) => void; error?: string }) {
+  const { t } = useI18n();
   const options = field.options_json ?? [];
-  if (field.is_sensitive) return <div className="user-mgmt-field"><span className="user-mgmt-field-label">{field.label}</span><div className="notice-card">Champ restreint à compléter depuis la fiche junior.</div></div>;
+  if (field.is_sensitive) return <div className="user-mgmt-field"><span className="user-mgmt-field-label">{field.label}</span><div className="notice-card">{t("manager.junior.restricted")}</div></div>;
   let control: React.ReactNode;
   if (field.field_type === "long_text") control = <textarea rows={4} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />;
-  else if (field.field_type === "boolean") control = <select value={value === true ? "yes" : value === false ? "no" : ""} onChange={(event) => onChange(event.target.value === "" ? "" : event.target.value === "yes")}><option value="">Non défini</option><option value="yes">Oui</option><option value="no">Non</option></select>;
-  else if (field.field_type === "select") control = <select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}><option value="">Choisir</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+  else if (field.field_type === "boolean") control = <select value={value === true ? "yes" : value === false ? "no" : ""} onChange={(event) => onChange(event.target.value === "" ? "" : event.target.value === "yes")}><option value="">{t("manager.content.undefined")}</option><option value="yes">{t("manager.content.yes")}</option><option value="no">{t("manager.content.no")}</option></select>;
+  else if (field.field_type === "select") control = <select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}><option value="">{t("manager.administration.choose")}</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
   else if (field.field_type === "radio") control = <div className="user-mgmt-chip-list">{options.map((option) => <label key={option} className="pill-soft"><input type="radio" name={field.id} checked={value === option} onChange={() => onChange(option)} />{option}</label>)}</div>;
   else if (field.field_type === "checkbox") { const selected = Array.isArray(value) ? value : []; control = <div className="user-mgmt-chip-list">{options.map((option) => <label key={option} className="pill-soft"><input type="checkbox" checked={selected.includes(option)} onChange={(event) => onChange(event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} />{option}</label>)}</div>; }
   else control = <input type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : "text"} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />;
-  return <label className="user-mgmt-field"><span className="user-mgmt-field-label">{field.label}{field.is_required ? " *" : ""}</span>{control}{field.description ? <small>{field.description}</small> : null}{error ? <small className="form-error">{error}</small> : null}</label>;
+  return <label className="user-mgmt-field"><span className="user-mgmt-field-label">{field.label}{field.is_required ? " *" : ""}</span>{control}{field.description ? <small>{field.description}</small> : null}{error ? <small className="form-error">{managerJuniorFeedback(t, error)}</small> : null}</label>;
 }
 
 function FieldInput({ label, value, onChange, error, type = "text", required, full }: { label: string; value: string; onChange: (value: string) => void; error?: string; type?: string; required?: boolean; full?: boolean }) {
-  return <label className="user-mgmt-field" style={full ? { gridColumn: "1 / -1" } : undefined}><span className="user-mgmt-field-label">{label}</span><input required={required} type={type} value={value} onChange={(event) => onChange(event.target.value)} />{error ? <small className="form-error">{error}</small> : null}</label>;
+  const { t } = useI18n();
+  return <label className="user-mgmt-field" style={full ? { gridColumn: "1 / -1" } : undefined}><span className="user-mgmt-field-label">{label}</span><input required={required} type={type} value={value} onChange={(event) => onChange(event.target.value)} />{error ? <small className="form-error">{managerJuniorFeedback(t, error)}</small> : null}</label>;
 }

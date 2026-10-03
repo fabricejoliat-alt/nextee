@@ -1,31 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { managerEditorFormat } from "@/lib/managerEditorPresentation";
+import { managerActivityLabel, managerLocaleTag, managerFormat, type ManagerTranslate } from "@/lib/managerLocale";
+import type { AppLocale } from "@/lib/i18n/messages";
+import groupStyles from "@/components/manager/GroupsManagement.module.css";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { loadCoachPlanningRoster } from "@/lib/coachPlanningRoster";
+import { coachEventSaveErrorKey, coachCreationErrorIsDefinite } from "@/lib/coachEventEditor";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import { createAppNotification, getEventAttendeeUserIds } from "@/lib/notifications";
+import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import EventCriteriaSelector, { replaceEventCriteria } from "@/components/evaluations/EventCriteriaSelector";
+import EventCriteriaSelector from "@/components/evaluations/EventCriteriaSelector";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import {
-  Calendar,
   ArrowLeft,
   PlusCircle,
   Repeat,
   Trash2,
-  Pencil,
-  Users,
   Search,
-  SlidersHorizontal,
 } from "lucide-react";
 
 type GroupRow = { id: string; name: string | null; club_id: string };
-type ClubRow = { id: string; name: string | null };
 
 type ProfileLite = {
   id: string;
@@ -48,51 +48,10 @@ type ClubMemberLite = {
   avatar_url?: string | null;
   role: string | null;
 };
-
-type EventRow = {
-  id: string;
-  group_id: string;
-  club_id: string;
-  event_type: "training" | "interclub" | "camp" | "session" | "event";
-  title?: string | null;
-  starts_at: string;
-  ends_at: string | null;
-  duration_minutes: number;
-  location_text: string | null;
-  coach_note: string | null;
-  series_id: string | null;
-  status: "scheduled" | "cancelled";
-  requires_evaluation: boolean;
-};
-type EventCoachRow = {
-  event_id: string;
-  coach_id: string;
-};
-type EventAttendeeRow = {
-  event_id: string;
-  player_id: string;
-};
 type TrainingItemDraft = {
   category: string;
   minutes: string;
   note: string;
-};
-
-type SeriesInsert = {
-  group_id: string;
-  club_id: string;
-  event_type: "training" | "interclub" | "camp" | "session" | "event";
-  title: string | null;
-  location_text: string | null;
-  coach_note: string | null;
-  duration_minutes: number;
-  weekday: number;
-  time_of_day: string; // "HH:mm:ss" or "HH:mm"
-  interval_weeks: number;
-  start_date: string; // YYYY-MM-DD
-  end_date: string; // YYYY-MM-DD
-  is_active: boolean;
-  created_by: string;
 };
 
 const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "session" | "event"; label: string }> = [
@@ -103,32 +62,13 @@ const EVENT_TYPE_OPTIONS: Array<{ value: "training" | "interclub" | "camp" | "se
   { value: "event", label: "Événement" },
 ];
 
-function memberRoleLabel(role: string | null | undefined) {
-  switch (role) {
-    case "owner":
-      return "Propriétaire";
-    case "admin":
-      return "Admin";
-    case "manager":
-      return "Manager";
-    case "coach":
-      return "Coach";
-    case "player":
-      return "Joueur";
-    case "parent":
-      return "Parent";
-    case "captain":
-      return "Capitaine";
-    case "staff":
-      return "Staff";
-    default:
-      return "Membre";
-  }
+function memberRoleLabel(t: ManagerTranslate, role: string | null | undefined) {
+  return t(`coach.form.role.${role && ["owner","admin","manager","coach","player","parent","captain","staff"].includes(role) ? role : "member"}`);
 }
 
-function fmtDateTime(iso: string) {
+function fmtDateTime(iso: string, locale: AppLocale) {
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
+  return new Intl.DateTimeFormat(managerLocaleTag(locale), {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -138,40 +78,23 @@ function fmtDateTime(iso: string) {
   }).format(d);
 }
 
-function fmtDateTimeRange(startIso: string, endIso: string | null) {
-  if (!endIso) return fmtDateTime(startIso);
+function fmtDateTimeRange(startIso: string, endIso: string | null, locale: AppLocale) {
+  if (!endIso) return fmtDateTime(startIso, locale);
   const start = new Date(startIso);
   const end = new Date(endIso);
   const sameDay = start.toDateString() === end.toDateString();
 
   if (sameDay) {
-    const datePart = new Intl.DateTimeFormat("fr-CH", {
+    const datePart = new Intl.DateTimeFormat(managerLocaleTag(locale), {
       weekday: "short",
       day: "2-digit",
       month: "short",
       year: "numeric",
     }).format(start);
-    const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+    const timeFmt = new Intl.DateTimeFormat(managerLocaleTag(locale), { hour: "2-digit", minute: "2-digit" });
     return `${datePart} • ${timeFmt.format(start)} → ${timeFmt.format(end)}`;
   }
-  return `${fmtDateTime(startIso)} → ${fmtDateTime(endIso)}`;
-}
-
-function fmtTrainingMoment(iso: string) {
-  const d = new Date(iso);
-  const datePart = new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(d);
-  const timePart = new Intl.DateTimeFormat("fr-CH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  })
-    .format(d)
-    .replace(":", "h");
-  return `${datePart} à ${timePart}`;
+  return `${fmtDateTime(startIso, locale)} → ${fmtDateTime(endIso, locale)}`;
 }
 
 function isoToLocalInput(iso: string) {
@@ -237,20 +160,7 @@ const TRAINING_CATEGORY_VALUES = [
   "fitness",
   "other",
 ] as const;
-const TRAINING_CATEGORY_LABELS: Record<string, string> = {
-  warmup_mobility: "Échauffement / mobilité",
-  long_game: "Long jeu",
-  short_game_all: "Petit jeu (tout secteur)",
-  putting: "Putting",
-  wedging: "Wedging",
-  pitching: "Pitching",
-  chipping: "Chipping",
-  bunker: "Bunker",
-  course: "Parcours",
-  mental: "Mental",
-  fitness: "Fitness",
-  other: "Autre",
-};
+
 function buildMinuteOptions() {
   const opts: number[] = [];
   for (let m = 5; m <= 300; m += 5) opts.push(m);
@@ -269,18 +179,6 @@ function buildQuarterHourOptions() {
   return out;
 }
 const QUARTER_HOUR_OPTIONS = buildQuarterHourOptions();
-
-function startOfDayISO(ymd: string) {
-  // ymd = YYYY-MM-DD (local) => ISO at local midnight
-  const d = new Date(`${ymd}T00:00:00`);
-  return d.toISOString();
-}
-
-function nextDayStartISO(ymd: string) {
-  const d = new Date(`${ymd}T00:00:00`);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString();
-}
 
 function fullName(p?: { first_name: string | null; last_name: string | null } | null) {
   const f = (p?.first_name ?? "").trim();
@@ -327,32 +225,37 @@ const compactGreenButtonStyle: React.CSSProperties = {
   boxShadow: "none",
 };
 
-type FilterMode = "upcoming" | "past" | "range";
-
-export default function CoachGroupPlanningPage() {
+export default function ManagerGroupActivityCreatePage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const groupId = String(params?.id ?? "").trim();
+  const seasonId = useSearchParams().get("season");
+  const seasonQuery = seasonId ? `?season=${encodeURIComponent(seasonId)}` : "";
+  const planningHref = `/manager/groups/${groupId}/planning${seasonQuery}`;
 
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [saving, setBusy] = useState(false);
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [uncertain, setUncertain] = useState(false);
+  const busy = saving || Boolean(createdId) || uncertain;
+  const mutationInFlight = useRef(false);
+  const loadVersion = useRef(0);
+  const currentGroup = useRef(groupId);
+  currentGroup.current = groupId;
+  const attempt = useRef<{ requestId: string; mode: "single" | "series"; template: Record<string, unknown>;
+    criterionIds: string[]; coachIds: string[]; playerIds: string[]; structure: Array<{ category: string; minutes: number; note: string | null }> } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [meId, setMeId] = useState("");
 
   const [group, setGroup] = useState<GroupRow | null>(null);
-  const [clubName, setClubName] = useState("");
+  const [, setClubName] = useState("");
 
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [players, setPlayers] = useState<ProfileLite[]>([]);
   const [clubMembers, setClubMembers] = useState<ClubMemberLite[]>([]);
 
-  const [events, setEvents] = useState<EventRow[]>([]);
-  const [eventCoachIds, setEventCoachIds] = useState<Record<string, string[]>>({});
-  const [eventAttendeeIds, setEventAttendeeIds] = useState<Record<string, string[]>>({});
-  const [coachEditBusy, setCoachEditBusy] = useState<Record<string, boolean>>({});
 
   // Coaches selected (simple chips)
   const [coachIdsSelected, setCoachIdsSelected] = useState<string[]>([]);
@@ -392,21 +295,12 @@ export default function CoachGroupPlanningPage() {
   const [endDate, setEndDate] = useState<string>(() => toYMD(addDays(new Date(), 60)));
 
   // ✅ NEW — filter
-  const [filterMode, setFilterMode] = useState<FilterMode>("upcoming");
-  const [rangeFrom, setRangeFrom] = useState<string>(() => toYMD(addDays(new Date(), -30)));
-  const [rangeTo, setRangeTo] = useState<string>(() => toYMD(addDays(new Date(), 30)));
 
-  const eventTypeLabelLocalized = (v: string | null | undefined) => {
-    if (v === "training") return tr("Entraînement", "Training");
-    if (v === "interclub") return tr("Interclub", "Interclub");
-    if (v === "camp") return tr("Stage/Camp", "Camp");
-    if (v === "session") return tr("Séance", "Session");
-    return tr("Événement", "Event");
-  };
+  const eventTypeLabelLocalized = (v: string | null | undefined) => managerActivityLabel(t, v ?? "event");
 
   const selectedPlayersList = useMemo(
-    () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedPlayers]
+    () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [selectedPlayers, locale]
   );
 
   const singleDate = useMemo(() => {
@@ -482,8 +376,8 @@ export default function CoachGroupPlanningPage() {
   }, [players, coaches]);
 
   const selectedGuestsList = useMemo(
-    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedGuests]
+    () => Object.values(selectedGuests).sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [selectedGuests, locale]
   );
 
   const candidateGuests = useMemo(() => {
@@ -493,11 +387,11 @@ export default function CoachGroupPlanningPage() {
     return base
       .filter((m) => {
         const n = fullName(m).toLowerCase();
-        const role = memberRoleLabel(m.role).toLowerCase();
+        const role = memberRoleLabel(t, m.role).toLowerCase();
         return n.includes(q) || role.includes(q);
       })
       .slice(0, 30);
-  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests]);
+  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests, t]);
 
   useEffect(() => {
     setSelectedGuests((prev) => {
@@ -513,16 +407,16 @@ export default function CoachGroupPlanningPage() {
     () =>
       coaches
         .filter((c) => coachIdsSelected.includes(c.id))
-        .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [coaches, coachIdsSelected, locale]
   );
 
   const candidateCoaches = useMemo(
     () =>
       coaches
         .filter((c) => !coachIdsSelected.includes(c.id))
-        .sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [coaches, coachIdsSelected]
+        .sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [coaches, coachIdsSelected, locale]
   );
 
   const allCoachesSelected = useMemo(() => {
@@ -530,22 +424,6 @@ export default function CoachGroupPlanningPage() {
     const selectedCount = coachIdsSelected.length;
     return total > 0 && selectedCount === total;
   }, [coaches.length, coachIdsSelected.length]);
-
-  const playerIdSet = useMemo(() => new Set(players.map((p) => p.id)), [players]);
-  const coachIdSet = useMemo(() => new Set(coaches.map((c) => c.id)), [coaches]);
-  const personNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    players.forEach((p) => map.set(p.id, fullName(p)));
-    coaches.forEach((c) => map.set(c.id, fullName(c as any)));
-    clubMembers.forEach((m) => {
-      if (!map.has(m.id)) map.set(m.id, fullName(m as any));
-    });
-    return map;
-  }, [players, coaches, clubMembers]);
-
-  function toggleInList(list: string[], id: string) {
-    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
-  }
 
   function addStructureLine() {
     setStructureItems((prev) => [...prev, { category: "", minutes: "", note: "" }]);
@@ -557,36 +435,6 @@ export default function CoachGroupPlanningPage() {
 
   function updateStructureLine(idx: number, patch: Partial<TrainingItemDraft>) {
     setStructureItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
-  }
-
-  async function saveStructureForEvents(eventIds: string[]) {
-    const payload = structureItems
-      .map((it, idx) => {
-        const minutes = Number(it.minutes);
-        if (!it.category || !Number.isFinite(minutes) || minutes <= 0) return null;
-        return {
-          category: it.category,
-          minutes,
-          note: it.note?.trim() || null,
-          position: idx,
-        };
-      })
-      .filter((x): x is { category: string; minutes: number; note: string | null; position: number } => Boolean(x));
-
-    if (payload.length === 0 || eventIds.length === 0) return;
-
-    const rows = eventIds.flatMap((eventId) =>
-      payload.map((it) => ({
-        event_id: eventId,
-        category: it.category,
-        minutes: it.minutes,
-        note: it.note,
-        position: it.position,
-      }))
-    );
-
-    const ins = await supabase.from("club_event_structure_items").insert(rows);
-    if (ins.error) throw new Error(ins.error.message);
   }
 
   function toggleSelectedPlayer(p: ProfileLite) {
@@ -608,177 +456,34 @@ export default function CoachGroupPlanningPage() {
   }
 
   async function load() {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
 
     try {
-      if (!groupId) throw new Error("Groupe manquant.");
+      if (!groupId) throw new Error("manager.planning.groupMissing");
 
       const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
+      if (version !== loadVersion.current) return;
+      if (uErr || !uRes.user) throw new Error("manager.home.invalidSession");
       setMeId(uRes.user.id);
 
-      // group
-      const gRes = await supabase.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle();
-      if (gRes.error) throw new Error(gRes.error.message);
-      if (!gRes.data) throw new Error("Groupe introuvable.");
-      setGroup(gRes.data as GroupRow);
-
-      // club name
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
-      if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
-      else setClubName("Club");
-
-      // all active club members (for guests visibility)
-      const cmRes = await supabase
-        .from("club_members")
-        .select("user_id, role")
-        .eq("club_id", gRes.data.club_id)
-        .eq("is_active", true);
-      if (cmRes.error) throw new Error(cmRes.error.message);
-      const cmRows = (cmRes.data ?? []) as Array<{ user_id: string; role: string | null }>;
-      const memberIds = Array.from(new Set(cmRows.map((r) => r.user_id).filter(Boolean)));
-
-      const profilesById = new Map<string, { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>();
-      if (memberIds.length > 0) {
-        const profRes = await supabase
-          .from("profiles")
-          .select("id, first_name, last_name, avatar_url")
-          .in("id", memberIds);
-        if (profRes.error) throw new Error(profRes.error.message);
-        ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>).forEach((p) => {
-          profilesById.set(p.id, p);
-        });
-      }
-
-      const cmList: ClubMemberLite[] = cmRows.map((r) => {
-        const p = profilesById.get(r.user_id);
-        return {
-          id: r.user_id,
-          first_name: p?.first_name ?? null,
-          last_name: p?.last_name ?? null,
-          avatar_url: p?.avatar_url ?? null,
-          role: r.role ?? null,
-        };
-      });
-      cmList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
-      setClubMembers(cmList);
-
-      // coaches in group
-      const coRes = await supabase
-        .from("coach_group_coaches")
-        .select("coach_user_id, profiles:coach_user_id ( id, first_name, last_name, avatar_url )")
-        .eq("group_id", groupId);
-
-      if (coRes.error) throw new Error(coRes.error.message);
-      const coList: CoachLite[] = (coRes.data ?? []).map((r: any) => ({
-        id: r.coach_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
-      }));
-      setCoaches(coList);
-
-      // players in group
-      const plRes = await supabase
-        .from("coach_group_players")
-        .select("player_user_id, profiles:player_user_id ( id, first_name, last_name, handicap, avatar_url )")
-        .eq("group_id", groupId);
-
-      if (plRes.error) throw new Error(plRes.error.message);
-      const plList: ProfileLite[] = (plRes.data ?? []).map((r: any) => ({
-        id: r.profiles?.id ?? r.player_user_id,
-        first_name: r.profiles?.first_name ?? null,
-        last_name: r.profiles?.last_name ?? null,
-        handicap: r.profiles?.handicap ?? null,
-        avatar_url: r.profiles?.avatar_url ?? null,
-      }));
-      plList.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
-      setPlayers(plList);
-
-      // defaults selections
-      setCoachIdsSelected(coList.map((c) => c.id));
-
-      // default: all players selected
-      const defaultSelected: Record<string, ProfileLite> = {};
-      plList.forEach((p) => (defaultSelected[p.id] = p));
-      setSelectedPlayers(defaultSelected);
-
-      // ✅ events filtered
-      let isoFrom: string | null = null;
-      let isoTo: string | null = null;
-
-      if (filterMode === "upcoming") {
-        const from = new Date();
-        const to = addDays(from, 90);
-        isoFrom = from.toISOString();
-        isoTo = to.toISOString();
-      } else if (filterMode === "past") {
-        const to = new Date(); // now
-        const from = addDays(to, -90);
-        isoFrom = from.toISOString();
-        isoTo = to.toISOString();
-      } else {
-        // range
-        if (rangeFrom) isoFrom = startOfDayISO(rangeFrom);
-        if (rangeTo) isoTo = nextDayStartISO(rangeTo); // inclusive end date
-      }
-
-      let q = supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status")
-        .eq("group_id", groupId)
-        .order("starts_at", { ascending: true });
-
-      if (isoFrom) q = q.gte("starts_at", isoFrom);
-      if (isoTo) q = q.lt("starts_at", isoTo);
-
-      const eRes = await q;
-      if (eRes.error) throw new Error(eRes.error.message);
-      const eList = (eRes.data ?? []) as EventRow[];
-      setEvents(eList);
-
-      const eventIds = eList.map((e) => e.id);
-      if (eventIds.length > 0) {
-        const ecRes = await supabase
-          .from("club_event_coaches")
-          .select("event_id,coach_id")
-          .in("event_id", eventIds);
-        if (ecRes.error) throw new Error(ecRes.error.message);
-        const byEvent: Record<string, string[]> = {};
-        ((ecRes.data ?? []) as EventCoachRow[]).forEach((r) => {
-          if (!byEvent[r.event_id]) byEvent[r.event_id] = [];
-          byEvent[r.event_id].push(r.coach_id);
-        });
-        setEventCoachIds(byEvent);
-
-        const eaRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id,player_id")
-          .in("event_id", eventIds);
-        if (eaRes.error) throw new Error(eaRes.error.message);
-        const attendeesByEvent: Record<string, string[]> = {};
-        ((eaRes.data ?? []) as EventAttendeeRow[]).forEach((r) => {
-          if (!attendeesByEvent[r.event_id]) attendeesByEvent[r.event_id] = [];
-          attendeesByEvent[r.event_id].push(r.player_id);
-        });
-        setEventAttendeeIds(attendeesByEvent);
-      } else {
-        setEventCoachIds({});
-        setEventAttendeeIds({});
-      }
-
+      const roster = await loadCoachPlanningRoster(supabase, groupId, uRes.user.id);
+      if (version !== loadVersion.current) return;
+      setGroup(roster.group); setClubName(roster.clubName);
+      setClubMembers(roster.members); setCoaches(roster.coaches); setPlayers(roster.players);
+      setCoachIdsSelected(roster.coaches.map((coach) => coach.id));
+      setSelectedPlayers(Object.fromEntries(roster.players.map((player) => [player.id, player])));
+      setSelectedGuests({});
       setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
+    } catch (e: unknown) {
+      if (version !== loadVersion.current) return;
+      setError(e instanceof Error && e.message === "forbidden" ? "coach.error.forbidden" : "coach.error.load");
       setGroup(null);
       setClubName("");
       setCoaches([]);
       setPlayers([]);
       setClubMembers([]);
-      setEvents([]);
-      setEventCoachIds({});
-      setEventAttendeeIds({});
       setSelectedPlayers({});
       setCoachIdsSelected([]);
       setLoading(false);
@@ -786,399 +491,119 @@ export default function CoachGroupPlanningPage() {
   }
 
   useEffect(() => {
-    load();
+    setCreatedId(null); setUncertain(false); setBusy(false); setGroup(null);
+    mutationInFlight.current = false; attempt.current = null;
+    void load();
+    return () => { loadVersion.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, filterMode, rangeFrom, rangeTo]);
+  }, [groupId]);
 
-  async function createSingleEvent() {
-    if (!group || busy) return;
-    setBusy(true);
-    setError(null);
-
+  async function createEvents() {
+    if (!group || loading || saving || createdId || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    const savedGroup = groupId;
+    let committed = false;
+    setBusy(true); setError(null);
     try {
-      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
+      if (!attempt.current) {
+        if (["session", "event", "camp"].includes(eventType) && !eventTitle.trim()) throw new Error("title_required");
+        const template: Record<string, unknown> = { event_type: eventType, title: eventTitle.trim() || null,
+          location_text: locationText.trim() || null, coach_note: coachNote.trim() || null, duration_minutes: durationMinutes, requires_evaluation: ["training", "camp"].includes(eventType) && requiresEvaluation };
+        if (mode === "single") {
+          const start = new Date(startsAtLocal);
+          const end = eventType === "training" ? new Date(start.getTime() + durationMinutes * 60_000) : new Date(endsAtLocal);
+          if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) throw new Error("invalid_event");
+          Object.assign(template, { starts_at: start.toISOString(), ends_at: end.toISOString(),
+            duration_minutes: Math.min(MAX_DB_EVENT_DURATION_MINUTES, Math.round((end.getTime() - start.getTime()) / 60_000)) });
+        } else {
+          if (!startDate || !endDate || endDate < startDate) throw new Error("invalid_recurrence");
+          Object.assign(template, { weekday, time_of_day: timeOfDay, interval_weeks: intervalWeeks, start_date: startDate, end_date: endDate });
+        }
+        attempt.current = { requestId: crypto.randomUUID(), mode, template, criterionIds: template.requires_evaluation ? [...evaluationCriterionIds] : [], coachIds: [...coachIdsSelected],
+          playerIds: [...new Set([...Object.keys(selectedPlayers), ...Object.keys(selectedGuests)])],
+          structure: structureItems.map((item) => ({ category: item.category, minutes: Number(item.minutes), note: item.note.trim() || null })) };
       }
-
-      const startDt = new Date(startsAtLocal);
-      if (Number.isNaN(startDt.getTime())) throw new Error("Date/heure invalide.");
-      let endDt = new Date(endsAtLocal);
-      let computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-
-      if (eventType === "training") {
-        computedDuration = Math.max(30, Number(durationMinutes) || 60);
-        endDt = new Date(startDt);
-        endDt.setMinutes(endDt.getMinutes() + computedDuration);
-      } else {
-        if (Number.isNaN(endDt.getTime())) throw new Error("Date/heure invalide.");
-        if (endDt <= startDt) throw new Error("La fin doit être après le début.");
-        computedDuration = Math.max(1, Math.round((endDt.getTime() - startDt.getTime()) / 60000));
-      }
-      const durationForDb = eventType === "training" ? computedDuration : Math.min(computedDuration, MAX_DB_EVENT_DURATION_MINUTES);
-
-      const { data: insData, error: insErr } = await supabase
-        .from("club_events")
-        .insert({
-          group_id: group.id,
-          club_id: group.club_id,
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          starts_at: startDt.toISOString(),
-          ends_at: endDt.toISOString(),
-          duration_minutes: durationForDb,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-          requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
-          created_by: meId,
-        })
-        .select("id")
-        .single();
-
-      if (insErr) throw new Error(insErr.message);
-      const eventId = insData.id as string;
-
-      // coaches link
-      if (coachIdsSelected.length > 0) {
-        const rows = coachIdsSelected.map((cid) => ({ event_id: eventId, coach_id: cid }));
-        const cIns = await supabase.from("club_event_coaches").insert(rows);
-        if (cIns.error) throw new Error(cIns.error.message);
-      }
-
-      // attendees: always seed all group players server-side, then add optional guests
-      const seeded = await supabase.rpc("staff_seed_group_players_attendees", { p_event_id: eventId });
-      if (seeded.error) throw new Error(seeded.error.message);
-      const seededPlayerIds = ((seeded.data ?? []) as Array<{ player_id: string }>).map((r) => r.player_id);
-
-      const guestIds = Object.keys(selectedGuests);
-      if (guestIds.length > 0) {
-        const rows = guestIds.map((pid) => ({ event_id: eventId, player_id: pid, status: "present" }));
-        const aIns = await supabase.from("club_event_attendees").insert(rows);
-        if (aIns.error) throw new Error(aIns.error.message);
-      }
-      const attendeeIds = Array.from(new Set([...seededPlayerIds, ...guestIds]));
-
-      await saveStructureForEvents([eventId]);
-      await replaceEventCriteria([eventId], requiresEvaluation ? evaluationCriterionIds : []);
-
-      if (attendeeIds.length > 0 && meId) {
-        const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
-        const msg = isTrainingOrInterclub
-          ? {
-              title:
-                eventType === "interclub"
-                  ? "Nouvel interclub prévu"
-                  : "Nouvel entrainement prévu",
-              body: `Le ${fmtTrainingMoment(startDt.toISOString())} • ${locationText.trim() || "Lieu à définir"}`,
-            }
-          : await getNotificationMessage("notif.coachEventCreated", locale, {
-              eventType: eventTypeLabelLocalized(eventType),
-              dateTime: fmtDateTimeRange(startDt.toISOString(), endDt.toISOString()),
-              locationPart: locationText.trim() ? ` · ${locationText.trim()}` : "",
-            });
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_created",
-          title: msg.title,
-          body: msg.body,
-          data: {
-            event_id: eventId,
-            group_id: groupId,
-            url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-          },
-          recipientUserIds: attendeeIds,
-        });
-      }
-
-      setBusy(false);
-      router.push(`/manager/groups/${groupId}/planning/${eventId}`);
-      return;
-    } catch (e: any) {
-      setError(e?.message ?? "Creation error.");
-      setBusy(false);
-    }
-  }
-
-  function weekdayFromDate(d: Date) {
-    return d.getDay(); // 0=Sun..6=Sat
-  }
-
-  function nextWeekdayOnOrAfter(start: Date, targetWeekday: number) {
-    const d = new Date(start);
-    const w = weekdayFromDate(d);
-    const diff = (targetWeekday - w + 7) % 7;
-    d.setDate(d.getDate() + diff);
-    return d;
-  }
-
-  function combineDateAndTime(localYMD: string, hhmm: string) {
-    const t = hhmm.length === 5 ? `${hhmm}:00` : hhmm;
-    return new Date(`${localYMD}T${t}`);
-  }
-
-  async function createSeries() {
-    if (!group || busy) return;
-    setBusy(true);
-    setError(null);
-
-    try {
-      if ((eventType === "session" || eventType === "event" || eventType === "camp") && !eventTitle.trim()) {
-        throw new Error(eventType === "session" ? tr("Nom de la séance requis.", "Session name is required.") : eventType === "camp" ? tr("Nom du stage/camp requis.", "Camp name is required.") : tr("Nom de l’événement requis.", "Event name is required."));
-      }
-      if (!startDate || !endDate) throw new Error(tr("Dates de récurrence manquantes.", "Missing recurrence dates."));
-      if (endDate < startDate) throw new Error(tr("La date de fin doit être après la date de début.", "End date must be after start date."));
-
-      const seriesPayload: SeriesInsert = {
-        group_id: group.id,
-        club_id: group.club_id,
-        event_type: eventType,
-        title: eventTitle.trim() || null,
-        location_text: locationText.trim() || null,
-        coach_note: coachNote.trim() || null,
-        duration_minutes: durationMinutes,
-        weekday,
-        time_of_day: timeOfDay.length === 5 ? `${timeOfDay}:00` : timeOfDay,
-        interval_weeks: intervalWeeks,
-        start_date: startDate,
-        end_date: endDate,
-        is_active: true,
-        created_by: meId,
-      };
-
-      const sIns = await supabase.from("club_event_series").insert(seriesPayload).select("id").single();
-      if (sIns.error) throw new Error(sIns.error.message);
-      const seriesId = sIns.data.id as string;
-
-      // generate occurrences (cap 80)
-      const startLocal = new Date(`${startDate}T00:00:00`);
-      const endLocal = new Date(`${endDate}T23:59:59`);
-
-      let cursor = nextWeekdayOnOrAfter(startLocal, weekday);
-      let count = 0;
-
-      const occurrences: any[] = [];
-      while (cursor <= endLocal) {
-        const dt = combineDateAndTime(toYMD(cursor), timeOfDay);
-        const endDt = new Date(dt);
-        endDt.setMinutes(endDt.getMinutes() + durationMinutes);
-        occurrences.push({
-          group_id: group.id,
-          club_id: group.club_id,
-          event_type: eventType,
-          title: eventTitle.trim() || null,
-          starts_at: dt.toISOString(),
-          ends_at: endDt.toISOString(),
-          duration_minutes: durationMinutes,
-          location_text: locationText.trim() || null,
-          coach_note: coachNote.trim() || null,
-          requires_evaluation: (eventType === "training" || eventType === "camp") && requiresEvaluation,
-          series_id: seriesId,
-          created_by: meId,
-        });
-
-        count += 1;
-        if (count >= 80) break;
-        cursor = addDays(cursor, intervalWeeks * 7);
-      }
-
-      if (occurrences.length === 0) throw new Error(tr("Aucune occurrence générée (vérifie jour/heure).", "No occurrence generated (check day/time)."));
-
-      const eIns = await supabase.from("club_events").insert(occurrences).select("id");
-      if (eIns.error) throw new Error(eIns.error.message);
-
-      const createdEventIds = (eIns.data ?? []).map((r: any) => r.id as string);
-
-      // link coaches
-      if (coachIdsSelected.length > 0 && createdEventIds.length > 0) {
-        const coachRows = createdEventIds.flatMap((eid) => coachIdsSelected.map((cid) => ({ event_id: eid, coach_id: cid })));
-        const cIns = await supabase.from("club_event_coaches").insert(coachRows);
-        if (cIns.error) throw new Error(cIns.error.message);
-      }
-
-      // attendees: seed all group players on each created event, then add optional guests
-      const seededPlayerIdSet = new Set<string>();
-      for (const eid of createdEventIds) {
-        const seeded = await supabase.rpc("staff_seed_group_players_attendees", { p_event_id: eid });
-        if (seeded.error) throw new Error(seeded.error.message);
-        ((seeded.data ?? []) as Array<{ player_id: string }>).forEach((r) => seededPlayerIdSet.add(r.player_id));
-      }
-
-      const guestIds = Object.keys(selectedGuests);
-      if (guestIds.length > 0 && createdEventIds.length > 0) {
-        const attRows = createdEventIds.flatMap((eid) => guestIds.map((pid) => ({ event_id: eid, player_id: pid, status: "present" })));
-        const aIns = await supabase.from("club_event_attendees").insert(attRows);
-        if (aIns.error) throw new Error(aIns.error.message);
-      }
-      const attendeeIds = Array.from(new Set([...Array.from(seededPlayerIdSet), ...guestIds]));
-
-      await saveStructureForEvents(createdEventIds);
-      await replaceEventCriteria(createdEventIds, requiresEvaluation ? evaluationCriterionIds : []);
-
-      if (attendeeIds.length > 0 && meId && createdEventIds.length > 0) {
-        const seriesTime = timeOfDay.length >= 5 ? timeOfDay.slice(0, 5) : String(timeOfDay);
-        const msg = await getNotificationMessage("notif.coachEventsCreated", locale, {
-          count: createdEventIds.length,
-          eventType: eventTypeLabelLocalized(eventType).toLowerCase(),
-          changesSummary:
-            locale === "fr"
-              ? `${createdEventIds.length} occurrence(s) · ${eventTypeLabelLocalized(eventType)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`
-              : `${createdEventIds.length} occurrence(s) · ${eventTypeLabelLocalized(eventType)} · ${startDate} -> ${endDate} · ${seriesTime} · ${durationMinutes} min${locationText.trim() ? ` · ${locationText.trim()}` : ""}`,
-        });
-        await createAppNotification({
-          actorUserId: meId,
-          kind: "coach_event_created",
-          title: msg.title,
-          body: msg.body,
-          data: { series_id: seriesId, group_id: groupId, url: "/player/golf/trainings" },
-          recipientUserIds: attendeeIds,
-        });
-      }
-
-      setBusy(false);
-      if (createdEventIds.length > 0) {
-        router.push(`/manager/groups/${groupId}/planning/${createdEventIds[0]}`);
-        return;
-      }
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? tr("Erreur de création de la récurrence.", "Recurrence creation error."));
-      setBusy(false);
-    }
-  }
-
-  async function deleteEvent(eventId: string) {
-    const ok = window.confirm(tr("Supprimer cet événement planifié ? (irréversible)", "Delete this planned event? (irreversible)"));
-    if (!ok) return;
-
-    setBusy(true);
-    setError(null);
-
-    let recipients: string[] = [];
-    try {
-      recipients = await getEventAttendeeUserIds(eventId, { includeAbsent: false });
-    } catch {
-      recipients = [];
-    }
-
-    const del = await supabase.from("club_events").delete().eq("id", eventId);
-    if (del.error) setError(del.error.message);
-
-    if (!del.error && recipients.length > 0 && meId) {
-      const deleted = events.find((e) => e.id === eventId);
-      const eventStart = deleted?.starts_at ?? new Date().toISOString();
-      const eventEnd =
-        deleted?.ends_at ??
-        new Date(new Date(eventStart).getTime() + Math.max(0, Number(deleted?.duration_minutes ?? 0)) * 60_000).toISOString();
-      const eventTypeDeleted = String(deleted?.event_type ?? "training");
-      const isTraining = eventTypeDeleted === "training";
-      const isInterclub = eventTypeDeleted === "interclub";
-      const msg = isTraining || isInterclub
-        ? {
-            title: isInterclub
-              ? `L'interclub du ${fmtTrainingMoment(eventStart)} a été annulé`
-              : `L'entrainement du ${fmtTrainingMoment(eventStart)} a été annulé`,
-            body: "",
-          }
-        : await getNotificationMessage("notif.coachEventDeleted", locale, {
-            eventType: eventTypeLabelLocalized(deleted?.event_type ?? "training"),
-            dateTime: fmtDateTimeRange(eventStart, eventEnd),
-            locationPart: deleted?.location_text ? ` · ${deleted.location_text}` : "",
-          });
-      await createAppNotification({
-        actorUserId: meId,
-        kind: "coach_event_deleted",
-        title: msg.title,
-        body: msg.body,
-        data: { event_id: eventId, group_id: groupId, url: "/player/golf/trainings" },
-        recipientUserIds: recipients,
+      const request = attempt.current;
+      const result = await supabase.rpc("create_manager_events_v1", {
+        p_request_id: request.requestId, p_group_id: group.id, p_mode: request.mode, p_template: request.template,
+        p_coach_ids: request.coachIds, p_player_ids: request.playerIds, p_structure: request.structure, p_criterion_ids: request.criterionIds,
       });
+      if (result.error) throw result.error;
+      const ids: string[] = Array.isArray(result.data?.event_ids) ? result.data.event_ids : [];
+      if (result.data?.ok !== true || !ids[0]) throw new Error("unconfirmed_creation");
+      committed = true;
+      if (savedGroup !== currentGroup.current) return;
+      setCreatedId(ids[0]); setUncertain(false);
+      // A replay is confirmation only: its original notification outcome is unknown.
+      if (result.data.replayed) { setError("coach.error.creationRecovered"); return; }
+      if (request.playerIds.length && meId) {
+        const msg = await getNotificationMessage(request.mode === "single" ? "notif.coachEventCreated" : "notif.coachEventsCreated", locale, {
+          eventType: eventTypeLabelLocalized(String(request.template.event_type)), count: ids.length,
+          dateTime: request.mode === "single" ? fmtDateTimeRange(String(request.template.starts_at), String(request.template.ends_at), locale) : "",
+          locationPart: request.template.location_text ? ` · ${request.template.location_text}` : "",
+          changesSummary: `${ids.length} · ${request.template.start_date} → ${request.template.end_date} · ${request.template.time_of_day}`,
+        });
+        await createAppNotification({ actorUserId: meId, kind: "coach_event_created", title: msg.title, body: msg.body,
+          data: { event_id: ids[0], series_id: result.data.series_id, group_id: groupId,
+            url: request.mode === "single" ? `/player/golf/trainings/new?club_event_id=${ids[0]}` : "/player/golf/trainings" },
+          recipientUserIds: request.playerIds });
+      }
+      if (savedGroup === currentGroup.current) router.push(`/manager/groups/${groupId}/planning/${ids[0]}${seasonQuery}`);
+    } catch (cause) {
+      if (savedGroup !== currentGroup.current) return;
+      if (committed) setError("coach.error.planningNotification");
+      else if (!attempt.current || (coachCreationErrorIsDefinite(cause) || (cause && typeof cause === "object" && "message" in cause && cause.message === "invalid_criteria"))) {
+        attempt.current = null; setUncertain(false); setError(cause && typeof cause === "object" && "message" in cause && cause.message === "invalid_criteria" ? "manager.editor.invalidCriteria" : coachEventSaveErrorKey(cause));
+      } else {
+        setUncertain(true); setError("coach.error.creationUncertain");
+      }
+    } finally {
+      if (savedGroup === currentGroup.current) { mutationInFlight.current = false; setBusy(false); }
     }
-
-    setBusy(false);
-    await load();
-  }
-
-  async function addCoachToEvent(eventId: string, coachId: string) {
-    const key = `${eventId}:${coachId}`;
-    if (coachEditBusy[key]) return;
-    setCoachEditBusy((prev) => ({ ...prev, [key]: true }));
-
-    const ins = await supabase.from("club_event_coaches").insert({ event_id: eventId, coach_id: coachId });
-    if (ins.error) {
-      setError(ins.error.message);
-      setCoachEditBusy((prev) => ({ ...prev, [key]: false }));
-      return;
-    }
-
-    setEventCoachIds((prev) => {
-      const current = prev[eventId] ?? [];
-      if (current.includes(coachId)) return prev;
-      return { ...prev, [eventId]: [...current, coachId] };
-    });
-    setCoachEditBusy((prev) => ({ ...prev, [key]: false }));
-  }
-
-  async function removeCoachFromEvent(eventId: string, coachId: string) {
-    const key = `${eventId}:${coachId}`;
-    if (coachEditBusy[key]) return;
-    setCoachEditBusy((prev) => ({ ...prev, [key]: true }));
-
-    const del = await supabase
-      .from("club_event_coaches")
-      .delete()
-      .eq("event_id", eventId)
-      .eq("coach_id", coachId);
-    if (del.error) {
-      setError(del.error.message);
-      setCoachEditBusy((prev) => ({ ...prev, [key]: false }));
-      return;
-    }
-
-    setEventCoachIds((prev) => ({ ...prev, [eventId]: (prev[eventId] ?? []).filter((id) => id !== coachId) }));
-    setCoachEditBusy((prev) => ({ ...prev, [key]: false }));
   }
 
   return (
-    <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
-        <Link href="/manager/groups">Groupes</Link>
+    <main className={`${styles.page} ${groupStyles.page}`}>
+      <nav aria-label={t("manager.content.breadcrumb")} style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">{t("manager.content.groups")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? "Groupe"}</Link>
+        <Link href={`/manager/groups/${groupId}`}>{group?.name ?? t("coachHome.groupFallback")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <Link href={`/manager/groups/${groupId}/planning`}>Planification</Link>
+        <Link href={planningHref}>{t("manager.groups.planning")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <span>Ajouter un événement</span>
+        <span>{t("coach.form.addTitle")}</span>
       </nav>
 
       <div className={styles.topline}>
         <div>
-          <h1>Ajouter un événement</h1>
-          <p className={styles.lead}>Planifiez un événement pour le groupe {group?.name ?? ""}.</p>
+          <h1>{t("coach.form.addTitle")}</h1>
+          <p className={styles.lead}>{managerEditorFormat(t, "addLead", { name: group?.name ?? "" })}</p>
         </div>
-        <Link className={actionStyles.backButton} href={`/manager/groups/${groupId}/planning`}>
+        <Link className={actionStyles.backButton} href={planningHref}>
           <ArrowLeft size={16} aria-hidden="true" />
-          Retour à la planification
-        </Link>
+          {t("coach.form.backPlanning")}</Link>
       </div>
 
-      {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
+      {error && <div className={actionStyles.errorAlert} role="alert">{t(error)}</div>}
+      {createdId ? <p role="status">{t("coach.editor.saved")} <Link href={`/manager/groups/${groupId}/planning/${createdId}${seasonQuery}`}>{t("coach.editor.viewSaved")}</Link></p> : null}
 
       {loading ? (
-        <section className={styles.quickPanel}><CompactLoadingBlock label="Chargement…" /></section>
-      ) : (
+        <section className={styles.quickPanel}><CompactLoadingBlock label={t("common.loading")} /></section>
+      ) : group ? (
         <>
           <section className={styles.quickPanel}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Informations de l’événement</h2>
-                <p>Définissez le type, la date et les informations pratiques.</p>
+                <h2>{t("coach.form.information")}</h2>
+                <p>{t("coach.form.informationHint")}</p>
               </div>
             </div>
             <div style={{ display: "grid", gap: 12 }}>
               {mode === "single" ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{tr("Récurrence", "Recurrence")}</span>
-                    <div className="mode-radio-group" role="radiogroup" aria-label={tr("Récurrence", "Recurrence")}>
+                    <span style={fieldLabelStyle}>{t("coach.form.recurrence")}</span>
+                    <div className="mode-radio-group" role="radiogroup" aria-label={t("coach.form.recurrence")}>
                       <label className={`mode-radio-option ${mode === "single" ? "is-active" : ""}`}>
                         <input
                           type="radio"
@@ -1187,7 +612,7 @@ export default function CoachGroupPlanningPage() {
                           onChange={() => setMode("single")}
                           disabled={busy}
                         />
-                        <span>{tr("Unique", "Single")}</span>
+                        <span>{t("coach.form.single")}</span>
                       </label>
 
                       <label className={`mode-radio-option ${String(mode) === "series" ? "is-active" : ""}`}>
@@ -1200,14 +625,14 @@ export default function CoachGroupPlanningPage() {
                         />
                         <span>
                           <Repeat size={16} />
-                          {tr("Récurrent", "Recurring")}
+                          {t("coach.form.recurring")}
                         </span>
                       </label>
                     </div>
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
+                    <span style={fieldLabelStyle}>{t("coach.form.eventType")}</span>
                     <select value={eventType} onChange={(e) => { const next = e.target.value as typeof eventType; setEventType(next); if (next !== "training") setRequiresEvaluation(false); }} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -1220,25 +645,25 @@ export default function CoachGroupPlanningPage() {
                   {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>
-                        {eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
+                        {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                       </span>
                       <input
                         value={eventTitle}
                         onChange={(e) => setEventTitle(e.target.value)}
                         disabled={busy}
-                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : eventType === "camp" ? tr("Ex: Stage de Pâques", "E.g. Easter camp") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                        placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                       />
                     </label>
                   ) : null}
 
                   <div className="grid-2">
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Date de début", "Start date")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.startDate")}</span>
                       <input type="date" value={singleDate} onChange={(e) => updateSingleDate(e.target.value)} disabled={busy} />
                     </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Heure de début", "Start time")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.startTime")}</span>
                       <select value={singleTime} onChange={(e) => updateSingleTime(e.target.value)} disabled={busy}>
                         {QUARTER_HOUR_OPTIONS.map((t) => (
                           <option key={t} value={t}>
@@ -1251,7 +676,7 @@ export default function CoachGroupPlanningPage() {
 
                   {eventType === "training" ? (
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                       <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                         {DURATION_OPTIONS.map((m) => (
                           <option key={m} value={m}>
@@ -1263,12 +688,12 @@ export default function CoachGroupPlanningPage() {
                   ) : (
                     <div className="grid-2">
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{tr("Date de fin", "End date")}</span>
+                        <span style={fieldLabelStyle}>{t("coach.form.endDate")}</span>
                         <input type="date" value={singleEndDate} onChange={(e) => updateSingleEndDate(e.target.value)} disabled={busy} />
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{tr("Heure de fin", "End time")}</span>
+                        <span style={fieldLabelStyle}>{t("coach.form.endTime")}</span>
                         <select value={singleEndTime} onChange={(e) => updateSingleEndTime(e.target.value)} disabled={busy}>
                           {QUARTER_HOUR_OPTIONS.map((t) => (
                             <option key={t} value={t}>
@@ -1285,8 +710,8 @@ export default function CoachGroupPlanningPage() {
               {mode === "series" ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{tr("Récurrence", "Recurrence")}</span>
-                    <div className="mode-radio-group" role="radiogroup" aria-label={tr("Récurrence", "Recurrence")}>
+                    <span style={fieldLabelStyle}>{t("coach.form.recurrence")}</span>
+                    <div className="mode-radio-group" role="radiogroup" aria-label={t("coach.form.recurrence")}>
                       <label className={`mode-radio-option ${String(mode) === "single" ? "is-active" : ""}`}>
                         <input
                           type="radio"
@@ -1295,7 +720,7 @@ export default function CoachGroupPlanningPage() {
                           onChange={() => setMode("single")}
                           disabled={busy}
                         />
-                        <span>{tr("Unique", "Single")}</span>
+                        <span>{t("coach.form.single")}</span>
                       </label>
 
                       <label className={`mode-radio-option ${String(mode) === "series" ? "is-active" : ""}`}>
@@ -1308,14 +733,14 @@ export default function CoachGroupPlanningPage() {
                         />
                         <span>
                           <Repeat size={16} />
-                          {tr("Récurrent", "Recurring")}
+                          {t("coach.form.recurring")}
                         </span>
                       </label>
                     </div>
                   </label>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>{tr("Type d’événement", "Event type")}</span>
+                    <span style={fieldLabelStyle}>{t("coach.form.eventType")}</span>
                     <select value={eventType} onChange={(e) => { const next = e.target.value as typeof eventType; setEventType(next); if (next !== "training") setRequiresEvaluation(false); }} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -1328,33 +753,33 @@ export default function CoachGroupPlanningPage() {
                   {(eventType === "session" || eventType === "event" || eventType === "camp") ? (
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={fieldLabelStyle}>
-                        {eventType === "session" ? tr("Nom de la séance", "Session name") : eventType === "camp" ? tr("Nom du stage/camp", "Camp name") : tr("Nom de l’événement", "Event name")}
+                        {eventType === "session" ? t("coach.form.sessionName") : eventType === "camp" ? t("coach.form.campName") : t("coach.form.eventName")}
                       </span>
                       <input
                         value={eventTitle}
                         onChange={(e) => setEventTitle(e.target.value)}
                         disabled={busy}
-                        placeholder={eventType === "session" ? tr("Ex: Séance putting junior", "E.g. Junior putting session") : eventType === "camp" ? tr("Ex: Stage de Pâques", "E.g. Easter camp") : tr("Ex: Rencontre de printemps", "E.g. Spring meetup")}
+                        placeholder={eventType === "session" ? t("coach.form.sessionExample") : eventType === "camp" ? t("coach.form.campExample") : t("coach.form.eventExample")}
                       />
                     </label>
                   ) : null}
 
                   <div className="grid-2">
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Jour", "Day")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.day")}</span>
                       <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} disabled={busy}>
-                        <option value={1}>{tr("Lundi", "Monday")}</option>
-                        <option value={2}>{tr("Mardi", "Tuesday")}</option>
-                        <option value={3}>{tr("Mercredi", "Wednesday")}</option>
-                        <option value={4}>{tr("Jeudi", "Thursday")}</option>
-                        <option value={5}>{tr("Vendredi", "Friday")}</option>
-                        <option value={6}>{tr("Samedi", "Saturday")}</option>
-                        <option value={0}>{tr("Dimanche", "Sunday")}</option>
+                        <option value={1}>{t("coach.form.monday")}</option>
+                        <option value={2}>{t("coach.form.tuesday")}</option>
+                        <option value={3}>{t("coach.form.wednesday")}</option>
+                        <option value={4}>{t("coach.form.thursday")}</option>
+                        <option value={5}>{t("coach.form.friday")}</option>
+                        <option value={6}>{t("coach.form.saturday")}</option>
+                        <option value={0}>{t("coach.form.sunday")}</option>
                       </select>
                     </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Heure de début", "Start time")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.startTime")}</span>
                       <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} disabled={busy}>
                         {QUARTER_HOUR_OPTIONS.map((t) => (
                           <option key={t} value={t}>
@@ -1379,7 +804,7 @@ export default function CoachGroupPlanningPage() {
 
                   <div className="grid-2">
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                       <select value={durationMinutes} onChange={(e) => setDurationMinutes(Number(e.target.value))} disabled={busy}>
                         {DURATION_OPTIONS.map((m) => (
                           <option key={m} value={m}>
@@ -1390,11 +815,11 @@ export default function CoachGroupPlanningPage() {
                     </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>{tr("Rythme", "Frequency")}</span>
+                      <span style={fieldLabelStyle}>{t("coach.form.frequency")}</span>
                       <select value={intervalWeeks} onChange={(e) => setIntervalWeeks(Number(e.target.value))} disabled={busy}>
                         {[1, 2, 3, 4].map((w) => (
                           <option key={w} value={w}>
-                            {tr(`Toutes les ${w} semaine${w > 1 ? "s" : ""}`, `Every ${w} week${w > 1 ? "s" : ""}`)}
+                            {w === 1 ? t("coach.form.everyWeek") : managerFormat(t, "coach.form.everyWeeks", { count: w })}
                           </option>
                         ))}
                       </select>
@@ -1402,23 +827,23 @@ export default function CoachGroupPlanningPage() {
                   </div>
 
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    {tr("⚠️ On matérialise les occurrences (max 80) pour que ce soit simple à éditer/supprimer par événement.", "⚠️ Occurrences are materialized (max 80) to keep per-event edit/delete simple.")}
+                    {t("coach.form.limitHint")}
                   </div>
                 </div>
               ) : null}
 
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={fieldLabelStyle}>{tr("Lieu (optionnel)", "Location (optional)")}</span>
-                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} placeholder={tr("Ex: Practice / putting / parcours", "E.g. range / putting / course")} />
+                <span style={fieldLabelStyle}>{t("coach.form.location")}</span>
+                <input value={locationText} onChange={(e) => setLocationText(e.target.value)} disabled={busy} placeholder={t("coach.form.locationExample")} />
               </label>
 
             <label style={{ display: "grid", gap: 6 }}>
-                <span style={fieldLabelStyle}>{tr("Renseignements événement (optionnel)", "Event notes (optional)")}</span>
+                <span style={fieldLabelStyle}>{t("coach.form.notes")}</span>
                 <textarea
                   value={coachNote}
                   onChange={(e) => setCoachNote(e.target.value)}
                   disabled={busy}
-                  placeholder={tr("Ex: matériel à prévoir, tenue, consignes logistiques…", "E.g. equipment needed, dress code, logistics…")}
+                  placeholder={t("coach.form.notesExample")}
                   style={{ minHeight: 96 }}
                 />
               </label>
@@ -1426,7 +851,7 @@ export default function CoachGroupPlanningPage() {
                 <label className="user-mgmt-checkbox-label">
                   <input type="checkbox" checked={requiresEvaluation} onChange={(e) => setRequiresEvaluation(e.target.checked)} disabled={busy} />
                   <span>
-                    <b>Activité à évaluer</b>
+                    <b>{t("manager.editor.evaluation")}</b>
                   </span>
                 </label>
               ) : null}
@@ -1439,11 +864,11 @@ export default function CoachGroupPlanningPage() {
 
             {eventType === "training" ? (
               <section className={styles.quickPanel}>
-                <div className={styles.sectionHeading}><div><h2>Structure de l’entraînement</h2><p>Préparez les postes de travail à transmettre aux juniors.</p></div></div>
+                <div className={styles.sectionHeading}><div><h2>{t("manager.editor.structure")}</h2><p>{t("manager.editor.structureHelp")}</p></div></div>
 
                 {structureItems.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    {tr("Ajoute des postes si tu veux préremplir l’entraînement des juniors.", "Add stations if you want to prefill players' training.")}
+                    {t("coach.form.structureHint")}
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
@@ -1452,19 +877,19 @@ export default function CoachGroupPlanningPage() {
                         <div style={{ display: "grid", gap: 10, width: "100%" }}>
                           <div className="grid-2">
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>{tr("Poste", "Station")}</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.station")}</span>
                               <select value={it.category} onChange={(e) => updateStructureLine(idx, { category: e.target.value })} disabled={busy}>
                                 <option value="">-</option>
                                 {TRAINING_CATEGORY_VALUES.map((cat) => (
                                   <option key={cat} value={cat}>
-                                    {TRAINING_CATEGORY_LABELS[cat] ?? cat}
+                                    {t(`coach.form.category.${cat}`)}
                                   </option>
                                 ))}
                               </select>
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span style={fieldLabelStyle}>{tr("Durée", "Duration")}</span>
+                              <span style={fieldLabelStyle}>{t("coach.form.duration")}</span>
                               <select value={it.minutes} onChange={(e) => updateStructureLine(idx, { minutes: e.target.value })} disabled={busy}>
                                 <option value="">-</option>
                                 {MINUTE_OPTIONS.map((m) => (
@@ -1477,7 +902,7 @@ export default function CoachGroupPlanningPage() {
                           </div>
 
                           <label style={{ display: "grid", gap: 6 }}>
-                            <span style={fieldLabelStyle}>{tr("Note (optionnel)", "Note (optional)")}</span>
+                            <span style={fieldLabelStyle}>{t("coach.form.note")}</span>
                             <input value={it.note} onChange={(e) => updateStructureLine(idx, { note: e.target.value })} disabled={busy} />
                           </label>
 
@@ -1494,7 +919,7 @@ export default function CoachGroupPlanningPage() {
 
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" className="btn" onClick={addStructureLine} disabled={busy}>
-                    + {tr("Ajouter un poste", "Add a station")}
+                    + {t("coach.form.addStation")}
                   </button>
                 </div>
               </section>
@@ -1502,7 +927,7 @@ export default function CoachGroupPlanningPage() {
 
             {/* Select coaches */}
             <section className={styles.quickPanel}>
-              <div className={styles.sectionHeading}><div><h2>Coachs attendus</h2><p>Sélectionnez les coachs attendus à cet événement.</p></div></div>
+              <div className={styles.sectionHeading}><div><h2>{t("coach.form.coaches")}</h2><p>{t("manager.editor.coachesHelp")}</p></div></div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -1511,7 +936,7 @@ export default function CoachGroupPlanningPage() {
                   disabled={busy || coaches.length === 0 || allCoachesSelected}
                   onClick={() => setCoachIdsSelected(coaches.map((c) => c.id))}
                 >
-                  {tr("Tout sélectionner", "Select all")}
+                  {t("coach.form.selectAll")}
                 </button>
 
                 <button
@@ -1520,26 +945,26 @@ export default function CoachGroupPlanningPage() {
                   disabled={busy || coaches.length === 0 || coachIdsSelected.length === 0}
                   onClick={() => setCoachIdsSelected([])}
                 >
-                  {tr("Tout désélectionner", "Unselect all")}
+                  {t("coach.form.deselectAll")}
                 </button>
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedCoachesList.length})</div>
+                <div className="pill-soft">{t("coach.form.selection")} ({selectedCoachesList.length})</div>
 
                 {coaches.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun coach dans ce groupe.", "No coach in this group.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noCoaches")}</div>
                 ) : selectedCoachesList.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun coach sélectionné.", "No coach selected.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noSelectedCoaches")}</div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                       <tbody>{selectedCoachesList.map((c) => (
                         <tr key={c.id}>
                           <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td>
                           <td><b>{fullName(c)}</b></td>
-                          <td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label="Retirer coach" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
+                          <td><button type="button" className="btn" onClick={() => setCoachIdsSelected((prev) => prev.filter((id) => id !== c.id))} disabled={busy} aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(c) })} title={t("coach.group.remove")} style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1551,16 +976,16 @@ export default function CoachGroupPlanningPage() {
                 <div className="pill-soft">{t("common.add")} ({candidateCoaches.length})</div>
 
                 {coaches.length > 0 && candidateCoaches.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                 ) : candidateCoaches.length > 0 ? (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                       <tbody>{candidateCoaches.map((c) => (
                         <tr key={c.id}>
                           <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(c)}</span></td>
                           <td><b>{fullName(c)}</b></td>
-                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label="Ajouter coach" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
+                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachIdsSelected((prev) => [...prev, c.id])} disabled={busy} aria-label={managerFormat(t, "coach.form.addNamed", { name: fullName(c) })} title={t("common.add")} style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1571,7 +996,7 @@ export default function CoachGroupPlanningPage() {
 
             {/* Select players */}
             <section className={styles.quickPanel}>
-              <div className={styles.sectionHeading}><div><h2>Juniors attendus</h2><p>Choisissez les juniors attendus à cet événement.</p></div></div>
+              <div className={styles.sectionHeading}><div><h2>{t("manager.editor.players")}</h2><p>{t("manager.editor.playersHelp")}</p></div></div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -1584,7 +1009,7 @@ export default function CoachGroupPlanningPage() {
                     setSelectedPlayers(map);
                   }}
                 >
-                  {tr("Tout sélectionner", "Select all")}
+                  {t("coach.form.selectAll")}
                 </button>
 
                 <button
@@ -1593,7 +1018,7 @@ export default function CoachGroupPlanningPage() {
                   disabled={busy || players.length === 0 || Object.keys(selectedPlayers).length === 0}
                   onClick={() => setSelectedPlayers({})}
                 >
-                  {tr("Tout désélectionner", "Unselect all")}
+                  {t("coach.form.deselectAll")}
                 </button>
               </div>
 
@@ -1612,28 +1037,28 @@ export default function CoachGroupPlanningPage() {
                   value={queryPlayers}
                   onChange={(e) => setQueryPlayers(e.target.value)}
                   disabled={busy}
-                  placeholder={tr("Rechercher un junior (nom, handicap)…", "Search a player (name, handicap)…")}
+                  placeholder={t("manager.groups.juniorSearch")}
                   style={{ paddingLeft: 44 }}
                 />
               </div>
 
               {/* Selected */}
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedPlayersList.length})</div>
+                <div className="pill-soft">{t("coach.form.selection")} ({selectedPlayersList.length})</div>
 
                 {players.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun junior dans ce groupe.", "No player in this group.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.groups.noJuniors")}</div>
                 ) : selectedPlayersList.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun junior sélectionné.", "No selected player.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("manager.groups.noSelectedJuniors")}</div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                       <tbody>{selectedPlayersList.map((p) => (
                         <tr key={p.id}>
                           <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td>
                           <td><b>{fullName(p)}</b></td>
-                          <td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Retirer junior" title="Retirer" style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
+                          <td><button type="button" className="btn" onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(p) })} title={t("coach.group.remove")} style={compactGreenButtonStyle}><Trash2 size={16} /></button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1646,16 +1071,16 @@ export default function CoachGroupPlanningPage() {
                 <div className="pill-soft">{t("common.add")} ({candidatesPlayers.length})</div>
 
                 {players.length > 0 && candidatesPlayers.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                 ) : candidatesPlayers.length > 0 ? (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
-                      <thead><tr><th aria-label="Avatar" /><th>Nom et prénom</th><th aria-label="Actions" /></tr></thead>
+                      <thead><tr><th aria-label={t("manager.performance.avatar")} /><th>{t("manager.administration.fullName")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead>
                       <tbody>{candidatesPlayers.map((p) => (
                         <tr key={p.id}>
                           <td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(p)}</span></td>
                           <td><b>{fullName(p)}</b></td>
-                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label="Ajouter junior" title="Ajouter" style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
+                          <td><button type="button" className={actionStyles.secondaryButton} onClick={() => toggleSelectedPlayer(p)} disabled={busy} aria-label={managerFormat(t, "coach.form.addNamed", { name: fullName(p) })} title={t("common.add")} style={{ width: 42, padding: 0 }}><PlusCircle size={16} /></button></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1666,7 +1091,7 @@ export default function CoachGroupPlanningPage() {
 
             {/* Club members visible as guests */}
             <section className={styles.quickPanel}>
-              <div className={styles.sectionHeading}><div><h2>Invités</h2><p>Ajoutez des membres du club en complément du groupe.</p></div></div>
+              <div className={styles.sectionHeading}><div><h2>{t("coach.form.guests")}</h2><p>{t("manager.editor.guestsHelp")}</p></div></div>
 
               <div style={{ position: "relative" }}>
                 <Search
@@ -1683,26 +1108,26 @@ export default function CoachGroupPlanningPage() {
                   value={queryGuests}
                   onChange={(e) => setQueryGuests(e.target.value)}
                   disabled={busy}
-                  placeholder={tr("Rechercher un invité (nom, rôle)…", "Search a guest (name, role)…")}
+                  placeholder={t("coach.form.searchGuests")}
                   style={{ paddingLeft: 44 }}
                 />
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">{tr("Sélection", "Selection")} ({selectedGuestsList.length})</div>
+                <div className="pill-soft">{t("coach.form.selection")} ({selectedGuestsList.length})</div>
                 {selectedGuestsList.length === 0 ? (
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun invité sélectionné.", "No guest selected.")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noGuests")}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
                     {selectedGuestsList.map((m) => (
                       <div key={m.id} style={lightRowCardStyle}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                           <div style={avatarBoxStyle} aria-hidden="true">
-                            {avatarNode(m as any)}
+                            {avatarNode(m)}
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                            <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(t, m.role)}</div>
                           </div>
                         </div>
 
@@ -1712,8 +1137,8 @@ export default function CoachGroupPlanningPage() {
                           onClick={() => toggleSelectedGuest(m)}
                           disabled={busy}
                           style={{ ...compactGreenButtonStyle, padding: "0 12px" }}
-                          aria-label="Retirer invité"
-                          title="Retirer"
+                          aria-label={managerFormat(t, "coach.form.removeNamed", { name: fullName(m) })}
+                          title={t("coach.group.remove")}
                         >
                           <Trash2 size={18} />
                         </button>
@@ -1727,18 +1152,18 @@ export default function CoachGroupPlanningPage() {
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="pill-soft">{t("common.add")} ({candidateGuests.length})</div>
                   {candidateGuests.length === 0 ? (
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{tr("Aucun résultat.", "No result.")}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                   ) : (
                     <div style={{ display: "grid", gap: 10 }}>
                       {candidateGuests.map((m) => (
                         <div key={m.id} style={lightRowCardStyle}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                             <div style={avatarBoxStyle} aria-hidden="true">
-                              {avatarNode(m as any)}
+                              {avatarNode(m)}
                             </div>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontWeight: 950 }}>{fullName(m)}</div>
-                              <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(m.role)}</div>
+                              <div style={{ opacity: 0.7, fontWeight: 800, marginTop: 4, fontSize: 12 }}>{memberRoleLabel(t, m.role)}</div>
                             </div>
                           </div>
 
@@ -1756,8 +1181,8 @@ export default function CoachGroupPlanningPage() {
                               background: "rgba(255,255,255,0.70)",
                               border: "1px solid rgba(0,0,0,0.08)",
                             }}
-                            aria-label="Ajouter invité"
-                            title="Ajouter"
+                            aria-label={t("common.add")}
+                            title={t("common.add")}
                           >
                             <PlusCircle size={18} />
                           </button>
@@ -1768,7 +1193,7 @@ export default function CoachGroupPlanningPage() {
                 </div>
               ) : (
                 <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                  {tr("Saisis une recherche pour ajouter des invités.", "Type a search to add guests.")}
+                  {t("coach.form.guestsHint")}
                 </div>
               )}
             </section>
@@ -1777,15 +1202,15 @@ export default function CoachGroupPlanningPage() {
               <button
                 type="button"
                 className={actionStyles.primaryButton}
-                disabled={busy || !group}
-                onClick={() => (mode === "single" ? createSingleEvent() : createSeries())}
+                disabled={saving || loading || Boolean(createdId) || !group}
+                onClick={createEvents}
               >
                 <PlusCircle size={18} />
-                {busy ? tr("Enregistrement…", "Saving…") : mode === "single" ? tr("Créer l’événement", "Create event") : tr("Créer la récurrence", "Create recurrence")}
+                {saving ? t("coachDebrief.saving") : uncertain ? t("coach.editor.resolveCreation") : mode === "single" ? t("coach.form.create") : t("coach.form.createSeries")}
               </button>
             </div>
         </>
-      )}
+      ) : null}
     </main>
   );
 }

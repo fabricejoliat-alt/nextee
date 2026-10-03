@@ -1,3 +1,4 @@
+import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -23,39 +24,17 @@ export async function POST(
     const { clubId } = await ctx.params;
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
-    const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
-
-    const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-    if (callerErr || !callerData.user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    const callerId = callerData.user.id;
-    const { data: adminRow } = await supabaseAdmin
-      .from("app_admins")
-      .select("user_id")
-      .eq("user_id", callerId)
-      .maybeSingle();
-
-    let isAllowed = Boolean(adminRow);
-    if (!isAllowed) {
-      const { data: membership } = await supabaseAdmin
-        .from("club_members")
-        .select("id,role,is_active")
-        .eq("club_id", clubId)
-        .eq("user_id", callerId)
-        .eq("is_active", true)
-        .maybeSingle();
-      isAllowed = Boolean(membership && membership.role === "manager");
-    }
-
-    if (!isAllowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => null);
     const userId = String(body?.user_id ?? "").trim();
 
     if (!userId) return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
+
+    if (!auth.isSuperadmin && !(await canReuseClubAccount(supabaseAdmin, clubId, userId, "manager"))) {
+      return NextResponse.json({ error: "Le rattachement de ce compte nécessite une validation par l’administration de la plateforme." }, { status: 409 });
+    }
 
     const { data: memberRow, error: memberError } = await supabaseAdmin
       .from("club_members")

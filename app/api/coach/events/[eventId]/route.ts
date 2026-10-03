@@ -5,6 +5,7 @@ import { requireCaller } from "@/app/api/messages/_lib";
 import { canCoachAccessEvent } from "@/lib/coachAccess";
 import { hasCoachClubPermission } from "@/lib/coachAuthorization";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
+import { coachClubCount } from "@/lib/server/coachClubCount";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -207,6 +208,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       meId: callerId,
       canManageActivity,
       coachTrainingAssistanceEnabled,
+      coachClubCount: await coachClubCount(supabaseAdmin, callerId),
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

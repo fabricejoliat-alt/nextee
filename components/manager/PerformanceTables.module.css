@@ -27,3 +27,32 @@
 .memberTable td:nth-child(2) {
   padding-left: 12px;
 }
+
+@media (max-width: 640px) {
+  .scope :global(table) td[data-label] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 12px;
+    width: 100%;
+    padding: 7px 0;
+    text-align: right;
+    align-items: baseline;
+  }
+
+  .scope :global(table) td[data-label]::before {
+    display: block;
+    content: attr(data-label);
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .cellValue {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .cellValue small {
+    display: block;
+    margin-top: 3px;
+  }
+}

@@ -4,3 +4,7 @@
 .trigger,.dialog header button { width:44px; height:44px; flex-shrink:0; }
 .dialog button,.dialog select,.body fieldset label { min-height:44px; }
 .dialog :focus-visible,.trigger:focus-visible { outline:2px solid #526b50; outline-offset:2px; }
+.dialog .explanation,.dialog .note { margin:0; color:#647167; font-size:12px; line-height:1.5; }
+.body b { font-size:12px; line-height:1.4; }
+.body small { font-size:12px; line-height:1.5; }
+.body fieldset input { flex-shrink:0; }

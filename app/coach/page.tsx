@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, MapPin, Newspaper, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, Newspaper, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import CoachLearningCards from "./CoachLearningCards";
 import styles from "./CoachDashboard.module.css";
-import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import activityStyles from "./CoachActivityList.module.css";
+import CoachActivityCard, { CoachActivityAction } from "@/components/coach/CoachActivityCard";
+import { COACH_PENDING_EVALUATIONS_HREF } from "@/lib/coachCalendarPeriod";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
@@ -119,11 +120,8 @@ export default function CoachHomePage() {
       </section>
       <section className={styles.panel}>
         <div className={styles.panelHeader}><div><h2>{t("coach.home.attention")}</h2><p>{t("coach.home.attentionHint")}</p></div></div>
-        {loading ? <Skeleton /> : error ? null : <div className={styles.taskList}>
-          {(data?.pendingAttendanceCount ?? 0) > 0 ? <Task icon={CheckCircle2} label={coachText(t, data?.pendingAttendanceCount === 1 ? "coach.home.attendanceOne" : "coach.home.attendanceCount", { count: data?.pendingAttendanceCount ?? 0 })} href="/coach/calendar?view=past" /> : null}
-          {(data?.pendingEvaluationCount ?? 0) > 0 ? <Task icon={ClipboardCheck} label={coachText(t, data?.pendingEvaluationCount === 1 ? "coach.home.evaluationOne" : "coach.home.evaluationCount", { count: data?.pendingEvaluationCount ?? 0 })} href="/coach/calendar?view=evaluations" tone="warning" /> : null}
-          {(data?.pendingAttendanceCount ?? 0) === 0 && (data?.pendingEvaluationCount ?? 0) === 0 ? <div className={styles.empty}><CheckCircle2 size={20} />{t("coach.home.noAttention")}</div> : null}
-        </div>}
+        {error ? null : <EventList loading={loading} events={(data?.pendingEvalEvents ?? []).slice(0, 5)} groups={data?.groupNameById ?? {}} clubs={data?.clubNameByGroupId ?? {}} empty={t("coach.home.noAttention")} pending/>}
+        {!loading && !error && (data?.pendingEvalEvents.length ?? 0) > 5 ? <Link className={styles.textLink} href={COACH_PENDING_EVALUATIONS_HREF}>{coachText(t, "coach.home.allPending", { count: data?.pendingEvalEvents.length ?? 0 })}<ArrowRight size={16} aria-hidden="true"/></Link> : null}
       </section>
     </div>
     <CoachLearningCards />
@@ -133,39 +131,22 @@ export default function CoachHomePage() {
     <section className={styles.shortcuts} aria-label={t("coach.home.shortcuts")}>
       <Link href="/coach/calendar"><CalendarDays size={18} /><span><b>{t("coach.home.openCalendar")}</b><small>{t("coach.home.viewActivities")}</small></span><ArrowRight size={16} /></Link>
       <Link href="/coach/groups"><Users size={18} /><span><b>{t("coach.home.viewGroups")}</b><small>{t("coach.home.groupsHint")}</small></span><ArrowRight size={16} /></Link>
-      <Link href="/coach/calendar?view=evaluations"><ClipboardCheck size={18} /><span><b>{t("coach.home.evaluate")}</b><small>{t("coach.home.evaluateHint")}</small></span><ArrowRight size={16} /></Link>
+      <Link href={COACH_PENDING_EVALUATIONS_HREF}><ClipboardCheck size={18} /><span><b>{t("coach.home.evaluate")}</b><small>{t("coach.home.evaluateHint")}</small></span><ArrowRight size={16} /></Link>
     </section>
   </div>;
 }
 
-function EventList({ loading, events, groups, clubs, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string }) {
-  const { locale, t } = useI18n();
+function EventList({ loading, events, groups, clubs, empty, pending = false }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string; pending?: boolean }) {
+  const { t } = useI18n();
   if (loading) return <Skeleton />;
   if (!events.length) return <div className={styles.empty}>{empty}</div>;
-  return <div className={`${styles.upcomingList} ${activityStyles.list}`}>{events.map((event) => {
-    const start = new Date(event.starts_at);
-    const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
-    const weekday = new Intl.DateTimeFormat(coachDateLocale(locale), { weekday: "short" }).format(start).replace(".", "");
-    const month = new Intl.DateTimeFormat(coachDateLocale(locale), { month: "short" }).format(start).replace(".", "");
-    const time = new Intl.DateTimeFormat(coachDateLocale(locale), { hour: "2-digit", minute: "2-digit" }).format(start);
-    const explicitTitle = String(event.title ?? "").trim();
-    const title = explicitTitle ? `${eventTypeLabel(event, t)} · ${explicitTitle}` : eventTypeLabel(event, t);
-    return <article key={event.id} className={`${dashboardStyles.activityItem} ${activityStyles.item}`}>
-      <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(coachDateLocale(locale), { dateStyle: "full", timeStyle: "short" }).format(start)}>
-        <span>{weekday}</span><b>{start.getDate()}</b><span>{month}</span><time dateTime={event.starts_at}>{time}</time>
-      </div>
-      <div className={dashboardStyles.activityBody}>
-        <Link className={dashboardStyles.activityTitle} href={href}>{title}</Link>
-        <span className={dashboardStyles.activityMeta}>{groups[event.group_id] || t("coach.activity.noGroup")} · {clubs[event.group_id] || t("coach.activity.noClub")}</span>
-        <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{event.location_text?.trim() || t("coach.activity.noPlace")}</span></span>
-      </div>
-      <Link className={activityStyles.action} href={href} aria-label={coachText(t, "coach.openNamed", { name: title })} title={t("coach.open")}><ArrowRight size={15} aria-hidden="true"/></Link>
-    </article>;
+  const showClub = new Set(Object.values(clubs)).size > 1;
+  return <div className={activityStyles.list}>{events.map((event) => {
+    const href = `/coach/groups/${event.group_id}/planning/${event.id}${pending ? "/debrief" : ""}`;
+    return <CoachActivityCard key={event.id} variant="list" startsAt={event.starts_at} endsAt={event.ends_at} typeLabel={eventTypeLabel(event, t)} title={event.title}
+      groupName={groups[event.group_id]} clubName={clubs[event.group_id]} showClub={showClub} location={event.location_text} href={href}
+      actions={<CoachActivityAction state={pending ? "needs_evaluation" : "view_activity"} groupId={event.group_id} eventId={event.id} name={event.title || eventTypeLabel(event, t)}/>}/>;
   })}</div>;
-}
-
-function Task({ icon: Icon, label, href, tone }: { icon: typeof CheckCircle2; label: string; href: string; tone?: "warning" }) {
-  return <Link href={href} className={tone === "warning" ? styles.taskWarning : ""}><span><Icon size={17} /></span><b>{label}</b><ArrowRight size={15} /></Link>;
 }
 
 function Skeleton() { const { t } = useI18n(); return <div className={styles.skeleton} role="status" aria-label={t("common.loading")}><span /><span /><span /></div>; }

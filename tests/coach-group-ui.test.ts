@@ -1,12 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { coachComponentHarness, elements, textContent, flush, deferred, type Element } from "./helpers/coachComponentHarness.ts";
+import { coachComponentHarness as baseHarness, elements, textContent, flush, deferred, type Element } from "./helpers/coachComponentHarness.ts";
 import { messages } from "../lib/i18n/messages.ts";
 import { coachDateLocale } from "../lib/i18n/coachMessages.ts";
+import type { CoachPlanningEvent } from "../lib/coachPlanning.ts";
 
 const page = "app/coach/groups/[id]/page.tsx";
 const originalGroup = { id: "group", club_id: "club", name: "Groupe témoin", is_active: true, head_coach_user_id: "head" };
 const profile = { id: "junior", first_name: "Émile", last_name: "Témoin", handicap: 12.5, avatar_url: null };
+const plannedEvent: CoachPlanningEvent = {
+  id: "event", group_id: "group", club_id: "club", event_type: "training", title: null,
+  starts_at: "2099-10-07T13:00:00Z", ends_at: "2099-10-07T14:30:00Z", duration_minutes: 90,
+  location_text: "Practice", status: "scheduled", series_id: "series", requires_evaluation: true,
+  evaluation_complete: false, preparation_pending: false, coaches: [], attendees: [],
+};
+const planningResponse = (groupId: string, events = [plannedEvent], coachClubCount = 1) => Response.json({
+  group: { ...originalGroup, id: groupId }, club_name: "Club témoin", can_plan: false, coachClubCount,
+  events: events.map((event) => ({ ...event, group_id: groupId })),
+});
+function coachComponentHarness(path: string, options: Parameters<typeof baseHarness>[1] & { planningFetch?: typeof fetch }) {
+  return baseHarness(path, { ...options, fetch: async (url, init) => {
+    const match = String(url).match(/^\/api\/coach\/groups\/([^/]+)\/planning$/);
+    if (!match) return options.fetch(url, init);
+    assert.equal(init?.headers && new Headers(init.headers).get("Authorization"), "Bearer test-only");
+    assert.equal(init?.cache, "no-store");
+    return options.planningFetch ? options.planningFetch(url, init) : planningResponse(decodeURIComponent(match[1]));
+  } });
+}
 type Query = { table: string; columns: string; action: string; filters: Record<string, unknown> };
 type Result = { data: unknown; error: unknown };
 
@@ -43,7 +63,6 @@ function database(options: {
               { id: "assistant-link", coach_user_id: "assistant", is_head: false, profiles: { ...profile, first_name: "Assistant", id: "assistant" } }];
           if (table === "coach_group_categories") data = [{ id: "category", group_id: "group", category: "Élite" }];
           if (table === "coach_group_players") data = [{ id: "player-link", group_id: "group", player_user_id: "junior", profiles: profile }];
-          if (table === "club_events") data = [{ id: "event", starts_at: "2099-10-07T13:00:00Z", status: "scheduled", series_id: "series" }];
           if (table === "profiles") data = [{ ...profile, id: "candidate", first_name: "Candidate" }];
           return { data, error: null };
         }).then(resolve, reject);
@@ -77,9 +96,9 @@ test("group details switch all four languages, dates and handicap without reload
     harness.setLocale(locale); tree = harness.render();
     assert.ok(textContent(tree).includes(messages[locale]["coach.group.info"]));
     assert.ok(textContent(tree).includes(new Intl.NumberFormat(`${locale}-CH`, { minimumFractionDigits: 1 }).format(12.5)));
-    assert.ok(textContent(tree).includes(new Intl.DateTimeFormat(coachDateLocale(locale), {
-      weekday: "short", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-    }).format(new Date("2099-10-07T13:00:00Z"))));
+    assert.ok(elements(tree).some((node) => node.props["aria-label"] === new Intl.DateTimeFormat(coachDateLocale(locale), {
+      dateStyle: "full", timeStyle: "short",
+    }).format(new Date(plannedEvent.starts_at))));
     assert.ok(textContent(tree).includes("Émile Témoin"));
     assert.ok(textContent(tree).includes("Élite"));
     assert.equal(nameInput(tree).props.value, "Nom non enregistré");
@@ -87,6 +106,86 @@ test("group details switch all four languages, dates and handicap without reload
   }
   assert.equal(db.reads.length, reads);
   harness.cleanup();
+});
+
+test("group details show five chronological independent upcoming cards, preparation status and the planning link", async (context) => {
+  const events = Array.from({ length: 7 }, (_, i) => ({ ...plannedEvent, id: `future-${i}`,
+    starts_at: `2099-10-${String(10 + i).padStart(2, "0")}T13:00:00Z`,
+    ends_at: `2099-10-${String(10 + i).padStart(2, "0")}T14:30:00Z`,
+    title: `Activité ${i}`, preparation_pending: i === 0,
+  })).reverse();
+  events.push({ ...events[0], id: "past", title: "Passée", starts_at: "2000-01-01T12:00:00Z", ends_at: "2000-01-01T13:00:00Z" });
+  events.push({ ...events[0], id: "cancelled", title: "Annulée", status: "cancelled", starts_at: "2099-01-01T12:00:00Z" });
+  const harness = coachComponentHarness(page, { params: { id: "group" }, database: database(), fetch: noFetch,
+    planningFetch: async () => planningResponse("group", events, 2),
+    modules: {
+      "./CoachGroupDetail.module.css": { default: { activities: "activities" } },
+      "@/components/admin/AdminHomeStats.module.css": { default: { quickPanel: "panel" } },
+      "./CoachActivityCard.module.css": { default: { card: "activity-card" } },
+    },
+  });
+  context.after(() => harness.cleanup());
+  harness.render(); await flush();
+  const tree = harness.render();
+  const section = find(tree, (node) => node.props["aria-labelledby"] === "group-upcoming-title");
+  assert.equal(section.props.className, "activities");
+  assert.ok(!elements(section).some((node) => node.props.className === "panel"));
+  const cards = elements(section).filter((node) => node.type === "article");
+  assert.equal(cards.length, 5);
+  cards.forEach((card, i) => {
+    assert.equal(card.props.className, "activity-card");
+    assert.ok(textContent(card).includes(`Activité ${i}`));
+    assert.ok(textContent(card).replace(/\s+/g, " ").includes("Groupe témoin · Club témoin"));
+    assert.ok(textContent(card).includes("Practice"));
+    assert.deepEqual(elements(card).filter((node) => node.type === "time").map((node) => node.props.dateTime), [
+      `2099-10-${String(10 + i).padStart(2, "0")}T13:00:00Z`, `2099-10-${String(10 + i).padStart(2, "0")}T14:30:00Z`,
+    ]);
+    assert.ok(elements(card).some((node) => node.type === (i === 0 ? "CalendarClock" : "Eye")));
+    assert.ok(elements(card).some((node) => node.type === "a" && node.props.href === `/coach/groups/group/planning/future-${i}`));
+  });
+  assert.ok(!textContent(section).includes("Passée"));
+  assert.ok(!textContent(section).includes("Annulée"));
+  assert.ok(elements(section).some((node) => node.type === "a" && node.props.href === "/coach/groups/group/planning" && textContent(node).includes(messages.fr["coach.group.viewPlanning"])));
+  const playerLink = find(tree, (node) => node.type === "a" && String(node.props.href).startsWith("/coach/players/junior?"));
+  assert.equal(playerLink.props["aria-label"], "Consulter Émile Témoin");
+  assert.equal(textContent(playerLink), "");
+  assert.ok(elements(playerLink).some((node) => node.type === "Eye"));
+  assert.equal(playerLink.props.href, "/coach/players/junior?returnTo=%2Fcoach%2Fgroups%2Fgroup");
+  harness.cleanup();
+});
+
+test("upcoming activity empty state and single-club cards stay localized", async () => {
+  for (const events of [[], [plannedEvent]]) {
+    const harness = coachComponentHarness(page, { params: { id: "group" }, database: database(), fetch: noFetch,
+      planningFetch: async () => planningResponse("group", events),
+    });
+    harness.render(); await flush();
+    for (const locale of ["fr", "en", "de", "it"] as const) {
+      harness.setLocale(locale);
+      const section = find(harness.render(), (node) => node.props["aria-labelledby"] === "group-upcoming-title");
+      assert.ok(textContent(section).includes(messages[locale]["coach.home.upcoming"]));
+      assert.ok(!textContent(section).includes("Club témoin"));
+      assert.equal(elements(section).filter((node) => node.type === "article").length, events.length);
+      if (!events.length) assert.ok(textContent(section).includes(messages[locale]["coach.planning.emptyUpcoming"]));
+    }
+    harness.cleanup();
+  }
+});
+
+test("planning failures or mismatched scopes never become a misleading empty upcoming list", async () => {
+  for (const response of [() => Response.json({ code: "planning_load_failed" }, { status: 500 }), () => planningResponse("other-group")]) {
+    let fail = true;
+    const harness = coachComponentHarness(page, { params: { id: "group" }, database: database(), fetch: noFetch,
+      planningFetch: async () => fail ? response() : planningResponse("group"),
+    });
+    harness.render(); await flush();
+    assert.ok(textContent(harness.render()).includes(messages.fr["coach.error.load"]));
+    assert.ok(!elements(harness.render()).some((node) => node.props["aria-labelledby"] === "group-upcoming-title"));
+    fail = false;
+    button(harness.render(), messages.fr["coach.retry"]).props.onClick(); await flush();
+    assert.ok(elements(harness.render()).some((node) => node.type === "article"));
+    harness.cleanup();
+  }
 });
 
 test("group mutations block duplicates, recover from thrown network errors and retain the name for retry", async () => {
@@ -170,7 +269,7 @@ test("successful group rename refreshes the saved title and does not clear the c
 });
 
 test("every failed group section hides incomplete data and offers a localized retry", async () => {
-  for (const table of ["coach_groups", "club_members", "coach_group_categories", "coach_group_players", "coach_group_coaches", "club_events"]) {
+  for (const table of ["coach_groups", "club_members", "coach_group_categories", "coach_group_players", "coach_group_coaches"]) {
     let fail = true;
     const db = database({ intercept: (query) => fail && query.table === table ? { data: null, error: { message: "secret SQL detail" } } : undefined });
     const harness = coachComponentHarness(page, { params: { id: "group" }, database: db, fetch: noFetch });
@@ -190,8 +289,9 @@ test("every failed group section hides incomplete data and offers a localized re
 
 test("a committed mutation followed by a failed refresh is not presented as a failed write", async () => {
   let failRefresh = false; let writes = 0;
-  const db = database({ intercept: (query) => failRefresh && query.table === "club_events" ? { data: null, error: true } : undefined });
-  const harness = coachComponentHarness(page, { params: { id: "group" }, database: db, fetch: async () => {
+  const harness = coachComponentHarness(page, { params: { id: "group" }, database: database(),
+    planningFetch: async () => failRefresh ? Response.json({ code: "planning_load_failed" }, { status: 500 }) : planningResponse("group"),
+    fetch: async () => {
     writes++; failRefresh = true; return Response.json({ ok: true });
   } });
   harness.render(); await flush();

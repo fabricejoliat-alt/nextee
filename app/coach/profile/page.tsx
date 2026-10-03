@@ -1,5 +1,7 @@
 "use client";
 
+import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
+
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
@@ -42,7 +44,7 @@ type ProfileCustomField = {
   options_json: string[];
   visible_in_profile: boolean;
   editable_in_profile: boolean;
-  value: string | boolean | null;
+  value: string | boolean | string[] | null;
 };
 type ProfileCustomFieldGroup = {
   member_id: string;
@@ -81,10 +83,7 @@ function normalizeDisplayEmail(raw: string | null | undefined) {
   return email;
 }
 
-function profileCustomFieldDisplayValue(rawValue: string | boolean | null | undefined) {
-  if (rawValue == null || rawValue === "") return "—";
-  return String(rawValue);
-}
+
 
 export default function CoachProfilePage() {
   const { t } = useI18n();
@@ -686,91 +685,11 @@ export default function CoachProfilePage() {
                           <div className="grid-2">
                             {group.fields.map((field) => (
                               <Field key={`${group.member_id}-${field.id}`} label={field.label}>
-                                {field.field_type === "boolean" ? (
-                                  <select
-                                    value={field.value == null ? "" : field.value ? "yes" : "no"}
-                                    disabled={!field.editable_in_profile}
-                                    onChange={(e) =>
-                                      setCustomFieldGroups((previous) =>
-                                        previous.map((currentGroup) =>
-                                          currentGroup.member_id !== group.member_id
-                                            ? currentGroup
-                                            : {
-                                                ...currentGroup,
-                                                fields: currentGroup.fields.map((currentField) =>
-                                                  currentField.id !== field.id
-                                                    ? currentField
-                                                    : {
-                                                        ...currentField,
-                                                        value: e.target.value === "" ? null : e.target.value === "yes",
-                                                      }
-                                                ),
-                                              }
-                                        )
-                                      )
-                                    }
-                                  >
-                                    <option value="">—</option>
-                                    <option value="yes">{t("coach.profile.yes")}</option>
-                                    <option value="no">{t("coach.profile.no")}</option>
-                                  </select>
-                                ) : field.field_type === "select" ? (
-                                  <select
-                                    value={String(field.value ?? "")}
-                                    disabled={!field.editable_in_profile}
-                                    onChange={(e) =>
-                                      setCustomFieldGroups((previous) =>
-                                        previous.map((currentGroup) =>
-                                          currentGroup.member_id !== group.member_id
-                                            ? currentGroup
-                                            : {
-                                                ...currentGroup,
-                                                fields: currentGroup.fields.map((currentField) =>
-                                                  currentField.id !== field.id
-                                                    ? currentField
-                                                    : {
-                                                        ...currentField,
-                                                        value: e.target.value || null,
-                                                      }
-                                                ),
-                                              }
-                                        )
-                                      )
-                                    }
-                                  >
-                                    <option value="">—</option>
-                                    {field.options_json.map((option) => (
-                                      <option key={option} value={option}>
-                                        {option}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : (
-                                  <input
-                                    value={field.editable_in_profile ? String(field.value ?? "") : profileCustomFieldDisplayValue(field.value)}
-                                    disabled={!field.editable_in_profile}
-                                    onChange={(e) =>
-                                      setCustomFieldGroups((previous) =>
-                                        previous.map((currentGroup) =>
-                                          currentGroup.member_id !== group.member_id
-                                            ? currentGroup
-                                            : {
-                                                ...currentGroup,
-                                                fields: currentGroup.fields.map((currentField) =>
-                                                  currentField.id !== field.id
-                                                    ? currentField
-                                                    : {
-                                                        ...currentField,
-                                                        value: e.target.value || null,
-                                                      }
-                                                ),
-                                              }
-                                        )
-                                      )
-                                    }
-                                  />
-                                )}
-                              </Field>
+                                <ProfileCustomFieldControl field={field} name={`${group.member_id}-${field.id}`} disabled={!field.editable_in_profile} yes={t("coach.profile.yes")} no={t("coach.profile.no")}
+                                    onChange={(value) => setCustomFieldGroups((previous) => previous.map((currentGroup) => currentGroup.member_id !== group.member_id ? currentGroup : {
+                                      ...currentGroup, fields: currentGroup.fields.map((currentField) => currentField.id !== field.id ? currentField : { ...currentField, value }),
+                                    }))} />
+                                </Field>
                             ))}
                           </div>
                         </div>

@@ -1,3 +1,19 @@
+import { managerLegacyPlayerMessages } from "./managerLegacyPlayerMessages.ts";
+import { managerOmMessages } from "./managerOmMessages.ts";
+import { managerActivityMessages } from "./managerActivityMessages.ts";
+import { managerParticipantMessages } from "./managerParticipantMessages.ts";
+import { managerAccessMessages } from "./managerAccessMessages.ts";
+import { managerEditorMessages } from "./managerEditorMessages.ts";
+import { managerPlanningMessages } from "./managerPlanningMessages.ts";
+import { managerGroupMessages } from "./managerGroupMessages.ts";
+import { managerJuniorMessages } from "./managerJuniorMessages.ts";
+import { managerAdministrationMessages } from "./managerAdministrationMessages.ts";
+import { managerSettingsMessages } from "./managerSettingsMessages.ts";
+import { managerProfileMessages } from "./managerProfileMessages.ts";
+import { managerContentMessages } from "./managerContentMessages.ts";
+import { managerMessages } from "./managerMessages.ts";
+import { managerOverviewMessages } from "./managerOverviewMessages.ts";
+import { managerPerformanceMessages } from "./managerPerformanceMessages.ts";
 import { coachMessages } from "./coachMessages.ts";
 export type AppLocale = "fr" | "en" | "de" | "it";
 
@@ -1728,3 +1744,30 @@ messages.de = { ...messages.en, ...deOverrides };
 messages.it = { ...messages.en, ...itOverrides };
 
 for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], coachMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerMessages[locale]);
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerOverviewMessages[locale]);
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerPerformanceMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerContentMessages[locale]);
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerProfileMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerSettingsMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerAdministrationMessages[locale]);
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerJuniorMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerGroupMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerPlanningMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerEditorMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerParticipantMessages[locale]);
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerAccessMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerActivityMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerOmMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerLegacyPlayerMessages[locale]);

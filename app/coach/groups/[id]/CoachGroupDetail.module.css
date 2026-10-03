@@ -8,16 +8,29 @@
 .page .memberList{min-width:0}
 .memberList td{overflow-wrap:anywhere}
 .memberList td:last-child>div{flex-wrap:wrap}
+.activities{display:grid;gap:12px;min-width:0}
+.activitiesHeading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.activities .activitiesHeading h2{margin:0;color:#fff!important;font:750 16px var(--font-inter-tight),var(--font-inter),sans-serif}
+.activitiesEmpty{margin:0;color:rgba(255,255,255,.86);font-size:13px;line-height:1.5}
 @media(max-width:700px){
   .page .memberList,.page .memberList tbody{display:block;width:100%}
   .page .memberList thead{display:none}
-  .page .memberList tr{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;align-items:center;padding:14px 0;border-bottom:1px solid #e7ece6}
+  .page .memberList tr{display:grid;grid-template-columns:32px minmax(0,1fr) auto;column-gap:10px;row-gap:5px;align-items:center;padding:14px 0;border-bottom:1px solid #e7ece6}
+  .page .playerList tbody>tr:first-child{padding-top:0}
   .page .memberList td{display:block;min-width:0;width:auto;padding:0;border:0}
-  .page .memberList td:first-child{grid-column:1;grid-row:1;width:42px}
-  .page .memberList td:nth-child(2){grid-column:2;grid-row:1}
-  .page .memberList td:nth-child(3){grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .page .memberList td:nth-child(3)::before{content:attr(data-label);color:#69766c;font-size:11px;font-weight:700}
-  .page .memberList td:last-child{grid-column:1/-1}
-  .page .memberList td:last-child:empty{display:none}
-  .page .memberList td:last-child>div{justify-content:flex-end}
+  .page .memberList td:first-child{grid-column:1;grid-row:1;width:32px}
+  .page .memberList td:first-child>span{width:32px;height:32px}
+  .page .memberList td:nth-child(2){grid-column:2;grid-row:1;line-height:1.4}
+  .page .memberList .memberHandicap{display:none}
+  .page .memberList .memberRole{grid-column:3;grid-row:1;justify-self:end;text-align:right}
+  .page .memberList .memberRole::before{content:none}
+  .page .memberList .memberActions{grid-column:3;grid-row:1;justify-self:end}
+  .page .memberList .memberActions:empty{display:none}
+  .page .memberList .memberActions>div{display:flex;justify-content:flex-end;flex-wrap:nowrap;gap:6px;margin:0}
+  .page .memberList .memberActions>div>a,.page .memberList .memberActions>div>button,.page .memberList .memberActions>button{width:44px;height:44px;min-width:44px;flex:0 0 44px;padding:0}
+  .page .coachList .memberActions{grid-column:3;grid-row:2}
+}
+@media(max-width:420px){
+  .page .playerList tr{grid-template-columns:32px minmax(0,1fr);row-gap:10px}
+  .page .playerList .memberActions{grid-column:2;grid-row:2}
 }

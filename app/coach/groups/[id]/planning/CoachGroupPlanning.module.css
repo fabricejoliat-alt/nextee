@@ -7,6 +7,10 @@
 .filter{display:grid;gap:7px;color:#526053;font-size:12px;font-weight:800}
 .filter select{min-width:0;width:100%}
 .list{display:grid;gap:12px}
+.activities{display:grid;gap:12px;min-width:0}
+.activities .listHeading h2{margin:0;color:#fff!important;font:750 16px var(--font-inter-tight),var(--font-inter),sans-serif}
+.listHeading p{margin:5px 0 0;color:rgba(255,255,255,.82);font-size:12px}
+.activities>.empty{color:rgba(255,255,255,.86)}
 .people{display:grid;gap:6px}.people>span{color:#69766c;font-size:11px;font-weight:800}
 .people ul{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
 .people li{display:flex;align-items:center;gap:8px;max-width:100%;padding:6px 8px;border:1px solid #e0e7df;border-radius:10px;background:#fff}

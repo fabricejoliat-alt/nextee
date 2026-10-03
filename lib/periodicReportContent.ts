@@ -1,3 +1,4 @@
+import { periodicReportLabels, periodicReportSummary } from "@/lib/periodicReportPresentation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateAttendance, calculateProratedTrainingObjective, calculateRegularity, handicapProgression, uniqueTrainingRows } from "@/lib/playerStatistics";
 import { periodLabel, periodicEventTitle, previousCivilPeriod, type ReportFrequency } from "@/lib/periodicReports";
@@ -68,7 +69,7 @@ export async function buildPeriodicReportContent(db: SupabaseClient, config: Rep
   const objectiveRate = objective.minutes && objective.minutes > 0 ? round1((minutes / objective.minutes) * 100) : null;
   const competitionRows = (rounds.data ?? []).filter((row) => row.round_type === "competition");
   const feedbackEventIds = new Set((periodEvents.data ?? []).map((event) => String(event.id)));
-  const feedback = (coachFeedback.data ?? []).filter((row) => feedbackEventIds.has(String(row.event_id)));
+  const feedback = (coachFeedback.data ?? []).filter((row) => row.visible_to_player === true && feedbackEventIds.has(String(row.event_id)) && row.engagement != null && row.attitude != null && row.performance != null);
   const evaluationSample = feedback.length;
   const evaluation = evaluationSample >= 3 ? {
     sample: evaluationSample,
@@ -78,19 +79,15 @@ export async function buildPeriodicReportContent(db: SupabaseClient, config: Rep
   } : null;
   const feelings = (trainingsResult.data ?? []).filter((row) => row.motivation != null && row.difficulty != null && row.satisfaction != null);
   const name = `${profile.data?.first_name ?? ""} ${profile.data?.last_name ?? ""}`.trim() || "Junior";
-  const facts = [
-    attendance.denominator ? `${attendance.present} présence${attendance.present > 1 ? "s" : ""} sur ${attendance.denominator} activité${attendance.denominator > 1 ? "s" : ""} comptabilisée${attendance.denominator > 1 ? "s" : ""}` : null,
-    minutes ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} d’entraînement enregistrées` : null,
-    competitionRows.length ? `${competitionRows.length} compétition${competitionRows.length > 1 ? "s" : ""}` : null,
-    handicap.change ? `un handicap passé de ${handicap.start} à ${handicap.end}` : null,
-  ].filter((fact): fact is string => Boolean(fact));
+
 
   return {
+    locale: periodicReportLabels(config.locale).locale,
     clubName: club.data?.name ?? "Club",
     playerName: name,
     period,
     periodLabel: periodLabel(period, config.locale),
-    summary: facts.length ? `Durant cette période, ${name} compte ${facts.slice(0, 3).join(", ")}.` : `Aucune donnée suffisante n’est disponible pour résumer cette période de ${name}.`,
+    summary: periodicReportSummary(config.locale, { name, present: attendance.present, denominator: sections.attendance ? attendance.denominator : 0, minutes: sections.training ? minutes : 0, competitions: sections.competitions ? competitionRows.length : 0, handicapChange: sections.handicap ? handicap.change : null, handicapStart: handicap.start, handicapEnd: handicap.end }),
     sections: {
       attendance: sections.attendance ? { invited: attendance.invited, present: attendance.present, absent: attendance.absent, excused: attendance.excused, pending: attendance.pending, rate: attendance.rate } : null,
       training: sections.training ? { sessions: sessionRows.length, minutes, regularityRate: regularity.rate, objectiveMinutes: objective.minutes, objectiveRate, byOrigin: Array.from(new Set(sessionRows.map((row) => row.sessionType ?? "individual"))).map((key) => ({ key, sessions: sessionRows.filter((row) => (row.sessionType ?? "individual") === key).length })) , feelings: feelings.length >= 3 ? { sample: feelings.length, motivation: average(feelings.map((row) => Number(row.motivation))), satisfaction: average(feelings.map((row) => Number(row.satisfaction))) } : null } : null,

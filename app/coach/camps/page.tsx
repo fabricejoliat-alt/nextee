@@ -1,19 +1,21 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- Camp and profile images are dynamic Storage URLs. */
 import { coachCampRegistrationChanges } from "@/lib/coachCampRegistrations";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { coachCaughtErrorKey, coachUiErrorKey } from "@/lib/coachUiErrors";
-import { CalendarDays, ChevronRight, Eye, Search, Users, X } from "lucide-react";
+import { CalendarDays, ChevronRight, ChevronUp, Eye, Search, TentTree, Users, X } from "lucide-react";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import styles from "@/app/manager/camps/Camps.module.css";
 import coachStyles from "./CoachCamps.module.css";
-import CoachPlayerActivityCard from "@/components/coach/player-detail/CoachPlayerActivityCard";
+import campStyles from "@/app/player/camps/PlayerCamps.module.css";
+import CoachActivityCard, { CoachActivityAction } from "@/components/coach/CoachActivityCard";
+import cardStyles from "@/components/coach/CoachActivityCard.module.css";
 
 type ProfileLite = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
 type CampRow = {
@@ -21,6 +23,7 @@ type CampRow = {
   club_name: string;
   title: string;
   notes: string | null;
+  image_url: string | null;
   head_coach: ProfileLite | null;
   available_players: ProfileLite[];
   player_registrations: Array<{
@@ -73,24 +76,6 @@ function fullName(profile?: { first_name: string | null; last_name: string | nul
   return `${first} ${last}`.trim() || "—";
 }
 
-function fmtRange(startIso: string | null, endIso: string | null, locale: string) {
-  if (!startIso) return "—";
-  const start = new Date(startIso);
-  const end = endIso ? new Date(endIso) : null;
-  const dateLabel = new Intl.DateTimeFormat(coachDateLocale(locale), {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  }).format(start);
-  const startTimeLabel = new Intl.DateTimeFormat(coachDateLocale(locale), {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(start);
-  if (!end) return `${dateLabel} · ${startTimeLabel}`;
-  const endTimeLabel = new Intl.DateTimeFormat(coachDateLocale(locale), { hour: "2-digit", minute: "2-digit" }).format(end);
-  return `${dateLabel} · ${startTimeLabel} – ${endTimeLabel}`;
-}
-
 function normalizeRegistrationStatus(value: unknown): "invited" | "registered" | "declined" {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "registered" || normalized === "declined") return normalized;
@@ -108,10 +93,11 @@ export default function CoachCampsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [camps, setCamps] = useState<CampRow[]>([]);
+  const [coachClubCount, setCoachClubCount] = useState(0);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<CampState>("all");
   const [periodFilter, setPeriodFilter] = useState("all");
-  const [detailCamp, setDetailCamp] = useState<CampRow | null>(null);
+  const [expandedCampId, setExpandedCampId] = useState<string | null>(null);
   const [participantsDay, setParticipantsDay] = useState<CampRow["days"][number] | null>(null);
   const [registrationCamp, setRegistrationCamp] = useState<CampRow | null>(null);
   const [registrationSaving, setRegistrationSaving] = useState(false);
@@ -135,6 +121,7 @@ export default function CoachCampsPage() {
       if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.load"));
       if (version !== loadVersion.current) return;
       setCamps((json?.camps ?? []) as CampRow[]);
+      setCoachClubCount(Number(json?.coachClubCount ?? 0));
     } catch (err: unknown) {
       if (version === loadVersion.current) { setError(coachCaughtErrorKey(err, "coach.error.load")); setCamps([]); }
     } finally {
@@ -258,13 +245,6 @@ export default function CoachCampsPage() {
     return periodFilter === "month" ? firstDate.getMonth() === now.getMonth() && firstDate.getFullYear() === now.getFullYear() : firstDate.getFullYear() === now.getFullYear();
   }), [camps, periodFilter, query, stateFilter]);
 
-  const counts = useMemo(() => ({
-    upcoming: camps.filter((camp) => campState(camp) === "upcoming").length,
-    inProgress: camps.filter((camp) => campState(camp) === "in_progress").length,
-    completed: camps.filter((camp) => campState(camp) === "completed").length,
-    participants: new Set(camps.flatMap((camp) => camp.player_registrations.filter((registration) => registration.registration_status === "registered").map((registration) => registration.player_id))).size,
-  }), [camps]);
-
   const noRegistrationSearchMatch = registrationCamp && registrationSearch.trim() &&
     ![...registrationCamp.available_players, ...registrationCamp.player_registrations.map((entry) => entry.player)]
       .some((player) => matchesRegistrationSearch(player, registrationSearch));
@@ -274,23 +254,89 @@ export default function CoachCampsPage() {
       <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><ChevronRight size={13} aria-hidden="true" /><span>{t("coach.camps.title")}</span></nav>
       <div className={styles.topline}><div><h1>{t("coach.camps.title")}</h1><p className={styles.lead}>{t("coach.camps.intro")}</p></div></div>
       {error ? <div className={styles.alertError} role="alert">{t(error)} <button type="button" className={styles.secondary} onClick={() => void loadCamps()}>{t("coach.retry")}</button></div> : null}
-      <section className={styles.stats} aria-label={t("coach.camps.statistics")} aria-busy={loading}><div className={styles.stat}><span>{t("coach.camps.upcoming")}</span><b>{loading || error ? "—" : counts.upcoming}</b></div><div className={styles.stat}><span>{t("coach.camps.inProgress")}</span><b>{loading || error ? "—" : counts.inProgress}</b></div><div className={styles.stat}><span>{t("coach.camps.completed")}</span><b>{loading || error ? "—" : counts.completed}</b></div><div className={styles.stat}><span>{t("coach.camps.registeredPlayers")}</span><b>{loading || error ? "—" : counts.participants}</b></div></section>
       <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>{t("coach.camps.list")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filteredCamps.length === 1 ? "coach.camps.one" : "coach.camps.count", { count: filteredCamps.length })}</p></div></div>
+        <div className={styles.panelHeader}><div><h2 id="coach-camps-list-title">{t("coach.camps.list")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filteredCamps.length === 1 ? "coach.camps.one" : "coach.camps.count", { count: filteredCamps.length })}</p></div></div>
         <div className={styles.toolbar}>
           <label className={styles.field}><span>{t("coach.directory.search")}</span><span className={coachStyles.searchField}><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("coach.camps.search")} /></span></label>
           <label className={styles.field}><span>{t("coach.camps.state")}</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as CampState)}><option value="all">{t("coach.camps.allStates")}</option><option value="upcoming">{t("coach.camps.upcoming")}</option><option value="in_progress">{t("coach.camps.inProgress")}</option><option value="completed">{t("coach.camps.completed")}</option></select></label>
           <label className={styles.field}><span>{t("coach.camps.period")}</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option value="all">{t("coach.camps.allDates")}</option><option value="month">{t("coach.camps.month")}</option><option value="year">{t("coach.camps.year")}</option></select></label>
         </div>
-        {loading ? <CoachListSkeleton label={t("coach.camps.loading")} /> : error ? null : filteredCamps.length === 0 ? <div className={styles.empty}>{t("coach.camps.empty")}</div> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{t("coach.camps.camp")}</th><th className={styles.compactHeader}>{t("coach.camps.dates")}</th><th className={styles.compactHeader}>{t("coach.camps.headCoach")}</th><th>{t("coach.camps.participants")}</th><th>{t("coach.camps.days")}</th><th>{t("coach.camps.state")}</th><th>{t("coach.directory.actions")}</th></tr></thead><tbody>{filteredCamps.map((camp) => {
-          const state = campState(camp);
-          const registered = camp.player_registrations.filter((registration) => registration.registration_status === "registered").length;
-          const badgeClass = state === "in_progress" ? styles.badgeProgress : state === "completed" ? styles.badgeDone : "";
-          return <tr key={camp.id}><td data-label={t("coach.camps.camp")}><div className={styles.titleCell}><b>{camp.title}</b><span className={styles.muted}>{camp.club_name}</span></div></td><td data-label={t("coach.camps.dates")}>{campDateRange(camp, locale, t("coach.camps.datesUnknown"))}</td><td data-label={t("coach.camps.headCoach")}>{fullName(camp.head_coach)}</td><td data-label={t("coach.camps.participants")}>{registered}</td><td data-label={t("coach.camps.days")}>{camp.days.length}</td><td data-label={t("coach.camps.state")}><span className={`${styles.badge} ${badgeClass}`}>{t(CAMP_STATE_LABELS[state])}</span></td><td data-label={t("coach.directory.actions")}><div className={styles.actions}><button type="button" className={styles.iconButton} title={t("coach.directory.view")} aria-label={coachText(t, "coach.directory.viewNamed", { name: camp.title })} aria-haspopup="dialog" onClick={() => setDetailCamp(camp)}><Eye size={15} aria-hidden="true" /></button><button type="button" className={styles.iconButton} title={t("coach.camps.manage")} aria-label={coachText(t, "coach.camps.manageNamed", { name: camp.title })} aria-haspopup="dialog" onClick={() => openRegistrationModal(camp)}><Users size={15} aria-hidden="true" /></button></div></td></tr>;
-        })}</tbody></table></div>}
       </section>
-
-      {detailCamp ? <AccessibleDialog className={`${coachStyles.modal} ${coachStyles.modalLarge}`} labelledBy="camp-detail-title" onClose={() => setDetailCamp(null)}><div className={coachStyles.modalHeader}><div><h2 id="camp-detail-title">{detailCamp.title}</h2><p>{detailCamp.club_name} · {campDateRange(detailCamp, locale, t("coach.camps.datesUnknown"))}</p></div><button className={styles.iconButton} type="button" onClick={() => setDetailCamp(null)} title={t("common.close")} aria-label={t("common.close")}><X size={16} /></button></div><div className={coachStyles.modalBody}>{detailCamp.notes?.trim() ? <div className={coachStyles.notes} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(detailCamp.notes) }} /> : null}<div className={coachStyles.dayGrid}>{detailCamp.days.map((day) => day.starts_at ? <CoachPlayerActivityCard key={day.event_id} startsAt={day.starts_at} endsAt={day.ends_at} dateLocale={coachDateLocale(locale)} typeLabel={t("coach.activity.camp")} title={detailCamp.title} groupName={coachText(t, "coach.camps.day", { number: day.day_index + 1 })} clubName={detailCamp.club_name} location={day.location_text} statusLabel={t(CAMP_STATE_LABELS[campState(detailCamp)])} actions={<><Link className={styles.secondary} href={`/coach/groups/${day.group_id}/planning/${day.event_id}`}><CalendarDays size={15} />{t("coach.camps.openActivity")}</Link><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />{t("coach.camps.participants")}</button></>}><div className={styles.badge}>{coachText(t, day.participants_count === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: day.participants_count })}</div>{day.practical_info ? <p className={coachStyles.practical}>{day.practical_info}</p> : null}</CoachPlayerActivityCard> : <article className={styles.dayCard} key={day.event_id}><div className={styles.cardHead}><div><h3>{coachText(t, "coach.camps.day", { number: day.day_index + 1 })}</h3><p className={styles.muted}>{fmtRange(day.starts_at, day.ends_at, locale)}</p></div><span className={styles.badge}>{coachText(t, day.participants_count === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: day.participants_count })}</span></div><div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => { setDetailCamp(null); setParticipantsDay(day); }}><Users size={15} />{t("coach.camps.participants")}</button></div></article>)}</div></div></AccessibleDialog> : null}
+      <section className={campStyles.list} aria-labelledby="coach-camps-list-title" aria-busy={loading}>
+        {loading ? <article className={`${campStyles.campCard} ${campStyles.skeleton} ${coachStyles.loadingCard}`} role="status" aria-label={t("coach.camps.loading")}>
+          <div className={`${campStyles.hero} ${campStyles.shimmer}`} aria-hidden="true" />
+          <div className={campStyles.campBody} aria-hidden="true"><span className={`${campStyles.skeletonLine} ${campStyles.shimmer}`} /><span className={`${campStyles.skeletonLineShort} ${campStyles.shimmer}`} /><div className={`${campStyles.skeletonDay} ${campStyles.shimmer}`} /><div className={`${campStyles.skeletonDay} ${campStyles.shimmer}`} /></div>
+        </article> : error ? null : filteredCamps.length === 0 ? <div className={styles.empty}>{t("coach.camps.empty")}</div> :
+          filteredCamps.map((camp) => {
+            const state = campState(camp);
+            const registered = camp.player_registrations.filter((registration) => registration.registration_status === "registered").length;
+            const expanded = expandedCampId === camp.id;
+            const showClub = coachClubCount > 1;
+            return <article className={`${campStyles.campCard} ${coachStyles.campCard}`} key={camp.id}>
+              <div className={campStyles.hero}>
+                {camp.image_url ? <img src={camp.image_url} alt={camp.title} loading="lazy" /> : <div className={campStyles.heroFallback}><TentTree size={40} aria-hidden="true" /></div>}
+              </div>
+              <div className={`${campStyles.campBody} ${coachStyles.campBody}`}>
+                <header className={`${campStyles.campHeader} ${coachStyles.campHeader}`}>
+                  {showClub ? <span className={campStyles.club}>{camp.club_name}</span> : null}
+                  <h2>{camp.title}</h2>
+                  <span className={campStyles.dateRange}><CalendarDays size={14} aria-hidden="true"/>{campDateRange(camp, locale, t("coach.camps.datesUnknown"))}</span>
+                </header>
+                <div className={campStyles.summaryRow}>
+                  <div className={campStyles.coach}>
+                    {camp.head_coach?.avatar_url ? <img className={campStyles.avatar} src={camp.head_coach.avatar_url} alt="" /> : <span className={campStyles.avatar} aria-hidden="true">{initials(camp.head_coach)}</span>}
+                    <span><small>{t("coach.camps.headCoach")}</small><strong>{fullName(camp.head_coach)}</strong></span>
+                  </div>
+                  <button type="button" className={`${styles.iconButton} ${coachStyles.campAction}`} title={t("coach.camps.manage")}
+                    aria-label={coachText(t, "coach.camps.manageNamed", { name: camp.title })} aria-haspopup="dialog"
+                    onClick={() => openRegistrationModal(camp)}><Users size={18} aria-hidden="true"/></button>
+                </div>
+                <div className={coachStyles.campMeta}>
+                  <span className={styles.badge}>{t(CAMP_STATE_LABELS[state])}</span>
+                  <span>{coachText(t, registered === 1 ? "coach.camps.participantOne" : "coach.camps.participantsCount", { count: registered })}</span>
+                </div>
+                {camp.notes?.trim() ? <div className={`${campStyles.description} ${coachStyles.description}`} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(camp.notes) }}/> : null}
+                <section className={campStyles.program} aria-label={t("coach.camps.program")}>
+                  <div className={campStyles.sectionHeading}>
+                    <span><CalendarDays size={16} aria-hidden="true"/>{t("coach.camps.program")}<small>{camp.days.length} {t("coach.camps.days").toLocaleLowerCase(locale)}</small></span>
+                    <button type="button" className={`${cardStyles.action} ${cardStyles.view}`}
+                      aria-expanded={expanded} aria-controls={`camp-days-${camp.id}`}
+                      title={t("coach.directory.view")} aria-label={coachText(t, "coach.directory.viewNamed", { name: camp.title })}
+                      onClick={() => setExpandedCampId(expanded ? null : camp.id)}><Eye size={18} aria-hidden="true"/></button>
+                  </div>
+                  <div id={`camp-days-${camp.id}`} hidden={!expanded}>
+                    {expanded ? <div className={coachStyles.inlineDays}>
+                      <div className={coachStyles.dayGrid}>
+                        {[...camp.days].sort((a, b) => a.day_index - b.day_index).map((day) => {
+                          const dayLabel = coachText(t, "coach.camps.day", { number: day.day_index + 1 });
+                          const actions = <>
+                            <CoachActivityAction state="view_activity" groupId={day.group_id} eventId={day.event_id} name={`${camp.title} · ${dayLabel}`}/>
+                            <button type="button" className={styles.iconButton} onClick={() => setParticipantsDay(day)}
+                              aria-label={`${t("coach.camps.participants")} — ${dayLabel}`} title={t("coach.camps.participants")}><Users size={17} aria-hidden="true"/></button>
+                          </>;
+                          return day.starts_at ? <CoachActivityCard key={day.event_id} variant="list"
+                            startsAt={day.starts_at} endsAt={day.ends_at} typeLabel={t("coach.activity.camp")} title={dayLabel}
+                            groupName={camp.title} clubName={camp.club_name} showClub={showClub} location={day.location_text}
+                            actions={actions}>
+                            {day.practical_info || day.status === "cancelled" ? <div>
+                              {day.status === "cancelled" ? <span className={styles.badge}>{t("coach.planning.cancelled")}</span> : null}
+                              {day.practical_info ? <p className={coachStyles.practical}>{day.practical_info}</p> : null}
+                            </div> : null}
+                          </CoachActivityCard> : <article className={`${cardStyles.listItem} ${coachStyles.undatedDay}`} key={day.event_id}>
+                            <h3>{dayLabel}</h3><p>{t("coach.camps.datesUnknown")}</p><div className={styles.actions}>{actions}</div>
+                          </article>;
+                        })}
+                      </div>
+                      <button type="button" className={styles.secondary} onClick={() => setExpandedCampId(null)}>
+                        <ChevronUp size={16} aria-hidden="true"/>{t("common.close")}
+                      </button>
+                    </div> : null}
+                  </div>
+                </section>
+              </div>
+            </article>;
+          })}
+      </section>
 
         {registrationCamp ? (
           <AccessibleDialog className={`${coachStyles.modal} ${coachStyles.modalLarge}`} labelledBy="registration-modal-title" onClose={closeRegistrationModal}>

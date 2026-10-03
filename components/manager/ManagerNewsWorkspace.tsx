@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { managerContentPresentation } from "@/lib/managerContentPresentation";
+import { managerLocaleTag, managerActivityLabel } from "@/lib/managerLocale";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import ManagerClubSelect from "@/components/manager/ManagerClubSelect";
+import { useManagerClubChangeGuard } from "@/components/manager/useManagerClubChangeGuard";
 import Link from "next/link";
 import { ImagePlus, Pencil, PlusCircle, Search, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -143,19 +149,9 @@ function emptyForm(): NewsFormState {
   };
 }
 
-function roleLabel(role: MemberRole) {
-  if (role === "player") return "Joueur";
-  if (role === "parent") return "Parent";
-  if (role === "coach") return "Coach";
-  return "Manager";
-}
 
-function statusLabel(status: NewsStatus) {
-  if (status === "published") return "Publiée";
-  if (status === "scheduled") return "Programmée";
-  if (status === "archived") return "Archivée";
-  return "Brouillon";
-}
+
+
 
 function statusBadgeClass(status: NewsStatus) {
   if (status === "published") return listStyles.badgeDone;
@@ -164,33 +160,11 @@ function statusBadgeClass(status: NewsStatus) {
   return listStyles.badgeDraft;
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("fr-CH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
 
-function eventTypeLabel(value: string | null) {
-  if (value === "training") return "Entraînement";
-  if (value === "interclub") return "Interclub";
-  if (value === "camp") return "Stage/Camp";
-  if (value === "session") return "Séance";
-  if (value === "event") return "Événement";
-  return "Événement";
-}
 
-function linkedEventOptionLabel(option: LinkedEventOption) {
-  const date = option.starts_at ? formatDateTime(option.starts_at) : "Date inconnue";
-  const title = option.title && option.title !== "Événement" ? ` · ${option.title}` : "";
-  return `${eventTypeLabel(option.event_type)}${title} · ${option.group_name ?? "Groupe spécifique"} · ${date} · Coach: ${option.head_coach_name ?? "Non défini"}`;
-}
+
+
+
 
 function toDatetimeLocal(value: string | null | undefined) {
   if (!value) return "";
@@ -228,25 +202,7 @@ function targetKey(target: NewsTarget) {
   return `${target.target_type}:${target.target_value}`;
 }
 
-function targetLabel(
-  target: NewsTarget,
-  members: MemberOption[],
-  groups: GroupOption[],
-  ageBands: AgeBandOption[]
-) {
-  if (target.target_type === "role") return `Role: ${roleLabel(target.target_value as MemberRole)}`;
-  if (target.target_type === "user") {
-    const member = members.find((row) => row.user_id === target.target_value);
-    return member ? `${member.full_name} (${roleLabel(member.role)})` : "Utilisateur";
-  }
-  if (target.target_type === "group") {
-    const group = groups.find((row) => row.id === target.target_value);
-    return group ? `Groupe: ${group.name}` : "Groupe";
-  }
-  if (target.target_type === "group_category") return `Catégorie: ${target.target_value}`;
-  const band = ageBands.find((row) => row.key === target.target_value);
-  return band ? `Âge: ${band.label}` : `Âge: ${target.target_value}`;
-}
+
 
 function toggleTarget(current: NewsTarget[], target: NewsTarget) {
   const key = targetKey(target);
@@ -256,11 +212,73 @@ function toggleTarget(current: NewsTarget[], target: NewsTarget) {
 }
 
 export default function ManagerNewsWorkspace() {
+  const { t, locale } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedClubId = searchParams.get("club") ?? "";
+  const { format, count, number, errorText, ageBandLabel } = managerContentPresentation(t, locale);
+  function roleLabel(role: MemberRole) {
+    if (role === "player") return t("manager.content.player");
+    if (role === "parent") return t("manager.content.parent");
+    if (role === "coach") return t("manager.content.coach");
+    return t("manager.content.manager");
+  }
+  function statusLabel(status: NewsStatus) {
+    if (status === "published") return t("manager.content.published");
+    if (status === "scheduled") return t("manager.content.scheduled");
+    if (status === "archived") return t("manager.content.archivedNews");
+    return t("manager.content.draft");
+  }
+  function formatDateTime(value: string | null | undefined) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat(managerLocaleTag(locale), {
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: "Europe/Zurich",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+  function eventTypeLabel(value: string | null) {
+    return managerActivityLabel(t, value ?? "event");
+  }
+  function linkedEventOptionLabel(option: LinkedEventOption) {
+    const date = option.starts_at ? formatDateTime(option.starts_at) : t("manager.content.unknownDate");
+    const title = option.title && option.title !== "Événement" ? ` · ${option.title}` : "";
+    return `${eventTypeLabel(option.event_type)}${title} · ${option.group_name ?? t("manager.content.specificGroup")} · ${date} · ${format("linkedCoach", { name: option.head_coach_name ?? t("manager.content.undefined") })}`;
+  }
+  function targetLabel(
+    target: NewsTarget,
+    members: MemberOption[],
+    groups: GroupOption[],
+    ageBands: AgeBandOption[]
+  ) {
+    if (target.target_type === "role") return format("roleTarget", { name: roleLabel(target.target_value as MemberRole) });
+    if (target.target_type === "user") {
+      const member = members.find((row) => row.user_id === target.target_value);
+      return member ? `${member.full_name} (${roleLabel(member.role)})` : t("manager.content.user");
+    }
+    if (target.target_type === "group") {
+      const group = groups.find((row) => row.id === target.target_value);
+      return group ? format("groupTarget", { name: group.name }) : t("manager.content.group");
+    }
+    if (target.target_type === "group_category") return format("categoryTarget", { name: target.target_value });
+    const band = ageBands.find((row) => row.key === target.target_value);
+    return format("ageTarget", { name: ageBandLabel(band?.key ?? target.target_value, band?.label ?? target.target_value) });
+  }
+
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedClubId, setSelectedClubId] = useState("");
+  const [clubs, setClubs] = useState<ClubOption[]>([]);
+  const requestVersion = useRef(0);
+  const previousRequestedClub = useRef(requestedClubId);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [groups, setGroups] = useState<GroupOption[]>([]);
   const [groupCategories, setGroupCategories] = useState<string[]>([]);
@@ -279,6 +297,7 @@ export default function ManagerNewsWorkspace() {
   const [form, setForm] = useState<NewsFormState>(emptyForm);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  useManagerClubChangeGuard(formOpen, t("manager.content.discardNewsDraft"), saving || Boolean(deletingNewsId));
 
   const authHeaders = useCallback(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -287,7 +306,9 @@ export default function ManagerNewsWorkspace() {
   }, []);
 
   const load = useCallback(async (clubId?: string) => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadFailed(false);
     setError(null);
     try {
       const headers = await authHeaders();
@@ -298,9 +319,13 @@ export default function ManagerNewsWorkspace() {
         cache: "no-store",
       });
       const json = (await res.json().catch(() => ({}))) as BootstrapResponse & { error?: string };
-      if (!res.ok) throw new Error(String(json?.error ?? "Impossible de charger les actualités."));
+      if (!res.ok) throw new Error(String(json?.error ?? t("manager.content.loadNewsError")));
+      if (version !== requestVersion.current) return;
+      if (clubId && json.selected_club_id !== clubId) throw new Error(t("manager.clubUnavailable"));
 
       setSelectedClubId(String(json.selected_club_id ?? ""));
+      setLoadFailed(false);
+      setClubs(Array.isArray(json.clubs) ? json.clubs : []);
       setMembers(Array.isArray(json.target_options?.members) ? json.target_options.members : []);
       setGroups(Array.isArray(json.target_options?.groups) ? json.target_options.groups : []);
       setGroupCategories(Array.isArray(json.target_options?.group_categories) ? json.target_options.group_categories : []);
@@ -313,7 +338,9 @@ export default function ManagerNewsWorkspace() {
       setNews(Array.isArray(json.news) ? json.news : []);
       setPlatformNews(Array.isArray(json.platform_news) ? json.platform_news : []);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Impossible de charger les actualités.");
+      if (version !== requestVersion.current) return;
+      setError(loadError instanceof Error ? loadError.message : t("manager.content.loadNewsError"));
+      setLoadFailed(true);
       setMembers([]);
       setGroups([]);
       setGroupCategories([]);
@@ -326,19 +353,41 @@ export default function ManagerNewsWorkspace() {
       setNews([]);
       setPlatformNews([]);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [authHeaders]);
+  }, [authHeaders, t]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (previousRequestedClub.current !== requestedClubId) {
+      previousRequestedClub.current = requestedClubId;
+      setFormOpen(false);
+      setEditingNewsId(null);
+      setImageFile(null);
+      setImagePreview(null);
+    }
+    void load(requestedClubId || undefined);
+    return () => { requestVersion.current += 1; };
+  }, [load, requestedClubId]);
 
-  const filteredMembers = useMemo(() => {
+  const scopeReady = !requestedClubId || selectedClubId === requestedClubId;
+  function selectClub(id: string) {
+    if (id === selectedClubId || saving || deletingNewsId) return;
+    if (formOpen && !window.confirm(t("manager.content.discardNewsDraft"))) return;
+    setFormOpen(false);
+    setEditingNewsId(null);
+    setForm(emptyForm());
+    setImageFile(null);
+    setImagePreview(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("club", id);
+    router.replace(`/manager/news?${params.toString()}`, { scroll: false });
+  }
+
+  const filteredMembers = (() => {
     const query = normalizeSearch(memberSearch);
     if (!query) return members;
     return members.filter((member) => normalizeSearch(`${member.full_name} ${roleLabel(member.role)}`).includes(query));
-  }, [memberSearch, members]);
+  })();
 
   const memberGroups = useMemo(() => {
     return {
@@ -455,8 +504,8 @@ export default function ManagerNewsWorkspace() {
   }
 
   async function submitForm() {
-    if (!selectedClubId) {
-      setError("Choisis une organisation.");
+    if (loadFailed || !scopeReady || !selectedClubId) {
+      setError(t("manager.content.chooseOrganization"));
       return;
     }
 
@@ -472,7 +521,7 @@ export default function ManagerNewsWorkspace() {
         uploadData.set("image", imageFile);
         const uploadRes = await fetch("/api/manager/news/image", { method: "POST", headers, body: uploadData });
         const uploadJson = (await uploadRes.json().catch(() => ({}))) as { error?: string; image_url?: string };
-        if (!uploadRes.ok || !uploadJson.image_url) throw new Error(String(uploadJson.error ?? "Upload de l’image impossible."));
+        if (!uploadRes.ok || !uploadJson.image_url) throw new Error(String(uploadJson.error ?? t("manager.content.uploadError")));
         imageUrl = uploadJson.image_url;
       }
       const payload = {
@@ -489,25 +538,30 @@ export default function ManagerNewsWorkspace() {
         },
         body: JSON.stringify(payload),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(String(json.error ?? "Enregistrement impossible."));
+      const json = (await res.json().catch(() => ({}))) as { error?: string; dispatch?: Record<string, unknown> };
+      if (!res.ok) throw new Error(String(json.error ?? t("manager.content.saveError")));
 
       setFormOpen(false);
       setEditingNewsId(null);
       setForm(emptyForm());
       setImageFile(null);
       setImagePreview(null);
-      setMessage(editingNewsId ? "Actualité mise à jour." : "Actualité créée.");
+      const failed = Number(json.dispatch?.email_failed_count ?? 0);
+      const uncertain = Number(json.dispatch?.email_uncertain_count ?? 0);
+      const deliveryNote = failed || uncertain
+        ? ` ${format("deliveryIncomplete", { failed: number(failed), uncertain: number(uncertain) })} ${t("manager.content.deliveryRetryHelp")}`
+        : json.dispatch?.notification_error ? ` ${t("manager.content.notificationFailed")}` : "";
+      setMessage((editingNewsId ? t("manager.content.newsUpdated") : t("manager.content.newsCreated")) + deliveryNote);
       await load(selectedClubId);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Enregistrement impossible.");
+      setError(submitError instanceof Error ? submitError.message : t("manager.content.saveError"));
     } finally {
       setSaving(false);
     }
   }
 
   async function deleteNews(row: NewsRow) {
-    const confirmed = window.confirm(`Supprimer l’actualité « ${row.title} » ?`);
+    const confirmed = window.confirm(format("confirmDeleteNews", { name: row.title }));
     if (!confirmed) return;
 
     setDeletingNewsId(row.id);
@@ -519,12 +573,12 @@ export default function ManagerNewsWorkspace() {
         method: "DELETE",
         headers,
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(String(json.error ?? "Suppression impossible."));
-      setMessage("Actualité supprimée.");
+      const json = (await res.json().catch(() => ({}))) as { error?: string; dispatch?: Record<string, unknown> };
+      if (!res.ok) throw new Error(String(json.error ?? t("manager.content.deleteError")));
+      setMessage(t("manager.content.newsDeleted"));
       await load(selectedClubId);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Suppression impossible.");
+      setError(deleteError instanceof Error ? deleteError.message : t("manager.content.deleteError"));
     } finally {
       setDeletingNewsId(null);
     }
@@ -532,76 +586,80 @@ export default function ManagerNewsWorkspace() {
 
   return (
     <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
-        <Link href="/manager">Manager</Link><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>Actualités</span>
+      <nav aria-label={t("manager.content.breadcrumb")} style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager">{t("manager.content.manager")}</Link><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>{t("manager.content.news")}</span>
       </nav>
       <div className={styles.topline}>
-        <div><h1>Actualités</h1><p className={styles.lead}>Créez et diffusez des informations ciblées à votre club.</p></div>
-        <button type="button" className={actionStyles.primaryButton} onClick={openCreateForm}><PlusCircle size={16} />Nouvelle actualité</button>
+        <div><h1>{t("manager.content.news")}</h1><p className={styles.lead}>{t("manager.content.newsLead")}</p></div>
+        <div className={actionStyles.topActions}>
+          {clubs.length > 1 ? <ManagerClubSelect clubs={clubs} clubId={scopeReady ? selectedClubId : requestedClubId} onChange={selectClub} disabled={loading || saving || Boolean(deletingNewsId)} /> : null}
+          <button type="button" className={actionStyles.primaryButton} onClick={openCreateForm} disabled={loading || loadFailed || !scopeReady || !selectedClubId}><PlusCircle size={16} />{t("manager.content.newNews")}</button>
+        </div>
       </div>
       {message ? <div className={actionStyles.successAlert}>{message}</div> : null}
-      {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
+      {error ? <div className={actionStyles.errorAlert} role="alert">{errorText(error)}</div> : null}
+      {loadFailed ? <button type="button" className={actionStyles.secondaryButton} onClick={() => void load(requestedClubId || undefined)}>{t("manager.refresh")}</button> : null}
 
-      {formOpen ? (
+      {formOpen && scopeReady && !loadFailed ? (
         <>
           <section className={styles.quickPanel}>
-            <div className={styles.sectionHeading}><div><h2>{editingNewsId ? "Modifier l’actualité" : "Créer l’actualité"}</h2><p>Rédigez le contenu et associez, si besoin, une activité planifiée.</p></div></div>
+            <div className={styles.sectionHeading}><div><h2>{editingNewsId ? t("manager.content.editNews") : t("manager.content.createNews")}</h2><p>{t("manager.content.newsFormHelp")}</p></div></div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(220px,280px)", gap: 12 }}>
+            <div className={newsStyles.formHeadingGrid}>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Titre</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.title")}</span>
                 <input
                   className="input"
                   value={form.title}
                   onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))}
-                  placeholder="Titre de l’actualité"
+                  placeholder={t("manager.content.newsTitle")}
                 />
               </label>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Statut</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.status")}</span>
                 <select
                   className="input"
                   value={form.status}
                   onChange={(event) => setForm((previous) => ({ ...previous, status: event.target.value as NewsStatus }))}
                 >
-                  <option value="draft">Brouillon</option>
-                  <option value="scheduled">Programmée</option>
-                  <option value="published">Publier maintenant</option>
-                  <option value="archived">Archiver</option>
+                  <option value="draft">{t("manager.content.draft")}</option>
+                  <option value="scheduled">{t("manager.content.scheduled")}</option>
+                  <option value="published">{t("manager.content.publishNow")}</option>
+                  <option value="archived">{t("manager.content.archive")}</option>
                 </select>
               </label>
             </div>
 
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Accroche courte (optionnel)</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.summaryOptional")}</span>
               <input
                 className="input"
                 value={form.summary}
                 onChange={(event) => setForm((previous) => ({ ...previous, summary: event.target.value }))}
-                placeholder="Résumé visible dans la notification"
+                placeholder={t("manager.content.notificationSummary")}
               />
             </label>
 
             <div className={newsStyles.imageField}>
               <div className={newsStyles.imageFieldHeader}>
-                <div><span className={newsStyles.fieldLabel}>Image de couverture</span><p>Format d’affichage 16:9 · JPG, PNG ou WebP · 8 Mo maximum</p></div>
-                {imagePreview ? <button type="button" className={newsStyles.removeImage} onClick={() => { setImageFile(null); setImagePreview(null); setForm((previous) => ({ ...previous, image_url: "" })); }}><X size={14} /> Retirer</button> : null}
+                <div><span className={newsStyles.fieldLabel}>{t("manager.content.cover")}</span><p>{t("manager.content.coverFormat")}</p></div>
+                {imagePreview ? <button type="button" className={newsStyles.removeImage} onClick={() => { setImageFile(null); setImagePreview(null); setForm((previous) => ({ ...previous, image_url: "" })); }}><X size={14} /> {t("manager.content.remove")}</button> : null}
               </div>
-              {imagePreview ? <div className={newsStyles.imagePreview}><img src={imagePreview} alt="Aperçu de la couverture" /></div> : <label className={newsStyles.imageDrop}><ImagePlus size={20} /><span>Ajouter une image</span><small>Elle sera recadrée proprement en 16:9 à l’affichage.</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const optimized = await optimizeUploadFile(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.84 }); setImageFile(optimized); setImagePreview(URL.createObjectURL(optimized)); }} /></label>}
+              {imagePreview ? <div className={newsStyles.imagePreview}><img src={imagePreview} alt={t("manager.content.coverPreview")} /></div> : <label className={newsStyles.imageDrop}><ImagePlus size={20} /><span>{t("manager.content.addImage")}</span><small>{t("manager.content.coverCrop")}</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const optimized = await optimizeUploadFile(file, { maxWidth: 1920, maxHeight: 1080, quality: 0.84 }); setImageFile(optimized); setImagePreview(URL.createObjectURL(optimized)); }} /></label>}
             </div>
 
             <div style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Contenu (optionnel)</span>
+              <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.contentOptional")}</span>
               <TiptapSimpleEditor
                 value={form.body}
                 onChange={(value) => setForm((previous) => ({ ...previous, body: value }))}
-                placeholder="Contenu de l’actualité"
+                placeholder={t("manager.content.newsContent")}
               />
             </div>
 
             {form.status === "scheduled" ? (
               <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Date de programmation</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.scheduleDate")}</span>
                 <input
                   className="input"
                   type="datetime-local"
@@ -613,22 +671,22 @@ export default function ManagerNewsWorkspace() {
 
             <div style={{ display: "grid", gap: 12 }}>
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Lier à une activité planifiée</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.linkActivity")}</span>
                 <select
                   className="input"
                   value={linkedContentValue}
                   onChange={(event) => linkActivity(event.target.value)}
                 >
-                  <option value="">Aucun</option>
+                  <option value="">{t("manager.content.none")}</option>
                   {linkedCamps.length ? (
-                    <optgroup label="Stages">
+                    <optgroup label={t("manager.content.camps")}>
                       {linkedCamps.map((camp) => (
                         <option key={camp.id} value={`camp:${camp.id}`}>{camp.title}</option>
                       ))}
                     </optgroup>
                   ) : null}
                   {selectableEvents.length ? (
-                    <optgroup label="Autres activités">
+                    <optgroup label={t("manager.content.otherActivities")}>
                       {selectableEvents.map((row) => (
                         <option key={row.id} value={`event:${row.id}`}>
                           {linkedEventOptionLabel(row)}
@@ -643,7 +701,7 @@ export default function ManagerNewsWorkspace() {
           </section>
 
           <section className={styles.quickPanel}>
-            <div className={styles.sectionHeading}><div><h2>Diffusion</h2><p>Choisissez les canaux d’envoi et la visibilité de cette actualité.</p></div></div>
+            <div className={styles.sectionHeading}><div><h2>{t("manager.content.delivery")}</h2><p>{t("manager.content.deliveryHelp")}</p></div></div>
             <div style={{ display: "grid", gap: 10 }}>
               <label className="user-mgmt-checkbox-label">
                 <input
@@ -651,7 +709,7 @@ export default function ManagerNewsWorkspace() {
                   checked={form.send_notification}
                   onChange={(event) => setForm((previous) => ({ ...previous, send_notification: event.target.checked }))}
                 />
-                Envoyer une notification dans l’application
+                {t("manager.content.sendNotification")}
               </label>
               <label className="user-mgmt-checkbox-label">
                 <input
@@ -659,7 +717,7 @@ export default function ManagerNewsWorkspace() {
                   checked={form.send_email}
                   onChange={(event) => setForm((previous) => ({ ...previous, send_email: event.target.checked }))}
                 />
-                Envoyer un e-mail de notification
+                {t("manager.content.sendEmail")}
               </label>
               <label className="user-mgmt-checkbox-label">
                 <input
@@ -667,7 +725,7 @@ export default function ManagerNewsWorkspace() {
                   checked={form.include_linked_parents}
                   onChange={(event) => setForm((previous) => ({ ...previous, include_linked_parents: event.target.checked }))}
                 />
-                Inclure les parents liés des joueurs ciblés
+                {t("manager.content.includeParents")}
               </label>
               <label className="user-mgmt-checkbox-label">
                 <input
@@ -675,22 +733,22 @@ export default function ManagerNewsWorkspace() {
                   checked={form.visible_on_home}
                   onChange={(event) => setForm((previous) => ({ ...previous, visible_on_home: event.target.checked }))}
                 />
-                Afficher sur l’accueil
+                {t("manager.content.showHome")}
               </label>
             </div>
           </section>
 
           <section className={styles.quickPanel}>
-            <div className={styles.sectionHeading}><div><h2>Ciblage</h2><p>Sélectionnez les rôles, groupes ou personnes qui recevront cette actualité.</p></div></div>
+            <div className={styles.sectionHeading}><div><h2>{t("manager.content.targeting")}</h2><p>{t("manager.content.targetingHelp")}</p></div></div>
             <fieldset className="manager-news-targeting" disabled={targetsLockedByActivity} style={{ display: "grid", gap: 14, minWidth: 0, margin: 0, padding: 0, border: 0 }}>
               {targetsLockedByActivity ? (
                 <p style={{ margin: 0, color: "#778278", fontSize: 12, fontWeight: 700 }}>
-                  Les cibles correspondent aux joueurs et coachs de l’activité liée.
+                  {t("manager.content.activityTargets")}
                 </p>
               ) : null}
 
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Rôles entiers</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.wholeRoles")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {(["player", "parent", "coach", "manager"] as MemberRole[]).map((role) => {
                     const target = { target_type: "role" as const, target_value: role };
@@ -724,7 +782,7 @@ export default function ManagerNewsWorkspace() {
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Groupes</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.groups")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {groups.map((group) => {
                     const target = { target_type: "group" as const, target_value: group.id };
@@ -758,7 +816,7 @@ export default function ManagerNewsWorkspace() {
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Catégories de groupe</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.groupCategories")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {groupCategories.map((category) => {
                     const target = { target_type: "group_category" as const, target_value: category };
@@ -792,7 +850,7 @@ export default function ManagerNewsWorkspace() {
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Tranche d’âge</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.ageBand")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {ageBands.map((band) => {
                     const target = { target_type: "age_band" as const, target_value: band.key };
@@ -818,7 +876,7 @@ export default function ManagerNewsWorkspace() {
                             setForm((previous) => ({ ...previous, targets: toggleTarget(previous.targets, target) }))
                           }
                         />
-                        {band.label}
+                        {ageBandLabel(band.key, band.label)}
                       </label>
                     );
                   })}
@@ -827,7 +885,7 @@ export default function ManagerNewsWorkspace() {
 
               <div style={{ display: "grid", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Utilisateurs individuels</div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>{t("manager.content.individualUsers")}</div>
                   <label
                     style={{
                       display: "inline-flex",
@@ -843,18 +901,18 @@ export default function ManagerNewsWorkspace() {
                     <input
                       value={memberSearch}
                       onChange={(event) => setMemberSearch(event.target.value)}
-                      placeholder="Rechercher un utilisateur"
+                      placeholder={t("manager.content.searchUser")}
                       style={{ border: 0, outline: 0, background: "transparent", minWidth: 220 }}
                     />
                   </label>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 12 }}>
+                <div className={newsStyles.memberGrid}>
                   {[
-                    { label: "Joueurs", rows: memberGroups.players },
-                    { label: "Parents", rows: memberGroups.parents },
-                    { label: "Coachs", rows: memberGroups.coaches },
-                    { label: "Managers", rows: memberGroups.managers },
+                    { label: t("manager.content.players"), rows: memberGroups.players },
+                    { label: t("manager.content.parents"), rows: memberGroups.parents },
+                    { label: t("manager.content.coaches"), rows: memberGroups.coaches },
+                    { label: t("manager.content.managers"), rows: memberGroups.managers },
                   ].map((group) => (
                     <div
                       key={group.label}
@@ -890,7 +948,7 @@ export default function ManagerNewsWorkspace() {
                           );
                         })}
                         {group.rows.length === 0 ? (
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.45)" }}>Aucun résultat</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(0,0,0,0.45)" }}>{t("manager.content.noResults")}</div>
                         ) : null}
                       </div>
                     </div>
@@ -921,10 +979,10 @@ export default function ManagerNewsWorkspace() {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button type="button" className={actionStyles.secondaryButton} onClick={() => setFormOpen(false)} disabled={saving}>
-                  Annuler
+                  {t("manager.content.cancel")}
                 </button>
                 <button type="button" className={actionStyles.primaryButton} onClick={() => void submitForm()} disabled={saving}>
-                  {saving ? "Enregistrement..." : editingNewsId ? "Mettre à jour" : "Créer l’actualité"}
+                  {saving ? t("manager.content.saving") : editingNewsId ? t("manager.content.update") : t("manager.content.createNews")}
                 </button>
               </div>
             </div>
@@ -932,37 +990,37 @@ export default function ManagerNewsWorkspace() {
         </>
       ) : null}
 
-      {platformNews.length > 0 ? <section className={listStyles.panel} aria-labelledby="activitee-news-title">
-        <div className={listStyles.panelHeader}><div><h2 id="activitee-news-title">Actualités ActiviTee</h2><p>Informations de la plateforme destinées aux managers de ce club.</p></div></div>
+      {!loading && scopeReady && platformNews.length > 0 ? <section className={listStyles.panel} aria-labelledby="activitee-news-title">
+        <div className={listStyles.panelHeader}><div><h2 id="activitee-news-title">{t("manager.content.platformNews")}</h2><p>{t("manager.content.platformNewsHelp")}</p></div></div>
         <div className={newsStyles.platformGrid}>{platformNews.map(row=><article className={newsStyles.platformCard} key={row.id}>{row.image_url?<img src={row.image_url} alt=""/>:null}<div><span>{formatDateTime(row.published_at||row.scheduled_for||row.created_at)}</span><h3>{row.title}</h3>{row.summary?<p>{row.summary}</p>:null}<div dangerouslySetInnerHTML={{__html:normalizeCampRichTextHtml(row.body)}}/></div></article>)}</div>
       </section>:null}
 
       <section className={listStyles.panel}>
         <div className={listStyles.panelHeader}>
           <div>
-            <h2>Liste des actualités</h2>
+            <h2>{t("manager.content.newsList")}</h2>
             <p>
-              {loading
-                ? "Chargement..."
-                : `${news.length} actualité${news.length > 1 ? "s" : ""} affichée${news.length > 1 ? "s" : ""}.`}
+              {loading || !scopeReady
+                ? t("manager.content.loading")
+                : count("newsCount", news.length)}
             </p>
           </div>
         </div>
 
-        {loading ? (
-          <ListLoadingBlock label="Chargement des actualités..." />
+        {loading || !scopeReady ? (
+          <ListLoadingBlock label={t("manager.content.loadingNews")} />
         ) : news.length === 0 ? (
-          <div className={listStyles.empty}>Aucune actualité pour le moment.</div>
+          <div className={listStyles.empty}>{t("manager.content.noNews")}</div>
         ) : (
           <div className={listStyles.tableWrap}>
             <table className={`${listStyles.table} ${newsStyles.newsTable}`}>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Image</th>
-                  <th>Titre</th>
-                  <th>Statut</th>
-                  <th>Actions</th>
+                  <th>{t("manager.content.date")}</th>
+                  <th>{t("manager.content.image")}</th>
+                  <th>{t("manager.content.title")}</th>
+                  <th>{t("manager.content.status")}</th>
+                  <th>{t("manager.content.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -971,33 +1029,35 @@ export default function ManagerNewsWorkspace() {
 
                   return (
                     <tr key={row.id}>
-                      <td data-label="Date" className={newsStyles.dateCell}>
+                      <td data-label={t("manager.content.date")} className={newsStyles.dateCell}>
                         {formatDateTime(displayDate)}
                       </td>
-                      <td data-label="Image">
+                      <td data-label={t("manager.content.image")}>
                         {row.image_url ? (
                           <img className={newsStyles.tableThumbnail} src={row.image_url} alt="" />
                         ) : (
                           <span className={newsStyles.noThumbnail}>—</span>
                         )}
                       </td>
-                      <td data-label="Titre">
+                      <td data-label={t("manager.content.title")}>
                         <div className={listStyles.titleCell}>
                           <b>{row.title}</b>
+                          {Number(row.last_dispatch_result?.email_failed_count ?? 0) > 0 || Number(row.last_dispatch_result?.email_uncertain_count ?? 0) > 0 ? <small role="status">{format("deliveryIncomplete", { failed: number(Number(row.last_dispatch_result?.email_failed_count ?? 0)), uncertain: number(Number(row.last_dispatch_result?.email_uncertain_count ?? 0)) })}</small> : null}
+                          {row.last_dispatch_result?.notification_error ? <small role="status">{t("manager.content.notificationFailed")}</small> : null}
                         </div>
                       </td>
-                      <td data-label="Statut">
+                      <td data-label={t("manager.content.status")}>
                         <span className={`${listStyles.badge} ${statusBadgeClass(row.status)}`}>
                           {statusLabel(row.status)}
                         </span>
                       </td>
-                      <td data-label="Actions">
+                      <td data-label={t("manager.content.actions")}>
                         <div className={listStyles.actions}>
                           <button
                             type="button"
                             className={listStyles.iconButton}
-                            title="Modifier"
-                            aria-label={`Modifier ${row.title}`}
+                            title={t("manager.content.edit")}
+                            aria-label={format("editNamed", { name: row.title })}
                             onClick={() => openEditForm(row)}
                           >
                             <Pencil size={15} />
@@ -1005,8 +1065,8 @@ export default function ManagerNewsWorkspace() {
                           <button
                             type="button"
                             className={`${listStyles.iconButton} ${listStyles.dangerIcon}`}
-                            title="Supprimer"
-                            aria-label={`Supprimer ${row.title}`}
+                            title={t("manager.content.delete")}
+                            aria-label={format("deleteNamed", { name: row.title })}
                             disabled={deletingNewsId === row.id}
                             onClick={() => void deleteNews(row)}
                           >

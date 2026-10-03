@@ -3,6 +3,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { managerContentPresentation } from "@/lib/managerContentPresentation";
+import { managerLocaleTag } from "@/lib/managerLocale";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
@@ -19,7 +22,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { TiptapSimpleEditor } from "@/components/ui/TiptapSimpleEditor";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
-import { isSelectableCampGroup } from "@/lib/campsManagement";
+import { isSelectableCampGroup, remapCampDayReferences } from "@/lib/campsManagement";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import EventCriteriaSelector from "@/components/evaluations/EventCriteriaSelector";
 import styles from "../Camps.module.css";
@@ -74,6 +77,8 @@ type Option = {
   }>;
 };
 type Camp = {
+  edit_version?: string;
+  season_id?: string | null;
   id: string;
   club_id: string;
   title: string;
@@ -108,12 +113,7 @@ function fromIso(value?: string | null) {
   const date = new Date(value ?? "");
   return Number.isFinite(date.getTime()) ? localInput(date) : "";
 }
-function shortDate(value?: string | null) {
-  const date = new Date(value ?? "");
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat("fr-CH").format(date)
-    : "Date à définir";
-}
+
 function fullName(profile?: Profile | null) {
   return (
     `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "—"
@@ -197,6 +197,15 @@ function Avatar({ profile }: { profile?: Profile | null }) {
 }
 
 export default function CampEditorPage() {
+  const { t, locale } = useI18n();
+  const { format, count, number, errorText } = managerContentPresentation(t, locale);
+  function shortDate(value?: string | null) {
+    const date = new Date(value ?? "");
+    return Number.isFinite(date.getTime())
+      ? new Intl.DateTimeFormat(managerLocaleTag(locale)).format(date)
+      : t("manager.content.datePending");
+  }
+
   const router = useRouter();
   const params = useSearchParams();
   const campId = String(params.get("campId") ?? "");
@@ -207,6 +216,8 @@ export default function CampEditorPage() {
   const [clubId, setClubId] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
+  const [editVersion, setEditVersion] = useState<string | null>(null);
+  const [seasonId, setSeasonId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -227,6 +238,13 @@ export default function CampEditorPage() {
   >({});
   const [options, setOptions] = useState<Option[]>([]);
 
+  function reorderDays(next: Day[]) {
+    const remapped = remapCampDayReferences(days, next, registrations, options);
+    setRegistrations(remapped.registrations);
+    setOptions(remapped.options);
+    setDays(next);
+  }
+
   async function authHeaders(json = false) {
     const { data } = await supabase.auth.getSession();
     return {
@@ -235,8 +253,10 @@ export default function CampEditorPage() {
     };
   }
   function hydrate(camp: Camp, duplicate: boolean) {
+    setEditVersion(duplicate ? null : camp.edit_version ?? null);
+    setSeasonId(camp.season_id ?? null);
     setClubId(camp.club_id);
-    setTitle(duplicate ? `${camp.title} — copie` : camp.title);
+    setTitle(duplicate ? format("copyTitle", { title: camp.title }) : camp.title);
     setNotes(normalizeCampRichTextHtml(camp.notes ?? ""));
     setImageUrl(camp.image_url ?? "");
     setImageFile(null);
@@ -297,7 +317,7 @@ export default function CampEditorPage() {
       setError(null);
       try {
         const { data: auth, error: authError } = await supabase.auth.getUser();
-        if (authError || !auth.user) throw new Error("Session invalide.");
+        if (authError || !auth.user) throw new Error(t("manager.content.invalidSession"));
         const memberships = await supabase
           .from("club_members")
           .select("club_id,user_id,role,is_active")
@@ -312,7 +332,7 @@ export default function CampEditorPage() {
             .map((row: any) => String(row.club_id)),
         );
         if (!managerClubIds.length)
-          throw new Error("Aucun club manager disponible.");
+          throw new Error(t("manager.content.noManagerClub"));
         const activeClubId = managerClubIds[0];
         setClubId(activeClubId);
         const memberRows = (memberships.data ?? []).filter(
@@ -340,7 +360,7 @@ export default function CampEditorPage() {
             supabase
               .from("coach_group_players")
               .select("group_id,player_user_id"),
-            fetch("/api/manager/camps", {
+            fetch(campId || duplicateId ? `/api/manager/camps?camp_id=${encodeURIComponent(campId || duplicateId)}` : "/api/manager/camps", {
               headers: await authHeaders(),
               cache: "no-store",
             }).then(async (response) => ({
@@ -357,7 +377,7 @@ export default function CampEditorPage() {
         if (!campsRes.response.ok)
           throw new Error(
             String(
-              campsRes.payload?.error ?? "Impossible de charger les stages.",
+              campsRes.payload?.error ?? t("manager.content.loadCampsError"),
             ),
           );
         const profileMap = new Map(
@@ -393,11 +413,11 @@ export default function CampEditorPage() {
           const camp = (campsRes.payload?.camps ?? []).find(
             (entry: Camp) => entry.id === requested,
           );
-          if (!camp) throw new Error("Stage introuvable.");
+          if (!camp) throw new Error(t("manager.content.campNotFound"));
           hydrate(camp, Boolean(duplicateId));
         }
       } catch (cause: any) {
-        setError(cause?.message ?? "Erreur de chargement.");
+        setError(cause?.message ?? t("manager.content.loadError"));
       } finally {
         setLoading(false);
       }
@@ -498,7 +518,9 @@ export default function CampEditorPage() {
     setSaving(true);
     setError(null);
     try {
-      if (!title.trim()) throw new Error("Le nom du stage est requis.");
+      if (!title.trim()) throw new Error(t("manager.content.campNameRequired"));
+      const validDays = days.filter((day) => day.starts_at && day.ends_at);
+      if (validDays.length > 0 && !headCoachId) throw new Error(t("manager.content.headRequired"));
       let uploadedImageUrl = imageUrl || null;
       if (imageFile) {
         const uploadData = new FormData();
@@ -511,39 +533,40 @@ export default function CampEditorPage() {
         });
         const uploadPayload = await uploadResponse.json().catch(() => ({}));
         if (!uploadResponse.ok || !uploadPayload?.image_url) {
-          throw new Error(String(uploadPayload?.error ?? "Upload de l’image impossible."));
+          throw new Error(String(uploadPayload?.error ?? t("manager.content.uploadError")));
         }
         uploadedImageUrl = String(uploadPayload.image_url);
       }
-      const validDays = days.filter((day) => day.starts_at && day.ends_at);
       options.forEach((option, index) => {
         if (!String(option.name ?? "").trim())
-          throw new Error(`Le nom de l’option ${index + 1} est requis.`);
+          throw new Error(format("optionNameRequired", { number: number(index + 1) }));
         if (!option.applies_to_all_days && option.day_indexes.length === 0)
           throw new Error(
-            `Sélectionnez au moins une journée pour l’option « ${String(option.name ?? "").trim()} ».`,
+            format("optionDaysRequired", { name: String(option.name ?? "").trim() }),
           );
         if ((option.input_type === "select" || option.input_type === "radio") && option.choices.filter((choice) => choice.trim()).length < 2)
-          throw new Error(`Ajoutez au moins deux choix pour l’option « ${String(option.name ?? "").trim()} ».`);
+          throw new Error(format("optionChoicesRequired", { name: String(option.name ?? "").trim() }));
       });
       if (status === "scheduled") {
-        if (!headCoachId) throw new Error("Sélectionnez un head coach.");
+        if (!headCoachId) throw new Error(t("manager.content.headRequired"));
         if (!groupIds.length && !playerIds.length)
-          throw new Error("Ajoutez au moins un groupe ou un junior.");
-        if (!validDays.length) throw new Error("Ajoutez au moins une journée.");
+          throw new Error(t("manager.content.participantsRequired"));
+        if (!validDays.length) throw new Error(t("manager.content.dayRequired"));
         const keys = new Set<string>();
         validDays.forEach((day, index) => {
           if (new Date(day.ends_at) <= new Date(day.starts_at))
             throw new Error(
-              `L’heure de fin de la journée ${index + 1} doit être postérieure à l’heure de début.`,
+              format("dayEndInvalid", { number: number(index + 1) }),
             );
           const key = `${day.starts_at}|${day.ends_at}|${String(day.location_text ?? "").trim().toLowerCase()}`;
           if (keys.has(key))
-            throw new Error("Deux journées identiques ont été détectées.");
+            throw new Error(t("manager.content.duplicateDays"));
           keys.add(key);
         });
       }
       const body = {
+        edit_version: editVersion,
+        season_id: seasonId,
         club_id: clubId,
         title: title.trim(),
         notes: normalizeCampRichTextHtml(notes),
@@ -588,11 +611,11 @@ export default function CampEditorPage() {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok)
-        throw new Error(String(payload?.error ?? "Enregistrement impossible."));
+        throw new Error(String(payload?.error ?? t("manager.content.saveError")));
       router.push(`/manager/camps/${payload.camp_id}`);
       router.refresh();
     } catch (cause: any) {
-      setError(cause?.message ?? "Enregistrement impossible.");
+      setError(cause?.message ?? t("manager.content.saveError"));
     } finally {
       setSaving(false);
     }
@@ -611,48 +634,48 @@ export default function CampEditorPage() {
   );
   return (
     <main className={styles.page}>
-      <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
-        <Link href="/manager/camps">Stages</Link>
+      <nav className={styles.breadcrumb} aria-label={t("manager.content.breadcrumb")}>
+        <Link href="/manager/camps">{t("manager.content.camps")}</Link>
         <ChevronRight size={13} />
-        <span>{campId && !duplicateId ? "Modifier" : "Créer"}</span>
+        <span>{campId && !duplicateId ? t("manager.content.edit") : t("manager.content.create")}</span>
       </nav>
       <div className={styles.topline}>
         <div>
           <h1>
-            {campId && !duplicateId ? "Modifier le stage" : "Créer un stage"}
+            {campId && !duplicateId ? t("manager.content.editCamp") : t("manager.content.createCamp")}
           </h1>
         </div>
       </div>
       {error ? (
         <div className={styles.alertError} role="alert">
-          {error}
+          {errorText(error)}
         </div>
       ) : null}
       {loading ? (
         <section className={styles.panel}>
-          <ListLoadingBlock label="Préparation du formulaire…" />
+          <ListLoadingBlock label={t("manager.content.preparingForm")} />
         </section>
       ) : (
         <>
           <section className={styles.panel} style={{ order: 1 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Informations générales</h2>
+                <h2>{t("manager.content.general")}</h2>
               </div>
             </div>
             <div className={styles.grid2}>
               <label className={styles.field}>
                 <span>
-                  Nom du stage <i className={styles.required}>*</i>
+                  {t("manager.content.campName")} <i className={styles.required}>*</i>
                 </span>
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Stage de printemps"
+                  placeholder={t("manager.content.springCamp")}
                 />
               </label>
               <label className={styles.field}>
-                <span>Capacité maximale</span>
+                <span>{t("manager.content.maxCapacity")}</span>
                 <input
                   type="number"
                   min={1}
@@ -662,15 +685,15 @@ export default function CampEditorPage() {
                       event.target.value ? Number(event.target.value) : null,
                     )
                   }
-                  placeholder="Sans limite"
+                  placeholder={t("manager.content.noLimit")}
                 />
               </label>
             </div>
             <div className={styles.imageField}>
               <div className={styles.imageFieldHeader}>
                 <div>
-                  <span>Image du stage</span>
-                  <p>Format 16:9 · JPG, PNG ou WebP · 8 Mo maximum</p>
+                  <span>{t("manager.content.campImage")}</span>
+                  <p>{t("manager.content.campImageFormat")}</p>
                 </div>
                 {imagePreview ? (
                   <button
@@ -683,14 +706,14 @@ export default function CampEditorPage() {
                     }}
                   >
                     <X size={14} />
-                    Retirer
+                    {t("manager.content.remove")}
                   </button>
                 ) : null}
               </div>
               {imagePreview ? (
                 <label className={styles.imagePreview}>
-                  <img src={imagePreview} alt="Aperçu du stage" />
-                  <span>Remplacer l’image</span>
+                  <img src={imagePreview} alt={t("manager.content.campPreview")} />
+                  <span>{t("manager.content.replaceImage")}</span>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -710,8 +733,8 @@ export default function CampEditorPage() {
               ) : (
                 <label className={styles.imageDrop}>
                   <ImagePlus size={22} />
-                  <span>Ajouter une image</span>
-                  <small>Elle sera recadrée proprement en 16:9.</small>
+                  <span>{t("manager.content.addImage")}</span>
+                  <small>{t("manager.content.campImageCrop")}</small>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -731,11 +754,11 @@ export default function CampEditorPage() {
               )}
             </div>
             <div className={styles.richTextField}>
-              <span>Présentation et notes générales</span>
+              <span>{t("manager.content.presentation")}</span>
               <TiptapSimpleEditor
                 value={notes}
                 onChange={setNotes}
-                placeholder="Objectifs, matériel à prévoir, informations pratiques…"
+                placeholder={t("manager.content.presentationPlaceholder")}
               />
             </div>
           </section>
@@ -743,10 +766,9 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 2 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Journées</h2>
+                <h2>{t("manager.content.days")}</h2>
                 <p>
-                  Ajoutez et réordonnez les journées. Chaque journée devient une
-                  activité compatible avec le calendrier.
+                  {t("manager.content.daysHelp")}
                 </p>
               </div>
               <button
@@ -760,7 +782,7 @@ export default function CampEditorPage() {
                 }
               >
                 <Plus size={15} />
-                Ajouter une journée
+                {t("manager.content.addDay")}
               </button>
             </div>
             <div className={styles.stack}>
@@ -771,11 +793,11 @@ export default function CampEditorPage() {
                 >
                   <div className={styles.cardHead}>
                     <div>
-                      <h3>Journée {index + 1}</h3>
+                      <h3>{format("dayNumber", { number: number(index + 1) })}</h3>
                       <span className={styles.muted}>
                         {day.evaluation_enabled
-                          ? "Évaluation prévue"
-                          : "Sans évaluation"}
+                          ? t("manager.content.evaluationPlanned")
+                          : t("manager.content.noEvaluation")}
                       </span>
                     </div>
                     <div className={styles.cardTools}>
@@ -784,9 +806,9 @@ export default function CampEditorPage() {
                         type="button"
                         disabled={index === 0}
                         onClick={() =>
-                          setDays((current) => move(current, index, -1))
+                          reorderDays(move(days, index, -1))
                         }
-                        aria-label="Monter la journée"
+                        aria-label={t("manager.content.moveDayUp")}
                       >
                         <ArrowUp size={14} />
                       </button>
@@ -795,9 +817,9 @@ export default function CampEditorPage() {
                         type="button"
                         disabled={index === days.length - 1}
                         onClick={() =>
-                          setDays((current) => move(current, index, 1))
+                          reorderDays(move(days, index, 1))
                         }
-                        aria-label="Descendre la journée"
+                        aria-label={t("manager.content.moveDayDown")}
                       >
                         <ArrowDown size={14} />
                       </button>
@@ -806,12 +828,10 @@ export default function CampEditorPage() {
                         type="button"
                         disabled={days.length === 1}
                         onClick={() =>
-                          setDays((current) =>
-                            current.filter((_, i) => i !== index),
-                          )
+                          reorderDays(days.filter((_, i) => i !== index))
                         }
-                        title="Supprimer"
-                        aria-label="Supprimer la journée"
+                        title={t("manager.content.delete")}
+                        aria-label={t("manager.content.removeDay")}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -820,7 +840,7 @@ export default function CampEditorPage() {
                   <div className={styles.grid3}>
                     <label className={styles.field}>
                       <span>
-                        Début <i className={styles.required}>*</i>
+                        {t("manager.content.start")} <i className={styles.required}>*</i>
                       </span>
                       <input
                         type="datetime-local"
@@ -832,7 +852,7 @@ export default function CampEditorPage() {
                     </label>
                     <label className={styles.field}>
                       <span>
-                        Fin <i className={styles.required}>*</i>
+                        {t("manager.content.end")} <i className={styles.required}>*</i>
                       </span>
                       <input
                         type="datetime-local"
@@ -843,7 +863,7 @@ export default function CampEditorPage() {
                       />
                     </label>
                     <label className={styles.field}>
-                      <span>Lieu</span>
+                      <span>{t("manager.content.location")}</span>
                       <input
                         value={day.location_text}
                         onChange={(event) =>
@@ -851,13 +871,13 @@ export default function CampEditorPage() {
                             location_text: event.target.value,
                           })
                         }
-                        placeholder="Practice, parcours…"
+                        placeholder={t("manager.content.locationPlaceholder")}
                       />
                     </label>
                   </div>
                   <div className={styles.grid2}>
                     <label className={styles.field}>
-                      <span>Coach responsable</span>
+                      <span>{t("manager.content.responsibleCoach")}</span>
                       <select
                         value={day.responsible_coach_id || headCoachId}
                         onChange={(event) =>
@@ -866,7 +886,7 @@ export default function CampEditorPage() {
                           })
                         }
                       >
-                        <option value="">Choisir…</option>
+                        <option value="">{t("manager.content.choose")}</option>
                         {coaches.map((coach) => (
                           <option key={coach.id} value={coach.id}>
                             {fullName(coach)}
@@ -875,7 +895,7 @@ export default function CampEditorPage() {
                       </select>
                     </label>
                     <label className={styles.field}>
-                      <span>Notes de la journée</span>
+                      <span>{t("manager.content.dayNotes")}</span>
                       <input
                         value={day.practical_info}
                         onChange={(event) =>
@@ -883,7 +903,7 @@ export default function CampEditorPage() {
                             practical_info: event.target.value,
                           })
                         }
-                        placeholder="Rendez-vous, repas, matériel…"
+                        placeholder={t("manager.content.dayNotesPlaceholder")}
                       />
                     </label>
                   </div>
@@ -896,7 +916,7 @@ export default function CampEditorPage() {
                           !event.target.checked &&
                           Number(day.evaluation?.completed ?? 0) > 0 &&
                           !window.confirm(
-                            "Des évaluations existent déjà pour cette journée. Elles seront conservées mais la journée ne sera plus proposée à l’évaluation. Continuer ?",
+                            t("manager.content.disableEvaluationConfirm"),
                           )
                         )
                           return;
@@ -905,13 +925,13 @@ export default function CampEditorPage() {
                         });
                       }}
                     />
-                    <span>Journée à évaluer</span>
+                    <span>{t("manager.content.evaluateDay")}</span>
                   </label>
                   {day.evaluation_enabled ? (
                     <EventCriteriaSelector clubId={clubId} eventType="camp" selectedIds={day.evaluation_criterion_ids ?? []} onChange={(ids) => updateDay(index, { evaluation_criterion_ids: ids })} disabled={saving} />
                   ) : null}
                   <div>
-                    <span className={styles.muted}>Coachs additionnels</span>
+                    <span className={styles.muted}>{t("manager.content.additionalCoaches")}</span>
                     <div className={styles.pillRow}>
                       {coaches
                         .filter(
@@ -943,10 +963,9 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 3 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Participants</h2>
+                <h2>{t("manager.content.participants")}</h2>
                 <p>
-                  Les juniors ajoutés depuis un groupe sont photographiés dans
-                  le stage et ne changeront pas silencieusement par la suite.
+                  {t("manager.content.participantsSnapshot")}
                 </p>
               </div>
               <button
@@ -955,22 +974,22 @@ export default function CampEditorPage() {
                 onClick={syncGroups}
               >
                 <UserPlus size={15} />
-                Synchroniser les groupes
+                {t("manager.content.syncGroups")}
               </button>
             </div>
             <div className={styles.stack}>
               <div className={styles.selectionBlock}>
                 <div className={styles.sectionTitle}>
-                  <h3>Groupes</h3>
-                  <p>Seuls les groupes actifs créés depuis la gestion des groupes sont proposés.</p>
+                  <h3>{t("manager.content.groups")}</h3>
+                  <p>{t("manager.content.availableGroupsHelp")}</p>
                 </div>
-                {groups.length === 0 ? <div className={styles.empty}>Aucun groupe standard disponible pour cette saison.</div> : <div className={styles.tableWrap}>
+                {groups.length === 0 ? <div className={styles.empty}>{t("manager.content.noGroups")}</div> : <div className={styles.tableWrap}>
                   <table className={`${styles.peopleTable} ${styles.groupSelectionTable}`}>
-                    <thead><tr><th>Groupe</th><th>Juniors</th><th>Sélection</th></tr></thead>
+                    <thead><tr><th>{t("manager.content.group")}</th><th>{t("manager.content.juniors")}</th><th>{t("manager.content.selection")}</th></tr></thead>
                     <tbody>{groups.map((group) => <tr key={group.id}>
                       <td><b>{group.name}</b></td>
                       <td>{groupPlayers[group.id]?.length ?? 0}</td>
-                      <td><label className={styles.check}><input type="checkbox" checked={groupIds.includes(group.id)} onChange={() => toggleGroup(group.id)} /><span>{groupIds.includes(group.id) ? "Sélectionné" : "Ajouter"}</span></label></td>
+                      <td><label className={styles.check}><input type="checkbox" checked={groupIds.includes(group.id)} onChange={() => toggleGroup(group.id)} /><span>{groupIds.includes(group.id) ? t("manager.content.selected") : t("common.add")}</span></label></td>
                     </tr>)}</tbody>
                   </table>
                 </div>}
@@ -981,8 +1000,8 @@ export default function CampEditorPage() {
                   <thead>
                     <tr>
                       <th aria-label="Avatar"></th>
-                      <th>Junior</th>
-                      <th>Sélection</th>
+                      <th>{t("manager.content.junior")}</th>
+                      <th>{t("manager.content.selection")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1007,8 +1026,8 @@ export default function CampEditorPage() {
                             />
                             <span>
                               {playerIds.includes(player.id)
-                                ? "Ajouté"
-                                : "Ajouter"}
+                                ? t("manager.content.added")
+                                : t("common.add")}
                             </span>
                           </label>
                         </td>
@@ -1023,16 +1042,15 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 4 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Encadrement</h2>
+                <h2>{t("manager.content.staffing")}</h2>
                 <p>
-                  Définissez le head coach du stage et les coachs additionnels
-                  disponibles pour les journées.
+                  {t("manager.content.staffingHelp")}
                 </p>
               </div>
             </div>
             <label className={styles.field}>
               <span>
-                Head coach{" "}
+                {t("manager.content.headCoach")}{" "}
                 {days.length ? <i className={styles.required}>*</i> : null}
               </span>
               <select
@@ -1048,7 +1066,7 @@ export default function CampEditorPage() {
                   );
                 }}
               >
-                <option value="">Choisir…</option>
+                <option value="">{t("manager.content.choose")}</option>
                 {coaches.map((coach) => (
                   <option key={coach.id} value={coach.id}>
                     {fullName(coach)}
@@ -1058,7 +1076,7 @@ export default function CampEditorPage() {
             </label>
             <div>
               <div className={styles.sectionTitle}>
-                <h3>Coachs additionnels</h3>
+                <h3>{t("manager.content.additionalCoaches")}</h3>
               </div>
               <div className={styles.pillRow}>
                 {coaches
@@ -1082,26 +1100,25 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 6 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Participations et présences</h2>
+                <h2>{t("manager.content.participationAttendance")}</h2>
                 <p>
-                  Une ligne par junior et une colonne par journée. Les statuts
-                  utilisent le système de présence existant.
+                  {t("manager.content.attendanceHelp")}
                 </p>
               </div>
             </div>
             {selectedPlayers.length === 0 ? (
               <div className={styles.empty}>
-                Ajoutez des juniors pour configurer leurs participations.
+                {t("manager.content.addParticipantsHelp")}
               </div>
             ) : (
               <div className={styles.tableWrap}>
                 <table className={styles.matrix}>
                   <thead>
                     <tr>
-                      <th>Junior</th>
-                      <th>Inscription</th>
+                      <th>{t("manager.content.junior")}</th>
+                      <th>{t("manager.content.registration")}</th>
                       {days.map((_, index) => (
-                        <th key={index}>Jour {index + 1}</th>
+                        <th key={index}>{format("dayNumber", { number: number(index + 1) })}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1121,6 +1138,7 @@ export default function CampEditorPage() {
                           </td>
                           <td>
                             <select
+                              aria-label={format("registrationFor", { name: fullName(player) })}
                               value={registration.registration_status}
                               onChange={(event) =>
                                 setRegistrations((current) => ({
@@ -1133,14 +1151,15 @@ export default function CampEditorPage() {
                                 }))
                               }
                             >
-                              <option value="invited">Invité</option>
-                              <option value="registered">Inscrit</option>
-                              <option value="declined">Refusé</option>
+                              <option value="invited">{t("manager.content.invited")}</option>
+                              <option value="registered">{t("manager.content.registered")}</option>
+                              <option value="declined">{t("manager.content.declined")}</option>
                             </select>
                           </td>
                           {days.map((_, dayIndex) => (
                             <td key={dayIndex}>
                               <select
+                                aria-label={format("attendanceFor", { name: fullName(player), number: number(dayIndex + 1) })}
                                 disabled={
                                   registration.registration_status !==
                                   "registered"
@@ -1167,14 +1186,14 @@ export default function CampEditorPage() {
                                   }))
                                 }
                               >
-                                <option value="expected">Prévu</option>
-                                <option value="present">Présent</option>
-                                <option value="excused">Absent excusé</option>
+                                <option value="expected">{t("manager.content.expected")}</option>
+                                <option value="present">{t("manager.content.present")}</option>
+                                <option value="excused">{t("manager.content.excused")}</option>
                                 <option value="absent">
-                                  Absent non excusé
+                                  {t("manager.content.absent")}
                                 </option>
                                 <option value="not_registered">
-                                  Non inscrit
+                                  {t("manager.content.notRegistered")}
                                 </option>
                               </select>
                             </td>
@@ -1191,12 +1210,9 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 5 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Options facultatives</h2>
+                <h2>{t("manager.content.optionalOptions")}</h2>
                 <p>
-                  Créez une option valable pour tout le stage, comme « Je
-                  dispose d’un abonnement de transport », ou une option limitée
-                  à certaines journées. Aucun calcul de facturation n’est
-                  effectué.
+                  {t("manager.content.optionsHelp")}
                 </p>
               </div>
               <button
@@ -1205,11 +1221,11 @@ export default function CampEditorPage() {
                 onClick={addOption}
               >
                 <Plus size={15} />
-                Ajouter une option
+                {t("manager.content.addOption")}
               </button>
             </div>
             {options.length === 0 ? (
-              <div className={styles.empty}>Aucune option configurée.</div>
+              <div className={styles.empty}>{t("manager.content.noOptions")}</div>
             ) : (
               <div className={styles.stack}>
                 {options.map((option, index) => (
@@ -1218,11 +1234,12 @@ export default function CampEditorPage() {
                     key={`${option.id ?? "new"}-${index}`}
                   >
                     <div className={styles.cardHead}>
-                      <h3>Option {index + 1}</h3>
+                      <h3>{format("optionNumber", { number: number(index + 1) })}</h3>
                       <div className={styles.cardTools}>
                         <button
                           className={styles.iconButton}
                           type="button"
+                          aria-label={t("manager.content.moveOptionUp")}
                           disabled={!index}
                           onClick={() =>
                             setOptions((current) => move(current, index, -1))
@@ -1233,6 +1250,7 @@ export default function CampEditorPage() {
                         <button
                           className={styles.iconButton}
                           type="button"
+                          aria-label={t("manager.content.moveOptionDown")}
                           disabled={index === options.length - 1}
                           onClick={() =>
                             setOptions((current) => move(current, index, 1))
@@ -1243,8 +1261,8 @@ export default function CampEditorPage() {
                         <button
                           className={`${styles.iconButton} ${styles.dangerIcon}`}
                           type="button"
-                          title="Supprimer"
-                          aria-label="Supprimer l’option"
+                          title={t("manager.content.delete")}
+                          aria-label={t("manager.content.removeOption")}
                           onClick={() =>
                             setOptions((current) =>
                               current.filter((_, i) => i !== index),
@@ -1258,18 +1276,18 @@ export default function CampEditorPage() {
                     <div className={styles.grid2}>
                       <label className={styles.field}>
                         <span>
-                          Nom <i className={styles.required}>*</i>
+                          {t("manager.content.name")} <i className={styles.required}>*</i>
                         </span>
                         <input
                           value={option.name}
                           onChange={(event) =>
                             updateOption(index, { name: event.target.value })
                           }
-                          placeholder="Je dispose d’un abonnement de transport"
+                          placeholder={t("manager.content.travelPass")}
                         />
                       </label>
                       <label className={styles.field}>
-                        <span>Capacité maximale</span>
+                        <span>{t("manager.content.maxCapacity")}</span>
                         <input
                           type="number"
                           min={1}
@@ -1284,7 +1302,7 @@ export default function CampEditorPage() {
                         />
                       </label>
                       <label className={styles.field}>
-                        <span>Description</span>
+                        <span>{t("manager.content.description")}</span>
                         <input
                           value={option.description}
                           onChange={(event) =>
@@ -1295,7 +1313,7 @@ export default function CampEditorPage() {
                         />
                       </label>
                       <label className={styles.field}>
-                        <span>Type de réponse</span>
+                        <span>{t("manager.content.answerType")}</span>
                         <select
                           value={option.input_type}
                           onChange={(event) => {
@@ -1303,7 +1321,7 @@ export default function CampEditorPage() {
                             updateOption(index, {
                               input_type: inputType,
                               choices: inputType === "checkbox" || inputType === "select" || inputType === "radio"
-                                ? (option.choices.length ? option.choices : ["Choix 1", "Choix 2"])
+                                ? (option.choices.length ? option.choices : [t("manager.content.choice1"), t("manager.content.choice2")])
                                 : [],
                               allows_quantity: inputType === "checkbox" ? option.allows_quantity : false,
                               assigns_to_all_participants: false,
@@ -1311,14 +1329,14 @@ export default function CampEditorPage() {
                             });
                           }}
                         >
-                          <option value="checkbox">Case à cocher</option>
-                          <option value="yes_no">Oui / Non</option>
-                          <option value="select">Liste déroulante</option>
-                          <option value="radio">Boutons radio</option>
+                          <option value="checkbox">{t("manager.content.checkbox")}</option>
+                          <option value="yes_no">{t("manager.content.yesNo")}</option>
+                          <option value="select">{t("manager.content.select")}</option>
+                          <option value="radio">{t("manager.content.radio")}</option>
                         </select>
                       </label>
                       <label className={styles.field}>
-                        <span>Note interne</span>
+                        <span>{t("manager.content.internalNote")}</span>
                         <input
                           value={option.internal_note}
                           onChange={(event) =>
@@ -1329,7 +1347,7 @@ export default function CampEditorPage() {
                         />
                       </label>
                       <label className={styles.field}>
-                        <span>Portée de l’option</span>
+                        <span>{t("manager.content.optionScope")}</span>
                         <select
                           value={
                             option.applies_to_all_days
@@ -1347,16 +1365,16 @@ export default function CampEditorPage() {
                             })
                           }
                         >
-                          <option value="camp">Option de stage</option>
+                          <option value="camp">{t("manager.content.campOption")}</option>
                           <option value="selected_days">
-                            Option par journée
+                            {t("manager.content.dayOption")}
                           </option>
                         </select>
                       </label>
                     </div>
                     {option.input_type === "checkbox" || option.input_type === "select" || option.input_type === "radio" ? (
                       <label className={styles.field}>
-                        <span>Choix proposés · un par ligne{option.input_type === "checkbox" ? " · facultatif" : ""}</span>
+                        <span>{t("manager.content.choicesHelp")}{option.input_type === "checkbox" ? t("manager.content.optionalSuffix") : ""}</span>
                         <textarea
                           rows={Math.max(3, option.choices.length)}
                           value={option.choices.join("\n")}
@@ -1369,7 +1387,7 @@ export default function CampEditorPage() {
                               player_assignments: choices.some((choice) => choice.trim()) ? [] : option.player_assignments,
                             });
                           }}
-                          placeholder={"Matériel inclus\nJe prends mon matériel"}
+                          placeholder={t("manager.content.choicesPlaceholder")}
                         />
                       </label>
                     ) : null}
@@ -1384,7 +1402,7 @@ export default function CampEditorPage() {
                             })
                           }
                         />
-                        <span>Option active</span>
+                        <span>{t("manager.content.activeOption")}</span>
                       </label>
                       {option.input_type === "checkbox" && !option.choices.some((choice) => choice.trim()) ? <label className={styles.check}>
                         <input
@@ -1396,15 +1414,15 @@ export default function CampEditorPage() {
                             })
                           }
                         />
-                        <span>Quantité par participant</span>
+                        <span>{t("manager.content.quantityPerParticipant")}</span>
                       </label> : null}
                     </div>
                     {!option.applies_to_all_days ? (
                       <div className={styles.stack}>
                         <div className={styles.sectionTitle}>
-                          <h3>Journées concernées</h3>
+                          <h3>{t("manager.content.applicableDays")}</h3>
                           <p>
-                            Sélectionnez au moins une journée pour cette option.
+                            {t("manager.content.chooseDays")}
                           </p>
                         </div>
                         <div className={styles.pillRow}>
@@ -1426,7 +1444,7 @@ export default function CampEditorPage() {
                                 }
                               />
                               <span>
-                                Jour {dayIndex + 1} · {shortDate(day.starts_at)}
+                                {format("dayNumber", { number: number(dayIndex + 1) })} · {shortDate(day.starts_at)}
                               </span>
                             </label>
                           ))}
@@ -1435,15 +1453,11 @@ export default function CampEditorPage() {
                     ) : null}
                     {option.input_type === "checkbox" && !option.choices.some((choice) => choice.trim()) ? <div className={styles.assignmentBlock}>
                       <div className={styles.sectionTitle}>
-                        <h3>Attribution aux juniors</h3>
+                        <h3>{t("manager.content.assignJuniors")}</h3>
                         <p>
-                          {option.player_assignments.reduce(
-                            (sum, entry) => sum + entry.quantity,
-                            0,
-                          )}{" "}
-                          sélection(s)
+                          {count("selectionCount", option.player_assignments.reduce((sum, entry) => sum + entry.quantity, 0))}
                           {option.capacity
-                            ? ` · ${Math.max(0, option.capacity - option.player_assignments.reduce((sum, entry) => sum + entry.quantity, 0))} restante(s)`
+                            ? ` · ${count("remainingCount", Math.max(0, option.capacity - option.player_assignments.reduce((sum, entry) => sum + entry.quantity, 0)))}`
                           : ""}
                         </p>
                       </div>
@@ -1467,7 +1481,7 @@ export default function CampEditorPage() {
                               })
                             }
                           />
-                          <span>Tous les participants</span>
+                          <span>{t("manager.content.allParticipants")}</span>
                         </label>
                       </div>
                       <div className={`${styles.pillRow} ${styles.assignmentChoices}`}>
@@ -1499,7 +1513,7 @@ export default function CampEditorPage() {
                               <span>{fullName(player)}</span>
                               {assignment && option.allows_quantity ? (
                                 <input
-                                  aria-label={`Quantité pour ${fullName(player)}`}
+                                  aria-label={format("quantityFor", { name: fullName(player) })}
                                   style={{ width: 54, height: 30 }}
                                   type="number"
                                   min={1}
@@ -1530,8 +1544,8 @@ export default function CampEditorPage() {
                         })}
                       </div>
                     </div> : <div className={styles.sectionTitle}>
-                      <h3>Réponse du joueur</h3>
-                      <p>Le joueur renseignera cette option depuis sa page Stages après son inscription.</p>
+                      <h3>{t("manager.content.playerAnswer")}</h3>
+                      <p>{t("manager.content.playerAnswerHelp")}</p>
                     </div>}
                   </article>
                 ))}
@@ -1542,45 +1556,44 @@ export default function CampEditorPage() {
           <section className={styles.panel} style={{ order: 7 }}>
             <div className={styles.panelHeader}>
               <div>
-                <h2>Récapitulatif</h2>
-                <p>Vérifiez la configuration avant de planifier le stage.</p>
+                <h2>{t("manager.content.summary")}</h2>
+                <p>{t("manager.content.reviewCamp")}</p>
               </div>
             </div>
             <div className={styles.summaryGrid}>
               <div className={styles.summaryItem}>
-                <span>Journées</span>
+                <span>{t("manager.content.days")}</span>
                 <b>{days.length}</b>
               </div>
               <div className={styles.summaryItem}>
-                <span>Participants</span>
+                <span>{t("manager.content.participants")}</span>
                 <b>
                   {playerIds.length}
                   {capacity ? ` / ${capacity}` : ""}
                 </b>
               </div>
               <div className={styles.summaryItem}>
-                <span>Encadrement</span>
+                <span>{t("manager.content.staffing")}</span>
                 <b>
-                  {headCoachId ? 1 + coachIds.length : coachIds.length} coach(s)
+                  {count("coachCount", headCoachId ? 1 + coachIds.length : coachIds.length)}
                 </b>
               </div>
               <div className={styles.summaryItem}>
-                <span>Journées évaluables</span>
+                <span>{t("manager.content.evaluableDays")}</span>
                 <b>{days.filter((day) => day.evaluation_enabled).length}</b>
               </div>
               <div className={styles.summaryItem}>
-                <span>Options</span>
+                <span>{t("manager.content.options")}</span>
                 <b>{options.length}</b>
               </div>
               <div className={styles.summaryItem}>
-                <span>Attributions d’options</span>
+                <span>{t("manager.content.optionAssignments")}</span>
                 <b>{optionAssignments}</b>
               </div>
             </div>
             {capacity != null && playerIds.length > capacity ? (
               <div className={styles.alertWarning}>
-                La capacité du stage est dépassée de{" "}
-                {playerIds.length - capacity} place(s).
+                {count("overCapacity", playerIds.length - capacity)}
               </div>
             ) : null}
           </section>
@@ -1593,7 +1606,7 @@ export default function CampEditorPage() {
                 onClick={() => void save("draft")}
               >
                 <Save size={15} />
-                {saving ? "Enregistrement…" : "Enregistrer le brouillon"}
+                {saving ? t("manager.content.savingEllipsis") : t("manager.content.saveDraft")}
               </button>
               <button
                 type="button"
@@ -1602,7 +1615,7 @@ export default function CampEditorPage() {
                 onClick={() => void save("scheduled")}
               >
                 <Save size={15} />
-                {saving ? "Enregistrement…" : "Planifier le stage"}
+                {saving ? t("manager.content.savingEllipsis") : t("manager.content.scheduleCamp")}
               </button>
             </div>
           </div>

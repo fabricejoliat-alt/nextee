@@ -16,6 +16,11 @@
 
 .historyStack { display: grid; gap: 18px; }
 
+.page { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.page > * { min-width: 0; }
+.tabs { min-width: 0; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+.tabs button { flex: 0 0 auto; white-space: nowrap; }
+
 .currentHandicap {
   min-width: 106px;
   display: grid;
@@ -66,4 +71,6 @@
 @media (max-width: 720px) {
   .chart { height: 240px; }
   .currentHandicap { min-width: 92px; }
+  .topActions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .topActions > * { min-width: 0; width: 100%; }
 }

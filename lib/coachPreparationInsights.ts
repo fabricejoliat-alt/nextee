@@ -11,6 +11,8 @@ export type CoachPreparationInsight = {
   points: CoachPreparationAttentionPoint[];
   source_event_count: number;
   generated_at: string;
+  source_fingerprint: string;
+  seen_at?: string | null;
 };
 
 type PreparationPrivateNoteInput = {

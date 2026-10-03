@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { managerGroupFeedback, managerGroupFormat } from "@/lib/managerGroupPresentation";
+import { managerLocaleTag } from "@/lib/managerLocale";
+import groupStyles from "@/components/manager/GroupsManagement.module.css";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -62,21 +65,27 @@ function avatarNode(p?: ProfileLite | null) {
 }
 
 export default function CoachGroupNewPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedSeasonId = searchParams.get("season") ?? "";
   const organizationId = String(searchParams.get("organizationId") ?? "").trim();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const pending = useRef(false);
+  const progress = useRef<{ id: string; headAdded: boolean; assistantsAdded: boolean; categoriesAdded: boolean; players: Set<string> } | null>(null);
+  const [createdGroupId, setCreatedGroupId] = useState("");
+  const [headCoachId, setHeadCoachId] = useState("");
+  const [clubLoading, setClubLoading] = useState(false);
   const [userId, setUserId] = useState("");
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubId, setClubId] = useState<string>("");
   const [seasons, setSeasons] = useState<Season[]>([]);
-  const [seasonId, setSeasonId] = useState<string>("");
+  const [seasonId, setSeasonId] = useState<string>(requestedSeasonId);
 
   const [groupName, setGroupName] = useState("");
   const [isActive, setIsActive] = useState(true);
@@ -104,12 +113,13 @@ export default function CoachGroupNewPage() {
   }
 
   async function load() {
+    try {
     setLoading(true);
     setError(null);
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide. Reconnecte-toi.");
+      setError("manager.profile.invalidSession");
       setLoading(false);
       return;
     }
@@ -125,7 +135,7 @@ export default function CoachGroupNewPage() {
     });
     const clubsJson = await clubsRes.json().catch(() => ({}));
     if (!clubsRes.ok) {
-      setError(clubsJson?.error ?? "Impossible de charger les clubs manager.");
+      setError(clubsJson?.error ?? t("manager.administration.clubsError"));
       setLoading(false);
       return;
     }
@@ -135,7 +145,7 @@ export default function CoachGroupNewPage() {
       .filter((c: Club) => Boolean(c.id));
 
     if (list.length === 0) {
-      setError(t("coachGroupNew.noClubPermission"));
+      setError("manager.groups.noClub");
       setClubs([]);
       setClubId("");
       setLoading(false);
@@ -144,7 +154,7 @@ export default function CoachGroupNewPage() {
 
     const filteredList = organizationId ? list.filter((c) => c.id === organizationId) : list;
     if (organizationId && filteredList.length === 0) {
-      setError("Organisation introuvable ou non autorisée.");
+      setError("manager.groups.clubForbidden");
       setClubs([]);
       setClubId("");
       setLoading(false);
@@ -155,6 +165,10 @@ export default function CoachGroupNewPage() {
     setClubId((prev) => prev || filteredList[0]?.id || "");
 
     setLoading(false);
+
+    } catch (cause) {
+      setError(cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "manager.groups.loadError");
+    } finally { setLoading(false); }
   }
 
   async function loadClubMembers(cid: string) {
@@ -171,10 +185,7 @@ export default function CoachGroupNewPage() {
       .eq("is_active", true);
 
     if (memErr) {
-      console.error(memErr);
-      setClubMembersPlayers([]);
-      setClubMembersCoaches([]);
-      return;
+      throw memErr;
     }
 
     const members = (mem as ClubMemberRow[] | null) ?? [];
@@ -191,16 +202,15 @@ export default function CoachGroupNewPage() {
         .in("id", ids);
 
       if (error) {
-        console.error(error);
-        return [];
+        throw error;
       }
       return (data ?? []) as ProfileLite[];
     }
 
     const [playerProfiles, coachProfiles] = await Promise.all([fetchProfiles(playerIds), fetchProfiles(coachIds)]);
 
-    playerProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
-    coachProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), "fr"));
+    playerProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale)));
+    coachProfiles.sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale)));
 
     setClubMembersPlayers(playerProfiles);
     setClubMembersCoaches(coachProfiles);
@@ -218,9 +228,7 @@ export default function CoachGroupNewPage() {
       .eq("club_id", cid);
 
     if (groupsError) {
-      console.error(groupsError);
-      setExistingCategories([]);
-      return;
+      throw groupsError;
     }
 
     const groupIds = (groupsData ?? []).map((group) => String(group.id)).filter(Boolean);
@@ -235,9 +243,7 @@ export default function CoachGroupNewPage() {
       .in("group_id", groupIds);
 
     if (categoriesError) {
-      console.error(categoriesError);
-      setExistingCategories([]);
-      return;
+      throw categoriesError;
     }
 
     setExistingCategories(
@@ -247,7 +253,7 @@ export default function CoachGroupNewPage() {
             .map((row) => String(row.category ?? "").trim())
             .filter(Boolean)
         )
-      ).sort((a, b) => a.localeCompare(b, "fr"))
+      ).sort((a, b) => a.localeCompare(b, managerLocaleTag(locale)))
     );
   }
 
@@ -258,12 +264,19 @@ export default function CoachGroupNewPage() {
 
   useEffect(() => {
     (async () => {
+      setClubLoading(true);
+      setSelectedPlayers({});
+      setSelectedCoaches({});
+      setHeadCoachId("");
+      setError(null);
+      try {
       if (clubId) {
-        const { data } = await supabase
+        const { data, error: seasonError } = await supabase
           .from("club_seasons")
           .select("id,name,starts_on,ends_on,is_current")
           .eq("club_id", clubId)
           .order("starts_on", { ascending: true });
+        if (seasonError) throw seasonError;
         const nextSeasons = (data ?? []) as Season[];
         setSeasons(nextSeasons);
         setSeasonId((current) => nextSeasons.some((season) => season.id === current)
@@ -278,17 +291,22 @@ export default function CoachGroupNewPage() {
       setQueryCoaches("");
       setSelectedPlayers({});
       setSelectedCoaches({});
+      } catch (cause) {
+        setError(cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "manager.groups.loadError");
+      } finally { setClubLoading(false); }
     })();
+    // Changing interface language must not reload membership or clear this draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   const canSave = useMemo(() => {
-    if (busy) return false;
+    if (busy || clubLoading) return false;
     if (!userId) return false;
     if (!clubId) return false;
     if (groupName.trim().length < 2) return false;
-    if (Object.keys(selectedCoaches).length < 1) return false;
+    if (Object.keys(selectedCoaches).length < 1 || !selectedCoaches[headCoachId]) return false;
     return true;
-  }, [busy, userId, clubId, groupName, selectedCoaches]);
+  }, [busy, clubLoading, userId, clubId, groupName, selectedCoaches, headCoachId]);
 
   function addCategory() {
     const v = catInput.trim();
@@ -298,7 +316,7 @@ export default function CoachGroupNewPage() {
       setCatInput("");
       return;
     }
-    setCategories((prev) => [...prev, v].sort((a, b) => a.localeCompare(b, "fr")));
+    setCategories((prev) => [...prev, v].sort((a, b) => a.localeCompare(b, managerLocaleTag(locale))));
     setCatInput("");
   }
 
@@ -311,7 +329,7 @@ export default function CoachGroupNewPage() {
     if (!v) return;
     const exists = categories.some((c) => c.toLowerCase() === v.toLowerCase());
     if (exists) return;
-    setCategories((prev) => [...prev, v].sort((a, b) => a.localeCompare(b, "fr")));
+    setCategories((prev) => [...prev, v].sort((a, b) => a.localeCompare(b, managerLocaleTag(locale))));
   }
 
   function toggleSelected(
@@ -326,14 +344,22 @@ export default function CoachGroupNewPage() {
     });
   }
 
+  function toggleCoach(person: ProfileLite) {
+    const next = { ...selectedCoaches };
+    if (next[person.id]) delete next[person.id];
+    else next[person.id] = person;
+    setSelectedCoaches(next);
+    if (!next[headCoachId]) setHeadCoachId(Object.keys(next)[0] ?? "");
+  }
+
   const selectedPlayersList = useMemo(
-    () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedPlayers]
+    () => Object.values(selectedPlayers).sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [selectedPlayers, locale]
   );
 
   const selectedCoachesList = useMemo(
-    () => Object.values(selectedCoaches).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")),
-    [selectedCoaches]
+    () => Object.values(selectedCoaches).sort((a, b) => fullName(a).localeCompare(fullName(b), managerLocaleTag(locale))),
+    [selectedCoaches, locale]
   );
 
   const candidatesPlayers = useMemo(() => {
@@ -365,137 +391,101 @@ export default function CoachGroupNewPage() {
     return filtered.slice(0, 30);
   }, [clubMembersCoaches, queryCoaches, selectedCoaches, userId]);
 
-  
+
 async function handleCreate(e: React.FormEvent) {
   e.preventDefault();
-  if (!canSave) return;
-
+  if (!canSave || pending.current) return;
+  pending.current = true;
   setBusy(true);
   setError(null);
-
-  const selectedCoachIds = selectedCoachesList.map((p) => p.id);
-  const selectedPlayerIds = selectedPlayersList.map((p) => p.id);
-  const headCoachId = selectedCoachIds[0] ?? "";
-  if (!headCoachId) {
-    setError("Sélectionne au moins un coach.");
-    setBusy(false);
-    return;
-  }
-
-  // ✅ Pré-check droits sur le club sélectionné
-  const pre = await supabase
-    .from("club_members")
-    .select("role,is_active")
-    .eq("user_id", userId)
-    .eq("club_id", clubId)
-    .maybeSingle();
-
- 
-
-  const role = String(pre.data?.role ?? "");
-  if (!pre.data?.is_active || (role !== "coach" && role !== "manager")) {
-    setError(`Droits insuffisants sur le club sélectionné (${role || "—"}).`);
-    setBusy(false);
-    return;
-  }
-
-  // ✅ IMPORTANT: pas de .select().single() (RETURNING) car ta policy SELECT bloque avant l'ajout du head coach
-  const groupIdNew = crypto.randomUUID();
-
-  const gRes = await supabase.from("coach_groups").insert({
-    id: groupIdNew,
-    club_id: clubId,
-    club_season_id: seasonId || null,
-    name: groupName.trim(),
-    is_active: isActive,
-    head_coach_user_id: headCoachId,
-  });
-
-
-  if (gRes.error) {
-    setError(gRes.error?.message ?? t("coachGroupNew.createError"));
-    setBusy(false);
-    return;
-  }
-
-  // ✅ head coach (obligatoire)
-  const headRes = await supabase.from("coach_group_coaches").insert({
-    group_id: groupIdNew,
-    coach_user_id: headCoachId,
-    is_head: true,
-  });
-
-  if (headRes.error) {
-    // best-effort rollback
-    await supabase.from("coach_groups").delete().eq("id", groupIdNew);
-    setError(headRes.error.message);
-    setBusy(false);
-    return;
-  }
-
-  // ✅ assistants (optionnel)
-  const assistantIds = selectedCoachIds.filter((id) => id !== headCoachId);
-  if (assistantIds.length > 0) {
-    const rows = assistantIds.map((cid) => ({
-      group_id: groupIdNew,
-      coach_user_id: cid,
-      is_head: false,
-    }));
-    const aRes = await supabase.from("coach_group_coaches").insert(rows);
-    if (aRes.error) setError(`Groupe créé, mais erreur ajout coachs supplémentaires: ${aRes.error.message}`);
-  }
-
-  // ✅ categories (optionnel)
-  if (categories.length > 0) {
-    const rows = categories.map((c) => ({ group_id: groupIdNew, category: c }));
-    const catRes = await supabase.from("coach_group_categories").insert(rows);
-    if (catRes.error) setError(`Groupe créé, mais erreur catégories: ${catRes.error.message}`);
-  }
-
-  // ✅ players (optionnel)
-  if (selectedPlayerIds.length > 0) {
-    const authorization = await authHeader();
-    const playerResults = await Promise.all(selectedPlayerIds.map((playerId) => fetch(`/api/admin/organizations/${clubId}/group-assignments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authorization },
-      body: JSON.stringify({ actorType: "player", userId: playerId, toGroupId: groupIdNew, seasonId: seasonId || undefined }),
-    })));
-    const failedPlayer = playerResults.find((response) => !response.ok);
-    if (failedPlayer) {
-      const payload = await failedPlayer.json().catch(() => ({}));
-      setError(`Groupe créé, mais erreur ajout joueurs: ${payload.error ?? "Action impossible."}`);
+  try {
+    // Once the group is acknowledged, the draft is locked and retries only finish missing steps.
+    if (!progress.current) {
+      const pre = await supabase.from("club_members").select("role,is_active")
+        .eq("user_id", userId).eq("club_id", clubId).maybeSingle();
+      if (pre.error) throw pre.error;
+      const role = String(pre.data?.role ?? "");
+      if (!pre.data?.is_active || (role !== "coach" && role !== "manager")) {
+        throw new Error("manager.groups.insufficientRights");
+      }
+      const id = crypto.randomUUID();
+      const result = await supabase.from("coach_groups").insert({
+        id, club_id: clubId, club_season_id: seasonId || null,
+        name: groupName.trim(), is_active: isActive, head_coach_user_id: headCoachId,
+      });
+      if (result.error) throw result.error;
+      progress.current = { id, headAdded: false, assistantsAdded: false, categoriesAdded: false, players: new Set() };
+      setCreatedGroupId(id);
     }
+    const step = progress.current;
+    if (!step.headAdded) {
+      const result = await supabase.from("coach_group_coaches").insert({ group_id: step.id, coach_user_id: headCoachId, is_head: true });
+      if (result.error) throw result.error;
+      step.headAdded = true;
+    }
+    if (!step.assistantsAdded) {
+      const rows = selectedCoachesList.filter(person => person.id !== headCoachId).map(person => ({ group_id: step.id, coach_user_id: person.id, is_head: false }));
+      if (rows.length) {
+        const result = await supabase.from("coach_group_coaches").insert(rows);
+        if (result.error) throw result.error;
+      }
+      step.assistantsAdded = true;
+    }
+    if (!step.categoriesAdded) {
+      if (categories.length) {
+        const result = await supabase.from("coach_group_categories").insert(categories.map(category => ({ group_id: step.id, category })));
+        if (result.error) throw result.error;
+      }
+      step.categoriesAdded = true;
+    }
+    const authorization = await authHeader();
+    for (const person of selectedPlayersList) {
+      if (step.players.has(person.id)) continue;
+      const response = await fetch(`/api/admin/organizations/${clubId}/group-assignments`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...authorization },
+        body: JSON.stringify({ actorType: "player", userId: person.id, toGroupId: step.id, seasonId: seasonId || undefined }),
+      });
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json.error ?? "manager.administration.actionError");
+      }
+      step.players.add(person.id);
+    }
+    router.push(`/manager/groups/${step.id}${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ""}`);
+  } catch (cause) {
+    setError(cause && typeof cause === "object" && "message" in cause ? String(cause.message) : "manager.groups.createError");
+  } finally {
+    pending.current = false;
+    setBusy(false);
   }
-
-  router.push(`/manager/groups/${groupIdNew}`);
 }
-  
+
 
   return (
-    <main className={styles.page}>
-      <nav aria-label="Fil d’Ariane" style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
-        <Link href="/manager/groups">Groupes</Link>
+    <main className={`${styles.page} ${groupStyles.page}`}>
+      <nav aria-label={t("manager.content.breadcrumb")} style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
+        <Link href="/manager/groups">{t("manager.content.groups")}</Link>
         <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
-        <span>Nouveau groupe</span>
+        <span>{t("manager.groups.new")}</span>
       </nav>
 
       <div className={styles.topline}>
         <div>
-          <h1>Nouveau groupe</h1>
-          <p className={styles.lead}>Composez le groupe, ses catégories, ses juniors et son encadrement.</p>
+          <h1>{t("manager.groups.new")}</h1>
+          <p className={styles.lead}>{t("manager.groups.newLead")}</p>
         </div>
         <div className={actionStyles.topActions}>
           <label className="groups-season-nav-select">
             <select
-              aria-label="Saison"
+              aria-label={t("manager.season")}
               value={seasonId}
               onChange={(event) => setSeasonId(event.target.value)}
-              disabled={seasons.length === 0}
+              disabled={busy || clubLoading || Boolean(createdGroupId) || seasons.length === 0}
             >
-              {seasons.length === 0 ? <option value="">Aucune saison configurée</option> : null}
+              {seasons.length === 0 ? <option value="">{t("manager.noSeason")}</option> : null}
               {seasons.map((season) => (
                 <option key={season.id} value={season.id}>
-                  {season.name}{season.is_current ? " · Saison en cours" : ""}
+                  {season.name}{season.is_current ? t("manager.groups.currentSeason") : ""}
                 </option>
               ))}
             </select>
@@ -505,43 +495,47 @@ async function handleCreate(e: React.FormEvent) {
             href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            Retour aux groupes
-          </Link>
+            {t("manager.groups.back")} </Link>
         </div>
       </div>
 
+      {createdGroupId ? <div className={groupStyles.partial} role="status">
+        <p>{t("manager.groups.partialCreation")}</p>
+        <Link className={actionStyles.secondaryButton} href={`/manager/groups/${createdGroupId}${seasonId ? `?season=${encodeURIComponent(seasonId)}` : ""}`}>{t("manager.groups.openGroup")}</Link>
+      </div> : null}
       {error && (
         <div className={actionStyles.errorAlert} role="alert">
-          {error}
+          {managerGroupFeedback(t, error)}
         </div>
       )}
 
       {loading ? (
         <section className={styles.quickPanel}>
-          <CompactLoadingBlock label="Chargement..." />
+          <CompactLoadingBlock label={t("common.loading")} />
         </section>
       ) : clubs.length === 0 ? (
         <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.60)" }}>
-          Aucun club trouvé pour ton compte.
-        </div>
+          {t("manager.groups.noClub")} </div>
       ) : (
         <form onSubmit={handleCreate} style={{ display: "grid", gap: 18 }}>
+          <fieldset className={groupStyles.draft} disabled={busy || clubLoading || Boolean(createdGroupId)}>
           <section className={styles.quickPanel}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Informations du groupe</h2>
-                <p>Prépare le cadre du groupe.</p>
+                <h2>{t("manager.groups.info")}</h2>
+                <p>{t("manager.groups.infoHelp")}</p>
               </div>
             </div>
 
             <div className="user-mgmt-form-grid">
+              {clubs.length > 1 ? <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.groups.club")}</span><select value={clubId} onChange={e => { setClubId(e.target.value); setClubLoading(true); }} disabled={Boolean(organizationId)}>{clubs.map(club => <option key={club.id} value={club.id}>{club.name ?? "—"}</option>)}</select></label> : null}
                     <label className="user-mgmt-field">
-                      <span className="user-mgmt-field-label">Nom du groupe <span aria-hidden="true">*</span></span>
+                      <span className="user-mgmt-field-label">{t("coach.group.name")} <span aria-hidden="true">*</span></span>
                       <input
                         value={groupName}
                         onChange={(e) => setGroupName(e.target.value)}
                         disabled={busy}
-                        placeholder={t("coachGroupNew.categoryPlaceholder")}
+                        placeholder={t("manager.groups.namePlaceholder")}
                         required
                       />
                     </label>
@@ -553,7 +547,7 @@ async function handleCreate(e: React.FormEvent) {
                         onChange={(e) => setIsActive(e.target.checked)}
                         disabled={busy}
                       />
-                      <span>Groupe actif</span>
+                      <span>{t("manager.groups.active")}</span>
                     </label>
             </div>
           </section>
@@ -561,18 +555,18 @@ async function handleCreate(e: React.FormEvent) {
           <section className={styles.quickPanel}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Catégories</h2>
-                <p>Les catégories servent à structurer le groupe.</p>
+                <h2>{t("coach.group.categories")}</h2>
+                <p>{t("manager.groups.categoryHelp")}</p>
               </div>
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 10 }}>
                 <input
                   value={catInput}
                   onChange={(e) => setCatInput(e.target.value)}
                   disabled={busy}
-                  placeholder="Ex: U12, U14, Elite, Adultes…"
+                  placeholder={t("manager.groups.categoryPlaceholder")}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -586,8 +580,8 @@ async function handleCreate(e: React.FormEvent) {
                   className={actionStyles.secondaryButton}
                   onClick={addCategory}
                   disabled={busy || !catInput.trim()}
-                  aria-label={t("coachGroupNew.addCategory")}
-                  title="Ajouter"
+                  aria-label={t("coach.group.addCategory")}
+                  title={t("common.add")}
                   style={{ width: 44, padding: 0, justifyContent: "center" }}
                 >
                   <PlusCircle size={18} />
@@ -596,12 +590,10 @@ async function handleCreate(e: React.FormEvent) {
 
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 900, color: "#6d786e", textTransform: "uppercase", letterSpacing: ".06em" }}>
-                  Catégories déjà utilisées
-                </div>
+                  {t("manager.groups.usedCategories")} </div>
                 {existingCategories.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucune catégorie existante dans ce club.
-                  </div>
+                    {t("manager.groups.noExistingCategories")} </div>
                 ) : (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {existingCategories.map((value) => {
@@ -613,7 +605,7 @@ async function handleCreate(e: React.FormEvent) {
                           className="pill-soft"
                           onClick={() => addExistingCategory(value)}
                           disabled={busy || alreadySelected}
-                          title={alreadySelected ? "Déjà sélectionnée" : "Ajouter cette catégorie"}
+                          title={alreadySelected ? t("manager.groups.alreadySelected") : t("manager.groups.addThisCategory")}
                           style={{
                             border: 0,
                             cursor: alreadySelected ? "default" : "pointer",
@@ -630,8 +622,7 @@ async function handleCreate(e: React.FormEvent) {
 
               {categories.length === 0 ? (
                 <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                  Aucune catégorie ajoutée.
-                </div>
+                  {t("manager.groups.noCategories")} </div>
               ) : (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                   {categories.map((c) => (
@@ -643,8 +634,8 @@ async function handleCreate(e: React.FormEvent) {
                         onClick={() => removeCategory(c)}
                         disabled={busy}
                         style={{ padding: "8px 10px" }}
-                        aria-label={t("coachGroupNew.removeCategory")}
-                        title="Supprimer"
+                        aria-label={managerGroupFormat(t, "removeNamed", { name: c })}
+                        title={t("manager.content.delete")}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -658,8 +649,8 @@ async function handleCreate(e: React.FormEvent) {
           <section className={styles.quickPanel}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Juniors</h2>
-                <p>Optionnel à la création. Tu peux aussi ajouter les juniors plus tard.</p>
+                <h2>{t("manager.fields.player")}</h2>
+                <p>{t("manager.groups.juniorHelp")}</p>
               </div>
             </div>
 
@@ -679,26 +670,25 @@ async function handleCreate(e: React.FormEvent) {
                   value={queryPlayers}
                   onChange={(e) => setQueryPlayers(e.target.value)}
                   disabled={busy}
-                  placeholder="Rechercher un junior (nom, handicap)…"
+                  placeholder={t("manager.groups.juniorSearch")}
                   style={{ paddingLeft: 44 }}
                 />
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">Junior(s) sélectionné(s) ({selectedPlayersList.length})</div>
+                <div className="pill-soft">{managerGroupFormat(t, "selectedJuniors", { count: selectedPlayersList.length.toLocaleString(managerLocaleTag(locale)) })}</div>
 
                 {selectedPlayersList.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun junior sélectionné.
-                  </div>
+                    {t("manager.groups.noSelectedJuniors")} </div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
                       <thead>
                         <tr>
-                          <th aria-label="Avatar" />
-                          <th>Nom et prénom</th>
-                          <th aria-label="Actions" />
+                          <th aria-label={t("manager.groups.avatar")} />
+                          <th>{t("manager.administration.fullName")}</th>
+                          <th aria-label={t("manager.content.actions")} />
                         </tr>
                       </thead>
                       <tbody>
@@ -718,8 +708,8 @@ async function handleCreate(e: React.FormEvent) {
                                 className="btn btn-danger soft"
                                 onClick={() => toggleSelected(setSelectedPlayers, p)}
                                 disabled={busy}
-                                aria-label="Retirer"
-                                title="Retirer"
+                                aria-label={managerGroupFormat(t, "removeNamed", { name: fullName(p) })}
+                                title={t("manager.content.remove")}
                               >
                                 <Trash2 size={18} />
                               </button>
@@ -733,24 +723,22 @@ async function handleCreate(e: React.FormEvent) {
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">Ajouter un junior ({candidatesPlayers.length})</div>
+                <div className="pill-soft">{managerGroupFormat(t, "juniorCandidates", { count: candidatesPlayers.length.toLocaleString(managerLocaleTag(locale)) })}</div>
 
                 {clubId && clubMembersPlayers.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun junior actif trouvé dans ce club.
-                  </div>
+                    {t("manager.groups.noActiveJuniors")} </div>
                 ) : candidatesPlayers.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun résultat.
-                  </div>
+                    {t("coach.picker.empty")} </div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list user-mgmt-table--group-selection">
                       <thead>
                         <tr>
-                          <th aria-label="Avatar" />
-                          <th>Nom et prénom</th>
-                          <th aria-label="Actions" />
+                          <th aria-label={t("manager.groups.avatar")} />
+                          <th>{t("manager.administration.fullName")}</th>
+                          <th aria-label={t("manager.content.actions")} />
                         </tr>
                       </thead>
                       <tbody>
@@ -770,8 +758,8 @@ async function handleCreate(e: React.FormEvent) {
                                 className={actionStyles.secondaryButton}
                                 onClick={() => toggleSelected(setSelectedPlayers, p)}
                                 disabled={busy}
-                                aria-label="Ajouter junior"
-                                title="Ajouter"
+                                aria-label={managerGroupFormat(t, "addNamed", { name: fullName(p) })}
+                                title={t("common.add")}
                                 style={{ width: 44, padding: 0, justifyContent: "center" }}
                               >
                                 <PlusCircle size={18} />
@@ -790,8 +778,8 @@ async function handleCreate(e: React.FormEvent) {
           <section className={styles.quickPanel}>
             <div className={styles.sectionHeading}>
               <div>
-                <h2>Coachs</h2>
-                <p>Sélectionne au moins un coach. Le premier devient Head Coach.</p>
+                <h2>{t("manager.fields.coach")}</h2>
+                <p>{t("manager.groups.coachHelp")}</p>
               </div>
             </div>
 
@@ -811,26 +799,26 @@ async function handleCreate(e: React.FormEvent) {
                   value={queryCoaches}
                   onChange={(e) => setQueryCoaches(e.target.value)}
                   disabled={busy}
-                  placeholder="Rechercher un coach (nom)…"
+                  placeholder={t("manager.groups.coachSearch")}
                   style={{ paddingLeft: 44 }}
                 />
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">Coach(s) sélectionné(s) ({selectedCoachesList.length})</div>
+                <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.groups.headCoach")}</span><select value={headCoachId} onChange={e => setHeadCoachId(e.target.value)} disabled={!selectedCoachesList.length} required><option value="">{t("manager.groups.headRequired")}</option>{selectedCoachesList.map(person => <option key={person.id} value={person.id}>{fullName(person)}</option>)}</select></label>
+              <div className="pill-soft">{managerGroupFormat(t, "selectedCoaches", { count: selectedCoachesList.length.toLocaleString(managerLocaleTag(locale)) })}</div>
 
                 {selectedCoachesList.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun coach supplémentaire sélectionné.
-                  </div>
+                    {t("manager.groups.noSelectedCoaches")} </div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection">
                       <thead>
                         <tr>
-                          <th aria-label="Avatar" />
-                          <th>Nom et prénom</th>
-                          <th aria-label="Actions" />
+                          <th aria-label={t("manager.groups.avatar")} />
+                          <th>{t("manager.administration.fullName")}</th>
+                          <th aria-label={t("manager.content.actions")} />
                         </tr>
                       </thead>
                       <tbody>
@@ -848,10 +836,10 @@ async function handleCreate(e: React.FormEvent) {
                               <button
                                 type="button"
                                 className="btn btn-danger soft"
-                                onClick={() => toggleSelected(setSelectedCoaches, p)}
+                                onClick={() => toggleCoach(p)}
                                 disabled={busy}
-                                aria-label="Retirer coach"
-                                title="Retirer"
+                                aria-label={managerGroupFormat(t, "removeNamed", { name: fullName(p) })}
+                                title={t("manager.content.remove")}
                               >
                                 <Trash2 size={18} />
                               </button>
@@ -865,24 +853,22 @@ async function handleCreate(e: React.FormEvent) {
               </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="pill-soft">Ajouter un coach ({candidatesCoaches.length})</div>
+                <div className="pill-soft">{managerGroupFormat(t, "coachCandidates", { count: candidatesCoaches.length.toLocaleString(managerLocaleTag(locale)) })}</div>
 
                 {clubId && clubMembersCoaches.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun coach actif trouvé dans ce club.
-                  </div>
+                    {t("manager.groups.noActiveCoaches")} </div>
                 ) : candidatesCoaches.length === 0 ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Aucun résultat.
-                  </div>
+                    {t("coach.picker.empty")} </div>
                 ) : (
                   <div className="user-mgmt-table-wrap">
                     <table className="user-mgmt-table user-mgmt-table--compact user-mgmt-table--staff user-mgmt-table--member-list user-mgmt-table--group-selection">
                       <thead>
                         <tr>
-                          <th aria-label="Avatar" />
-                          <th>Nom et prénom</th>
-                          <th aria-label="Actions" />
+                          <th aria-label={t("manager.groups.avatar")} />
+                          <th>{t("manager.administration.fullName")}</th>
+                          <th aria-label={t("manager.content.actions")} />
                         </tr>
                       </thead>
                       <tbody>
@@ -900,10 +886,10 @@ async function handleCreate(e: React.FormEvent) {
                               <button
                                 type="button"
                                 className={actionStyles.secondaryButton}
-                                onClick={() => toggleSelected(setSelectedCoaches, p)}
+                                onClick={() => toggleCoach(p)}
                                 disabled={busy}
-                                aria-label="Ajouter coach"
-                                title="Ajouter"
+                                aria-label={managerGroupFormat(t, "addNamed", { name: fullName(p) })}
+                                title={t("common.add")}
                                 style={{ width: 44, padding: 0, justifyContent: "center" }}
                               >
                                 <PlusCircle size={18} />
@@ -919,16 +905,16 @@ async function handleCreate(e: React.FormEvent) {
             </div>
           </section>
 
+          </fieldset>
           <div className={actionStyles.topActions} style={{ justifyContent: "flex-end", marginTop: 8 }}>
             <Link
               href={organizationId ? `/manager/organizations/${organizationId}/groups` : "/manager/groups"}
               className={actionStyles.secondaryButton}
             >
-              Annuler
-            </Link>
+              {t("manager.cancel")} </Link>
             <button className={actionStyles.primaryButton} type="submit" disabled={!canSave || busy}>
               {busy ? <RefreshCw size={16} className={styles.spin} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-              {busy ? t("coachGroupNew.creating") : t("coachGroupNew.createGroup")}
+              {busy ? t("manager.settings.seasons.creating") : createdGroupId ? t("manager.groups.resumeCreation") : t("manager.groups.create")}
             </button>
           </div>
         </form>

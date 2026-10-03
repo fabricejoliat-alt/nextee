@@ -1,5 +1,8 @@
 "use client";
 
+import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
+import { normalizeAccessInvitationTemplate } from "@/lib/familyAccess";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
@@ -37,7 +40,7 @@ type PlayerFieldDef = {
   club_id: string;
   field_key: string;
   label: string;
-  field_type: "text" | "boolean" | "select";
+  field_type: "text" | "short_text" | "long_text" | "number" | "date" | "boolean" | "select" | "radio" | "checkbox";
   options_json?: string[] | null;
   is_active: boolean;
   sort_order: number;
@@ -56,8 +59,8 @@ type MemberRow = {
   is_active: boolean | null;
   is_performance: boolean | null;
   player_consent_status?: "granted" | "pending" | "adult" | null;
-  custom_field_values?: Record<string, string | boolean | null>;
-  player_field_values?: Record<string, string | boolean | null>;
+  custom_field_values?: Record<string, string | boolean | string[] | null>;
+  player_field_values?: Record<string, string | boolean | string[] | null>;
   auth_email?: string | null;
   auth_last_sign_in_at?: string | null;
   profiles?: {
@@ -97,7 +100,7 @@ type EditPlayerForm = {
   is_active: boolean;
   is_performance: boolean;
   player_consent_status: "granted" | "pending" | "refused" | "adult";
-  custom_field_values: Record<string, string | boolean | null>;
+  custom_field_values: Record<string, string | boolean | string[] | null>;
 };
 
 type EditMemberForm = {
@@ -116,10 +119,10 @@ type EditMemberForm = {
   avs_no: string;
   staff_function: string;
   is_active: boolean;
-  custom_field_values: Record<string, string | boolean | null>;
+  custom_field_values: Record<string, string | boolean | string[] | null>;
 };
 
-type InlinePlayerFieldDrafts = Record<string, Record<string, string | boolean | null>>;
+type InlinePlayerFieldDrafts = Record<string, Record<string, string | boolean | string[] | null>>;
 
 type ProfileLite = {
   id: string;
@@ -358,7 +361,7 @@ function dateStamp() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function playerFieldDisplayValue(field: PlayerFieldDef, rawValue: string | boolean | null | undefined) {
+function playerFieldDisplayValue(field: PlayerFieldDef, rawValue: string | boolean | string[] | null | undefined) {
   if (rawValue == null || rawValue === "") return null;
   if (field.field_type === "boolean") return rawValue ? "Oui" : "Non";
   if (field.legacy_binding === "player_course_track") {
@@ -376,6 +379,7 @@ function renderMailTemplate(
   variables: Record<string, string>,
   linkMode: "text" | "token" = "text"
 ) {
+  if (variables.reset_url) template = normalizeAccessInvitationTemplate(template);
   return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_, key: string, label?: string) => {
     const value = variables[key] ?? "";
     if (!value) return "";
@@ -453,7 +457,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
   const [savingMailConfig, setSavingMailConfig] = useState(false);
   const [newField, setNewField] = useState<{
     label: string;
-    field_type: "text" | "boolean" | "select";
+    field_type: "text" | "short_text" | "long_text" | "number" | "date" | "boolean" | "select" | "radio" | "checkbox";
     options: string;
     applies_to_roles: MemberRole[];
     visible_in_profile: boolean;
@@ -599,7 +603,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
   }
 
   function openPlayerEdit(member: MemberRow) {
-    const initialFieldValues: Record<string, string | boolean | null> = {};
+    const initialFieldValues: Record<string, string | boolean | string[] | null> = {};
     for (const field of activePlayerFields) {
       initialFieldValues[field.id] = member.custom_field_values?.[field.id] ?? member.player_field_values?.[field.id] ?? null;
     }
@@ -650,7 +654,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     return getMemberCustomFieldRawValue(member, field);
   }
 
-  function setInlinePlayerFieldDraft(memberId: string, fieldId: string, value: string | boolean | null) {
+  function setInlinePlayerFieldDraft(memberId: string, fieldId: string, value: string | boolean | string[] | null) {
     setInlinePlayerFieldDrafts((previous) => ({
       ...previous,
       [memberId]: {
@@ -687,7 +691,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     if (member.role === "player") return;
 
     const role = member.role;
-    const initialFieldValues: Record<string, string | boolean | null> = {};
+    const initialFieldValues: Record<string, string | boolean | string[] | null> = {};
     for (const field of getActiveFieldsForRole(role)) {
       initialFieldValues[field.id] = member.custom_field_values?.[field.id] ?? member.player_field_values?.[field.id] ?? null;
     }
@@ -741,8 +745,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
           first_name: memberEditForm.first_name.trim(),
           last_name: memberEditForm.last_name.trim(),
           username: memberEditForm.username.trim().toLowerCase(),
-          auth_email: memberEditForm.auth_email.trim().toLowerCase(),
-          auth_password: memberEditForm.auth_password,
           phone: memberEditForm.phone.trim(),
           birth_date: memberEditForm.birth_date.trim(),
           address: memberEditForm.address.trim(),
@@ -783,8 +785,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
           first_name: playerEditForm.first_name.trim(),
           last_name: playerEditForm.last_name.trim(),
           username: playerEditForm.username.trim().toLowerCase(),
-          auth_email: playerEditForm.auth_email.trim().toLowerCase(),
-          auth_password: playerEditForm.auth_password,
           phone: playerEditForm.phone.trim(),
           birth_date: playerEditForm.birth_date.trim(),
           sex: playerEditForm.sex.trim(),
@@ -809,45 +809,14 @@ export default function UserManagementWorkspace({ section }: { section: Section 
     }
   }
 
-  async function saveInlinePlayerField(member: MemberRow, field: PlayerFieldDef, rawValue: string | boolean | null) {
+  async function saveInlinePlayerField(member: MemberRow, field: PlayerFieldDef, rawValue: string | boolean | string[] | null) {
     if (!clubId || savingInlinePlayerFieldKey) return;
 
-    const normalizedValue =
-      field.field_type === "text"
-        ? typeof rawValue === "string"
-          ? rawValue.trim() || null
-          : rawValue == null
-          ? null
-          : String(rawValue).trim() || null
-        : field.field_type === "boolean"
-        ? rawValue == null
-          ? null
-          : Boolean(rawValue)
-        : typeof rawValue === "string"
-        ? rawValue.trim() || null
-        : rawValue == null
-        ? null
-        : String(rawValue).trim() || null;
+    const normalize = (value: string | boolean | string[] | null) => Array.isArray(value) ? value : typeof value === "string" ? value.trim() || null : value;
+    const normalizedValue = normalize(rawValue);
+    const currentNormalized = normalize(getMemberCustomFieldRawValue(member, field));
 
-    const currentValue = getMemberCustomFieldRawValue(member, field);
-    const currentNormalized =
-      field.field_type === "text"
-        ? typeof currentValue === "string"
-          ? currentValue.trim() || null
-          : currentValue == null
-          ? null
-          : String(currentValue).trim() || null
-        : field.field_type === "boolean"
-        ? currentValue == null
-          ? null
-          : Boolean(currentValue)
-        : typeof currentValue === "string"
-        ? currentValue.trim() || null
-        : currentValue == null
-        ? null
-        : String(currentValue).trim() || null;
-
-    if (currentNormalized === normalizedValue) {
+    if (JSON.stringify(currentNormalized) === JSON.stringify(normalizedValue)) {
       clearInlinePlayerFieldDraft(member.id, field.id);
       return;
     }
@@ -1660,7 +1629,6 @@ export default function UserManagementWorkspace({ section }: { section: Section 
         "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf",
       junior_name: "Lucas Dupont",
       junior_username: "lucas.dupont",
-      temp_password: "TempPass123!",
     }),
     [currentClubName]
   );
@@ -1723,7 +1691,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                 <input
                   type="email"
                   value={memberEditForm.auth_email}
-                  onChange={(event) => setMemberEditForm((previous) => (previous ? { ...previous, auth_email: event.target.value } : previous))}
+                  readOnly
                   style={FIELD_INPUT_STYLE}
                 />
               </label>
@@ -1786,15 +1754,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                   />
                 </label>
               ) : null}
-              <label className="user-mgmt-field">
-                <span className="user-mgmt-field-label">Nouveau mot de passe</span>
-                <input
-                  value={memberEditForm.auth_password}
-                  onChange={(event) => setMemberEditForm((previous) => (previous ? { ...previous, auth_password: event.target.value } : previous))}
-                  placeholder="Laisser vide pour ne pas changer"
-                  style={FIELD_INPUT_STYLE}
-                />
-              </label>
+
             </div>
 
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -1818,81 +1778,11 @@ export default function UserManagementWorkspace({ section }: { section: Section 
               ) : (
                 <div className="user-mgmt-form-grid">
                   {activeFields.map((field) => (
-                    <label key={field.id} className="user-mgmt-field">
+                    <div key={field.id} className="user-mgmt-field">
                       <span className="user-mgmt-field-label">{field.label}</span>
-                      {field.field_type === "boolean" ? (
-                        <select
-                          value={
-                            memberEditForm.custom_field_values[field.id] == null
-                              ? ""
-                              : memberEditForm.custom_field_values[field.id]
-                              ? "yes"
-                              : "no"
-                          }
-                          onChange={(event) =>
-                            setMemberEditForm((previous) =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    custom_field_values: {
-                                      ...previous.custom_field_values,
-                                      [field.id]: event.target.value === "" ? null : event.target.value === "yes",
-                                    },
-                                  }
-                                : previous
-                            )
-                          }
-                          style={FIELD_INPUT_STYLE}
-                        >
-                          <option value="">Non défini</option>
-                          <option value="yes">Oui</option>
-                          <option value="no">Non</option>
-                        </select>
-                      ) : field.field_type === "select" ? (
-                        <select
-                          value={String(memberEditForm.custom_field_values[field.id] ?? "")}
-                          onChange={(event) =>
-                            setMemberEditForm((previous) =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    custom_field_values: {
-                                      ...previous.custom_field_values,
-                                      [field.id]: event.target.value || null,
-                                    },
-                                  }
-                                : previous
-                            )
-                          }
-                          style={FIELD_INPUT_STYLE}
-                        >
-                          <option value="">Non défini</option>
-                          {(field.options_json ?? []).map((option) => (
-                            <option key={option} value={option}>
-                              {playerFieldDisplayValue(field, option)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          value={String(memberEditForm.custom_field_values[field.id] ?? "")}
-                          onChange={(event) =>
-                            setMemberEditForm((previous) =>
-                              previous
-                                ? {
-                                    ...previous,
-                                    custom_field_values: {
-                                      ...previous.custom_field_values,
-                                      [field.id]: event.target.value || null,
-                                    },
-                                  }
-                                : previous
-                            )
-                          }
-                          style={FIELD_INPUT_STYLE}
-                        />
-                      )}
-                    </label>
+                      <ProfileCustomFieldControl field={{ ...field, options_json: field.options_json ?? [], value: memberEditForm.custom_field_values[field.id] ?? null }} name={`member-${field.id}`} yes="Oui" no="Non"
+                        onChange={(value) => setMemberEditForm((previous) => previous ? { ...previous, custom_field_values: { ...previous.custom_field_values, [field.id]: value } } : previous)} />
+                    </div>
                   ))}
                 </div>
               )}
@@ -2169,7 +2059,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                         <input
                           type="email"
                           value={playerEditForm.auth_email}
-                          onChange={(event) => setPlayerEditForm((previous) => (previous ? { ...previous, auth_email: event.target.value } : previous))}
+                          readOnly
                           style={FIELD_INPUT_STYLE}
                         />
                       </label>
@@ -2266,15 +2156,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                           <option value="adult">Majeur</option>
                         </select>
                       </label>
-                      <label className="user-mgmt-field">
-                        <span className="user-mgmt-field-label">Nouveau mot de passe</span>
-                        <input
-                          value={playerEditForm.auth_password}
-                          onChange={(event) => setPlayerEditForm((previous) => (previous ? { ...previous, auth_password: event.target.value } : previous))}
-                          placeholder="Laisser vide pour ne pas changer"
-                          style={FIELD_INPUT_STYLE}
-                        />
-                      </label>
+
                     </div>
 
                     <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -2306,81 +2188,11 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                       ) : (
                         <div className="user-mgmt-form-grid">
                           {activePlayerFields.map((field) => (
-                            <label key={field.id} className="user-mgmt-field">
+                            <div key={field.id} className="user-mgmt-field">
                               <span className="user-mgmt-field-label">{field.label}</span>
-                              {field.field_type === "boolean" ? (
-                                <select
-                                  value={
-                                    playerEditForm.custom_field_values[field.id] == null
-                                      ? ""
-                                      : playerEditForm.custom_field_values[field.id]
-                                      ? "yes"
-                                      : "no"
-                                  }
-                                  onChange={(event) =>
-                                    setPlayerEditForm((previous) =>
-                                      previous
-                                        ? {
-                                            ...previous,
-                                            custom_field_values: {
-                                              ...previous.custom_field_values,
-                                              [field.id]: event.target.value === "" ? null : event.target.value === "yes",
-                                            },
-                                          }
-                                        : previous
-                                    )
-                                  }
-                                  style={FIELD_INPUT_STYLE}
-                                >
-                                  <option value="">Non défini</option>
-                                  <option value="yes">Oui</option>
-                                  <option value="no">Non</option>
-                                </select>
-                              ) : field.field_type === "select" ? (
-                                <select
-                                  value={String(playerEditForm.custom_field_values[field.id] ?? "")}
-                                  onChange={(event) =>
-                                    setPlayerEditForm((previous) =>
-                                      previous
-                                        ? {
-                                            ...previous,
-                                            custom_field_values: {
-                                              ...previous.custom_field_values,
-                                              [field.id]: event.target.value || null,
-                                            },
-                                          }
-                                        : previous
-                                    )
-                                  }
-                                  style={FIELD_INPUT_STYLE}
-                                >
-                                  <option value="">Non défini</option>
-                                  {(field.options_json ?? []).map((option) => (
-                                    <option key={option} value={option}>
-                                      {playerFieldDisplayValue(field, option)}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  value={String(playerEditForm.custom_field_values[field.id] ?? "")}
-                                  onChange={(event) =>
-                                    setPlayerEditForm((previous) =>
-                                      previous
-                                        ? {
-                                            ...previous,
-                                            custom_field_values: {
-                                              ...previous.custom_field_values,
-                                              [field.id]: event.target.value || null,
-                                            },
-                                          }
-                                        : previous
-                                    )
-                                  }
-                                  style={FIELD_INPUT_STYLE}
-                                />
-                              )}
-                            </label>
+                              <ProfileCustomFieldControl field={{ ...field, options_json: field.options_json ?? [], value: playerEditForm.custom_field_values[field.id] ?? null }} name={`player-${field.id}`} yes="Oui" no="Non"
+                        onChange={(value) => setPlayerEditForm((previous) => previous ? { ...previous, custom_field_values: { ...previous.custom_field_values, [field.id]: value } } : previous)} />
+                    </div>
                           ))}
                         </div>
                       )}
@@ -2457,6 +2269,8 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                                   {(() => {
                                     const draftValue = getInlinePlayerFieldDraftValue(member, field);
                                     const savingThisField = savingInlinePlayerFieldKey === `${member.id}:${field.id}`;
+
+                                    if (field.field_type === "checkbox" || field.field_type === "radio") return <ProfileCustomFieldControl field={{ ...field, options_json: field.options_json ?? [], value: draftValue }} name={`${member.id}-${field.id}`} disabled={savingThisField} yes="Oui" no="Non" onChange={(value) => { setInlinePlayerFieldDraft(member.id, field.id, value); void saveInlinePlayerField(member, field, value); }} />;
 
                                     if (field.field_type === "boolean") {
                                       return (
@@ -3324,7 +3138,7 @@ export default function UserManagementWorkspace({ section }: { section: Section 
                   <div>
                     <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Templates d’envoi</h2>
                     <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>
-                      Variables disponibles: {"{{club_name}}"}, {"{{parent_name}}"}, {"{{parent_username}}"}, {"{{parent_username_or_existing}}"}, {"{{reset_url}}"}, {"{{app_url}}"}, {"{{player_guide_url}}"}, {"{{junior_name}}"}, {"{{junior_username}}"}, {"{{temp_password}}"}.
+                      Variables disponibles: {"{{club_name}}"}, {"{{parent_name}}"}, {"{{parent_username}}"}, {"{{parent_username_or_existing}}"}, {"{{reset_url}}"}, {"{{app_url}}"}, {"{{player_guide_url}}"}, {"{{junior_name}}"}, {"{{junior_username}}"}.
                     </p>
                   </div>
                   <Link href="/manager/access" className="btn">

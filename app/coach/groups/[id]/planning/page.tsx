@@ -4,18 +4,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, PlusCircle, Trash2, Pencil, AlertTriangle, MapPin } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, Pencil, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { coachCaughtErrorKey, coachUiErrorKey } from "@/lib/coachUiErrors";
-import { coachCalendarActionHref, coachCalendarActionState } from "@/lib/coachCalendar";
+import { coachCalendarActionState } from "@/lib/coachCalendar";
 import { coachPlanningView, coachPlanningAttendanceKey, coachPlanningTitle, type CoachPlanningData, type CoachPlanningEvent,
   type CoachPlanningPerson, type CoachPlanningAttendee, type CoachPlanningTab } from "@/lib/coachPlanning";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
-import ManagementActivityDate from "@/components/ui/ManagementActivityDate";
+import CoachActivityCard, { CoachActivityAction } from "@/components/coach/CoachActivityCard";
+import cardStyles from "@/components/coach/CoachActivityCard.module.css";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import planningStyles from "./CoachGroupPlanning.module.css";
@@ -42,6 +43,7 @@ export default function CoachGroupPlanningPage() {
   const [tab, setTab] = useState<CoachPlanningTab>("upcoming");
   const [type, setType] = useState("all");
   const [limit, setLimit] = useState(50);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(() => Date.now());
   const [deleteTarget, setDeleteTarget] = useState<CoachPlanningEvent | null>(null);
   const [deleteScope, setDeleteScope] = useState<"occurrence" | "series">("occurrence");
@@ -153,12 +155,12 @@ export default function CoachGroupPlanningPage() {
     const sorted = [...people].sort((a, b) => fullName(a).localeCompare(fullName(b), locale));
     return <div className={planningStyles.people}>
       <span>{label}</span>
-      {sorted.length ? <ul aria-label={label}>{sorted.slice(0, 8).map((person) => <li key={person.id}>
+      {sorted.length ? <ul aria-label={label}>{sorted.map((person) => <li key={person.id}>
         <span className={planningStyles.avatar} aria-hidden="true">{person.avatar_url ? <img src={person.avatar_url} alt=""/> : initials(person)}</span>
         <div className={planningStyles.personCopy}><b>{fullName(person)}</b>
           {attendance ? <small>{t(coachPlanningAttendanceKey(person as CoachPlanningAttendee))}</small> : null}
         </div>
-      </li>)}{sorted.length > 8 ? <li>{coachText(t, "coach.planning.more", { count: sorted.length - 8 })}</li> : null}</ul> : <p className={planningStyles.empty}>{t("coach.planning.none")}</p>}
+      </li>)}</ul> : <p className={planningStyles.empty}>{t("coach.planning.none")}</p>}
     </div>;
   }
 
@@ -192,8 +194,8 @@ export default function CoachGroupPlanningPage() {
         </select>
       </label>
     </section>
-    <section className={styles.quickPanel} aria-busy={loading}>
-      <div className={styles.sectionHeading}><div><h2>{t("coach.nav.activities")}</h2>
+    <section className={planningStyles.activities} aria-busy={loading} aria-labelledby="planning-activities-title">
+      <div className={planningStyles.listHeading}><div><h2 id="planning-activities-title">{t("coach.nav.activities")}</h2>
         <p>{unavailable ? "—" : view.events.length > limit ? coachText(t, "coach.planning.partial", { shown: limit, total: view.events.length })
           : coachText(t, view.events.length === 1 ? "coach.planning.one" : "coach.planning.count", { count: view.events.length })}</p>
       </div></div>
@@ -202,39 +204,32 @@ export default function CoachGroupPlanningPage() {
         <div className={planningStyles.list}>{view.events.slice(0, limit).map((event) => {
           const action = coachCalendarActionState(event, event.evaluation_complete, now);
           const canEdit = canPlan && event.event_type !== "competition";
-          return <article key={event.id} className="planning-event-card">
-            <div className="planning-event-card-inner">
-              <ManagementActivityDate startsAt={event.starts_at} endsAt={event.ends_at} locale={coachDateLocale(locale)}/>
-              <div className="planning-event-content">
-                <div className={planningStyles.list}>
-                  <div className={planningStyles.title}>
-                    <h3 className="planning-event-title">{eventName(event)}</h3>
-                    <span className="pill-soft">{t(event.series_id ? "coach.planning.recurring" : "coach.planning.single")}</span>
-                    {event.status === "cancelled" ? <span className="pill-soft">{t("coach.planning.cancelled")}</span> : null}
-                    {action === "needs_evaluation" ? <span className="manager-calendar-warning-pill"><AlertTriangle size={14} aria-hidden="true"/>{t("coach.planning.pending")}</span> : null}
-                    {event.duration_minutes != null ? <span className="pill-soft">{coachText(t, "coach.planning.duration", { minutes: event.duration_minutes })}</span> : null}
-                  </div>
-                  <div className="manager-calendar-detail-grid">
-                    <div><span>{t("coach.groups.group")}</span><b>{currentData?.group.name || t("coach.activity.noGroup")}</b></div>
-                    <div><span>{t("coach.directory.club")}</span><b>{currentData?.club_name || t("coach.activity.noClub")}</b></div>
-                    <div><span>{t("coach.planning.type")}</span><b>{typeLabel(event.event_type)}</b></div>
-                  </div>
-                  {peopleLine(t("coach.groups.coaches"), event.coaches)}
-                  {peopleLine(t("coach.nav.players"), event.attendees.filter((person) => person.is_player), true)}
-                  {event.attendees.some((person) => !person.is_player) ? peopleLine(t("coach.planning.guests"), event.attendees.filter((person) => !person.is_player), true) : null}
-                  <div className="planning-event-footer">
-                    <span className="planning-event-location"><MapPin size={16} aria-hidden="true"/><span>{event.location_text?.trim() || t("coach.activity.noPlace")}</span></span>
-                    <div className={planningStyles.actions}>
-                      <Link className={actionStyles.secondaryButton} href={coachCalendarActionHref(action, groupId, event.id)}>{t(action === "needs_evaluation" ? "coach.planning.evaluate" : action === "evaluation_complete" ? "coach.planning.review" : "coach.open")}</Link>
-                      {canEdit ? <><Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${event.id}/edit`}><Pencil size={16} aria-hidden="true"/>{t("common.edit")}</Link>
-                        <button type="button" className={actionStyles.dangerButton} disabled={deleting} onClick={() => openDelete(event)}
-                          aria-label={coachText(t, "coach.planning.deleteNamed", { name: `${eventName(event)} · ${eventDate(event)}` })}><Trash2 size={16} aria-hidden="true"/>{t("common.delete")}</button></> : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          return <CoachActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at}
+            typeLabel={typeLabel(event.event_type)} title={event.title}
+            groupName={currentData?.group.name} clubName={currentData?.club_name} showClub={(currentData?.coachClubCount ?? 1) > 1}
+            location={event.location_text}
+            actions={<>
+              <CoachActivityAction state={action} groupId={groupId} eventId={event.id} name={eventName(event)}/>
+              <button type="button" className={cardStyles.action} aria-expanded={Boolean(expanded[event.id])}
+                aria-controls={`activity-people-${event.id}`} aria-label={`${t("coach.activity.people")} — ${eventName(event)}`}
+                title={t("coach.activity.people")} onClick={() => setExpanded((current) => ({ ...current, [event.id]: !current[event.id] }))}>
+                {expanded[event.id] ? <ChevronUp size={18} aria-hidden="true"/> : <ChevronDown size={18} aria-hidden="true"/>}
+              </button>
+            </>}>
+            <div id={`activity-people-${event.id}`} hidden={!expanded[event.id]}>
+              {expanded[event.id] ? <div className={planningStyles.list}>
+                {event.status === "cancelled" ? <span className="pill-soft">{t("coach.planning.cancelled")}</span> : null}
+                {peopleLine(t("coach.groups.coaches"), event.coaches)}
+                {peopleLine(t("coach.nav.players"), event.attendees.filter((person) => person.is_player), true)}
+                {event.attendees.some((person) => !person.is_player) ? peopleLine(t("coach.planning.guests"), event.attendees.filter((person) => !person.is_player), true) : null}
+                {canEdit ? <div className={planningStyles.actions}>
+                  <Link className={actionStyles.secondaryButton} href={`/coach/groups/${groupId}/planning/${event.id}/edit`}><Pencil size={16} aria-hidden="true"/>{t("common.edit")}</Link>
+                  <button type="button" className={actionStyles.dangerButton} disabled={deleting} onClick={() => openDelete(event)}
+                    aria-label={coachText(t, "coach.planning.deleteNamed", { name: `${eventName(event)} · ${eventDate(event)}` })}><Trash2 size={16} aria-hidden="true"/>{t("common.delete")}</button>
+                </div> : null}
+              </div> : null}
             </div>
-          </article>;
+          </CoachActivityCard>;
         })}{view.events.length > limit ? <button type="button" className={actionStyles.secondaryButton} onClick={() => setLimit((value) => value + 50)}>{t("coach.planning.showMore")}</button> : null}</div>}
     </section>
     {deleteTarget ? <AccessibleDialog className={planningStyles.dialog} labelledBy="planning-delete-title" onClose={closeDelete}>

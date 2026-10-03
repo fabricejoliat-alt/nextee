@@ -34,3 +34,10 @@
 .automaticToggle input:disabled {
   cursor: not-allowed;
 }
+
+.fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+@media (max-width: 640px) {
+  .historyTable tbody td:last-child { justify-content: space-between; }
+  .historyTable tbody td:last-child::before { display: block; }
+}

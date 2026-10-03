@@ -102,12 +102,17 @@ export default function CoachPlayerTransferDialog({ playerId, playerName, source
           {error ? <div className={styles.error} role="alert">{t(error)}{groups.length === 0 ? <button type="button" className={styles.cancel} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button> : null}</div> : null}
           {!error && groups.length === 0 ? <p role="status">{t("coach.transfer.noDestinations")}</p> : null}
           <label><span>{t("coach.transfer.destination")}</span><select value={destinationId} onChange={(event) => setDestinationId(event.target.value)}><option value="">{t("coach.transfer.choose")}</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          <p className={styles.explanation}>{t("coach.transfer.explanation")}</p>
           <fieldset><legend>{coachText(t, "coach.transfer.future", { count: futureCount })}</legend>
             {(["keep", "remove_old", "move"] as const).map((value) => {
               const key = value === "remove_old" ? "remove" : value;
-              return <label key={value}><input type="radio" name={`future-${playerId}`} checked={action === value} onChange={() => setAction(value)}/><span><b>{t(`coach.transfer.${key}`)}</b><small>{t(`coach.transfer.${key}Hint`)}</small></span></label>;
+              const optionId = `transfer-${playerId}-${value}`;
+              return <label key={value}><input type="radio" name={`future-${playerId}`} value={value} checked={action === value}
+                aria-labelledby={`${optionId}-label`} aria-describedby={`${optionId}-hint`} onChange={() => setAction(value)}/>
+                <span><b id={`${optionId}-label`}>{t(`coach.transfer.${key}`)}</b><small id={`${optionId}-hint`}>{t(`coach.transfer.${key}Hint`)}</small></span></label>;
             })}
           </fieldset>
+          <p className={styles.note}>{t("coach.transfer.unchanged")}</p>
         </fieldset>}
       <footer><button type="button" className={styles.cancel} onClick={close} disabled={saving}>{t("coach.directory.cancel")}</button><button type="button" className={styles.confirm} onClick={() => void confirm()} disabled={loading || saving || !destinationId}>{saving ? t("coach.transfer.saving") : t("coach.transfer.confirm")}</button></footer>
     </AccessibleDialog> : null}

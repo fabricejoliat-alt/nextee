@@ -114,6 +114,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
     );
     if (insertTargetsRes.error) return NextResponse.json({ error: insertTargetsRes.error.message }, { status: 400 });
 
+    let dispatchResult: Record<string, unknown> | null = null;
     if (normalizedStatus === "published") {
       const recipients = await resolveNewsRecipients(supabaseAdmin, clubId, targets, includeLinkedParents);
       const dispatch = await dispatchNews({
@@ -134,6 +135,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
         emailRecipients: recipients.emailRecipients,
       });
 
+      dispatchResult = dispatch.lastDispatchResult;
       const dispatchRes = await supabaseAdmin
         .from("club_news")
         .update({
@@ -145,7 +147,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ newsId: s
       if (dispatchRes.error) return NextResponse.json({ error: dispatchRes.error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, dispatch: dispatchResult });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";
     return NextResponse.json({ error: message }, { status: 500 });

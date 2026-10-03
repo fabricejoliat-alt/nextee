@@ -128,12 +128,6 @@ function labelName(m: MemberRow) {
   return n || "Utilisateur";
 }
 
-function generatePassword(len = 12) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
 
 function normalizeAuthEmailInput(raw?: string | null) {
   const email = String(raw ?? "").trim().toLowerCase();
@@ -622,8 +616,8 @@ export default function ManagerUsersPage() {
       first_name: (form.first_name ?? "").toString().trim(),
       last_name: (form.last_name ?? "").toString().trim(),
       username: (form.username ?? "").toString().trim().toLowerCase(),
-      auth_email: normalizeAuthEmailInput(form.auth_email as string),
-      auth_password: (form.auth_password ?? "").toString(),
+
+
     };
 
     if ((form.role ?? "player") === "player") {
@@ -640,8 +634,8 @@ export default function ManagerUsersPage() {
       payload.player_consent_status = (form.player_consent_status ?? "pending").toString().trim();
     }
     if ((form.role ?? "player") === "parent") {
-      payload.auth_email = normalizeAuthEmailInput(form.auth_email as string);
-      payload.auth_password = (form.auth_password ?? "").toString();
+
+
       payload.phone = (form.phone ?? "").toString().trim();
       payload.address = (form.address ?? "").toString().trim();
       payload.postal_code = (form.postal_code ?? "").toString().trim();
@@ -1475,7 +1469,7 @@ export default function ManagerUsersPage() {
                           placeholder="Adresse e-mail"
                           type="email"
                           value={(form.auth_email ?? "") as string}
-                          onChange={(e) => setForm((f) => ({ ...f, auth_email: e.target.value }))}
+                          readOnly
                           style={inputStyle}
                         />
                       </label>
@@ -1490,36 +1484,7 @@ export default function ManagerUsersPage() {
                           />
                         </label>
                       ) : null}
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 12, fontWeight: 800 }}>Nouveau mot de passe</span>
-                        </div>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "minmax(220px, 360px) auto",
-                            gap: 8,
-                            alignItems: "center",
-                            maxWidth: 520,
-                          }}
-                        >
-                          <input
-                            placeholder="Nouveau mot de passe (min 8)"
-                            type="text"
-                            value={(form.auth_password ?? "") as string}
-                            onChange={(e) => setForm((f) => ({ ...f, auth_password: e.target.value }))}
-                            style={inputStyle}
-                          />
-                          <button
-                            className="btn"
-                            type="button"
-                            onClick={() => setForm((f) => ({ ...f, auth_password: generatePassword(12) }))}
-                            style={{ padding: "8px 10px", borderRadius: 10, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}
-                          >
-                            Générer
-                          </button>
-                        </div>
-                      </label>
+
 
                       <label style={{ display: "grid", gap: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 800 }}>Rôle</span>
@@ -1719,7 +1684,7 @@ export default function ManagerUsersPage() {
                             <input
                               placeholder="Email login"
                               value={(form.auth_email ?? "") as string}
-                              onChange={(e) => setForm((f) => ({ ...f, auth_email: e.target.value }))}
+                              readOnly
                               style={inputStyle}
                             />
                           </div>

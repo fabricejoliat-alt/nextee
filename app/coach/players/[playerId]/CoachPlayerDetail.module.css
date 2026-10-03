@@ -25,15 +25,16 @@
 
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-.identityGrid {
+.identityCopy {
+  min-width: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(110px, 1fr));
-  gap: 14px;
+  gap: 7px;
 }
 
-.identityItem { min-width: 0; display: grid; gap: 4px; }
-.identityItem span { color: #718078; font: 650 10px var(--font-inter), sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.identityItem strong { color: #1f2922; font: 650 13px var(--font-inter), sans-serif; overflow-wrap: anywhere; }
+.identityName { color: #1f2922; font: 750 18px/1.35 var(--font-inter-tight), var(--font-inter), sans-serif; overflow-wrap: anywhere; }
+.identityHandicap { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
+.identityHandicap span { color: #718078; font: 650 10px var(--font-inter), sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.identityHandicap b { color: #35483b; font: 700 14px var(--font-inter), sans-serif; }
 
 .panel {
   min-width: 0;
@@ -207,7 +208,6 @@
 .modalBody { overflow: auto; padding: 16px; background: #f7f9f6; }
 
 @media (max-width: 1180px) {
-  .identityGrid { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
   .overviewGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .statisticsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .statisticsOverview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -217,11 +217,8 @@
 @media (max-width: 760px) {
   .stack { gap: 12px; }
   .panel { padding: 15px; border-radius: 15px; box-shadow: 0 8px 22px rgba(43, 61, 49, .045); }
-  .identity { grid-template-columns: 76px minmax(0, 1fr); align-items: start; gap: 14px; }
+  .identity { grid-template-columns: 76px minmax(0, 1fr); gap: 14px; }
   .avatar { width: 76px; height: 76px; }
-  .identityGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .identityItem { padding-bottom: 8px; border-bottom: 1px solid #edf1eb; }
-  .identityItem:last-child { grid-column: 1 / -1; }
   .overviewGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
   .overviewColumns { grid-template-columns: 1fr; gap: 12px; }
   .metric { min-height: 96px; padding: 13px; border-radius: 13px; }
@@ -243,9 +240,7 @@
 @media (max-width: 480px) {
   .identity { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
   .avatar { width: 64px; height: 64px; }
-  .identityGrid { gap: 10px 12px; }
-  .identityItem span { font-size: 9px; }
-  .identityItem strong { font-size: 12px; }
+  .identityName { font-size: 16px; }
   .overviewGrid { gap: 8px; }
   .metric { min-height: 90px; padding: 12px; }
   .metric span { font-size: 9px; }

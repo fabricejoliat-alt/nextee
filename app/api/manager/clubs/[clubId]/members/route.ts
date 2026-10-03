@@ -1,3 +1,5 @@
+import { encodeMemberFieldValue, decodeMemberFieldValue, type MemberFieldValue } from "@/lib/memberFieldValues";
+import { requireManagerClub, isPlatformAccount } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -208,45 +210,13 @@ async function fetchAuthUsersByIds(supabaseAdmin: any, userIds: string[]) {
   return authUserById;
 }
 
-async function assertManagerOrSuperadmin(req: NextRequest, supabaseAdmin: any, clubId: string) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
-
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) return { ok: false as const, status: 401, error: "Invalid token" };
-
-  const callerId = callerData.user.id;
-
-  const { data: adminRow } = await supabaseAdmin
-    .from("app_admins")
-    .select("user_id")
-    .eq("user_id", callerId)
-    .maybeSingle();
-
-  if (adminRow) return { ok: true as const, callerId };
-
-  const { data: membership } = await supabaseAdmin
-    .from("club_members")
-    .select("id,role,is_active")
-    .eq("club_id", clubId)
-    .eq("user_id", callerId)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!membership || membership.role !== "manager") {
-    return { ok: false as const, status: 403, error: "Forbidden" };
-  }
-
-  return { ok: true as const, callerId };
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: string }> }) {
   try {
     const { clubId } = await ctx.params;
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const membersResult = await supabaseAdmin
@@ -284,7 +254,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const memberIds = Array.from(new Set(members.map((m: any) => String(m.id)).filter(Boolean)));
     const customFieldIds = playerFields.filter((field) => !field.legacy_binding).map((field) => field.id);
 
-    const valuesByMemberId = new Map<string, Record<string, string | boolean | null>>();
+    const valuesByMemberId = new Map<string, Record<string, MemberFieldValue>>();
     if (memberIds.length > 0 && customFieldIds.length > 0) {
       const { data: valueRows, error: valuesError } = await supabaseAdmin
         .from("club_member_player_field_values")
@@ -297,10 +267,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         const memberId = String((row as any).club_member_id);
         const fieldId = String((row as any).field_id);
         const current = valuesByMemberId.get(memberId) ?? {};
-        current[fieldId] =
-          (row as any).value_option ??
-          ((row as any).value_bool == null ? null : Boolean((row as any).value_bool)) ??
-          ((row as any).value_text ?? null);
+        current[fieldId] = decodeMemberFieldValue(playerFields.find((field) => field.id === fieldId), row);
         valuesByMemberId.set(memberId, current);
       }
     }
@@ -445,7 +412,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (!clubId) return NextResponse.json({ error: "Missing clubId" }, { status: 400 });
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const auth = await assertManagerOrSuperadmin(req, supabaseAdmin, clubId);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => ({}));
@@ -493,6 +460,23 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
     if (memberErr) return NextResponse.json({ error: memberErr.message }, { status: 400 });
     if (!memberRow) return NextResponse.json({ error: "Member not found" }, { status: 404 });
 
+    // Reject credential/global-role changes before any membership or profile write.
+    if (!auth.isSuperadmin) {
+      if (await isPlatformAccount(supabaseAdmin, memberRow.user_id)) {
+        return NextResponse.json({ error: "Ce compte est géré par l’administration de la plateforme." }, { status: 403 });
+      }
+      if (authPassword || (role && role !== memberRow.role)) {
+        return NextResponse.json({ error: "Les identifiants et les changements de rôle sont gérés par l’administration de la plateforme." }, { status: 403 });
+      }
+      if (has("auth_email")) {
+        const account = await supabaseAdmin.auth.admin.getUserById(memberRow.user_id);
+        if (account.error || !account.data.user) return NextResponse.json({ error: "Compte indisponible." }, { status: 503 });
+        if (authEmail !== normalizeAuthEmailInput(account.data.user.email ?? "")) {
+          return NextResponse.json({ error: "L’adresse de connexion doit être modifiée par le titulaire du compte." }, { status: 403 });
+        }
+      }
+    }
+
     const memberPatch: Record<string, any> = {};
     if (role) memberPatch.role = role;
     if (typeof isActive === "boolean") memberPatch.is_active = isActive;
@@ -537,6 +521,22 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       memberPatch.player_consent_status = null;
     }
 
+    const customFieldValues =
+      has("custom_field_values") && body.custom_field_values && typeof body.custom_field_values === "object"
+        ? (body.custom_field_values as Record<string, unknown>)
+        : has("player_field_values") && body.player_field_values && typeof body.player_field_values === "object"
+        ? (body.player_field_values as Record<string, unknown>)
+        : null;
+
+    try {
+      for (const [fieldId, raw] of Object.entries(customFieldValues ?? {})) {
+        const field = fieldById.get(fieldId);
+        if (field && fieldAppliesToRole(field, effectiveRole)) encodeMemberFieldValue(field, raw);
+      }
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Champ invalide" }, { status: 400 });
+    }
+
     if (Object.keys(memberPatch).length > 0) {
       const { error } = await supabaseAdmin.from("club_members").update(memberPatch).eq("id", memberId);
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -562,12 +562,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       if (deleteFieldValuesError) return NextResponse.json({ error: deleteFieldValuesError.message }, { status: 400 });
     }
 
-    const customFieldValues =
-      has("custom_field_values") && body.custom_field_values && typeof body.custom_field_values === "object"
-        ? (body.custom_field_values as Record<string, unknown>)
-        : has("player_field_values") && body.player_field_values && typeof body.player_field_values === "object"
-        ? (body.player_field_values as Record<string, unknown>)
-        : null;
 
     if (customFieldValues) {
       const playerFieldValues = customFieldValues;
@@ -596,10 +590,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
           continue;
         }
 
-        const isEmpty =
-          rawValue == null ||
-          (typeof rawValue === "string" && rawValue.trim() === "") ||
-          (field.field_type === "select" && String(rawValue ?? "").trim() === "");
+        const encoded = encodeMemberFieldValue(field, rawValue);
+        const isEmpty = encoded === null;
 
         if (isEmpty) {
           const { error } = await supabaseAdmin
@@ -611,24 +603,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
           continue;
         }
 
-        const valuePatch: Record<string, any> = {
-          club_member_id: memberId,
-          field_id: fieldId,
-          value_text: null,
-          value_bool: null,
-          value_option: null,
-        };
-        if (field.field_type === "text") {
-          valuePatch.value_text = String(rawValue).trim();
-        } else if (field.field_type === "boolean") {
-          valuePatch.value_bool = Boolean(rawValue);
-        } else if (field.field_type === "select") {
-          const option = String(rawValue).trim();
-          if (field.options_json && field.options_json.length > 0 && !field.options_json.includes(option)) {
-            return NextResponse.json({ error: `Valeur invalide pour ${field.label}` }, { status: 400 });
-          }
-          valuePatch.value_option = option;
-        }
+        const valuePatch = { club_member_id: memberId, field_id: fieldId, ...encoded };
 
         const { error } = await supabaseAdmin
           .from("club_member_player_field_values")
@@ -637,7 +612,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
       }
     }
 
-    if (has("auth_email") || has("auth_password")) {
+    if (auth.isSuperadmin && (has("auth_email") || has("auth_password"))) {
       const authPatch: Record<string, any> = {};
       if (has("auth_email")) {
         if (authEmailRaw.trim() && !authEmail) {

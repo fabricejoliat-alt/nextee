@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -32,10 +33,10 @@ type ProfileRow = {
 type ClubMember = { club_id: string };
 type Club = { id: string; name: string | null };
 
-function displayHello(firstName?: string | null) {
+function displayHello(hello: string, firstName?: string | null) {
   const f = (firstName ?? "").trim();
-  if (!f) return "Salut";
-  return `Salut ${f}`;
+  if (!f) return hello;
+  return `${hello} ${f}`;
 }
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
@@ -68,14 +69,15 @@ function sanitizeEditableEmail(rawEmail?: string | null) {
   return v;
 }
 
-function translateAuthMessage(message: string) {
+function translateAuthMessage(message: string, t: (key: string) => string) {
   if (message === "New password should be different from the old password.") {
-    return "Le nouveau mot de passe doit être différent de l’ancien.";
+    return t("manager.profile.samePassword");
   }
   return message;
 }
 
-export default function PlayerProfilePage() {
+export default function ManagerProfilePage() {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -148,7 +150,7 @@ export default function PlayerProfilePage() {
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes.user) {
-      setError("Session invalide. Reconnecte-toi.");
+      setError(t("manager.profile.invalidSession"));
       setLoading(false);
       return;
     }
@@ -196,7 +198,7 @@ export default function PlayerProfilePage() {
     setBirthDate(row?.birth_date ?? "");
     setSex(row?.sex ?? "");
 
-    setHandedness((row?.handedness as any) ?? "");
+    setHandedness(row?.handedness === "left" || row?.handedness === "right" ? row.handedness : "");
     setHandicap(row?.handicap == null ? "" : String(row.handicap));
 
     setAddress(row?.address ?? "");
@@ -262,12 +264,12 @@ export default function PlayerProfilePage() {
 
     if (newPassword.trim() || confirmPassword.trim()) {
       if (newPassword.length < 8) {
-        setError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+        setError(t("manager.profile.passwordShort"));
         setBusy(false);
         return;
       }
       if (newPassword !== confirmPassword) {
-        setError("La confirmation du mot de passe ne correspond pas.");
+        setError(t("manager.profile.passwordMismatch"));
         setBusy(false);
         return;
       }
@@ -278,18 +280,18 @@ export default function PlayerProfilePage() {
     const currentEmailNormalized = normalizeDisplayEmail(authEmailRaw).trim().toLowerCase();
 
     if (emailTrimmed && !emailNormalized) {
-      setError("Merci de saisir une adresse e-mail valide (pas @noemail.local).");
+      setError(t("manager.profile.realEmail"));
       setBusy(false);
       return;
     }
     if (emailNormalized && !emailNormalized.includes("@")) {
-      setError("Adresse e-mail invalide.");
+      setError(t("manager.profile.invalidEmail"));
       setBusy(false);
       return;
     }
     const handicapValue = parseHandicap();
     if (handicap.trim() !== "" && handicapValue == null) {
-      setError("Handicap invalide.");
+      setError(t("manager.profile.invalidHandicap"));
       setBusy(false);
       return;
     }
@@ -337,7 +339,7 @@ export default function PlayerProfilePage() {
       });
       const emailJson = await emailRes.json().catch(() => ({}));
       if (!emailRes.ok) {
-        setError(String(emailJson?.error ?? "Erreur mise à jour e-mail"));
+        setError(String(emailJson?.error ?? t("manager.profile.emailError")));
         setBusy(false);
         return;
       }
@@ -350,7 +352,7 @@ export default function PlayerProfilePage() {
         password: newPassword,
       });
       if (authError) {
-        setError(translateAuthMessage(authError.message));
+        setError(translateAuthMessage(authError.message, t));
         setBusy(false);
         return;
       }
@@ -358,7 +360,7 @@ export default function PlayerProfilePage() {
       setConfirmPassword("");
     }
 
-    setInfo("Profile saved ✅");
+    setInfo(t("manager.profile.saved"));
     setBusy(false);
   }
 
@@ -378,13 +380,13 @@ export default function PlayerProfilePage() {
     setInfo(null);
 
     if (!isAllowedImage(file)) {
-      setError("Unsupported format. Use JPG, PNG or WEBP.");
+      setError(t("manager.profile.photoFormat"));
       return;
     }
 
     // 4MB limit (ajuste si tu veux)
     if (file.size > 4 * 1024 * 1024) {
-      setError("Image trop lourde (max 4 Mo).");
+      setError(t("manager.profile.photoSize"));
       return;
     }
 
@@ -428,9 +430,9 @@ export default function PlayerProfilePage() {
       // ✅ REFRESH: bump de la clé juste après succès => l'image se recharge tout de suite
       setAvatarRefreshKey(Date.now());
 
-      setInfo("Profile photo updated ✅");
-    } catch (err: any) {
-      setError(err?.message ?? "Erreur lors de l’upload de l’avatar.");
+      setInfo(t("manager.profile.photoSaved"));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("manager.profile.photoError"));
     } finally {
       setAvatarBusy(false);
     }
@@ -445,7 +447,7 @@ export default function PlayerProfilePage() {
           <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
             <div
               className="avatar"
-              aria-hidden="true"
+              aria-label={t("manager.profile.changePhoto")}
               role="button"
               tabIndex={0}
               onClick={openFilePicker}
@@ -457,9 +459,8 @@ export default function PlayerProfilePage() {
                 position: "relative",
                 overflow: "hidden",
               }}
-              title={loading ? "" : "Changer la photo"}
+              title={loading ? "" : t("manager.profile.changePhoto")}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {avatarDbUrl ? (
                 <img
                   src={avatarUrl}
@@ -508,7 +509,7 @@ export default function PlayerProfilePage() {
                 opacity: loading ? 0.6 : 1,
               }}
             >
-              {avatarBusy ? "Upload…" : "Changer"}
+              {avatarBusy ? t("manager.profile.uploading") : t("manager.profile.changePhoto")}
             </button>
           </div>
 
@@ -522,7 +523,7 @@ export default function PlayerProfilePage() {
           />
 
           {/* Crop modal */}
-          <CropAvatarModal
+          {cropOpen && cropImageSrc ? <CropAvatarModal
             open={cropOpen}
             imageSrc={cropImageSrc}
             busy={avatarBusy}
@@ -534,10 +535,10 @@ export default function PlayerProfilePage() {
             onConfirm={async (croppedBlob) => {
               await uploadAvatarBlob(croppedBlob);
             }}
-          />
+          /> : null}
 
           <div style={{ minWidth: 0 }}>
-            <div className="hero-title">{loading ? "Salut…" : `${displayHello(firstName)} 👋`}</div>
+            <div className="hero-title">{loading ? t("manager.profile.hello") : `${displayHello(t("manager.profile.hello"), firstName)} 👋`}</div>
 
             <div className="hero-sub">
               <div>
@@ -558,11 +559,11 @@ export default function PlayerProfilePage() {
 
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
-          <div className="section-title">Mon profil</div>
+          <div className="section-title">{t("manager.profile.title")}</div>
 
           <div className="glass-card">
             {loading ? (
-              <CompactLoadingBlock label="Chargement..." />
+              <CompactLoadingBlock label={t("manager.profile.loading")} />
             ) : (
                 <div style={{ display: "grid", gap: 16 }}>
                 <input
@@ -582,21 +583,21 @@ export default function PlayerProfilePage() {
                 {/* Identité */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Identité
+                    {t("manager.profile.identity")}
                   </div>
 
                   <div className="grid-2">
-                    <Field label="First name">
+                    <Field label={t("manager.profile.firstName")}>
                       <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                     </Field>
 
-                    <Field label="Nom">
+                    <Field label={t("manager.profile.lastName")}>
                       <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
                     </Field>
                   </div>
 
                   {/* ✅ Date de naissance sur une ligne */}
-                  <Field label="Date de naissance">
+                  <Field label={t("manager.profile.birthDate")}>
                     <input
                       type="date"
                       value={birthDate}
@@ -605,24 +606,24 @@ export default function PlayerProfilePage() {
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Sexe">
+                    <Field label={t("manager.profile.sex")}>
                       <select value={sex} onChange={(e) => setSex(e.target.value)}>
                         <option value="">—</option>
-                        <option value="male">Homme</option>
-                        <option value="female">Femme</option>
-                        <option value="other">Autre</option>
+                        <option value="male">{t("manager.profile.male")}</option>
+                        <option value="female">{t("manager.profile.female")}</option>
+                        <option value="other">{t("manager.profile.other")}</option>
                       </select>
                     </Field>
 
                     {/* ✅ NEW */}
-                    <Field label="Handedness">
+                    <Field label={t("manager.profile.handedness")}>
                       <select
                         value={handedness}
-                        onChange={(e) => setHandedness(e.target.value as any)}
+                        onChange={(e) => setHandedness(e.target.value as "right" | "left" | "")}
                       >
                         <option value="">—</option>
-                        <option value="right">Droite</option>
-                        <option value="left">Gauche</option>
+                        <option value="right">{t("manager.profile.right")}</option>
+                        <option value="left">{t("manager.profile.left")}</option>
                       </select>
                     </Field>
                   </div>
@@ -636,7 +637,7 @@ export default function PlayerProfilePage() {
                         inputMode="decimal"
                         value={handicap}
                         onChange={(e) => setHandicap(e.target.value)}
-                        placeholder="Ex: 8.4"
+                        placeholder={t("manager.profile.handicapExample")}
                         style={{
                           height: 46,
                           fontSize: 18,
@@ -653,15 +654,15 @@ export default function PlayerProfilePage() {
                 {/* Contact */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Contact
+                    {t("manager.profile.contact")}
                   </div>
 
                   <div className="grid-2">
-                    <Field label="Phone">
+                    <Field label={t("manager.profile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                     </Field>
 
-                    <Field label="Email (login)">
+                    <Field label={t("manager.profile.email")}>
                       <input
                         type="email"
                         name="manager_profile_email"
@@ -673,11 +674,11 @@ export default function PlayerProfilePage() {
                       />
                     </Field>
                   </div>
-                  <Field label="Fonction">
+                  <Field label={t("manager.profile.function")}>
                     <input
                       value={staffFunction}
                       onChange={(e) => setStaffFunction(e.target.value)}
-                      placeholder="Ex: Head Pro"
+                      placeholder={t("manager.profile.functionHint")}
                     />
                   </Field>
                 </div>
@@ -687,11 +688,11 @@ export default function PlayerProfilePage() {
                 {/* Mot de passe */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Mot de passe
+                    {t("manager.profile.passwordSection")}
                   </div>
 
                   <div className="grid-2">
-                    <Field label="Nouveau mot de passe">
+                    <Field label={t("manager.profile.password")}>
                       <input
                         type="password"
                         name="manager_new_password"
@@ -700,11 +701,11 @@ export default function PlayerProfilePage() {
                         onFocus={() => setPasswordEditable(true)}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Au moins 8 caractères"
+                        placeholder={t("manager.profile.passwordHint")}
                       />
                     </Field>
 
-                    <Field label="Confirmer le mot de passe">
+                    <Field label={t("manager.profile.confirmPassword")}>
                       <input
                         type="password"
                         name="manager_confirm_password"
@@ -713,7 +714,7 @@ export default function PlayerProfilePage() {
                         onFocus={() => setPasswordEditable(true)}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Répéter le nouveau mot de passe"
+                        placeholder={t("manager.profile.repeatPassword")}
                       />
                     </Field>
                   </div>
@@ -724,19 +725,19 @@ export default function PlayerProfilePage() {
                 {/* Adresse */}
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="card-title" style={{ marginBottom: 0 }}>
-                    Adresse
+                    {t("manager.profile.address")}
                   </div>
 
-                  <Field label="Adresse">
+                  <Field label={t("manager.profile.address")}>
                     <input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </Field>
 
                   <div className="grid-2">
-                    <Field label="Code postal">
+                    <Field label={t("manager.profile.postalCode")}>
                       <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
                     </Field>
 
-                    <Field label="City">
+                    <Field label={t("manager.profile.city")}>
                       <input value={city} onChange={(e) => setCity(e.target.value)} />
                     </Field>
                   </div>
@@ -753,7 +754,7 @@ export default function PlayerProfilePage() {
                     disabled={!canSave}
                     style={{ height: 34, padding: "0 12px", fontSize: 13, fontWeight: 800, borderRadius: 10 }}
                   >
-                    {busy ? "Enregistrement…" : "Enregistrer"}
+                    {busy ? t("manager.profile.saving") : t("manager.profile.save")}
                   </button>
                 </div>
               </div>
@@ -771,12 +772,12 @@ export default function PlayerProfilePage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <label className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
+    <label style={{ display: "grid", gap: 6 }}>
+      <span className="muted-uc" style={{ color: "rgba(0,0,0,0.55)" }}>
         {label}
-      </label>
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 
@@ -793,6 +794,7 @@ type CropAvatarModalProps = {
 };
 
 function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvatarModalProps) {
+  const { t } = useI18n();
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
@@ -802,20 +804,13 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
     height: number;
   } | null>(null);
 
-  useEffect(() => {
-    if (!open) {
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-      setCroppedAreaPixels(null);
-    }
-  }, [open]);
-
   if (!open || !imageSrc) return null;
 
   return (
     <div
       role="dialog"
       aria-modal="true"
+      aria-label={t("manager.profile.crop")}
       style={{
         position: "fixed",
         inset: 0,
@@ -841,7 +836,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
         }}
       >
         <div style={{ padding: 14, fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
-          Recadrer la photo
+          {t("manager.profile.crop")}
         </div>
 
         <div style={{ position: "relative", height: 340, background: "rgba(0,0,0,0.35)" }}>
@@ -861,10 +856,11 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
         <div style={{ padding: 14, display: "grid", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,0.85)" }}>
-              Zoom
+              {t("manager.profile.zoom")}
             </div>
             <input
               type="range"
+              aria-label={t("manager.profile.zoom")}
               min={1}
               max={3}
               step={0.01}
@@ -883,7 +879,7 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
               className="btn"
               style={{ width: "100%", opacity: busy ? 0.65 : 1 }}
             >
-              Annuler
+              {t("manager.profile.cancel")}
             </button>
 
             <button
@@ -893,17 +889,17 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
               style={{ width: "100%" }}
               onClick={async () => {
                 if (!croppedAreaPixels) return;
-                const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
+                const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels, t);
                 await onConfirm(blob);
                 onClose();
               }}
             >
-              {busy ? "Enregistrement…" : "Valider"}
+              {busy ? t("manager.profile.saving") : t("manager.profile.confirm")}
             </button>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.7)" }}>
-            Astuce : centre le visage / logo dans le cercle.
+            {t("manager.profile.cropHint")}
           </div>
         </div>
       </div>
@@ -913,13 +909,14 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
 
 async function getCroppedImageBlob(
   imageSrc: string,
-  cropPixels: { x: number; y: number; width: number; height: number }
+  cropPixels: { x: number; y: number; width: number; height: number },
+  t: (key: string) => string
 ) {
   const img = await loadImage(imageSrc);
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas not supported.");
+  if (!ctx) throw new Error(t("manager.profile.canvasError"));
 
   const outSize = 512;
   canvas.width = outSize;
@@ -940,7 +937,7 @@ async function getCroppedImageBlob(
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (!blob) return reject(new Error("Cannot generate cropped image."));
+        if (!blob) return reject(new Error(t("manager.profile.cropError")));
         resolve(blob);
       },
       "image/jpeg",

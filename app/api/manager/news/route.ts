@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: targetInsertRes.error.message }, { status: 400 });
     }
 
+    let dispatchResult: Record<string, unknown> | null = null;
     if (normalizedStatus === "published") {
       const recipients = await resolveNewsRecipients(supabaseAdmin, clubId, targets, includeLinkedParents);
       const dispatch = await dispatchNews({
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
         emailRecipients: recipients.emailRecipients,
       });
 
+      dispatchResult = dispatch.lastDispatchResult;
       const updateDispatchRes = await supabaseAdmin
         .from("club_news")
         .update({
@@ -179,7 +181,7 @@ export async function POST(req: NextRequest) {
       if (updateDispatchRes.error) return NextResponse.json({ error: updateDispatchRes.error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, id: newsId });
+    return NextResponse.json({ ok: true, id: newsId, dispatch: dispatchResult });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";
     return NextResponse.json({ error: message }, { status: 500 });

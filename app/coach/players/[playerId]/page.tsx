@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import CountUpNumber from "@/components/ui/CountUpNumber";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -55,6 +54,12 @@ import {
 import managerStyles from "@/app/manager/camps/Camps.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
+import TrainingDashboard from "@/components/golf/TrainingDashboard";
+import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
+import CoachPlayerFollowup from "@/components/coach/player-detail/CoachPlayerFollowup";
+import type { CoachFollowupEvent, CoachFollowupSelfEvaluation, CoachFollowupCriterion, CoachFollowupResponse, CoachFollowupAttendance } from "@/lib/coachPlayerFollowup";
+import { CoachActivityAction } from "@/components/coach/CoachActivityCard";
+import { coachCalendarActionState } from "@/lib/coachCalendar";
 import CoachPlayerActivityCard from "@/components/coach/player-detail/CoachPlayerActivityCard";
 import CoachPlayerIdentity from "@/components/coach/player-detail/CoachPlayerIdentity";
 import playerStyles from "./CoachPlayerDetail.module.css";
@@ -115,6 +120,7 @@ type GolfRoundRow = {
   id: string;
   start_at: string;
   round_type: string; // training | competition | ...
+  score_entry_mode?: string | null;
   competition_name?: string | null;
   course_name: string | null;
   location: string | null;
@@ -168,7 +174,10 @@ type HandicapHistoryEntry = {
   note: string | null;
 };
 
+type ClubSeason = { id: string; name: string; starts_on: string; ends_on: string; is_current: boolean };
+
 type TrainingVolumeClubConfig = {
+  seasons?: ClubSeason[];
   organization_id: string;
   season_months: number[];
   offseason_months: number[];
@@ -181,7 +190,7 @@ type OmTournamentScoreRow = {
   score_net: number | null;
 };
 
-type Preset = "week" | "month" | "last3" | "all" | "custom";
+type Preset = "season" | "lastSeason" | "week" | "month" | "last3" | "all" | "custom";
 type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
 type DashboardSection = "overview" | "trainings" | "competition" | "stats" | "planning" | "followup" | "thread" | "documents" | "evaluations" | "validations";
@@ -196,6 +205,10 @@ type ProfileLite = {
 };
 
 type PlannedEventRow = {
+  preparation_pending?: boolean;
+  requires_evaluation?: boolean;
+  duration_minutes: number | null;
+  status?: string;
   id: string;
   starts_at: string;
   ends_at: string | null;
@@ -711,7 +724,7 @@ export default function GolfDashboardPage() {
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [preset, setPreset] = useState<Preset>("month");
+  const [preset, setPreset] = useState<Preset>("season");
   const [customOpen, setCustomOpen] = useState(false);
 
   const [fromDate, setFromDate] = useState<string>("");
@@ -728,6 +741,14 @@ export default function GolfDashboardPage() {
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
+  const [roundsError, setRoundsError] = useState<string | null>(null);
+  const [holesError, setHolesError] = useState<string | null>(null);
+  const [followupEvents, setFollowupEvents] = useState<CoachFollowupEvent[]>([]);
+  const [followupSelf, setFollowupSelf] = useState<CoachFollowupSelfEvaluation[]>([]);
+  const [followupCriteria, setFollowupCriteria] = useState<CoachFollowupCriterion[]>([]);
+  const [followupResponses, setFollowupResponses] = useState<CoachFollowupResponse[]>([]);
+  const [followupAttendance, setFollowupAttendance] = useState<CoachFollowupAttendance[]>([]);
+  const [followupError, setFollowupError] = useState<string | null>(null);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
   const [omScoresByRoundId, setOmScoresByRoundId] = useState<Record<string, { gross: number | null; net: number | null }>>({});
 
@@ -741,6 +762,7 @@ export default function GolfDashboardPage() {
   const [canAccessSensitiveSections, setCanAccessSensitiveSections] = useState(false);
   const [playerProfile, setPlayerProfile] = useState<ProfileLite | null>(null);
   const [sharedClubNames, setSharedClubNames] = useState<string[]>([]);
+  const [coachClubCount, setCoachClubCount] = useState(0);
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
   const [sensitiveClubIds, setSensitiveClubIds] = useState<string[]>([]);
   const [coachId, setCoachId] = useState<string>("");
@@ -791,6 +813,8 @@ export default function GolfDashboardPage() {
   const [playerHandicap, setPlayerHandicap] = useState<number | null>(null);
   const [handicapHistory, setHandicapHistory] = useState<HandicapHistoryEntry[]>([]);
   const [trainingVolumeConfigs, setTrainingVolumeConfigs] = useState<TrainingVolumeClubConfig[]>([]);
+  const [currentClubSeason, setCurrentClubSeason] = useState<ClubSeason | null>(null);
+  const [previousClubSeason, setPreviousClubSeason] = useState<ClubSeason | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -834,6 +858,7 @@ export default function GolfDashboardPage() {
           : [];
         if (nextSharedClubIds.length === 0) throw new Error("Access denied for this player.");
         setSharedClubIds(nextSharedClubIds);
+        setCoachClubCount(Number(accessJson?.access?.coach_club_count ?? nextSharedClubIds.length));
         setSensitiveClubIds(Array.isArray(accessJson?.access?.sensitive_club_ids) ? accessJson.access.sensitive_club_ids : []);
 
         const sensitiveAccess = Boolean(accessJson?.access?.can_access_sensitive_sections);
@@ -853,6 +878,7 @@ export default function GolfDashboardPage() {
         setCanAccessSensitiveSections(false);
         setPlayerProfile(null);
         setSharedClubNames([]);
+        setCoachClubCount(0);
         setSharedClubIds([]);
         setCoachId("");
         setValidationDashboard(null);
@@ -937,7 +963,7 @@ export default function GolfDashboardPage() {
   }, [activeSection, canLoadData, playerId, validationDashboard?.effective_player_id]);
 
   const shouldLoadTrainingData = canLoadData && (activeSection === "overview" || activeSection === "trainings");
-  const shouldLoadRoundData = canLoadData && (activeSection === "overview" || activeSection === "competition" || activeSection === "stats");
+  const shouldLoadRoundData = canLoadData && (activeSection === "overview" || activeSection === "trainings" || activeSection === "competition" || activeSection === "stats");
 
   const validationAttemptCount = useMemo(() => {
     if (!validationDashboard) return 0;
@@ -971,15 +997,6 @@ export default function GolfDashboardPage() {
     });
   }, [validationDashboard]);
 
-  useEffect(() => {
-    const now = new Date();
-    const { start, end } = monthRangeLocal(now);
-    const endInclusive = new Date(end);
-    endInclusive.setDate(endInclusive.getDate() - 1);
-    setFromDate(isoToYMD(start));
-    setToDate(isoToYMD(endInclusive));
-    setPreset("month");
-  }, []);
 
   useEffect(() => {
     const now = new Date();
@@ -1011,12 +1028,21 @@ export default function GolfDashboardPage() {
       return;
     }
 
+    if (preset === "season") {
+      const today = isoToYMD(now);
+      setFromDate(currentClubSeason?.starts_on ?? `${now.getFullYear()}-01-01`);
+      setToDate(currentClubSeason && currentClubSeason.ends_on < today ? currentClubSeason.ends_on : today);
+      return;
+    }
+    if (preset === "lastSeason" && previousClubSeason) {
+      setFromDate(previousClubSeason.starts_on); setToDate(previousClubSeason.ends_on); return;
+    }
     if (preset === "all") {
       setFromDate("");
       setToDate("");
       return;
     }
-  }, [preset]);
+  }, [preset, currentClubSeason, previousClubSeason]);
 
   function onChangeFrom(v: string) {
     setFromDate(v);
@@ -1037,6 +1063,7 @@ export default function GolfDashboardPage() {
 
   const prevRange = useMemo(() => {
     if (preset === "all") return null;
+    if (preset === "season") return previousClubSeason ? { from: previousClubSeason.starts_on, to: previousClubSeason.ends_on } : null;
 
     if (preset === "week") {
       const now = new Date();
@@ -1077,7 +1104,7 @@ export default function GolfDashboardPage() {
     }
 
     return null;
-  }, [preset, fromDate, toDate]);
+  }, [preset, fromDate, toDate, previousClubSeason]);
 
   const compareLabel = useMemo(() => {
     if (!prevRange) return null;
@@ -1151,6 +1178,7 @@ export default function GolfDashboardPage() {
 
   // ===== LOAD COACH EVALUATIONS (past trainings) =====
   useEffect(() => {
+    let active = true;
     (async () => {
       if (!canLoadData || !canAccessSensitiveSections || !coachId || !playerId || sharedClubIds.length === 0) {
         setCoachEvaluations([]);
@@ -1158,6 +1186,7 @@ export default function GolfDashboardPage() {
       }
 
       setLoadingCoachEvaluations(true);
+      setFollowupError(null);
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token;
@@ -1166,7 +1195,13 @@ export default function GolfDashboardPage() {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
         });
         const body = await response.json();
+        if (!active) return;
         if (!response.ok) throw new Error(String(body.error ?? "Load failed"));
+        setFollowupEvents(body.events ?? []);
+        setFollowupSelf(body.selfEvaluations ?? []);
+        setFollowupCriteria(body.criteria ?? []);
+        setFollowupResponses(body.responses ?? []);
+        setFollowupAttendance(body.attendance ?? []);
         const feedbacks = (body.feedback ?? []) as CoachEvaluationFeedbackRow[];
         const events = (body.events ?? []) as CoachEvaluationEventRow[];
         const eventById = new Map(events.map((e) => [e.id, e]));
@@ -1196,12 +1231,16 @@ export default function GolfDashboardPage() {
         setCoachEvaluations(merged);
         setCoachEvalPage(0);
       } catch {
+        if (!active) return;
         setCoachEvaluations([]);
+        setFollowupEvents([]); setFollowupSelf([]); setFollowupCriteria([]); setFollowupResponses([]); setFollowupAttendance([]);
+        setFollowupError(t("common.errorLoading"));
       } finally {
-        setLoadingCoachEvaluations(false);
+        if (active) setLoadingCoachEvaluations(false);
       }
     })();
-  }, [canLoadData, canAccessSensitiveSections, coachId, playerId, sharedClubIds]);
+    return () => { active = false; };
+  }, [canLoadData, canAccessSensitiveSections, coachId, playerId, sharedClubIds, t]);
 
   useEffect(() => {
     let active = true;
@@ -1381,6 +1420,7 @@ export default function GolfDashboardPage() {
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
+    let active = true;
     (async () => {
       if (!shouldLoadRoundData) {
         setRounds([]);
@@ -1388,32 +1428,32 @@ export default function GolfDashboardPage() {
         return;
       }
       setLoadingRounds(true);
+      setRoundsError(null);
       try {
-        const uid = playerId;
-
-        let q = supabase
-          .from("golf_rounds")
-          .select(
-            "id,start_at,round_type,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus"
-          )
-          .eq("user_id", uid)
-          .order("start_at", { ascending: true });
-
-        if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
-        if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
-        q = q.limit(2000);
-
-        const rRes = await q;
-        if (rRes.error) throw new Error(rRes.error.message);
-
-        setRounds((rRes.data ?? []) as GolfRoundRow[]);
+        const rows: GolfRoundRow[] = [];
+        for (let offset = 0; ; offset += 500) {
+          let query = supabase.from("golf_rounds")
+            .select("id,start_at,round_type,score_entry_mode,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus")
+            .eq("user_id", playerId).order("start_at", { ascending: true }).order("id");
+          if (activeSection !== "competition" && fromDate) query = query.gte("start_at", startOfDayISO(fromDate));
+          if (activeSection !== "competition" && toDate) query = query.lt("start_at", nextDayStartISO(toDate));
+          const result = await query.range(offset, offset + 499);
+          if (!active) return;
+          if (result.error) throw new Error(result.error.message);
+          rows.push(...(result.data ?? []) as GolfRoundRow[]);
+          if ((result.data?.length ?? 0) < 500) break;
+        }
+        setRounds(rows);
       } catch {
+        if (!active) return;
+        setRoundsError(t("common.errorLoading"));
         setRounds([]);
       } finally {
-        setLoadingRounds(false);
+        if (active) setLoadingRounds(false);
       }
     })();
-  }, [shouldLoadRoundData, fromDate, playerId, toDate]);
+    return () => { active = false; };
+  }, [shouldLoadRoundData, activeSection, fromDate, playerId, toDate, t]);
 
   // ===== LOAD ROUNDS (prev, for trends) =====
   useEffect(() => {
@@ -1455,7 +1495,9 @@ export default function GolfDashboardPage() {
 
   // ===== LOAD HOLES (current) =====
   useEffect(() => {
+    let active = true;
     (async () => {
+      setHolesError(null);
       if (!shouldLoadRoundData) {
         setHoles([]);
         setLoadingHoles(false);
@@ -1463,26 +1505,31 @@ export default function GolfDashboardPage() {
       }
       setLoadingHoles(true);
       try {
-        const ids = rounds.map((r) => r.id);
-        if (ids.length === 0) {
-          setHoles([]);
-          return;
+        const ids = rounds.map((round) => round.id);
+        const rows: GolfHoleRow[] = [];
+        for (let batch = 0; batch < ids.length; batch += 150) {
+          for (let offset = 0; ; offset += 500) {
+            const result = await supabase.from("golf_round_holes")
+              .select("round_id,hole_no,par,score,putts,fairway_hit")
+              .in("round_id", ids.slice(batch, batch + 150))
+              .order("round_id").order("hole_no").range(offset, offset + 499);
+            if (!active) return;
+            if (result.error) throw new Error(result.error.message);
+            rows.push(...(result.data ?? []) as GolfHoleRow[]);
+            if ((result.data?.length ?? 0) < 500) break;
+          }
         }
-
-        const hRes = await supabase
-          .from("golf_round_holes")
-          .select("round_id,hole_no,par,score,putts,fairway_hit")
-          .in("round_id", ids);
-
-        if (hRes.error) throw new Error(hRes.error.message);
-        setHoles((hRes.data ?? []) as GolfHoleRow[]);
+        setHoles(rows);
       } catch {
+        if (!active) return;
         setHoles([]);
+        setHolesError(t("common.errorLoading"));
       } finally {
-        setLoadingHoles(false);
+        if (active) setLoadingHoles(false);
       }
     })();
-  }, [shouldLoadRoundData, rounds]);
+    return () => { active = false; };
+  }, [shouldLoadRoundData, rounds, t]);
 
   // ===== LOAD OM SCORES (gross/net) FOR CURRENT ROUNDS =====
   useEffect(() => {
@@ -1606,6 +1653,8 @@ export default function GolfDashboardPage() {
   }, [shouldLoadTrainingData, fromDate, playerId, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
+    season: t("coach.training.season"),
+    lastSeason: t("coach.training.lastSeason"),
     week: t("common.thisWeek"),
     month: t("common.thisMonth"),
     last3: t("common.last3Months"),
@@ -1686,11 +1735,6 @@ function presetToSelectValue(p: Preset): Preset {
   );
   const trainingLevel = trainingVolumeLevelFromDb ?? "—";
   const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
-  const displayedTrainingVolumeObjective = useMemo(() => {
-    if (trainingVolumeObjective <= 0) return 0;
-    if (preset === "month") return trainingVolumeObjective * 4;
-    return trainingVolumeObjective;
-  }, [preset, trainingVolumeObjective]);
   const weeklyObjectiveMinutes = useMemo(
     () => (trainingVolumeObjective > 0 ? trainingVolumeObjective : 0),
     [trainingVolumeObjective]
@@ -1708,6 +1752,33 @@ function presetToSelectValue(p: Preset): Preset {
       return sortedAsc[0]?.value ?? playerHandicap;
     };
   }, [handicapHistory, playerHandicap]);
+  const displayedTrainingVolumeObjective = useMemo(() => {
+    if (!fromDate || !toDate) return weeklyObjectiveMinutes;
+    const first = weekStartMonday(new Date(`${fromDate}T12:00:00`));
+    const last = new Date(`${toDate}T23:59:59`);
+    let total = 0;
+    for (const cursor = new Date(first); cursor <= last; cursor.setDate(cursor.getDate() + 7)) {
+      const week = isoToYMD(cursor);
+      total += trainingVolumeConfigs.length ? trainingVolumeConfigs.reduce((maximum, config) => {
+        const target = pickTrainingVolumeTarget(handicapForDate(week), config.rows);
+        return Math.max(maximum, objectiveForMonth(target, config.season_months, config.offseason_months, cursor.getMonth() + 1));
+      }, 0) : weeklyObjectiveMinutes;
+    }
+    return total;
+  }, [fromDate, toDate, weeklyObjectiveMinutes, trainingVolumeConfigs, handicapForDate]);
+  const trainingAttendanceOverview = useMemo(() => {
+    const calculate = (from: string, to: string) => {
+      const eligible = followupEvents.filter((event) => event.event_type === "training"
+        && (!from || event.starts_at >= startOfDayISO(from)) && (!to || event.starts_at < nextDayStartISO(to)));
+      const ids = new Set(eligible.map((event) => event.id));
+      const recorded = followupAttendance.filter((row) => ids.has(row.event_id) && ["present", "absent"].includes(row.coach_recorded_status ?? ""));
+      const present = recorded.filter((row) => row.coach_recorded_status === "present").length;
+      return { present, total: recorded.length, rate: recorded.length ? Math.round(present / recorded.length * 100) : null };
+    };
+    const current = calculate(fromDate, toDate);
+    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
+    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
+  }, [followupEvents, followupAttendance, fromDate, toDate, prevRange]);
   const trainingVolumePercent =
     displayedTrainingVolumeObjective > 0
       ? Math.max(0, Math.round((totalMinutes / displayedTrainingVolumeObjective) * 100))
@@ -1741,6 +1812,15 @@ function presetToSelectValue(p: Preset): Preset {
         );
         const weeklyTargetsJson = await weeklyTargetsRes.json().catch(() => ({}));
         if (weeklyTargetsRes.ok) {
+          const bestConfig = ((weeklyTargetsJson?.configs ?? []) as TrainingVolumeClubConfig[]).slice().sort((a, b) => {
+            const handicap = Number(weeklyTargetsJson?.current_handicap);
+            return objectiveForMonth(pickTrainingVolumeTarget(handicap, b.rows), b.season_months, b.offseason_months, new Date().getMonth() + 1)
+              - objectiveForMonth(pickTrainingVolumeTarget(handicap, a.rows), a.season_months, a.offseason_months, new Date().getMonth() + 1);
+          })[0];
+          const seasons = bestConfig?.seasons ?? [];
+          const currentSeason = seasons.find((season) => season.is_current) ?? seasons[0] ?? null;
+          setCurrentClubSeason(currentSeason);
+          setPreviousClubSeason(currentSeason ? seasons.find((season) => season.starts_on < currentSeason.starts_on) ?? null : null);
           const currentHandicap = Number(weeklyTargetsJson?.current_handicap);
           setPlayerHandicap(Number.isFinite(currentHandicap) ? currentHandicap : null);
           setHandicapHistory(
@@ -2632,10 +2712,6 @@ function presetToSelectValue(p: Preset): Preset {
     const f = (playerProfile?.first_name ?? "").trim();
     return f || "ce joueur";
   }, [playerProfile?.first_name]);
-  const currentGroupNames = useMemo(
-    () => Array.from(new Set(plannedEvents.map((event) => String(event.group_name ?? "").trim()).filter(Boolean))),
-    [plannedEvents]
-  );
   const nextPlannedEvent = useMemo(
     () => plannedEvents.filter((event) => new Date(event.starts_at).getTime() >= Date.now()).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0] ?? null,
     [plannedEvents]
@@ -3583,7 +3659,9 @@ function presetToSelectValue(p: Preset): Preset {
             aria-label={t("common.filterByPeriod")}
           >
             <option value="week">{t("common.thisWeek")}</option>
-            <option value="month">Ce mois</option>
+            <option value="season">{t("coach.training.season")}</option>
+            {previousClubSeason ? <option value="lastSeason">{t("coach.training.lastSeason")}</option> : null}
+            <option value="month">{t("common.thisMonth")}</option>
             <option value="last3">3 derniers mois</option>
             <option value="all">{t("common.allActivity")}</option>
             <option value="custom">{t("common.custom")}</option>
@@ -3678,7 +3756,7 @@ function presetToSelectValue(p: Preset): Preset {
       {!accessChecked ? <section className={managerStyles.panel}><CompactLoadingBlock label={t("common.loading")} /></section> : null}
       {error && <div className={managerStyles.alertError} role="alert">{error}</div>}
       <section className={managerStyles.panel} aria-label="Identité sportive">
-        <CoachPlayerIdentity avatarUrl={playerAvatarUrl} avatarAlt={fullName(playerProfile)} initials={initials(playerProfile)} handicap={typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "Non renseigné"} ftemLevel={trainingLevel === "—" ? "Non défini" : trainingLevel} groups={currentGroupNames.length ? currentGroupNames.join(", ") : "Non renseigné"} clubs={sharedClubNames.length ? sharedClubNames.join(", ") : "Non renseigné"} nextActivity={nextPlannedEvent ? shortDate(nextPlannedEvent.starts_at, dateLocale) : "Aucune activité"} />
+        <CoachPlayerIdentity avatarUrl={playerAvatarUrl} name={fullName(playerProfile)} initials={initials(playerProfile)} handicap={playerProfile?.handicap} />
       </section>
       <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" mobileGrid />
 
@@ -3695,7 +3773,7 @@ function presetToSelectValue(p: Preset): Preset {
             <div className={playerStyles.overviewColumns}>
               <section className={playerStyles.panel}>
                 <h2 className={playerStyles.panelTitle}>Prochaine activité</h2>
-                {loadingPlannedEvents ? <CompactLoadingBlock label={t("common.loading")} /> : nextPlannedEvent ? <CoachPlayerActivityCard startsAt={nextPlannedEvent.starts_at} endsAt={nextPlannedEvent.ends_at} dateLocale={dateLocale} typeLabel={nextPlannedEvent.event_type === "training" ? "Entraînement" : nextPlannedEvent.event_type === "camp" ? "Stage" : nextPlannedEvent.event_type === "interclub" ? "Interclub" : nextPlannedEvent.event_type === "session" ? "Séance" : "Événement"} title={nextPlannedEvent.title || undefined} groupName={nextPlannedEvent.group_name || "Groupe non renseigné"} clubName={nextPlannedEvent.organization_name || sharedClubNames[0] || "Club non renseigné"} location={nextPlannedEvent.location_text} href={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? `/coach/groups/${nextPlannedEvent.group_id}/planning/${nextPlannedEvent.id}` : undefined} statusLabel="À venir" /> : <div className={playerStyles.empty}>Aucune activité à venir.</div>}
+                {loadingPlannedEvents ? <CompactLoadingBlock label={t("common.loading")} /> : nextPlannedEvent ? <CoachPlayerActivityCard startsAt={nextPlannedEvent.starts_at} endsAt={nextPlannedEvent.ends_at} showClub={coachClubCount > 1} dateLocale={dateLocale} typeLabel={nextPlannedEvent.event_type === "training" ? "Entraînement" : nextPlannedEvent.event_type === "camp" ? "Stage" : nextPlannedEvent.event_type === "interclub" ? "Interclub" : nextPlannedEvent.event_type === "session" ? "Séance" : "Événement"} title={nextPlannedEvent.title || undefined} groupName={nextPlannedEvent.group_name || "Groupe non renseigné"} clubName={nextPlannedEvent.organization_name || sharedClubNames[0] || "Club non renseigné"} location={nextPlannedEvent.location_text} href={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? `/coach/groups/${nextPlannedEvent.group_id}/planning/${nextPlannedEvent.id}` : undefined} actions={nextPlannedEvent.can_open_detail && nextPlannedEvent.group_id ? <CoachActivityAction state={coachCalendarActionState(nextPlannedEvent, false, Date.now())} groupId={nextPlannedEvent.group_id} eventId={nextPlannedEvent.id}/> : undefined} /> : <div className={playerStyles.empty}>Aucune activité à venir.</div>}
               </section>
               <section className={playerStyles.panel}>
                 <h2 className={playerStyles.panelTitle}>Points d’attention</h2>
@@ -3710,7 +3788,7 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "trainings" || activeSection === "competition" || activeSection === "stats" ? (
+        {activeSection === "trainings" || activeSection === "stats" ? (
           <div className={playerStyles.section}>{renderFilterCard()}</div>
         ) : null}
 
@@ -3844,7 +3922,7 @@ function presetToSelectValue(p: Preset): Preset {
               <div style={{ display: "grid", gap: 8 }}>
                 {plannedEventsVisible.map((event) => {
                   const type = event.event_type === "training" ? "Entraînement" : event.event_type === "camp" ? "Stage" : event.event_type === "interclub" ? "Interclub" : event.event_type === "session" ? "Séance" : "Événement";
-                  return <CoachPlayerActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at} dateLocale={dateLocale} typeLabel={type} title={String(event.title ?? "").trim() || undefined} groupName={String(event.group_name ?? "").trim() || "Groupe non renseigné"} clubName={String(event.organization_name ?? "").trim() || "Club non renseigné"} location={event.location_text} href={event.can_open_detail && event.group_id ? `/coach/groups/${event.group_id}/planning/${event.id}` : undefined} actionLabel="Détails" statusLabel={new Date(event.ends_at ?? event.starts_at).getTime() < Date.now() ? "Terminée" : "À venir"} />;
+                  return <CoachPlayerActivityCard key={event.id} startsAt={event.starts_at} endsAt={event.ends_at} showClub={coachClubCount > 1} dateLocale={dateLocale} typeLabel={type} title={String(event.title ?? "").trim() || undefined} groupName={String(event.group_name ?? "").trim() || "Groupe non renseigné"} clubName={String(event.organization_name ?? "").trim() || "Club non renseigné"} location={event.location_text} href={event.can_open_detail && event.group_id ? `/coach/groups/${event.group_id}/planning/${event.id}` : undefined} actions={event.can_open_detail && event.group_id ? <CoachActivityAction state={coachCalendarActionState(event, false, Date.now())} groupId={event.group_id} eventId={event.id}/> : undefined} />;
                 })}
                 {plannedEvents.length > plannedEventsPageSize ? (
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
@@ -3990,115 +4068,22 @@ function presetToSelectValue(p: Preset): Preset {
 
                 <div className="hr-soft" style={{ margin: "2px 0" }} />
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                    {t("coachDebrief.validatedNotesTitle")} ({validatedPrivateNotes.length})
-                  </div>
-                  {loadingValidatedPrivateNotes ? (
-                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-                  ) : validatedPrivateNotes.length === 0 ? (
-                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("coachDebrief.noValidatedNotes")}</div>
-                  ) : (
-                    validatedPrivateNotes.map((note) => (
-                      <div
-                        key={note.id}
-                        style={{
-                          border: "1px solid rgba(15,92,53,0.14)",
-                          borderRadius: 12,
-                          background: "rgba(240,253,244,0.72)",
-                          padding: "10px 12px",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.68)" }}>
-                            {note.event_starts_at ? shortDate(note.event_starts_at, dateLocale) : "—"}
-                            {note.event_title ? ` • ${note.event_title}` : ""}
-                          </div>
-                          <div style={{ fontSize: 11, fontWeight: 900, color: "#166534" }}>
-                            {note.source === "ai_suggested" ? t("coachDebrief.aiSource") : t("coachDebrief.privateNote")}
-                            {note.author_name ? ` ${t("coachDebrief.byCoach")} ${note.author_name}` : ""}
-                          </div>
-                        </div>
-                        <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.80)", whiteSpace: "pre-wrap" }}>{note.body}</div>
-                        {note.event_group_id ? (
-                          <Link
-                            className="btn"
-                            style={{ width: "fit-content", minHeight: 44 }}
-                            href={`/coach/groups/${note.event_group_id}/planning/${note.event_id}`}
-                          >
-                            {t("coachDebrief.back")}
-                          </Link>
-                        ) : null}
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="hr-soft" style={{ margin: "2px 0" }} />
-
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>
-                    Notes coach ({coachEvalNotes.length})
-                  </div>
-
-                  {coachEvalVisibleNotes.length === 0 ? (
-                    <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune note texte disponible.</div>
-                  ) : (
-                    coachEvalVisibleNotes.map((row) => (
-                      <div
-                        key={row.event_id}
-                        style={{
-                          border: "1px solid rgba(0,0,0,0.08)",
-                          borderRadius: 12,
-                          background: "rgba(255,255,255,0.78)",
-                          padding: "10px 12px",
-                          display: "grid",
-                          gap: 6,
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 900, fontSize: 12, color: "rgba(0,0,0,0.68)" }}>
-                            {shortDate(row.starts_at, dateLocale)}
-                            {` • ${row.event_type === "camp" ? "Stage/Camp" : "Entraînement"}`}
-                          </div>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.65)" }}>
-                            Eng. {row.engagement ?? "—"} • Att. {row.attitude ?? "—"} • App. {row.application ?? "—"}
-                          </div>
-                        </div>
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ display: "grid", gap: 4 }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Note pour le joueur</div>
-                            <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.player_note || "—"}</div>
-                          </div>
-                          <div style={{ display: "grid", gap: 4 }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.62)" }}>Note privée</div>
-                            <div style={{ fontWeight: 800, color: "rgba(0,0,0,0.78)" }}>{row.private_note || "—"}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {coachEvalHasMore ? (
-                      <button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachEvalPage((p) => p + 1)}>
-                        Afficher les suivantes
-                      </button>
-                    ) : null}
-                    {coachEvalPage > 0 ? (
-                      <button type="button" className={actionStyles.secondaryButton} onClick={() => setCoachEvalPage(0)}>
-                        Revenir au début
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
               </div>
             )}
           </div>
           </div>
         ) : null}
+
+        {activeSection === "followup" ? <div className={playerStyles.section}>
+          {followupError ? <p role="alert" className={actionStyles.errorAlert}>{followupError}</p> : null}
+          {loadingCoachEvaluations || loadingValidatedPrivateNotes ? <CompactLoadingBlock label={t("common.loading")}/> :
+            <CoachPlayerFollowup events={followupEvents.slice(0, (coachEvalPage + 1) * 12)} feedback={coachEvaluations}
+              selfEvaluations={followupSelf} criteria={followupCriteria} responses={followupResponses}
+              notes={validatedPrivateNotes} showClub={coachClubCount > 1}/>}
+          {followupEvents.length > (coachEvalPage + 1) * 12 ? <button type="button" className={actionStyles.secondaryButton}
+            onClick={() => setCoachEvalPage((page) => page + 1)}>{t("coach.planning.showMore")}</button> : null}
+          {!loadingCoachEvaluations && !followupEvents.length && !followupError ? <p className={playerStyles.empty}>{t("common.noData")}</p> : null}
+        </div> : null}
 
         {activeSection === "followup" ? (
           <div className={playerStyles.section}>
@@ -4106,235 +4091,31 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "trainings" ? (
-          <>
-        {/* ===== Trainings KPIs ===== */}
-          <div className={playerStyles.section}>
-          <div className={kpiGridClass} style={kpiGridStyle}>
-            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
-              <h2 className={playerStyles.panelTitle}>{volumeCardTitle}</h2>
-
-              {loading ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : (
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                        <div>
-                          <CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" />
-                          <span className="unit">MIN</span>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                        <span className="pill-soft">⛳ {displayedTrainingCount} {t("golfDashboard.sessions")}</span>
-                      </div>
-
-                      {trainingVolumeObjective > 0 ? (
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.72)" }}>
-                            {t("playerHome.goal")}: {displayedTrainingVolumeObjective} {t("common.min")}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {compareLabel && (
-                        <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
-                      )}
-                    </div>
-                    <div style={{ justifySelf: "center" }}>
-                      <VolumeDonut percent={trainingVolumePercent} />
-                    </div>
-                  </div>
-
-                  <div className="hr-soft" style={{ margin: "2px 0" }} />
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.70)" }}>{t("golfDashboard.breakdown")}</div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("club", t)}</div>
-                        <div style={typeRowRightStyle}>{byType.club}</div>
-                      </div>
-                      <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("private", t)}</div>
-                        <div style={typeRowRightStyle}>{byType.private}</div>
-                      </div>
-                      <div style={typeRowStyle}>
-                        <div style={typeRowLeftStyle}>{typeLabelLong("individual", t)}</div>
-                        <div style={typeRowRightStyle}>{byType.individual}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
-              <h2 className={playerStyles.panelTitle}>{t("golfDashboard.feelingsAverage")}</h2>
-
-              {filteredSessions.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-              ) : (
-                <div style={{ display: "grid", gap: 14 }}>
-                  <RatingBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label={t("common.motivation")} value={avgMotivation} delta={deltaMot} />
-                  <RatingBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label={t("common.difficulty")} value={avgDifficulty} delta={deltaDif} />
-                  <RatingBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label={t("common.satisfaction")} value={avgSatisfaction} delta={deltaSat} />
-
-                  {compareLabel && (
-                    <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>{loadingPrev ? t("golfDashboard.comparing") : compareLabel}</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ===== Graphes trainings ===== */}
-          <div className={playerStyles.section}>
-          <div className={playerStyles.panel}>
-            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.weeklyVolume")}</h2>
-            <p className={playerStyles.panelIntro}>Volume réellement enregistré par semaine, comparé à l’objectif lorsqu’il est défini.</p>
-
-            {weekSeries.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div className={playerStyles.chart} role="img" aria-label="Évolution du volume hebdomadaire">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weekSeries} margin={{ top: 8, right: 12, left: -14, bottom: 2 }}>
-                    <CartesianGrid stroke="#e7ece6" vertical={false} />
-                    <XAxis dataKey="weekLabel" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} />
-                    <YAxis tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 12, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
-                    <Legend />
-                    {weekSeries.some((item) => Number(item.objective ?? 0) > 0) ? (
-                      <Line
-                        type="monotone"
-                        dataKey="objective"
-                        name={pickLocaleText(locale, "Objectif", "Goal")}
-                        stroke="#b08a46"
-                        strokeDasharray="6 4"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={false}
-                      />
-                    ) : null}
-                    <Bar dataKey="minutes" name={t("golfDashboard.minutesPerWeek")} fill="#607b5b" radius={[5, 5, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-
-          <div className={playerStyles.section}>
-          <div className={playerStyles.panel}>
-            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.weeklyFeelingTrend")}</h2>
-            <p className={playerStyles.panelIntro}>Moyennes hebdomadaires des sensations renseignées par le junior.</p>
-
-            {weekSeries.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div className={playerStyles.chart} role="img" aria-label="Évolution hebdomadaire des sensations">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weekSeries} margin={{ top: 8, right: 12, left: -14, bottom: 2 }}>
-                    <CartesianGrid stroke="#e7ece6" vertical={false} />
-                    <XAxis dataKey="weekLabel" tick={{ fill: "#718076", fontSize: 10 }} axisLine={{ stroke: "#dfe6dd" }} tickLine={false} />
-                    <YAxis domain={[0, 6]} tick={{ fill: "#718076", fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ border: "1px solid #dfe6dd", borderRadius: 10, fontSize: 12, boxShadow: "0 8px 20px rgba(27,45,33,.08)" }} />
-                    <Legend />
-
-                    <Line type="monotone" dataKey="motivation" name={t("common.motivation")} stroke="#35483b" strokeWidth={2.5} dot={{ r: 3, fill: "#35483b" }} />
-                    <Line type="monotone" dataKey="difficulty" name={t("common.difficulty")} stroke="#9cab95" strokeWidth={2.5} dot={{ r: 3, fill: "#9cab95" }} />
-                    <Line type="monotone" dataKey="satisfaction" name={t("common.satisfaction")} stroke="#b08a46" strokeWidth={2.5} dot={{ r: 3, fill: "#b08a46" }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-
-          <div className={playerStyles.section}>
-          <div className={playerStyles.panel}>
-            <h2 className={playerStyles.panelTitle}>{t("golfDashboard.categoryBreakdown")}</h2>
-
-            {topCats.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {topCats.slice(0, 8).map((x) => {
-                  const w = Math.round((x.minutes / catMax) * 100);
-                  return (
-                    <div key={x.cat}>
-                      <div className="bar-row">
-                        <div>{x.label}</div>
-                        <div>{x.minutes} min</div>
-                      </div>
-                      <div className="bar">
-                        <span style={{ width: `${w}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-          </>
-        ) : null}
+        {activeSection === "trainings" ? <TrainingDashboard
+          sessions={filteredSessions} items={filteredItems} prevSessions={filteredPrevSessions} prevItems={filteredPrevItems} rounds={rounds}
+          fromDate={fromDate || filteredSessions[0]?.start_at.slice(0, 10) || isoToYMD(new Date())}
+          toDate={toDate || isoToYMD(new Date())} totalMinutes={totalMinutes} displayedTrainingCount={displayedTrainingCount}
+          overviewObjective={displayedTrainingVolumeObjective} overviewFtemPercent={displayedTrainingVolumeObjective > 0 ? trainingVolumePercent : null}
+          trainingVolumeTarget={{ ftem_code: trainingLevel }} trainingVolumeMotivation={trainingVolumeMotivationFromDb}
+          weeklyObjectiveMinutes={weeklyObjectiveMinutes}
+          objectiveForWeek={(week) => trainingVolumeConfigs.length ? trainingVolumeConfigs.reduce((maximum, config) => {
+            const target = pickTrainingVolumeTarget(handicapForDate(week), config.rows);
+            return Math.max(maximum, objectiveForMonth(target, config.season_months, config.offseason_months, new Date(`${week}T12:00:00`).getMonth() + 1));
+          }, 0) : weeklyObjectiveMinutes}
+          compareLabel={compareLabel} periodLabel={periodLabel} trainingAttendanceOverview={trainingAttendanceOverview}
+          loading={loading} pendingEvaluationCount={0} latestCoachEvaluation={coachEvaluations[0] ?? null}
+          calendarHref={`/coach/players/${playerId}?tab=planning`} pendingHref="/coach/calendar?view=evaluations&period=year"
+          onEvaluationsClick={() => setActiveSection("followup")}/> : null}
+        {activeSection === "competition" ? <GolfRoundsWorkspace key={playerId} readOnly dataset={{
+          rounds: rounds.filter((round) => round.round_type === "competition").sort((a, b) => b.start_at.localeCompare(a.start_at)).map((round) => ({
+            ...round, competition_name: round.competition_name ?? null, score_entry_mode: round.score_entry_mode ?? null,
+          })), holes, loading: loadingRounds || loadingHoles, error: roundsError || holesError,
+        }}/> : null}
 
         {/* ===== MES PARCOURS — Cards ===== */}
-        {activeSection === "competition" || activeSection === "stats" ? (
+        {activeSection === "stats" ? (
           <div className={playerStyles.section}>
           <div className={activeSection === "stats" ? playerStyles.statisticsGrid : kpiGridClass} style={activeSection === "stats" ? undefined : kpiGridStyle}>
-            {activeSection === "competition" ? (
-            <div className={playerStyles.panel} style={{ gridColumn: "1 / -1" }}>
-              <h2 className={playerStyles.panelTitle}>{pickLocaleText(locale, "Résultats en compétition", "Competition results")}</h2>
-
-              {loadingRounds ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.loading")}</div>
-              ) : competitionRounds.length === 0 ? (
-                <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                  {pickLocaleText(locale, "Aucun parcours en compétition sur la période.", "No competition rounds in this period.")}
-                </div>
-              ) : (
-                <div className={playerStyles.competitionList}>
-                  {competitionRounds.map((r) => {
-                    const gross = omScoresByRoundId[r.id]?.gross ?? r.total_score ?? null;
-                    const netFromOm = omScoresByRoundId[r.id]?.net ?? null;
-                    const net = netFromOm ?? (typeof gross === "number" ? gross - Number(r.handicap_start ?? 0) : null);
-                    const name = String(r.competition_name ?? "").trim() || pickLocaleText(locale, "Compétition", "Competition");
-                    const date = new Intl.DateTimeFormat(dateLocale, {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    }).format(new Date(r.start_at));
-                    const cfg = [String(r.course_name ?? "").trim(), String(r.tee_name ?? "").trim()].filter(Boolean).join(" • ");
-                    const fwPct =
-                      typeof r.fairways_hit === "number" && typeof r.fairways_total === "number" && r.fairways_total > 0
-                        ? `${Math.round((r.fairways_hit / r.fairways_total) * 100)}%`
-                        : "—";
-                    return <article className={playerStyles.competitionCard} key={r.id}>
-                      <div className={playerStyles.competitionCardHeader}>
-                        <div><span>{date}</span><strong>{name}</strong><small>{cfg || pickLocaleText(locale, "Parcours non renseigné", "Course not provided")}</small></div>
-                        <button type="button" className={actionStyles.secondaryButton} onClick={() => setSelectedCompetitionRoundId(r.id)}>{t("rounds.scorecard")}</button>
-                      </div>
-                      <div className={playerStyles.competitionMetrics}>
-                        <div><span>Brut</span><b>{gross ?? "—"}</b></div>
-                        <div><span>Net</span><b>{net ?? "—"}</b></div>
-                        <div><span>Putts</span><b>{r.total_putts ?? "—"}</b></div>
-                        <div><span>GIR</span><b>{r.gir ?? "—"}</b></div>
-                        <div><span>Fairways</span><b>{fwPct}</b></div>
-                      </div>
-                    </article>;
-                  })}
-                </div>
-              )}
-            </div>
-            ) : null}
-
             {/* Card 1: Volume + trous + split training/competition */}
             {activeSection === "stats" ? (
             <div className={playerStyles.statisticsOverview}>

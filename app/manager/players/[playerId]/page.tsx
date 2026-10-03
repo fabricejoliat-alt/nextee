@@ -379,31 +379,38 @@ export default function GolfDashboardPage() {
 
   const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
   const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
-  const [accessChecked, setAccessChecked] = useState(false);
-  const [canLoadData, setCanLoadData] = useState(false);
+  const [accessCheckedFor, setAccessCheckedFor] = useState("");
+  const [authorizedFor, setAuthorizedFor] = useState("");
+  const accessChecked = accessCheckedFor === playerId;
+  const canLoadData = Boolean(playerId) && authorizedFor === playerId;
   const [playerProfile, setPlayerProfile] = useState<ProfileLite | null>(null);
   const [sharedClubNames, setSharedClubNames] = useState<string[]>([]);
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
-  const [coachId, setCoachId] = useState<string>("");
   const [trainingScope, setTrainingScope] = useState<TrainingScope>("all");
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      setAccessChecked(false);
-      setCanLoadData(false);
+      setAccessCheckedFor("");
+      setAuthorizedFor("");
       setError(null);
+      setPlayerProfile(null);
+      setSharedClubNames([]);
+      setSharedClubIds([]);
+      setSessions([]); setItems([]); setPrevSessions([]);
+      setRounds([]); setPrevRounds([]); setHoles([]); setPrevHoles([]);
+      setSessionsLookback([]); setItemsLookback([]);
 
       try {
         if (!playerId) throw new Error("Joueur introuvable.");
 
         const { data: authRes, error: authErr } = await supabase.auth.getUser();
+        if (cancelled) return;
         if (authErr || !authRes.user) throw new Error("Session invalide.");
 
         const meId = authRes.user.id;
-        setCoachId(meId);
         if (meId === playerId) {
-          setCanLoadData(true);
-          setAccessChecked(true);
+          setAuthorizedFor(playerId);
           return;
         }
 
@@ -412,15 +419,18 @@ export default function GolfDashboardPage() {
           .select("club_id,role,is_active")
           .eq("user_id", meId)
           .eq("is_active", true)
-          .in("role", ["coach", "manager"]);
+          .eq("role", "manager");
         if (meRes.error) throw new Error(meRes.error.message);
+        if (cancelled) return;
 
         const targetRes = await supabase
           .from("club_members")
           .select("club_id,role,is_active")
           .eq("user_id", playerId)
+          .eq("role", "player")
           .eq("is_active", true);
         if (targetRes.error) throw new Error(targetRes.error.message);
+        if (cancelled) return;
 
         const myClubIds = new Set(
           ((meRes.data ?? []) as ClubMemberRow[]).map((r) => r.club_id).filter(Boolean)
@@ -429,7 +439,7 @@ export default function GolfDashboardPage() {
           .map((r) => r.club_id)
           .filter((id) => myClubIds.has(id));
 
-        if (sharedClubIds.length === 0) throw new Error("Access denied for this player.");
+        if (sharedClubIds.length === 0) throw new Error("access_denied");
         setSharedClubIds(sharedClubIds);
 
         const [profileRes, clubsRes] = await Promise.all([
@@ -443,6 +453,7 @@ export default function GolfDashboardPage() {
 
         if (profileRes.error) throw new Error(profileRes.error.message);
         if (clubsRes.error) throw new Error(clubsRes.error.message);
+        if (cancelled) return;
 
         setPlayerProfile((profileRes.data ?? null) as ProfileLite | null);
         setSharedClubNames(
@@ -451,15 +462,14 @@ export default function GolfDashboardPage() {
             .filter(Boolean)
         );
 
-        setCanLoadData(true);
+        setAuthorizedFor(playerId);
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Erreur chargement.";
-        setError(msg);
-        setCanLoadData(false);
+        if (cancelled) return;
+        setError(e instanceof Error && e.message === "access_denied" ? "access_denied" : "load_failed");
+        setAuthorizedFor("");
         setPlayerProfile(null);
         setSharedClubNames([]);
         setSharedClubIds([]);
-        setCoachId("");
         setLoading(false);
         setLoadingPrev(false);
         setLoadingRounds(false);
@@ -468,9 +478,10 @@ export default function GolfDashboardPage() {
         setLoadingPrevHoles(false);
         setLoadingTrainLookback(false);
       } finally {
-        setAccessChecked(true);
+        if (!cancelled) setAccessCheckedFor(playerId);
       }
     })();
+    return () => { cancelled = true; };
   }, [playerId]);
 
   useEffect(() => {
@@ -567,10 +578,13 @@ export default function GolfDashboardPage() {
 
   // ===== LOAD TRAININGS (current) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       setLoading(true);
       setError(null);
+      setSessions([]);
+      setItems([]);
 
       try {
         const uid = playerId;
@@ -586,6 +600,7 @@ export default function GolfDashboardPage() {
         q = q.limit(2000);
 
         const sRes = await q;
+        if (cancelled) return;
         if (sRes.error) throw new Error(sRes.error.message);
 
         const sess = (sRes.data ?? []) as TrainingSessionRow[];
@@ -599,22 +614,25 @@ export default function GolfDashboardPage() {
         }
 
         const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
+        if (cancelled) return;
         if (iRes.error) throw new Error(iRes.error.message);
 
         setItems((iRes.data ?? []) as TrainingItemRow[]);
         setLoading(false);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Erreur chargement.";
-        setError(msg);
+      } catch {
+        if (cancelled) return;
+        setError("load_failed");
         setSessions([]);
         setItems([]);
         setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, fromDate, playerId, toDate]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       if (!prevRange) {
@@ -623,6 +641,7 @@ export default function GolfDashboardPage() {
       }
 
       setLoadingPrev(true);
+      setPrevSessions([]);
       try {
         const uid = playerId;
 
@@ -635,22 +654,26 @@ export default function GolfDashboardPage() {
         q = q.gte("start_at", startOfDayISO(prevRange.from)).lt("start_at", nextDayStartISO(prevRange.to)).limit(2000);
 
         const res = await q;
+        if (cancelled) return;
         if (res.error) throw new Error(res.error.message);
 
         setPrevSessions((res.data ?? []) as TrainingSessionRow[]);
       } catch {
-        setPrevSessions([]);
+        if (!cancelled) setPrevSessions([]);
       } finally {
-        setLoadingPrev(false);
+        if (!cancelled) setLoadingPrev(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, playerId, prevRange, prevRange?.from, prevRange?.to]);
 
   // ===== LOAD ROUNDS (current) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       setLoadingRounds(true);
+      setRounds([]);
       try {
         const uid = playerId;
 
@@ -667,19 +690,22 @@ export default function GolfDashboardPage() {
         q = q.limit(2000);
 
         const rRes = await q;
+        if (cancelled) return;
         if (rRes.error) throw new Error(rRes.error.message);
 
         setRounds((rRes.data ?? []) as GolfRoundRow[]);
       } catch {
-        setRounds([]);
+        if (!cancelled) setRounds([]);
       } finally {
-        setLoadingRounds(false);
+        if (!cancelled) setLoadingRounds(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, fromDate, playerId, toDate]);
 
   // ===== LOAD ROUNDS (prev, for trends) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       if (!prevRange) {
@@ -688,6 +714,7 @@ export default function GolfDashboardPage() {
       }
 
       setLoadingPrevRounds(true);
+      setPrevRounds([]);
       try {
         const uid = playerId;
 
@@ -701,22 +728,26 @@ export default function GolfDashboardPage() {
           .limit(2000);
 
         const rRes = await q;
+        if (cancelled) return;
         if (rRes.error) throw new Error(rRes.error.message);
 
         setPrevRounds((rRes.data ?? []) as GolfRoundRow[]);
       } catch {
-        setPrevRounds([]);
+        if (!cancelled) setPrevRounds([]);
       } finally {
-        setLoadingPrevRounds(false);
+        if (!cancelled) setLoadingPrevRounds(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, playerId, prevRange, prevRange?.from, prevRange?.to]);
 
   // ===== LOAD HOLES (current) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       setLoadingHoles(true);
+      setHoles([]);
       try {
         const ids = rounds.map((r) => r.id);
         if (ids.length === 0) {
@@ -729,20 +760,25 @@ export default function GolfDashboardPage() {
           .select("round_id,hole_no,par,score,putts,fairway_hit")
           .in("round_id", ids);
 
+        if (cancelled) return;
         if (hRes.error) throw new Error(hRes.error.message);
         setHoles((hRes.data ?? []) as GolfHoleRow[]);
       } catch {
-        setHoles([]);
+        if (!cancelled) setHoles([]);
       } finally {
-        setLoadingHoles(false);
+        if (!cancelled) setLoadingHoles(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, rounds]);
 
   // ===== LOAD HOLES (prev) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      if (!canLoadData) return;
       setLoadingPrevHoles(true);
+      setPrevHoles([]);
       try {
         if (!prevRange) {
           setPrevHoles([]);
@@ -759,21 +795,26 @@ export default function GolfDashboardPage() {
           .select("round_id,hole_no,par,score,putts,fairway_hit")
           .in("round_id", ids);
 
+        if (cancelled) return;
         if (hRes.error) throw new Error(hRes.error.message);
         setPrevHoles((hRes.data ?? []) as GolfHoleRow[]);
       } catch {
-        setPrevHoles([]);
+        if (!cancelled) setPrevHoles([]);
       } finally {
-        setLoadingPrevHoles(false);
+        if (!cancelled) setLoadingPrevHoles(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, prevRange, prevRounds]);
 
   // ===== LOAD TRAININGS LOOKBACK (for correlation) =====
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!canLoadData) return;
       setLoadingTrainLookback(true);
+      setSessionsLookback([]);
+      setItemsLookback([]);
       try {
         const uid = playerId;
 
@@ -794,6 +835,7 @@ export default function GolfDashboardPage() {
           .order("start_at", { ascending: true })
           .limit(4000);
 
+        if (cancelled) return;
         if (sRes.error) throw new Error(sRes.error.message);
 
         const sess = (sRes.data ?? []) as TrainingSessionRow[];
@@ -806,16 +848,20 @@ export default function GolfDashboardPage() {
         }
 
         const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
+        if (cancelled) return;
         if (iRes.error) throw new Error(iRes.error.message);
 
         setItemsLookback((iRes.data ?? []) as TrainingItemRow[]);
       } catch {
-        setSessionsLookback([]);
-        setItemsLookback([]);
+        if (!cancelled) {
+          setSessionsLookback([]);
+          setItemsLookback([]);
+        }
       } finally {
-        setLoadingTrainLookback(false);
+        if (!cancelled) setLoadingTrainLookback(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [canLoadData, fromDate, playerId, toDate]);
       
   const PRESET_LABEL: Record<Preset, string> = {
@@ -834,11 +880,10 @@ function presetToSelectValue(p: Preset): Preset {
     return sessions.filter(
       (s) =>
         s.session_type === "club" &&
-        s.coach_user_id === coachId &&
         !!s.club_id &&
         sharedClubIds.includes(s.club_id)
     );
-  }, [trainingScope, sessions, coachId, sharedClubIds]);
+  }, [trainingScope, sessions, sharedClubIds]);
 
   const filteredSessionIds = useMemo(
     () => new Set(filteredSessions.map((s) => s.id)),
@@ -855,11 +900,10 @@ function presetToSelectValue(p: Preset): Preset {
     return prevSessions.filter(
       (s) =>
         s.session_type === "club" &&
-        s.coach_user_id === coachId &&
         !!s.club_id &&
         sharedClubIds.includes(s.club_id)
     );
-  }, [trainingScope, prevSessions, coachId, sharedClubIds]);
+  }, [trainingScope, prevSessions, sharedClubIds]);
 
   // ===== TRAININGS AGGREGATES (current + prev) =====
   const totalMinutes = useMemo(
@@ -1475,8 +1519,13 @@ function presetToSelectValue(p: Preset): Preset {
   const kpiGridStyle: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "1fr" };
   const playerFirstName = useMemo(() => {
     const f = (playerProfile?.first_name ?? "").trim();
-    return f || "ce joueur";
-  }, [playerProfile?.first_name]);
+    return f || t("manager.legacyPlayers.thisPlayer");
+  }, [playerProfile?.first_name, t]);
+
+  if (!accessChecked || !canLoadData) return <div className="player-dashboard-bg"><div className="app-shell marketplace-page">
+    <div className="glass-section"><Link className="cta-green cta-green-inline" href={returnHref}>{t("common.back")}</Link></div>
+    <div className="glass-card" style={{ marginTop: 12 }}>{!accessChecked ? <CompactLoadingBlock label={t("common.loading")} /> : <div role="alert" className="marketplace-error">{t(error === "access_denied" ? "manager.legacyPlayers.accessDenied" : "manager.legacyPlayers.detailLoadError")}</div>}</div>
+  </div></div>;
 
   return (
     <div className="player-dashboard-bg">
@@ -1490,7 +1539,7 @@ function presetToSelectValue(p: Preset): Preset {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 8 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>
-                GOLF - ANALYSE
+                {t("manager.legacyPlayers.analysisTitle")}
               </div>
               <div className="marketplace-filter-label" style={{ margin: 0 }}>
                 <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
@@ -1501,12 +1550,12 @@ function presetToSelectValue(p: Preset): Preset {
             </div>
           </div>
 
-          {error && <div className="marketplace-error">{error}</div>}
+          {error && <div className="marketplace-error">{t("manager.legacyPlayers.detailLoadError")}</div>}
         </div>
 
         <div className="glass-section">
           <Link className="cta-green cta-green-inline" href={returnHref}>
-            Retour
+            {t("common.back")}
           </Link>
         </div>
 
@@ -1540,10 +1589,10 @@ function presetToSelectValue(p: Preset): Preset {
                 {fullName(playerProfile)}
               </div>
               <div style={{ opacity: 0.72, fontWeight: 800, marginTop: 4 }}>
-                Handicap {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"}
+                {t("manager.legacyPlayers.handicap")} {typeof playerProfile?.handicap === "number" ? playerProfile.handicap.toFixed(1) : "—"}
               </div>
               <div className="truncate" style={{ opacity: 0.58, fontWeight: 800, marginTop: 4, fontSize: 12 }}>
-                {sharedClubNames.length ? sharedClubNames.join(" • ") : "Club —"}
+                {sharedClubNames.length ? sharedClubNames.join(" • ") : `${t("manager.legacyPlayers.club")} —`}
               </div>
             </div>
           </div>
@@ -1605,8 +1654,8 @@ function presetToSelectValue(p: Preset): Preset {
         }}
         aria-label={t("common.filterByPeriod")}
       >
-        <option value="month">Ce mois</option>
-        <option value="last3">3 derniers mois</option>
+        <option value="month">{t("common.thisMonth")}</option>
+        <option value="last3">{t("common.last3Months")}</option>
         <option value="all">{t("common.allActivity")}</option>
         <option value="custom">{t("common.custom")}</option>
       </select>
@@ -1614,7 +1663,7 @@ function presetToSelectValue(p: Preset): Preset {
       <div className="hr-soft" style={{ margin: "2px 0" }} />
       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
         <div style={{ fontSize: 12, fontWeight: 950, color: "rgba(0,0,0,0.72)" }}>
-          Entraînements affichés
+          {t("manager.legacyPlayers.trainingScope")}
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1629,7 +1678,7 @@ function presetToSelectValue(p: Preset): Preset {
               : {}
           }
         >
-          {t("coachPlayerDashboard.scopeMineClub")}
+          {t("manager.legacyPlayers.scopeManagedClubs")}
         </button>
         <button
           type="button"
@@ -1647,7 +1696,7 @@ function presetToSelectValue(p: Preset): Preset {
       </div>
       <div style={{ fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,0.55)" }}>
         {trainingScope === "mine_club"
-          ? t("coachPlayerDashboard.scopeMineClubHint")
+          ? t("manager.legacyPlayers.scopeManagedClubsHint")
           : t("coachPlayerDashboard.scopeAllHint")}
       </div>
 
@@ -1671,7 +1720,7 @@ function presetToSelectValue(p: Preset): Preset {
                   color: "rgba(0,0,0,0.65)",
                 }}
               >
-                Du
+                {t("golfDashboard.from")}
               </span>
               <input
                 type="date"
@@ -1694,7 +1743,7 @@ function presetToSelectValue(p: Preset): Preset {
                   color: "rgba(0,0,0,0.65)",
                 }}
               >
-                Au
+                {t("golfDashboard.to")}
               </span>
               <input
                 type="date"

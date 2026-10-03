@@ -1,0 +1,16 @@
+export const coachActivityRows = {
+  "coach.training.season": ["Cette saison", "This season", "Diese Saison", "Questa stagione"],
+  "coach.training.lastSeason": ["La saison dernière", "Last season", "Letzte Saison", "La stagione scorsa"],
+  "coach.followup.publicNote": ["Note partagée avec le joueur", "Note shared with the player", "Mit dem Spieler geteilte Notiz", "Nota condivisa con il giocatore"],
+  "coach.followup.privateNote": ["Note privée · Coach uniquement", "Private note · Coaches only", "Private Notiz · Nur Coaches", "Nota privata · Solo coach"],
+  "coach.followup.coachEvaluation": ["Évaluation du coach", "Coach evaluation", "Coach-Bewertung", "Valutazione del coach"],
+  "coach.followup.selfEvaluation": ["Autoévaluation du joueur", "Player self-evaluation", "Selbsteinschätzung des Spielers", "Autovalutazione del giocatore"],
+  "coach.preparation.unavailable": ["Le suivi de lecture n’est pas encore disponible sur cet environnement.", "Read tracking is not yet available in this environment.", "Lesebestätigungen sind in dieser Umgebung noch nicht verfügbar.", "Le conferme di lettura non sono ancora disponibili in questo ambiente."],
+  "coach.calendar.year": ["Année", "Year", "Jahr", "Anno"],
+  "coach.home.allPending": ["Voir toutes les activités à compléter ({count})", "View all activities to complete ({count})", "Alle offenen Aktivitäten ansehen ({count})", "Vedi tutte le attività da completare ({count})"],
+  "coach.activity.people": ["Coachs et joueurs", "Coaches and players", "Coaches und Spieler", "Coach e giocatori"],
+  "coach.preparation.markSeen": ["Marquer comme vu", "Mark as seen", "Als gesehen markieren", "Segna come visto"],
+  "coach.preparation.seen": ["Vu", "Seen", "Gesehen", "Visto"],
+  "coach.preparation.saveError": ["Impossible d’enregistrer la lecture. Réessayez.", "Unable to save the acknowledgement. Try again.", "Lesebestätigung konnte nicht gespeichert werden. Versuche es erneut.", "Impossibile salvare la conferma di lettura. Riprova."],
+  "coach.preparation.changed": ["Les points d’attention ont changé. Rechargez l’activité avant de confirmer.", "The attention points have changed. Reload the activity before confirming.", "Die Hinweise haben sich geändert. Lade die Aktivität vor der Bestätigung neu.", "I punti di attenzione sono cambiati. Ricarica l’attività prima di confermare."],
+} satisfies Record<string, [string, string, string, string]>;

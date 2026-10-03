@@ -1,3 +1,4 @@
+import { deliverManagerNewsEmails, RejectedNewsEmail } from "@/lib/server/managerNewsDelivery";
 import { createClient } from "@supabase/supabase-js";
 
 export type NewsStatus = "draft" | "scheduled" | "published" | "archived";
@@ -659,7 +660,8 @@ export async function resolveNewsRecipients(
 ) {
   const activeMembers = await fetchActiveClubMembers(supabaseAdmin, clubId);
   const activeByUserId = new Map(activeMembers.map((member) => [member.user_id, member]));
-  const activeRoleByUserId = new Map(activeMembers.map((member) => [member.user_id, member.role]));
+  const activePlayerIds = new Set(activeMembers.filter((member) => member.role === "player").map((member) => member.user_id));
+  const activeParentIds = new Set(activeMembers.filter((member) => member.role === "parent").map((member) => member.user_id));
   const activeUserIds = new Set(activeMembers.map((member) => member.user_id));
 
   const groupTargets = targets.filter((target) => target.target_type === "group").map((target) => target.target_value);
@@ -698,7 +700,7 @@ export async function resolveNewsRecipients(
       ? supabaseAdmin.from("coach_group_categories").select("group_id,category").in("group_id", clubGroupIds)
       : ({ data: [], error: null } as const),
     includeLinkedParents
-      ? supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id").in(
+      ? supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id").eq("can_view", true).in(
           "player_id",
           activeMembers.filter((member) => member.role === "player").map((member) => member.user_id)
         )
@@ -722,7 +724,10 @@ export async function resolveNewsRecipients(
   const targetedPlayerIds = new Set<string>();
 
   for (const member of activeMembers) {
-    if (directRoleTargets.has(member.role)) recipientUserIds.add(member.user_id);
+    if (directRoleTargets.has(member.role)) {
+      recipientUserIds.add(member.user_id);
+      if (member.role === "player") targetedPlayerIds.add(member.user_id);
+    }
     if (ageBandTargets.size > 0 && member.role === "player") {
       const band = ageBandKeyFromBirthDate(member.birth_date);
       if (band && ageBandTargets.has(band)) {
@@ -735,7 +740,7 @@ export async function resolveNewsRecipients(
   for (const userId of directUserTargets) {
     if (!activeUserIds.has(userId)) continue;
     recipientUserIds.add(userId);
-    if (activeRoleByUserId.get(userId) === "player") targetedPlayerIds.add(userId);
+    if (activePlayerIds.has(userId)) targetedPlayerIds.add(userId);
   }
 
   for (const row of groupPlayersRes.data ?? []) {
@@ -770,8 +775,7 @@ export async function resolveNewsRecipients(
       const playerId = String((row as any).player_id ?? "").trim();
       const parentId = String((row as any).guardian_user_id ?? "").trim();
       if (!playerId || !parentId || !targetedPlayerIds.has(playerId)) continue;
-      const parentMember = activeByUserId.get(parentId);
-      if (!parentMember || parentMember.role !== "parent") continue;
+      if (!activeParentIds.has(parentId)) continue;
       recipientUserIds.add(parentId);
     }
   }
@@ -818,7 +822,8 @@ async function sendBrevoEmail(args: {
 
   const sendJson = await sendRes.json().catch(() => ({}));
   if (!sendRes.ok) {
-    throw new Error(String((sendJson as any)?.message ?? "Email send failed"));
+    const ErrorType = sendRes.status >= 400 && sendRes.status < 500 && sendRes.status !== 408 ? RejectedNewsEmail : Error;
+    throw new ErrorType(String((sendJson as any)?.message ?? "Email send failed"));
   }
 }
 
@@ -973,38 +978,21 @@ export async function dispatchNews(args: {
     }
   }
 
-  if (args.sendEmail && !args.lastEmailSentAt && args.emailRecipients.length > 0) {
+  if (args.sendEmail && args.emailRecipients.length > 0) {
     const subject = args.title;
     const textContent = [args.summary ?? "", "", args.body].filter(Boolean).join("\n");
     const htmlContent = [args.summary ? `<p>${textToHtml(args.summary)}</p>` : "", `<p>${textToHtml(args.body)}</p>`]
       .filter(Boolean)
       .join("");
 
-    let sent = 0;
-    let failed = 0;
-    let lastError: string | null = null;
-
-    for (const recipient of args.emailRecipients) {
-      if (!recipient.email) continue;
-      try {
-        await sendBrevoEmail({
-          toEmail: recipient.email,
-          toName: recipient.full_name,
-          subject,
-          textContent,
-          htmlContent,
-        });
-        sent += 1;
-      } catch (error) {
-        failed += 1;
-        lastError = error instanceof Error ? error.message : "Email send failed";
-      }
-    }
-
-    if (sent > 0) lastEmailSentAt = new Date().toISOString();
-    result.email_sent_count = sent;
-    result.email_failed_count = failed;
-    if (lastError) result.email_last_error = lastError;
+    mustEnv("BREVO_API_KEY");
+    const delivery = await deliverManagerNewsEmails({
+      db: args.supabaseAdmin, actorId: args.callerId, clubId: args.clubId, newsId: args.newsId,
+      recipients: args.emailRecipients,
+      send: (recipient) => sendBrevoEmail({ toEmail: recipient.email, toName: recipient.full_name, subject, textContent, htmlContent }),
+    });
+    lastEmailSentAt = delivery.complete ? args.lastEmailSentAt ?? new Date().toISOString() : null;
+    Object.assign(result, delivery);
   }
 
   return {

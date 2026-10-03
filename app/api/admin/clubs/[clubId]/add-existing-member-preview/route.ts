@@ -1,3 +1,4 @@
+import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -7,38 +8,6 @@ function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
-}
-
-async function authorizeClubAdmin(supabaseAdmin: any, clubId: string, accessToken: string) {
-  const { data: callerData, error: callerErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (callerErr || !callerData.user) {
-    return { ok: false as const, status: 401, error: "Invalid token" };
-  }
-
-  const callerId = callerData.user.id;
-  const { data: adminRow } = await supabaseAdmin
-    .from("app_admins")
-    .select("user_id")
-    .eq("user_id", callerId)
-    .maybeSingle();
-
-  let isAllowed = Boolean(adminRow);
-  if (!isAllowed) {
-    const { data: membership } = await supabaseAdmin
-      .from("club_members")
-      .select("id,role,is_active")
-      .eq("club_id", clubId)
-      .eq("user_id", callerId)
-      .eq("is_active", true)
-      .maybeSingle();
-    isAllowed = Boolean(membership && membership.role === "manager");
-  }
-
-  if (!isAllowed) {
-    return { ok: false as const, status: 403, error: "Forbidden" };
-  }
-
-  return { ok: true as const };
 }
 
 async function resolveExistingPlayerConsentStatus(supabaseAdmin: any, userId: string) {
@@ -83,7 +52,7 @@ export async function POST(
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
 
-    const auth = await authorizeClubAdmin(supabaseAdmin, clubId, accessToken);
+    const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const body = await req.json().catch(() => null);
@@ -93,6 +62,10 @@ export async function POST(
     if (!userId) return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
     if (!["manager", "coach", "player", "parent"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    if (!auth.isSuperadmin && !(await canReuseClubAccount(supabaseAdmin, clubId, userId, role))) {
+      return NextResponse.json({ error: "Le rattachement de ce compte nécessite une validation par l’administration de la plateforme." }, { status: 409 });
     }
 
     const consentStatus =

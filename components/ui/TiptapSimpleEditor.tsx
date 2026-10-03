@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -47,6 +48,7 @@ function ToolButton({
 }
 
 export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props) {
+  const { t } = useI18n();
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -78,24 +80,31 @@ export function TiptapSimpleEditor({ value, onChange, placeholder = "" }: Props)
     }
   }, [editor, value]);
 
+  useEffect(() => {
+    editor?.setOptions({ editorProps: { attributes: {
+      class: "tiptap-camp-editor",
+      "data-placeholder": placeholder,
+    } } });
+  }, [editor, placeholder]);
+
   if (!editor) return null;
 
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <ToolButton label="Gras" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
+        <ToolButton label={t("manager.content.bold")} active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold size={16} />
         </ToolButton>
-        <ToolButton label="Italique" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
+        <ToolButton label={t("manager.content.italic")} active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
           <Italic size={16} />
         </ToolButton>
-        <ToolButton label="Souligné" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+        <ToolButton label={t("manager.content.underline")} active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
           <UnderlineIcon size={16} />
         </ToolButton>
-        <ToolButton label="Liste à puces" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+        <ToolButton label={t("manager.content.bulletList")} active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
           <List size={16} />
         </ToolButton>
-        <ToolButton label="Liste numérotée" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+        <ToolButton label={t("manager.content.orderedList")} active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
           <ListOrdered size={16} />
         </ToolButton>
       </div>

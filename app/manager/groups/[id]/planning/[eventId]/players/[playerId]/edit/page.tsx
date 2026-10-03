@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
+import { loadManagerParticipant, participantDate, participantError, type ManagerEvaluationSnapshot } from "@/lib/managerParticipant";
+import { managerActivityLabel, managerFormat } from "@/lib/managerLocale";
+import groupStyles from "@/components/manager/GroupsManagement.module.css";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createAppNotification } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
-import { respondentIncludes, validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
+import { validateResponseValue, type EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 
 type EventRow = {
   id: string;
@@ -45,19 +46,6 @@ type CoachFeedbackRow = {
   private_note: string | null;
   player_note: string | null;
 };
-type AttendanceStatus = "expected" | "present" | "absent" | "excused";
-
-function fmtDateTime(iso: string) {
-  const d = new Date(iso);
-  return new Intl.DateTimeFormat("fr-CH", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
 
 function nameOf(first: string | null, last: string | null) {
   return `${first ?? ""} ${last ?? ""}`.trim() || "—";
@@ -92,28 +80,10 @@ const fieldLabelStyle: React.CSSProperties = {
   color: "rgba(0,0,0,0.70)",
 };
 
-function feedbackFingerprint(input: {
-  engagement: number | null;
-  attitude: number | null;
-  performance: number | null;
-  visible_to_player: boolean;
-  private_note: string | null;
-  player_note: string | null;
-}) {
-  return JSON.stringify({
-    engagement: input.engagement ?? null,
-    attitude: input.attitude ?? null,
-    performance: input.performance ?? null,
-    visible_to_player: !!input.visible_to_player,
-    private_note: (input.private_note ?? "").trim() || null,
-    player_note: (input.player_note ?? "").trim() || null,
-  });
-}
-
-export default function CoachEventPlayerFeedbackEditPage() {
+export default function ManagerEventPlayerFeedbackEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
   const playerId = String(params?.playerId ?? "").trim();
@@ -127,9 +97,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
   const [event, setEvent] = useState<EventRow | null>(null);
   const [player, setPlayer] = useState<ProfileRow | null>(null);
   const [orderedPlayerIds, setOrderedPlayerIds] = useState<string[]>([]);
-  const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>("present");
-  const [attendanceBusy, setAttendanceBusy] = useState(false);
-  const [initialFeedbackFp, setInitialFeedbackFp] = useState("");
+  const [attendanceStatus, setAttendanceStatus] = useState<"present" | "absent" | null>(null);
+  const [snapshot, setSnapshot] = useState<ManagerEvaluationSnapshot | null>(null);
+  const [committed, setCommitted] = useState(false);
+  const mutation = useRef(false);
+  const version = useRef(0);
+  const season = useSearchParams().get("season");
+  const seasonQuery = season ? `?season=${encodeURIComponent(season)}` : "";
+  const activityHref = `/manager/groups/${groupId}/planning/${eventId}${seasonQuery}`;
+  const playerHref = `/manager/groups/${groupId}/planning/${eventId}/players/${playerId}${seasonQuery}`;
   const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
   const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
 
@@ -145,174 +121,32 @@ export default function CoachEventPlayerFeedbackEditPage() {
     player_note: null,
   });
 
-  async function load() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (!eventId || !playerId) throw new Error("Missing parameters.");
-
-      const { data: uRes, error: uErr } = await supabase.auth.getUser();
-      if (uErr || !uRes.user) throw new Error("Session invalide.");
-      setMeId(uRes.user.id);
-
-      const eRes = await supabase
-        .from("club_events")
-        .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,series_id,status")
-        .eq("id", eventId)
-        .maybeSingle();
-
-      if (eRes.error) throw new Error(eRes.error.message);
-      if (!eRes.data) throw new Error("Training not found.");
-      setEvent(eRes.data as EventRow);
-
-      const pRes = await supabase
-        .from("profiles")
-        .select("id,first_name,last_name,handicap,avatar_url")
-        .eq("id", playerId)
-        .maybeSingle();
-
-      if (pRes.error) throw new Error(pRes.error.message);
-      if (!pRes.data) throw new Error("Joueur introuvable.");
-      setPlayer(pRes.data as ProfileRow);
-
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("player_id")
-        .eq("event_id", eventId);
-
-      if (attendeeRes.error) throw new Error(attendeeRes.error.message);
-
-      const attendeeIds = Array.from(
-        new Set((attendeeRes.data ?? []).map((r: any) => String(r.player_id ?? "").trim()).filter(Boolean))
-      );
-
-      if (attendeeIds.length > 0) {
-        const profRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name")
-          .in("id", attendeeIds);
-
-        if (profRes.error) throw new Error(profRes.error.message);
-
-        const byId = new Map(
-          ((profRes.data ?? []) as Array<{ id: string; first_name: string | null; last_name: string | null }>).map((p) => [
-            p.id,
-            p,
-          ])
-        );
-
-        const sorted = [...attendeeIds].sort((a, b) => {
-          const pa = byId.get(a);
-          const pb = byId.get(b);
-          const la = (pa?.last_name ?? "").toLocaleLowerCase("fr-CH");
-          const lb = (pb?.last_name ?? "").toLocaleLowerCase("fr-CH");
-          if (la !== lb) return la.localeCompare(lb, "fr-CH");
-          const fa = (pa?.first_name ?? "").toLocaleLowerCase("fr-CH");
-          const fb = (pb?.first_name ?? "").toLocaleLowerCase("fr-CH");
-          if (fa !== fb) return fa.localeCompare(fb, "fr-CH");
-          return a.localeCompare(b);
-        });
-
-        setOrderedPlayerIds(sorted.includes(playerId) ? sorted : [...sorted, playerId]);
-      } else {
-        setOrderedPlayerIds([playerId]);
-      }
-
-      const cfRes = await loadCoachEventFeedback(eventId, playerId);
-
-      if (!cfRes.error && cfRes.data) {
-        const row = cfRes.data as CoachFeedbackRow;
-        setDraft(row);
-        setInitialFeedbackFp(
-          feedbackFingerprint({
-            engagement: row.engagement,
-            attitude: row.attitude,
-            performance: row.performance,
-            visible_to_player: row.visible_to_player,
-            private_note: row.private_note,
-            player_note: row.player_note,
-          })
-        );
-      } else {
-        const row = {
-          event_id: eventId,
-          player_id: playerId,
-          coach_id: uRes.user.id,
-          engagement: null,
-          attitude: null,
-          performance: null,
-          visible_to_player: false,
-          private_note: null,
-          player_note: null,
-        };
-        setDraft(row);
-        setInitialFeedbackFp(
-          feedbackFingerprint({
-            engagement: row.engagement,
-            attitude: row.attitude,
-            performance: row.performance,
-            visible_to_player: row.visible_to_player,
-            private_note: row.private_note,
-            player_note: row.player_note,
-          })
-        );
-      }
-
-      const atRes = await supabase
-        .from("club_event_attendees")
-        .select("status")
-        .eq("event_id", eventId)
-        .eq("player_id", playerId)
-        .maybeSingle();
-      if (!atRes.error && atRes.data?.status) {
-        setAttendanceStatus(atRes.data.status as AttendanceStatus);
-      } else {
-        setAttendanceStatus("present");
-      }
-
-      const customLinksRes = await supabase
-        .from("club_event_evaluation_criteria")
-        .select("*")
-        .eq("event_id", eventId)
-        .eq("is_enabled", true)
-        .order("position");
-      if (customLinksRes.error) throw new Error(customLinksRes.error.message);
-      const coachCriteria = ((customLinksRes.data ?? []) as EventEvaluationCriterion[]).filter((criterion) =>
-        respondentIncludes(criterion.snapshot_respondent, "coach")
-      );
-      setCustomCriteria(coachCriteria);
-      if (coachCriteria.length) {
-        const responsesRes = await supabase
-          .from("club_event_evaluation_responses")
-          .select("event_criterion_id,value_json")
-          .eq("event_id", eventId)
-          .eq("player_id", playerId)
-          .eq("respondent_role", "coach");
-        if (responsesRes.error) throw new Error(responsesRes.error.message);
-        setCustomResponses(Object.fromEntries((responsesRes.data ?? []).map((row: any) => [row.event_criterion_id, row.value_json])));
-      } else setCustomResponses({});
-
-      setLoading(false);
-    } catch (e: any) {
-      setError(e?.message ?? "Erreur chargement.");
-      setEvent(null);
-      setPlayer(null);
-      setOrderedPlayerIds([]);
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId, playerId]);
+    const current = ++version.current;
+    setLoading(true); setError(null); setEvent(null); setPlayer(null); setSnapshot(null); setCommitted(false); setBusy(false); mutation.current = false;
+    async function load() {
+      try {
+        const info = await loadManagerParticipant<{ event: EventRow; player: ProfileRow; meId: string; orderedPlayerIds: string[] }>(eventId, playerId, groupId);
+        const result = await supabase.rpc("get_manager_evaluation_snapshot_v1", { p_event_id: eventId, p_player_id: playerId });
+        if (current !== version.current) return;
+        if (result.error) throw result.error;
+        const loaded = result.data as ManagerEvaluationSnapshot | null;
+        if (!loaded || loaded.event?.group_id !== groupId || loaded.event.id !== eventId || loaded.attendee?.player_id !== playerId) throw new Error("coach.error.attendee");
+        setEvent({ ...info.event, ...loaded.event }); setPlayer(info.player); setMeId(info.meId); setOrderedPlayerIds(info.orderedPlayerIds ?? []);
+        setSnapshot(loaded); setAttendanceStatus(loaded.attendee.coach_recorded_status);
+        setDraft(loaded.feedback[0] ?? { event_id: eventId, player_id: playerId, coach_id: info.meId, engagement: null, attitude: null, performance: null, visible_to_player: false, private_note: null, player_note: null });
+        setCustomCriteria(loaded.criteria); setCustomResponses(Object.fromEntries(loaded.responses.map(row => [row.event_criterion_id, row.value_json])));
+      } catch (cause) { if (current === version.current) setError(participantError(cause, "coach.error.load")); }
+      finally { if (current === version.current) setLoading(false); }
+    }
+    void load();
+    return () => { version.current += 1; };
+  }, [eventId, playerId, groupId]);
 
-  const canSave = useMemo(() => {
-    if (busy || loading) return false;
-    if (!event || !player) return false;
-    return true;
-  }, [busy, loading, event, player]);
+  const unavailable = !snapshot || snapshot.event.status === "cancelled" || !snapshot.event.requires_evaluation ||
+    new Date(snapshot.event.ends_at ?? new Date(new Date(snapshot.event.starts_at).getTime() + snapshot.event.duration_minutes * 60_000)).getTime() > Date.now();
+  const locked = busy || committed || unavailable;
+  const canSave = !locked && !loading && Boolean(event && player && attendanceStatus);
 
   const nextPlayerId = useMemo(() => {
     const idx = orderedPlayerIds.indexOf(playerId);
@@ -321,165 +155,76 @@ export default function CoachEventPlayerFeedbackEditPage() {
   }, [orderedPlayerIds, playerId]);
 
   async function save(goNext = false) {
-    setBusy(true);
-    setError(null);
-
-    if (attendanceStatus !== "absent") {
-      const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
-      if (missing) {
-        setError(`Le critère « ${missing.snapshot_name} » est obligatoire.`);
-        setBusy(false);
-        return;
+    if (!canSave || mutation.current || !snapshot) return;
+    mutation.current = true;
+    const current = version.current;
+    let saved = false;
+    setBusy(true); setError(null);
+    try {
+      if (attendanceStatus === "present") {
+        if ([draft.engagement, draft.attitude, draft.performance].some(value => value == null || value < 1 || value > 6)) throw new Error("ratings_required");
+        const missing = customCriteria.find(criterion => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
+        if (missing) throw new Error("required_criteria_missing");
       }
-    }
-
-    if (attendanceStatus === "absent") {
-      const attUp = await supabase
-        .from("club_event_attendees")
-        .update({ status: "absent" })
-        .eq("event_id", eventId)
-        .eq("player_id", playerId);
-      if (attUp.error) {
-        setError(attUp.error.message);
-        setBusy(false);
-        return;
-      }
-    }
-
-    const up = await supabase.rpc("save_manager_event_feedback_v1", {
-      p_event_id: eventId,
-      p_player_id: playerId,
-      p_feedback: {
-        engagement: attendanceStatus === "absent" ? null : draft.engagement,
-        attitude: attendanceStatus === "absent" ? null : draft.attitude,
-        performance: attendanceStatus === "absent" ? null : draft.performance,
-        visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
-        private_note: draft.private_note?.trim() || null,
-        player_note: attendanceStatus === "absent" ? null : draft.player_note?.trim() || null,
-      },
-    });
-
-    if (up.error) {
-      setError(up.error.message);
-      setBusy(false);
-      return;
-    }
-
-    if (attendanceStatus !== "absent" && customCriteria.length) {
-      const clearedIds = customCriteria.filter((criterion) => customResponses[criterion.id] == null || customResponses[criterion.id] === "").map((criterion) => criterion.id);
-      if (clearedIds.length) {
-        const removed = await supabase.from("club_event_evaluation_responses").delete().eq("event_id", eventId).eq("player_id", playerId).eq("respondent_role", "coach").in("event_criterion_id", clearedIds);
-        if (removed.error) { setError(removed.error.message); setBusy(false); return; }
-      }
-      const answered = customCriteria.filter((criterion) => customResponses[criterion.id] != null && customResponses[criterion.id] !== "");
-      if (answered.length) {
-        const saved = await supabase.from("club_event_evaluation_responses").upsert(answered.map((criterion) => ({ club_id: event?.club_id, event_criterion_id: criterion.id, event_id: eventId, player_id: playerId, respondent_user_id: meId, respondent_role: "coach", value_json: customResponses[criterion.id] })), { onConflict: "event_criterion_id,player_id,respondent_role" });
-        if (saved.error) { setError(saved.error.message); setBusy(false); return; }
-      }
-    }
-
-    const nextFeedbackFp = feedbackFingerprint({
-      engagement: attendanceStatus === "absent" ? null : draft.engagement,
-      attitude: attendanceStatus === "absent" ? null : draft.attitude,
-      performance: attendanceStatus === "absent" ? null : draft.performance,
-      visible_to_player: attendanceStatus === "absent" ? false : !!draft.visible_to_player,
-      private_note: draft.private_note,
-      player_note: attendanceStatus === "absent" ? null : draft.player_note,
-    });
-
-    if (attendanceStatus !== "absent" && meId && playerId && nextFeedbackFp !== initialFeedbackFp) {
-      const eventTypeLabel =
-        event?.event_type === "camp"
-          ? pickLocaleText(locale, "Stage", "Camp")
-          : event?.event_type === "interclub"
-          ? pickLocaleText(locale, "Interclubs", "Interclub")
-          : event?.event_type === "session"
-          ? pickLocaleText(locale, "Séance", "Session")
-          : event?.event_type === "event"
-          ? pickLocaleText(locale, "Événement", "Event")
-          : pickLocaleText(locale, "Entraînement", "Training");
-      const msg = await getNotificationMessage("notif.coachPlayerEvaluated", locale, {
-        playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
-        eventType: eventTypeLabel,
-        dateTime: fmtDateTime(event?.starts_at ?? new Date().toISOString()),
+      const result = await supabase.rpc("save_manager_event_feedback_v2", {
+        p_event_id: eventId, p_player_id: playerId, p_expected: snapshot,
+        p_values: { attendance: attendanceStatus, feedback: {
+          engagement: draft.engagement, attitude: draft.attitude, performance: draft.performance,
+          visible_to_player: draft.visible_to_player, private_note: draft.private_note?.trim() || null, player_note: draft.player_note?.trim() || null,
+        }, responses: Object.fromEntries(customCriteria.map(criterion => [criterion.id, customResponses[criterion.id] ?? null])) },
       });
-      await createAppNotification({
-        actorUserId: meId,
-        kind: "coach_player_evaluated",
-        title: msg.title,
-        body: msg.body,
-        data: {
-          event_id: eventId,
-          group_id: groupId,
-          player_id: playerId,
-          url: `/player/golf/trainings/new?club_event_id=${eventId}`,
-        },
-        recipientUserIds: [playerId],
-      });
-    }
-
-    setBusy(false);
-    if (goNext) {
-      if (nextPlayerId) {
-        router.push(`/manager/groups/${groupId}/planning/${eventId}/players/${nextPlayerId}/edit`);
-      } else {
-        router.push(`/manager/groups/${groupId}/planning/${eventId}`);
+      if (result.error) throw result.error;
+      if (result.data?.ok !== true) throw new Error("unconfirmed_save");
+      saved = true;
+      if (current !== version.current) return;
+      setCommitted(true);
+      if (result.data.notification_required && meId) {
+        const msg = await getNotificationMessage("notif.coachPlayerEvaluated", locale, {
+          playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
+          eventType: managerActivityLabel(t, event!.event_type), dateTime: participantDate(event!.starts_at, locale),
+        });
+        await createAppNotification({ actorUserId: meId, kind: "coach_player_evaluated", title: msg.title, body: msg.body,
+          data: { event_id: eventId, group_id: groupId, player_id: playerId, url: `/player/golf/trainings/new?club_event_id=${eventId}` }, recipientUserIds: [playerId] });
       }
-      return;
-    }
-    router.push(`/manager/groups/${groupId}/planning/${eventId}/players/${playerId}`);
-  }
-
-  async function setPresence(next: "present" | "absent") {
-    if (attendanceBusy || busy) return;
-    const prev = attendanceStatus;
-    setAttendanceStatus(next);
-    setAttendanceBusy(true);
-    const up = await supabase
-      .from("club_event_attendees")
-      .update({ status: next })
-      .eq("event_id", eventId)
-      .eq("player_id", playerId);
-    if (up.error) {
-      setAttendanceStatus(prev);
-      setError(up.error.message);
-    }
-    setAttendanceBusy(false);
+      if (current === version.current) router.push(goNext ? nextPlayerId ? `/manager/groups/${groupId}/planning/${eventId}/players/${nextPlayerId}/edit${seasonQuery}` : activityHref : playerHref);
+    } catch (cause) { if (current === version.current) setError(saved ? "coach.error.planningNotification" : participantError(cause)); }
+    finally { if (current === version.current) { setBusy(false); if (!saved) mutation.current = false; } }
   }
 
   return (
-    <div className="player-dashboard-bg">
+    <main className={`player-dashboard-bg ${groupStyles.page}`}>
       <div className="app-shell marketplace-page">
         {/* Header */}
         <div className="glass-section">
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                Évaluer — {player ? nameOf(player.first_name, player.last_name) : "Joueur"}
-              </div>
+              <h1 className="section-title" style={{ marginBottom: 0 }}>
+                {managerFormat(t, "manager.participant.evaluate", { name: player ? nameOf(player.first_name, player.last_name) : t("manager.content.player") })}
+              </h1>
             </div>
 
             <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href={`/manager/groups/${groupId}/planning/${eventId}/players/${playerId}`}>
+              <Link className="cta-green cta-green-inline" href={playerHref}>
                 <ArrowLeft size={16} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                Retour
-              </Link>
+                {t("common.back")}</Link>
             </div>
           </div>
 
-          {error && <div className="marketplace-error">{error}</div>}
+          {error && <div className="marketplace-error" role="alert">{t(error)}</div>}
+          {committed ? <p role="status">{t("coach.editor.saved")} <Link href={playerHref}>{t("coach.editor.viewSaved")}</Link></p> : null}
+          {!loading && snapshot && unavailable ? <p role="status">{t("manager.participant.unavailable")}</p> : null}
         </div>
 
         {/* Content */}
         <div className="glass-section">
           {loading ? (
-            <div className="glass-card"><CompactLoadingBlock label="Chargement..." /></div>
+            <div className="glass-card"><CompactLoadingBlock label={t("manager.content.loading")} /></div>
           ) : !event || !player ? (
-            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucune donnée.</div>
+            <div className="glass-card" style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{t("common.noData")}</div>
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               <div className="glass-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, justifyContent: "space-between" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, justifyContent: "space-between", flexWrap: "wrap" }}>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: 1 }}>
                   <div
                     style={{
@@ -500,15 +245,16 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     <PlayerAvatar player={player} />
                   </div>
                   <div style={{ minWidth: 0, display: "grid", gap: 4 }}>
-                    <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>FICHE JOUEUR</div>
+                    <div style={{ fontSize: 11, letterSpacing: 0.8, fontWeight: 900, color: "rgba(0,0,0,0.58)" }}>{t("manager.participant.title")}</div>
                     <div style={{ fontSize: 20, fontWeight: 980 }} className="truncate">{nameOf(player.first_name, player.last_name)}</div>
                   </div>
                 </div>
                   <div style={{ display: "inline-flex", border: "1px solid rgba(0,0,0,0.12)", borderRadius: 10, overflow: "hidden", flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={() => setPresence("present")}
-                      disabled={attendanceBusy || busy}
+                      onClick={() => setAttendanceStatus("present")}
+                      aria-pressed={attendanceStatus === "present"}
+                      disabled={locked}
                       style={{
                         border: "none",
                         borderRight: "1px solid rgba(0,0,0,0.10)",
@@ -518,15 +264,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
                         fontSize: 11,
                         lineHeight: 1.1,
                         padding: "6px 10px",
-                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                        cursor: locked ? "not-allowed" : "pointer",
                       }}
                     >
-                      Présent
-                    </button>
+                      {t("manager.content.present")}</button>
                     <button
                       type="button"
-                      onClick={() => setPresence("absent")}
-                      disabled={attendanceBusy || busy}
+                      onClick={() => setAttendanceStatus("absent")}
+                      aria-pressed={attendanceStatus === "absent"}
+                      disabled={locked}
                       style={{
                         border: "none",
                         background: attendanceStatus === "absent" ? "#ef4444" : "transparent",
@@ -535,24 +281,25 @@ export default function CoachEventPlayerFeedbackEditPage() {
                         fontSize: 11,
                         lineHeight: 1.1,
                         padding: "6px 10px",
-                        cursor: attendanceBusy || busy ? "not-allowed" : "pointer",
+                        cursor: locked ? "not-allowed" : "pointer",
                       }}
                     >
-                      Absent
-                    </button>
+                      {t("coach.camps.absent")}</button>
                   </div>
                 </div>
 
+                <p style={{ margin: 0 }}>{t("manager.participant.attendanceDraft")}</p>
+                {attendanceStatus == null ? <p role="status">{t("manager.participant.attendanceRequired")}</p> : null}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span className="pill-soft">{fmtDateTime(event.starts_at)}</span>
-                  <span className="pill-soft">{event.duration_minutes} min</span>
+                  <span className="pill-soft">{participantDate(event.starts_at, locale)}</span>
+                  <span className="pill-soft">{event.duration_minutes} {t("common.min")}</span>
                   {event.location_text ? <span className="pill-soft">📍 {event.location_text}</span> : null}
                 </div>
 
               </div>
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Évaluation coach (1 à 6)</div>
+                <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.participant.ratingTitle")}</div>
                 <div
                   style={{
                     border: "1px solid rgba(0,0,0,0.10)",
@@ -565,24 +312,23 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     lineHeight: 1.45,
                   }}
                 >
-                  <div>Engagement: implication dans l’entrainement</div>
-                  <div>Attitude: Concentration, comportement et esprit</div>
-                  <div>Application: qualité de mise en pratique des exercices</div>
+                  <div>{t("manager.participant.engagementHelp")}</div>
+                  <div>{t("manager.participant.attitudeHelp")}</div>
+                  <div>{t("manager.participant.performanceHelp")}</div>
                 </div>
 
                 {attendanceStatus === "absent" ? (
                   <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                    Joueur absent: seule la note privée coach est disponible.
-                  </div>
+                    {t("manager.participant.absentHelp")}</div>
                 ) : (
                   <>
                     <div className="grid-2">
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Engagement</span>
+                        <span style={fieldLabelStyle}>{t("trainingDetail.engagement")}</span>
                         <select
                           value={draft.engagement ?? ""}
                           onChange={(e) => setDraft((p) => ({ ...p, engagement: e.target.value ? Number(e.target.value) : null }))}
-                          disabled={busy}
+                          disabled={locked}
                         >
                           <option value="">-</option>
                           {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
@@ -594,11 +340,11 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       </label>
 
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Attitude</span>
+                        <span style={fieldLabelStyle}>{t("trainingDetail.attitude")}</span>
                         <select
                           value={draft.attitude ?? ""}
                           onChange={(e) => setDraft((p) => ({ ...p, attitude: e.target.value ? Number(e.target.value) : null }))}
-                          disabled={busy}
+                          disabled={locked}
                         >
                           <option value="">-</option>
                           {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
@@ -611,11 +357,11 @@ export default function CoachEventPlayerFeedbackEditPage() {
                     </div>
 
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={fieldLabelStyle}>Application</span>
+                      <span style={fieldLabelStyle}>{t("trainingDetail.performance")}</span>
                       <select
                         value={draft.performance ?? ""}
                         onChange={(e) => setDraft((p) => ({ ...p, performance: e.target.value ? Number(e.target.value) : null }))}
-                        disabled={busy}
+                        disabled={locked}
                       >
                         <option value="">-</option>
                         {Array.from({ length: MAX_SCORE }, (_, i) => i + 1).map((v) => (
@@ -631,12 +377,12 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               {attendanceStatus !== "absent" && customCriteria.length ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 14 }}>
-                  <div><div className="card-title" style={{ marginBottom: 3 }}>Focus personnalisés</div><div style={{ fontSize: 11, opacity: .6 }}>Les champs marqués * sont obligatoires.</div></div>
+                  <div><div className="card-title" style={{ marginBottom: 3 }}>{t("manager.participant.criteria")}</div><div style={{ fontSize: 11, opacity: .6 }}>{t("manager.participant.required")}</div></div>
                   {customCriteria.map((criterion) => (
                     <label key={criterion.id} style={{ display: "grid", gap: 7 }}>
                       <span style={fieldLabelStyle}>{criterion.snapshot_name}{criterion.snapshot_is_required ? " *" : ""}</span>
                       {criterion.snapshot_description ? <small style={{ opacity: .65 }}>{criterion.snapshot_description}</small> : null}
-                      <EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={busy} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/>
+                      <EvaluationResponseField name={criterion.snapshot_name} format={criterion.snapshot_response_format} choices={criterion.snapshot_choices} value={customResponses[criterion.id]} disabled={locked} onChange={(value) => setCustomResponses((current) => ({ ...current, [criterion.id]: value }))}/>
                     </label>
                   ))}
                 </div>
@@ -644,14 +390,15 @@ export default function CoachEventPlayerFeedbackEditPage() {
 
               {attendanceStatus !== "absent" ? (
                 <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                  <div className="card-title" style={{ marginBottom: 0 }}>Visibilité et retour joueur</div>
+                  <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.participant.visibility")}</div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className="btn"
-                      disabled={busy}
+                      disabled={locked}
                       onClick={() => setDraft((p) => ({ ...p, visible_to_player: !p.visible_to_player }))}
+                      aria-pressed={draft.visible_to_player}
                       style={
                         draft.visible_to_player
                           ? { background: "rgba(53,72,59,0.12)", borderColor: "rgba(53,72,59,0.25)" }
@@ -659,33 +406,35 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       }
                     >
                       {draft.visible_to_player ? <Eye size={16} style={{ marginRight: 6 }} /> : <EyeOff size={16} style={{ marginRight: 6 }} />}
-                      {draft.visible_to_player ? "Visible pour le joueur" : "Invisible pour le joueur"}
+                      {draft.visible_to_player ? t("manager.participant.visible") : t("manager.participant.hidden")}
                     </button>
                   </div>
 
                   <label style={{ display: "grid", gap: 6 }}>
-                    <span style={fieldLabelStyle}>Commentaire pour le joueur</span>
+                    <span style={fieldLabelStyle}>{t("manager.participant.playerNote")}</span>
                     <textarea
+                      maxLength={4000}
                       value={draft.player_note ?? ""}
                       onChange={(e) => setDraft((p) => ({ ...p, player_note: e.target.value }))}
-                      disabled={busy}
+                      disabled={locked}
                       style={{ minHeight: 90 }}
-                      placeholder="Feedback pour le joueur…"
+                      placeholder={t("manager.participant.playerNote")}
                     />
                   </label>
                 </div>
               ) : null}
 
               <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>Note privée coach</div>
+                <div className="card-title" style={{ marginBottom: 0 }}>{t("manager.participant.privateNote")}</div>
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={fieldLabelStyle}>Visible uniquement par les coachs</span>
+                  <span style={fieldLabelStyle}>{t("manager.participant.privateHelp")}</span>
                   <textarea
+                    maxLength={4000}
                     value={draft.private_note ?? ""}
                     onChange={(e) => setDraft((p) => ({ ...p, private_note: e.target.value }))}
-                    disabled={busy}
+                    disabled={locked}
                     style={{ minHeight: 90 }}
-                    placeholder="Notes privées..."
+                    placeholder={t("manager.participant.privateNote")}
                   />
                 </label>
               </div>
@@ -702,17 +451,16 @@ export default function CoachEventPlayerFeedbackEditPage() {
                       justifyContent: "center",
                     }}
                   >
-                    {busy ? "Enregistrement…" : nextPlayerId ? "Enregistrer et passer au joueur suivant" : "Enregistrer et fermer"}
+                    {busy ? t("manager.settings.saving") : nextPlayerId ? t("manager.participant.next") : t("manager.participant.close")}
                   </button>
-                  <Link className="btn" href={`/manager/groups/${groupId}/planning/${eventId}/players/${playerId}`} style={{ width: "100%", textAlign: "center" }}>
-                    Annuler
-                  </Link>
+                  <Link className="btn" href={playerHref} style={{ width: "100%", textAlign: "center" }}>
+                    {t("manager.settings.cancel")}</Link>
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

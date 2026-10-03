@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
+import { coachRows } from "@/lib/server/coachRows";
+import { loadCoachPreparationStatus } from "@/lib/server/coachPreparationStatus";
 import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
 
 function mustEnv(name: string) {
@@ -43,27 +45,25 @@ export async function GET(req: NextRequest) {
     const rowsById: Record<string, EventRow> = {};
 
     if (groupIds.length > 0) {
-      const r = await supabaseAdmin
+      const rows = await coachRows<EventRow>((from, to) => supabaseAdmin
         .from("club_events")
         .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .in("group_id", groupIds)
         .in("club_id", scope.clubIds)
-        .order("starts_at", { ascending: true });
-      if (r.error) return NextResponse.json({ error: r.error.message }, { status: 400 });
-      (r.data ?? []).forEach((e: EventRow) => {
+        .order("starts_at", { ascending: true }).order("id").range(from, to));
+      rows.forEach((e: EventRow) => {
         rowsById[e.id] = e;
       });
     }
 
     if (eventIdsFromAssign.length > 0) {
-      const r = await supabaseAdmin
+      const rows = await coachRows<EventRow>((from, to) => supabaseAdmin
         .from("club_events")
         .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .in("id", eventIdsFromAssign)
         .in("club_id", scope.clubIds)
-        .order("starts_at", { ascending: true });
-      if (r.error) return NextResponse.json({ error: r.error.message }, { status: 400 });
-      (r.data ?? []).forEach((e: EventRow) => {
+        .order("starts_at", { ascending: true }).order("id").range(from, to));
+      rows.forEach((e: EventRow) => {
         rowsById[e.id] = e;
       });
     }
@@ -144,9 +144,12 @@ export async function GET(req: NextRequest) {
       campNameById[camp.id] = camp.title ?? "Stage";
     });
 
+    const preparation = await loadCoachPreparationStatus(supabaseAdmin, coachId, events);
     return NextResponse.json({
+      coachClubCount: scope.clubIds.length,
       events: events.map((event) => ({
         ...event,
+        preparation_pending: preparation[event.id] ?? false,
         camp_day_index:
           event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
         camp_id: event.event_type === "camp" ? (campIdByEventId[String(event.id ?? "").trim()] ?? null) : null,

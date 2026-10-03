@@ -32,7 +32,7 @@ export const FAMILY_MAIL_TEMPLATE_DEFINITIONS = [
     recipient: "Adresse e-mail personnelle du junior",
     subjectKey: "junior_direct_subject" as const,
     bodyKey: "junior_direct_body" as const,
-    variables: ["club_name", "junior_name", "junior_username", "temp_password", "app_url", "player_guide_url"],
+    variables: ["club_name", "junior_name", "junior_username", "reset_url", "app_url", "player_guide_url"],
   },
   {
     key: "junior_parent" as const,
@@ -40,7 +40,7 @@ export const FAMILY_MAIL_TEMPLATE_DEFINITIONS = [
     recipient: "Parent principal ou parent choisi",
     subjectKey: "junior_parent_subject" as const,
     bodyKey: "junior_parent_body" as const,
-    variables: ["club_name", "parent_name", "junior_name", "junior_username", "temp_password", "app_url", "player_guide_url"],
+    variables: ["club_name", "parent_name", "junior_name", "junior_username", "reset_url", "app_url", "player_guide_url"],
   },
   {
     key: "consent" as const,
@@ -81,11 +81,11 @@ export function defaultFamilyMailConfig(): FamilyMailConfig {
       "",
       "Voici tes accès ActiviTee pour {{club_name}}.",
       "Identifiant : {{junior_username}}",
-      "Mot de passe temporaire : {{temp_password}}",
+      "Définir le mot de passe : {{reset_url:Cliquez ici}}",
       "Connexion : {{app_url:Ouvrir ActiviTee}}",
       "Guide : {{player_guide_url:Consulter le guide}}",
       "",
-      "Pense à modifier ton mot de passe après ta première connexion.",
+      "Ce lien est valable 7 jours et ne peut être utilisé qu’une fois.",
       "L’équipe ActiviTee",
     ].join("\n"),
     junior_parent_subject: "ActiviTee • Accès de {{junior_name}}",
@@ -94,7 +94,7 @@ export function defaultFamilyMailConfig(): FamilyMailConfig {
       "",
       "Voici les accès ActiviTee de {{junior_name}} pour {{club_name}}.",
       "Identifiant junior : {{junior_username}}",
-      "Mot de passe temporaire : {{temp_password}}",
+      "Définir le mot de passe : {{reset_url:Cliquez ici}}",
       "Connexion : {{app_url:Ouvrir ActiviTee}}",
       "Guide : {{player_guide_url:Consulter le guide}}",
       "",
@@ -125,7 +125,13 @@ export function defaultFamilyMailConfig(): FamilyMailConfig {
   };
 }
 
+export function normalizeAccessInvitationTemplate(template: string) {
+  return template.replace(/Mot de passe temporaire\s*:\s*{{temp_password}}/gi, "Définir le mot de passe : {{reset_url}}")
+    .replace(/{{temp_password}}/g, "{{reset_url}}");
+}
+
 export function renderFamilyTemplate(template: string, variables: Record<string, string>) {
+  if (variables.reset_url) template = normalizeAccessInvitationTemplate(template);
   return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_match, key: string, label?: string) => {
     const value = variables[key] ?? "";
     if (!value) return "";
@@ -148,4 +154,11 @@ export function familyAccessStatusLabel(status: AccessStatus) {
     activated: "Activé",
     error: "Erreur",
   } as const)[status];
+}
+
+export function renderAccessInvitationBody(template: string, variables: Record<string, string>) {
+  const body = renderFamilyTemplate(template, variables);
+  return variables.reset_url && !body.includes(variables.reset_url)
+    ? `${body}\n\nDéfinir le mot de passe : ${variables.reset_url}\nCe lien est valable 7 jours et ne peut être utilisé qu’une fois.`
+    : body;
 }

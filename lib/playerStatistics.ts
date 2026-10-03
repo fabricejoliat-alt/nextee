@@ -1,4 +1,13 @@
 export type DateRange = { from: string; to: string };
+export type PlayerSummaryInput = { attendanceRate: number | null; objectiveRate: number | null; regularityRate: number | null; handicapChange: number | null; samples: number };
+export function playerSummarySignals(args: PlayerSummaryInput) {
+  const parts: Array<{ kind: "attendance" | "objective" | "improvement" | "change" | "regularity"; value: number }> = [];
+  if (args.attendanceRate != null && args.samples >= 3) parts.push({ kind: "attendance", value: args.attendanceRate });
+  if (args.objectiveRate != null) parts.push({ kind: "objective", value: Math.round(args.objectiveRate) });
+  if (args.handicapChange != null && args.handicapChange !== 0) parts.push({ kind: args.handicapChange > 0 ? "improvement" : "change", value: Math.abs(args.handicapChange) });
+  if (parts.length < 3 && args.regularityRate != null) parts.push({ kind: "regularity", value: Math.round(args.regularityRate) });
+  return parts.slice(0, 3);
+}
 export type AttendanceStatus = "present" | "absent" | "excused" | "expected" | "not_registered" | string | null;
 
 export type AttendanceInput = {

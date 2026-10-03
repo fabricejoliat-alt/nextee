@@ -1,319 +1,81 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import { Search } from "lucide-react";
+import { useManagerResource } from "@/components/manager/useManagerResource";
+import { managerFormat, managerLocaleTag } from "@/lib/managerLocale";
 
-type ClubRow = {
-  id: string;
-  name: string | null;
+type Club = { id: string; name: string | null };
+type Player = {
+  id: string; first_name: string | null; last_name: string | null;
+  avatar_url: string | null; handicap: number | null; sex: string | null;
+  club_ids: string[]; club_names: string[];
 };
+type Directory = { clubs: Club[]; players: Player[] };
+type SexFilter = "all" | "male" | "female" | "other" | "none";
 
-type ClubMemberRow = {
-  club_id: string;
-  user_id: string;
-  role: string | null;
-  is_active: boolean | null;
-};
-
-type PlayerProfileRow = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
-  handicap: number | null;
-  sex: string | null;
-};
-
-type PlayerListItem = PlayerProfileRow & {
-  club_ids: string[];
-  club_names: string[];
-};
-
-function fullName(p?: { first_name: string | null; last_name: string | null } | null) {
-  const f = (p?.first_name ?? "").trim();
-  const l = (p?.last_name ?? "").trim();
-  return `${f} ${l}`.trim() || "—";
+function fullName(player: Player) {
+  return [player.first_name?.trim(), player.last_name?.trim()].filter(Boolean).join(" ") || "—";
+}
+function initials(player: Player) {
+  return [player.first_name?.trim().charAt(0), player.last_name?.trim().charAt(0)].filter(Boolean).join("").toUpperCase() || "👤";
 }
 
-function initials(p?: { first_name: string | null; last_name: string | null } | null) {
-  const f = (p?.first_name ?? "").trim();
-  const l = (p?.last_name ?? "").trim();
-  const fi = f ? f[0].toUpperCase() : "";
-  const li = l ? l[0].toUpperCase() : "";
-  return fi + li || "👤";
-}
-
-function sexLabel(v: string | null | undefined, locale: "fr" | "en" | "de" | "it") {
-  if (v === "male") return pickLocaleText(locale, "Homme", "Male");
-  if (v === "female") return pickLocaleText(locale, "Femme", "Female");
-  if (v === "other") return pickLocaleText(locale, "Autre", "Other");
-  return pickLocaleText(locale, "Non défini", "Not set");
-}
-
-export default function CoachPlayersPage() {
+export default function ManagerPlayersPage() {
   const { locale, t } = useI18n();
-  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [players, setPlayers] = useState<PlayerListItem[]>([]);
-  const [clubs, setClubs] = useState<ClubRow[]>([]);
-
+  const tr = (key: string) => t(`manager.legacyPlayers.${key}`);
+  const directory = useManagerResource<Directory>("/api/manager/players/directory", "directory_load_failed");
   const [query, setQuery] = useState("");
-  const [sexFilter, setSexFilter] = useState<"all" | "male" | "female" | "other" | "none">("all");
-  const [clubFilter, setClubFilter] = useState<string>("all");
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data: authRes, error: authErr } = await supabase.auth.getUser();
-        if (authErr || !authRes.user) throw new Error("Session invalide.");
-        const uid = authRes.user.id;
-
-        const myMembershipsRes = await supabase
-          .from("club_members")
-          .select("club_id,user_id,role,is_active")
-          .eq("user_id", uid)
-          .eq("is_active", true);
-        if (myMembershipsRes.error) throw new Error(myMembershipsRes.error.message);
-
-        const myClubIds = Array.from(
-          new Set(
-            ((myMembershipsRes.data ?? []) as ClubMemberRow[])
-              .filter((m) => Boolean(m.club_id))
-              .map((m) => m.club_id)
-          )
-        );
-
-        if (myClubIds.length === 0) {
-          setPlayers([]);
-          setClubs([]);
-          setLoading(false);
-          return;
-        }
-
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", myClubIds);
-        if (clubsRes.error) throw new Error(clubsRes.error.message);
-        const clubsList = ((clubsRes.data ?? []) as ClubRow[]).sort((a, b) =>
-          (a.name ?? "").localeCompare(b.name ?? "", "fr")
-        );
-        setClubs(clubsList);
-        const clubNameById = new Map(clubsList.map((c) => [c.id, c.name ?? "Club"]));
-
-        const playerMembersRes = await supabase
-          .from("club_members")
-          .select("club_id,user_id,role,is_active")
-          .in("club_id", myClubIds)
-          .eq("role", "player")
-          .eq("is_active", true);
-        if (playerMembersRes.error) throw new Error(playerMembersRes.error.message);
-
-        const rows = (playerMembersRes.data ?? []) as ClubMemberRow[];
-        const playerIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
-
-        if (playerIds.length === 0) {
-          setPlayers([]);
-          setLoading(false);
-          return;
-        }
-
-        const profilesRes = await supabase
-          .from("profiles")
-          .select("id,first_name,last_name,avatar_url,handicap,sex")
-          .in("id", playerIds);
-        if (profilesRes.error) throw new Error(profilesRes.error.message);
-        const profileRows = (profilesRes.data ?? []) as PlayerProfileRow[];
-        const byProfileId = new Map(profileRows.map((p) => [p.id, p]));
-
-        const clubsByPlayer = new Map<string, Set<string>>();
-        rows.forEach((r) => {
-          if (!clubsByPlayer.has(r.user_id)) clubsByPlayer.set(r.user_id, new Set());
-          clubsByPlayer.get(r.user_id)!.add(r.club_id);
-        });
-
-        const list: PlayerListItem[] = playerIds
-          .map((id) => {
-            const p = byProfileId.get(id);
-            if (!p) return null;
-            const clubIds = Array.from(clubsByPlayer.get(id) ?? []);
-            const clubNames = clubIds.map((cid) => clubNameById.get(cid) ?? "Club");
-            return { ...p, club_ids: clubIds, club_names: clubNames };
-          })
-          .filter((x): x is PlayerListItem => Boolean(x))
-          .sort((a, b) => {
-            const la = (a.last_name ?? "").toLocaleLowerCase("fr-CH");
-            const lb = (b.last_name ?? "").toLocaleLowerCase("fr-CH");
-            if (la !== lb) return la.localeCompare(lb, "fr-CH");
-            const fa = (a.first_name ?? "").toLocaleLowerCase("fr-CH");
-            const fb = (b.first_name ?? "").toLocaleLowerCase("fr-CH");
-            return fa.localeCompare(fb, "fr-CH");
-          });
-
-        setPlayers(list);
-        setLoading(false);
-      } catch (e: any) {
-        setError(e?.message ?? tr("Erreur chargement.", "Loading error."));
-        setPlayers([]);
-        setClubs([]);
-        setLoading(false);
-      }
-    })();
-  }, [locale]);
-
-  const filteredPlayers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return players.filter((p) => {
-      if (clubFilter !== "all" && !p.club_ids.includes(clubFilter)) return false;
-
-      if (sexFilter === "male" && p.sex !== "male") return false;
-      if (sexFilter === "female" && p.sex !== "female") return false;
-      if (sexFilter === "other" && p.sex !== "other") return false;
-      if (sexFilter === "none" && !!p.sex) return false;
-
-      if (!q) return true;
-      const name = fullName(p).toLowerCase();
-      const clubText = p.club_names.join(" ").toLowerCase();
-      return name.includes(q) || clubText.includes(q);
-    });
-  }, [players, query, sexFilter, clubFilter]);
-
-  return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
-        <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 6 }}>
-              <div className="section-title" style={{ marginBottom: 0 }}>
-                {tr("Joueurs", "Players")}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>
-                {tr("Liste des joueurs du club", "List of club players")}
-              </div>
-            </div>
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="cta-green cta-green-inline" href="/manager">
-                {t("common.back")}
-              </Link>
-            </div>
-          </div>
-          {error && <div className="marketplace-error">{error}</div>}
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}>
-              <Search size={16} />
-              {tr("Filtrer les joueurs", "Filter players")}
-            </div>
-
-            <div className="grid-2">
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={fieldLabelStyle}>{tr("Nom", "Name")}</span>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={tr("Rechercher nom/prénom…", "Search first/last name...")}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={fieldLabelStyle}>{tr("Sexe", "Sex")}</span>
-                <select value={sexFilter} onChange={(e) => setSexFilter(e.target.value as any)}>
-                  <option value="all">{tr("Tous", "All")}</option>
-                  <option value="male">{tr("Homme", "Male")}</option>
-                  <option value="female">{tr("Femme", "Female")}</option>
-                  <option value="other">{tr("Autre", "Other")}</option>
-                  <option value="none">{tr("Non défini", "Not set")}</option>
-                </select>
-              </label>
-            </div>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={fieldLabelStyle}>{tr("Club", "Club")}</span>
-              <select value={clubFilter} onChange={(e) => setClubFilter(e.target.value)}>
-                <option value="all">{tr("Tous les clubs", "All clubs")}</option>
-                {clubs.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name ?? "Club"}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div className="glass-section">
-          <div className="glass-card">
-            {loading ? (
-              <ListLoadingBlock label={t("common.loading")} />
-            ) : filteredPlayers.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>
-                {tr("Aucun joueur trouvé.", "No player found.")}
-              </div>
-            ) : (
-              <div className="marketplace-list marketplace-list-top">
-                {filteredPlayers.map((p) => (
-                  <Link
-                    key={p.id}
-                    href={`/manager/players/${p.id}?returnTo=${encodeURIComponent("/manager/players")}`}
-                    className="marketplace-link"
-                  >
-                    <div className="marketplace-item">
-                      <div className="marketplace-row" style={{ gridTemplateColumns: "56px 1fr", alignItems: "center" }}>
-                        <div style={avatarBoxStyle}>
-                          {p.avatar_url ? (
-                            <img src={p.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          ) : (
-                            initials(p)
-                          )}
-                        </div>
-
-                        <div className="marketplace-body">
-                          <div className="marketplace-item-title">{fullName(p)}</div>
-                          <div className="marketplace-meta">
-                            {tr("Sexe", "Sex")}: {sexLabel(p.sex, locale as "fr" | "en" | "de" | "it")} • Handicap{" "}
-                            {typeof p.handicap === "number" ? p.handicap.toFixed(1) : "—"}
-                          </div>
-                          <div className="marketplace-meta">{p.club_names.join(" • ") || "Club"}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+  const [sexFilter, setSexFilter] = useState<SexFilter>("all");
+  const [clubFilter, setClubFilter] = useState("all");
+  const ready = !directory.loading && !directory.error && Array.isArray(directory.data?.clubs) && Array.isArray(directory.data?.players);
+  const clubs = ready ? directory.data!.clubs : [];
+  const selectedClub = clubFilter === "all" || clubs.some((club) => club.id === clubFilter) ? clubFilter : "all";
+  const rows = useMemo(() => {
+    const players = ready ? directory.data!.players : [];
+    const term = query.trim().toLocaleLowerCase(managerLocaleTag(locale));
+    return players.filter((player) => {
+      if (selectedClub !== "all" && !player.club_ids.includes(selectedClub)) return false;
+      if (sexFilter === "none" && player.sex) return false;
+      if (sexFilter !== "all" && sexFilter !== "none" && player.sex !== sexFilter) return false;
+      const haystack = `${fullName(player)} ${player.club_names.join(" ")}`.toLocaleLowerCase(managerLocaleTag(locale));
+      return !term || haystack.includes(term);
+    }).sort((a, b) => (a.last_name ?? "").localeCompare(b.last_name ?? "", managerLocaleTag(locale)) || (a.first_name ?? "").localeCompare(b.first_name ?? "", managerLocaleTag(locale)));
+  }, [directory.data, ready, query, selectedClub, sexFilter, locale]);
+  const sexLabel = (value: string | null) => tr(value === "male" || value === "female" || value === "other" ? value : "notSet");
+  return <div className="player-dashboard-bg"><div className="app-shell marketplace-page">
+    <div className="glass-section"><div className="marketplace-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "grid", gap: 6 }}><h1 className="section-title" style={{ marginBottom: 0 }}>{tr("title")}</h1><p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.60)" }}>{tr("lead")}</p></div>
+      <div className="marketplace-actions" style={{ marginTop: 2, width: "auto", flexWrap: "wrap" }}><button type="button" className="cta-green cta-green-inline" style={{ flex: "0 0 auto" }} disabled={directory.loading} onClick={directory.reload}>{tr("refresh")}</button><Link className="cta-green cta-green-inline" style={{ flex: "0 0 auto" }} href="/manager">{t("common.back")}</Link></div>
+    </div>{directory.error ? <div role="alert" className="marketplace-error">{tr("loadError")}</div> : null}</div>
+    <div className="glass-section"><div className="glass-card" style={{ padding: 14, display: "grid", gap: 12 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 950 }}><Search size={16}/>{tr("filter")}</div>
+      <div className="grid-2">
+        <label style={{ display: "grid", gap: 6 }}><span style={fieldLabelStyle}>{tr("name")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr("search")}/></label>
+        <label style={{ display: "grid", gap: 6 }}><span style={fieldLabelStyle}>{tr("sex")}</span><select value={sexFilter} onChange={(event) => setSexFilter(event.target.value as SexFilter)}>{(["all","male","female","other","none"] as const).map((value) => <option key={value} value={value}>{tr(value === "none" ? "notSet" : value)}</option>)}</select></label>
       </div>
-    </div>
-  );
+      <label style={{ display: "grid", gap: 6 }}><span style={fieldLabelStyle}>{tr("club")}</span><select value={selectedClub} disabled={!ready} onChange={(event) => setClubFilter(event.target.value)}><option value="all">{tr("allClubs")}</option>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name ?? tr("club")}</option>)}</select></label>
+    </div></div>
+    <div className="glass-section"><div className="glass-card">
+      {directory.loading ? <ListLoadingBlock label={t("common.loading")}/>
+      : !ready ? null
+      : !clubs.length ? <div className="marketplace-empty">{tr("noClubs")}</div>
+      : !rows.length ? <div className="marketplace-empty">{tr("empty")}</div>
+      : <div className="marketplace-list marketplace-list-top">{rows.map((player) => {
+        const name = fullName(player);
+        return <Link key={player.id} href={`/manager/players/${player.id}?returnTo=${encodeURIComponent("/manager/players")}`} className="marketplace-link" aria-label={managerFormat(t,"manager.legacyPlayers.open",{name})}>
+          <div className="marketplace-item"><div className="marketplace-row" style={{ gridTemplateColumns: "56px 1fr", alignItems: "center" }}>
+            <div style={avatarBoxStyle}>{player.avatar_url ? <img src={player.avatar_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/> : initials(player)}</div>
+            <div className="marketplace-body"><div className="marketplace-item-title">{name}</div><div className="marketplace-meta">{tr("sex")}: {sexLabel(player.sex)} • {tr("handicap")} {typeof player.handicap === "number" ? new Intl.NumberFormat(managerLocaleTag(locale),{minimumFractionDigits:1,maximumFractionDigits:1}).format(player.handicap) : "—"}</div><div className="marketplace-meta">{player.club_names.join(" • ") || tr("club")}</div></div>
+          </div></div>
+        </Link>;
+      })}</div>}
+    </div></div>
+  </div></div>;
 }
 
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "rgba(0,0,0,0.70)",
-};
-
-const avatarBoxStyle: React.CSSProperties = {
-  width: 56,
-  height: 56,
-  borderRadius: 16,
-  overflow: "hidden",
-  background: "rgba(255,255,255,0.75)",
-  border: "1px solid rgba(0,0,0,0.10)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 950,
-  color: "var(--green-dark)",
-  flexShrink: 0,
-};
+const fieldLabelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.70)" };
+const avatarBoxStyle: React.CSSProperties = { width: 56, height: 56, borderRadius: 16, overflow: "hidden", background: "rgba(255,255,255,0.75)", border: "1px solid rgba(0,0,0,0.10)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 950, color: "var(--green-dark)", flexShrink: 0 };
