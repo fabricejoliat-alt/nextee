@@ -76,7 +76,7 @@ export async function runJuniorImport(rows: JuniorImportRow[], clubId: string, p
       if (row.parent_email) {
         let parentId = progress.parents.get(row.parent_email);
         if (!parentId) {
-          const result = await request(`/api/admin/clubs/${clubId}/create-member`, { role: "parent", first_name: row.parent_first_name, last_name: row.parent_last_name, email: row.parent_email }, "manager.junior.import.parentError");
+          const result = await request(`/api/admin/clubs/${clubId}/create-member`, { role: "parent", player_id: juniorId, first_name: row.parent_first_name, last_name: row.parent_last_name, email: row.parent_email }, "manager.junior.import.parentError");
           parentId = result.user?.id;
           if (!parentId) throw new Error("manager.junior.import.parentIdMissing");
           progress.parents.set(row.parent_email, parentId);

@@ -1,5 +1,6 @@
 const CLUB_SCOPED_ROUTES = new Set([
   "/manager/user-management/players",
+  "/manager/user-management/parents",
   "/manager/user-management/coaches",
   "/manager/user-management/managers",
   "/manager/user-management/custom-fields",

@@ -98,6 +98,59 @@ test("junior profile and family tabs retain drafts, consent and custom fields in
   lang.set("de");tree=await settle(h);preview=elements(tree).find(n=>n.props.preview)?.props.preview;assert.equal(preview.canSend,false);assert.equal(preview.subject,"Objet maison Alex Exemple");assert.equal(writes.length,2);assert.ok(ui(tree).includes(tr("de")("manager.junior.edit.status.ready")));h.cleanup();
 });
 
+test("adding an existing parent account links the selected junior and reports reuse after reloading the family", async () => {
+  const lang = localized(), writes: any[] = [];
+  let linked = false;
+  const member = { id: "member", user_id: "player", role: "player", is_active: true, profiles: { first_name: "Junior", last_name: "QA" } };
+  const parent = { user_id: "parent", profiles: { first_name: "Parent", last_name: "QA" } };
+  const h = coachComponentHarness("components/manager/PlayerEditPage.tsx", {
+    props: { memberId: "member" },
+    modules: {
+      "@/components/i18n/AppI18nProvider": lang.module,
+      "next/navigation": { useSearchParams: () => new URLSearchParams({ club: "club", tab: "parent-access" }) },
+      "@/components/manager/ManagerPlayerStatistics": { default: "statistics" },
+      "@/components/manager/ManagerPeriodicReport": { default: "periodic-report" },
+    },
+    fetch: async (url, init) => {
+      const path = String(url);
+      if (init?.method) {
+        const body = JSON.parse(String(init.body));
+        writes.push({ path, body });
+        if (path.endsWith("create-member")) return Response.json({ user: { id: "parent" }, username: "existing.parent", tempPassword: null });
+        assert.ok(path.endsWith("guardians"));
+        linked = true;
+        return Response.json({ ok: true });
+      }
+      return Response.json(path.endsWith("members") ? { members: [member], playerFields: [] }
+        : path.endsWith("seasons") ? { seasons: [] }
+        : path.endsWith("guardians") ? { parents: linked ? [parent] : [], all_links: linked ? [{ player_id: "player", guardian_user_id: "parent", relation: "mother", is_primary: false }] : [] }
+        : path.endsWith("consent") ? { consent: { status: "pending" }, history: [], guardians: [] }
+        : path.endsWith("access-invitations") ? { club: { name: "Club QA" }, mail_config: defaultFamilyMailConfig(), parents: [], juniors: [] }
+        : { entries: [] });
+    },
+  });
+  try {
+    let tree = await settle(h);
+    for (const [key, value] of [["manager.profile.firstName", "Parent"], ["manager.content.name", "QA"], ["manager.administration.email", "PARENT@EXAMPLE.TEST"]]) {
+      elements(tree).find(n => n.props.label === tr("fr")(key))!.props.onChange(value);
+      tree = h.render();
+    }
+    await elements(tree).find(n => n.type === "form")!.props.onSubmit({ preventDefault() {} });
+    tree = await settle(h);
+    assert.equal(writes.length, 2);
+    assert.equal(writes[0].body.player_id, "player");
+    assert.equal(writes[0].body.role, "parent");
+    assert.equal(writes[0].body.email, "parent@example.test");
+    assert.equal(writes[1].body.player_id, "player");
+    assert.equal(writes[1].body.guardian_user_id, "parent");
+    assert.ok(ui(tree).includes("existing.parent"));
+    assert.ok(ui(tree).includes(tr("fr")("manager.junior.edit.parentLinked")));
+    assert.ok(ui(tree).includes(tr("fr")("manager.junior.edit.existingLinked")));
+    assert.ok(!ui(tree).includes(tr("fr")("manager.junior.edit.passwordPrefix")));
+    assert.ok(ui(tree).includes("Parent QA"));
+  } finally { h.cleanup(); }
+});
+
 test("statistical presentation preserves zeroes, custom responses and sample thresholds", async()=>{
   const { managerJuniorStatisticsLabels } = await import("../lib/managerJuniorStatisticsPresentation.ts");
   const { playerSummarySignals } = await import("../lib/playerStatistics.ts");

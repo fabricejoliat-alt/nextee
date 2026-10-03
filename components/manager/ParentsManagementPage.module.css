@@ -1,0 +1,45 @@
+.page { min-width: 0; }
+
+/* Keep the directory table, avatar and action language shared with Juniors. */
+.table th:nth-child(2), .table td:nth-child(2) { width: 18%; }
+.table th:nth-child(3), .table td:nth-child(3) { width: 24%; }
+.table th:nth-child(4), .table td:nth-child(4) { width: 14%; }
+.table th:nth-child(5), .table td:nth-child(5) { width: 22%; }
+.table th:nth-last-child(2), .table td:nth-last-child(2) { width: 88px; }
+.table th:last-child, .table td:last-child { width: 94px; }
+.table td:nth-child(3) { overflow-wrap: anywhere; }
+.table td:last-child { white-space: nowrap; }
+.table td:last-child > button + button { margin-left: 6px; }
+.table td:last-child > :global(.btn-danger.soft) {
+  background: #fff0ef !important;
+  color: #ad3d35 !important;
+}
+.table td:last-child > :global(.btn-danger.soft):hover:not(:disabled) { background: #ffe3e1 !important; }
+.table td:last-child > button:disabled { opacity: .4; cursor: not-allowed; }
+.table button:focus-visible, .links a:focus-visible { outline: 2px solid #35483b; outline-offset: 3px; }
+
+.details { display: grid; gap: 5px; min-width: 0; }
+.details b { font-weight: 700; }
+.muted { color: #778278; font-size: 11px; font-weight: 400; }
+.links { display: grid; gap: 6px; }
+.links a { color: #35483b; }
+
+.dialog { width: min(560px, calc(100vw - 32px)); box-sizing: border-box; border: 0; border-radius: 16px; padding: 24px; color: #35483b; }
+.dialog h2 { margin: 0 0 12px; font-size: 22px; }
+.dialog p { font-size: 13px; line-height: 1.6; }
+.form { display: grid; gap: 16px; }
+.dialogActions { display: flex; gap: 10px; justify-content: end; margin-top: 20px; flex-wrap: wrap; }
+.dialogActions button { min-height: 44px; }
+
+@media (max-width: 640px) {
+  .sectionHeading { align-items: center; }
+  .page .table tbody tr { grid-template-columns: 36px minmax(0, 1fr) 92px; }
+  .page .table td:nth-child(2), .page .table td:nth-child(3), .page .table td:nth-child(4), .page .table td:nth-child(5) { width: auto; }
+  .page .table td:last-child { width: 92px; display: flex; align-items: flex-start; gap: 6px; }
+  .page .table td:last-child > button { width: 43px; min-width: 43px; height: 44px; }
+  .page .table td:last-child > button + button { margin-left: 0; }
+  .page .table td:nth-child(3) { overflow-wrap: anywhere; }
+  .dialog { padding: 20px; }
+  .dialogActions { display: grid; grid-template-columns: 1fr 1fr; }
+  .dialogActions button { height: auto; padding: 10px; }
+}

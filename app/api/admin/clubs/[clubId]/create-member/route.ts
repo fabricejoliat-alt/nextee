@@ -1,5 +1,5 @@
 import { encodeMemberFieldValue } from "@/lib/memberFieldValues";
-import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
+import { activeClubMember, canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -264,6 +264,7 @@ const clubId: string | undefined = params?.clubId;
       ? String(body.player_consent_status)
       : null;
     const role = (body?.role ?? "").trim(); // manager | coach | player | parent
+    const playerId = role === "parent" ? String(body?.player_id ?? "").trim() : "";
     const playerFieldValues =
       body?.player_field_values && typeof body.player_field_values === "object"
         ? (body.player_field_values as Record<string, unknown>)
@@ -275,6 +276,9 @@ const clubId: string | undefined = params?.clubId;
 
     const auth = await requireManagerClub(req, supabaseAdmin, clubId);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (playerId && !(await activeClubMember(supabaseAdmin, clubId, playerId, "player"))) {
+      return NextResponse.json({ error: "Junior introuvable dans ce club." }, { status: 404 });
+    }
 
     const fieldIds = role === "player" ? Object.keys(playerFieldValues) : [];
     const { data: fields, error: fieldsError } = fieldIds.length
@@ -303,8 +307,11 @@ const clubId: string | undefined = params?.clubId;
       last_name,
       birthDate
     );
+    if (playerId && existingUserId === playerId) {
+      return NextResponse.json({ error: "Le compte du junior ne peut pas être utilisé comme son propre compte parent." }, { status: 400 });
+    }
     if (existingUserId && !auth.isSuperadmin && !(await canReuseClubAccount(supabaseAdmin, clubId, existingUserId, role))) {
-      return NextResponse.json({ error: "Le rattachement de ce compte nécessite une validation par l’administration de la plateforme." }, { status: 409 });
+      return NextResponse.json({ error: "Ce compte existe déjà, mais son rattachement n’est pas autorisé depuis ce club. Contactez l’administration de la plateforme ; aucune demande ne lui a été envoyée automatiquement." }, { status: 409 });
     }
     const authUserWithSameEmail = emailInput ? await findAuthUserByEmail(supabaseAdmin, emailInput) : null;
     const mustUseTechnicalEmail =
@@ -403,6 +410,9 @@ const clubId: string | undefined = params?.clubId;
       .single();
 
     if (memErr) {
+      if (role === "parent" && existingUserId && memErr.code === "23505") {
+        return NextResponse.json({ error: "L’ajout du rôle parent à ce compte nécessite la mise à jour de la base de données du club.", code: "MEMBERSHIP_ROLES_MIGRATION_REQUIRED" }, { status: 503 });
+      }
       return NextResponse.json({ error: memErr.message }, { status: 400 });
     }
 

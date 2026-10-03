@@ -12,6 +12,7 @@ import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle
 const ROUTES = {
   home: "/manager",
   userManagementPlayers: "/manager/user-management/players",
+  userManagementParents: "/manager/user-management/parents",
   userManagementCoaches: "/manager/user-management/coaches",
   userManagementManagers: "/manager/user-management/managers",
   userManagementCustomFields: "/manager/user-management/custom-fields",
@@ -141,6 +142,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
             icon: Users,
             children: [
               { label: t("manager.nav.juniors"), icon: UserRound, href: ROUTES.userManagementPlayers },
+              { label: t("manager.administration.parents.title"), icon: Users, href: ROUTES.userManagementParents },
               { label: t("manager.nav.coaches"), icon: User, href: ROUTES.userManagementCoaches },
               { label: t("manager.nav.managers"), icon: ShieldCheck, href: ROUTES.userManagementManagers },
               { label: t("manager.fields.title"), icon: SlidersHorizontal, href: ROUTES.userManagementCustomFields },

@@ -94,6 +94,106 @@ test("reusing an existing club member preserves the global profile and returns n
   assert.deepEqual(h.authWrites, []);
 });
 
+test("an active club member can also become a parent without changing their profile, credentials or existing roles", async () => {
+  for (const roles of [["coach"], ["manager"], ["player"], ["coach", "manager"], ["parent"]]) {
+    const tables = managerFixture();
+    tables.club_members = tables.club_members.filter(row => row.user_id !== "target");
+    for (const role of roles) tables.club_members.push({ id: `target-${role}`, user_id: "target", club_id: "A", role, is_active: true });
+    const h = managerDatabase(tables);
+    const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {
+      role: "parent", email: "TARGET@example.invalid", first_name: "Must not replace", last_name: "Existing profile", phone: "Must not replace",
+    }), clubContext);
+    assert.equal(response.status, 200, roles.join(","));
+    const body = await response.json();
+    assert.equal(body.user.id, "target");
+    assert.equal(body.username, "coach");
+    assert.equal(body.tempPassword, null);
+    assert.deepEqual(h.authWrites, []);
+    assert.equal(h.writes.length, 1);
+    assert.equal(h.writes[0].table, "club_members");
+    assert.equal(h.writes[0].method, "upsert");
+    assert.equal(h.writes[0].values.role, "parent");
+    assert.equal(h.writes[0].values.club_id, "A");
+    assert.equal(h.writes[0].values.user_id, "target");
+  }
+});
+
+test("adding parental access does not bypass inactive, foreign or platform-account boundaries", async () => {
+  for (const scope of ["inactive", "foreign", "platform"] as const) {
+    const tables = managerFixture();
+    const target = tables.club_members.find(row => row.id === "target-A")!;
+    if (scope === "inactive") target.is_active = false;
+    if (scope === "foreign") target.club_id = "B";
+    if (scope === "platform") tables.app_admins = [{ user_id: "target" }];
+    const h = managerDatabase(tables);
+    const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {
+      role: "parent", email: "target@example.invalid", first_name: "Test", last_name: "Parent",
+    }), clubContext);
+    assert.equal(response.status, 409, scope);
+    assert.deepEqual(h.writes, []);
+    assert.deepEqual(h.authWrites, []);
+  }
+});
+
+test("parent role reuse does not authorize promotion to coach or manager", async () => {
+  for (const role of ["coach", "manager"]) {
+    const tables = managerFixture();
+    tables.club_members.find(row => row.id === "target-A")!.role = "parent";
+    const h = managerDatabase(tables);
+    const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {
+      role, email: "target@example.invalid", first_name: "Test", last_name: "Parent",
+    }), clubContext);
+    assert.equal(response.status, 409);
+    assert.deepEqual(h.writes, []);
+  }
+});
+
+test("parent account creation validates the target junior before changing any membership", async () => {
+  for (const playerId of ["outside", "target"]) {
+    const tables = managerFixture();
+    if (playerId === "target") tables.club_members.find(row => row.id === "target-A")!.role = "player";
+    const h = managerDatabase(tables);
+    const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {
+      role: "parent", player_id: playerId, email: "target@example.invalid", first_name: "Test", last_name: "Parent",
+    }), clubContext);
+    assert.equal(response.status, playerId === "outside" ? 404 : 400);
+    assert.deepEqual(h.writes, []);
+    assert.deepEqual(h.authWrites, []);
+  }
+});
+
+test("parent attachment preview follows the same club boundary as creation", async () => {
+  for (const club of ["A", "B"]) {
+    const tables = managerFixture();
+    tables.club_members.find(row => row.id === "target-A")!.club_id = club;
+    const h = managerDatabase(tables);
+    const response = await loadManagerModule("app/api/admin/clubs/[clubId]/add-existing-member-preview/route.ts", h.mocks)
+      .POST(managerRequest("POST", { user_id: "target", role: "parent" }), clubContext);
+    assert.equal(response.status, club === "A" ? 200 : 409);
+    assert.deepEqual(h.writes, []);
+  }
+});
+
+test("the legacy one-role constraint returns an actionable migration error without replacing the existing role", async () => {
+  const h = managerDatabase(managerFixture());
+  const from = h.db.from.bind(h.db);
+  h.db.from = (table: string) => {
+    const query = from(table);
+    if (table === "club_members") query.upsert = () => ({ select: () => ({ single: async () => ({ data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "club_members_unique_club_user"' } }) }) }) as unknown as typeof query;
+    return query;
+  };
+  const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {
+    role: "parent", player_id: "player", email: "target@example.invalid", first_name: "Test", last_name: "Parent",
+  }), clubContext);
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.code, "MEMBERSHIP_ROLES_MIGRATION_REQUIRED");
+  assert.match(body.error, /mise à jour/);
+  assert.doesNotMatch(body.error, /club_members|duplicate key/);
+  assert.deepEqual(h.writes, []);
+  assert.deepEqual(h.authWrites, []);
+});
+
 test("new-member creation remains available and initializes the new profile", async () => {
   const h = managerDatabase(managerFixture(), { users: [] });
   const response = await loadManagerModule(createPath, h.mocks).POST(managerRequest("POST", {

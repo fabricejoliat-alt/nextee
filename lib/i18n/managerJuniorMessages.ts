@@ -232,7 +232,7 @@ export const managerJuniorEntries: Record<string, readonly [string, string, stri
   "edit.juniorRelation": ["Relation avec le junior", "Relationship to the junior", "Beziehung zum Junior", "Relazione con il junior"],
   "edit.saveParent": ["Enregistrer le parent", "Save parent", "Elternteil speichern", "Salva genitore"],
   "edit.addParent": ["Ajouter un accès parent", "Add parent access", "Elternzugang hinzufügen", "Aggiungi accesso genitore"],
-  "edit.addParentHelp": ["Créez le compte puis rattachez-le automatiquement à ce junior.", "Create an account and automatically link it to this junior.", "Erstellen Sie das Konto und ordnen Sie es automatisch diesem Junior zu.", "Crea l’account e associalo automaticamente a questo junior."],
+  "edit.addParentHelp": ["Créez un compte ou réutilisez l’adresse e-mail d’un membre actif de ce club pour lui ajouter un accès parent.", "Create an account or reuse an active club member’s email address to add parent access.", "Erstellen Sie ein Konto oder verwenden Sie die E-Mail-Adresse eines aktiven Clubmitglieds, um einen Elternzugang hinzuzufügen.", "Crea un account o riutilizza l’indirizzo e-mail di un membro attivo del club per aggiungere l’accesso genitore."],
   "edit.accessCreated": ["Accès créé", "Access created", "Zugang erstellt", "Accesso creato"],
   "edit.usernamePrefix": ["Identifiant :", "Username:", "Benutzername:", "Nome utente:"],
   "edit.passwordPrefix": ["Mot de passe temporaire :", "Temporary password:", "Temporäres Passwort:", "Password temporanea:"],

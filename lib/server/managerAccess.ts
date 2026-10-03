@@ -30,6 +30,14 @@ export async function isPlatformAccount(db: SupabaseClient, userId: string) {
 
 export async function canReuseClubAccount(db: SupabaseClient, clubId: string, userId: string, role: string) {
   if (await isPlatformAccount(db, userId)) return false;
+  if (role === "parent") {
+    // A club can add parental access to one of its active members without
+    // replacing the person's existing roles or changing their global account.
+    const member = await db.from("club_members").select("id")
+      .eq("club_id", clubId).eq("user_id", userId).eq("is_active", true).limit(1).maybeSingle();
+    if (member.error) throw new Error(member.error.message);
+    if (member.data) return true;
+  }
   // Matching an e-mail/identity is not consent to a new club or a new role.
   return Boolean(await activeClubMember(db, clubId, userId, role));
 }

@@ -170,6 +170,7 @@ export default function PlayerEditPage({ memberId }: { memberId: string }) {
 
   async function createParentAccess(event: React.FormEvent) {
     event.preventDefault();
+    if (!member?.user_id || saving) return;
     const nextErrors: Record<string, string> = {};
     if (!parentForm.first_name.trim()) nextErrors.parent_first_name = t("manager.administration.firstNameRequired");
     if (!parentForm.last_name.trim()) nextErrors.parent_last_name = t("manager.administration.lastNameRequired");
@@ -181,7 +182,7 @@ export default function PlayerEditPage({ memberId }: { memberId: string }) {
       const response = await fetch(`/api/admin/clubs/${clubId}/create-member`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await headers()) },
-        body: JSON.stringify({ ...parentForm, first_name: parentForm.first_name.trim(), last_name: parentForm.last_name.trim(), email: parentForm.email.trim().toLowerCase(), phone: parentForm.phone.trim(), role: "parent" }),
+        body: JSON.stringify({ ...parentForm, first_name: parentForm.first_name.trim(), last_name: parentForm.last_name.trim(), email: parentForm.email.trim().toLowerCase(), phone: parentForm.phone.trim(), role: "parent", player_id: member.user_id }),
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error ?? t("manager.junior.edit.createAccessError"));
@@ -190,7 +191,7 @@ export default function PlayerEditPage({ memberId }: { memberId: string }) {
       await linkParent(parentUserId, parentForm.relation, parentForm.is_primary);
       setParentForm({ first_name: "", last_name: "", email: "", phone: "", relation: "other", is_primary: false });
       setCreatedAccess({ username: String(json.username ?? ""), tempPassword: json.tempPassword ?? null });
-      setMessage(t("manager.junior.edit.parentCreated"));
+      setMessage(t(json.tempPassword ? "manager.junior.edit.parentCreated" : "manager.junior.edit.parentLinked"));
       await refreshGuardianAccess();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("manager.junior.edit.createAccessError")); } finally { setSaving(false); }
   }
@@ -321,7 +322,7 @@ export default function PlayerEditPage({ memberId }: { memberId: string }) {
           <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.junior.edit.juniorRelation")}</span><select value={parentForm.relation} onChange={(event) => setParentForm({ ...parentForm, relation: event.target.value })}><option value="mother">{t("manager.junior.relation.mother")}</option><option value="father">{t("manager.junior.relation.father")}</option><option value="legal_guardian">{t("manager.junior.relation.legal_guardian")}</option><option value="other">{t("manager.junior.relation.other")}</option></select></label>
           <label className="user-mgmt-field"><span className="user-mgmt-field-label">{t("manager.junior.edit.primary")}</span><select value={parentForm.is_primary ? "yes" : "no"} onChange={(event) => setParentForm({ ...parentForm, is_primary: event.target.value === "yes" })}><option value="no">{t("manager.content.no")}</option><option value="yes">{t("manager.content.yes")}</option></select></label>
         </div>
-        {createdAccess ? <div className={actionStyles.successAlert} role="status"><b>{t("manager.junior.edit.accessCreated")}</b><br />{t("manager.junior.edit.usernamePrefix")} {createdAccess.username || "—"}{createdAccess.tempPassword ? <><br />{t("manager.junior.edit.passwordPrefix")} {createdAccess.tempPassword}</> : <><br />{t("manager.junior.edit.existingLinked")}</>}</div> : null}
+        {createdAccess ? <div className={actionStyles.successAlert} role="status"><b>{t(createdAccess.tempPassword ? "manager.junior.edit.accessCreated" : "manager.junior.edit.existingLinked")}</b><br />{t("manager.junior.edit.usernamePrefix")} {createdAccess.username || "—"}{createdAccess.tempPassword ? <><br />{t("manager.junior.edit.passwordPrefix")} {createdAccess.tempPassword}</> : null}</div> : null}
         <CardActions><button type="submit" className={actionStyles.primaryButton} disabled={saving}>{saving ? <RefreshCw size={16} className={styles.spin} /> : <UserPlus size={16} />}{saving ? t("manager.settings.seasons.creating") : t("manager.junior.edit.createAccess")}</button></CardActions>
       </form>
       <section className={styles.quickPanel}>
