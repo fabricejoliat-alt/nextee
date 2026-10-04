@@ -1,5 +1,5 @@
 .page { position:relative; min-height:100vh; min-height:100svh; overflow:hidden; color:#f8faf7; background:#25342b; }
-.image { position:absolute; inset:0; background:url('/hero-golf.png') center/cover; }
+.image { position:absolute; inset:0; background:url('/hero-golf.jpg') center/cover; }
 .image::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,rgba(18,31,24,.76),rgba(24,39,29,.54) 42%,rgba(20,31,24,.18)); }
 .shell { position:relative; z-index:1; width:min(1240px,calc(100% - 64px)); min-height:100vh; min-height:100svh; margin:0 auto; padding:42px 0; }
 .intro { position:absolute; top:clamp(128px,21vh,184px); left:0; display:grid; gap:14px; max-width:605px; }

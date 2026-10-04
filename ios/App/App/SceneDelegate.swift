@@ -1,5 +1,17 @@
 import UIKit
+import WebKit
 import Capacitor
+
+private class BrandedBridgeViewController: CAPBridgeViewController {
+    override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
+        let webView = super.webView(with: frame, configuration: configuration)
+        let launchColor = UIColor(red: 53 / 255, green: 72 / 255, blue: 59 / 255, alpha: 1)
+        webView.isOpaque = false
+        webView.backgroundColor = launchColor
+        webView.scrollView.backgroundColor = launchColor
+        return webView
+    }
+}
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -8,7 +20,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        window?.rootViewController = BrandedBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

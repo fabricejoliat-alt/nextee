@@ -16,7 +16,8 @@ html, body {
 }
 
 html{
-  background-image: url("/hero-golf.png");
+  background-color:#35483b;
+  background-image: url("/hero-golf.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -2742,7 +2743,7 @@ body:has([data-design-system]){
 .player-scroll-area{
   background:
     linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
-    url("/hero-golf.png") center / cover fixed !important;
+    url("/hero-golf.jpg") center / cover fixed !important;
 }
 
 /* The Player home image belongs to the whole viewport surface, rather than to
@@ -2750,7 +2751,7 @@ body:has([data-design-system]){
 .player-scroll-area--home{
   background:
     linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
-    url("/hero-golf.png") center / cover fixed !important;
+    url("/hero-golf.jpg") center / cover fixed !important;
 }
 
 /* Coach workspace shares the current Manager design system. Legacy Coach pages
@@ -3031,7 +3032,7 @@ body:has([data-design-system]){
 .coach-page-root .coach-scroll-area{
   background:
     linear-gradient(90deg, rgba(12,30,20,.88) 0%, rgba(16,38,25,.74) 42%, rgba(16,38,25,.28) 100%),
-    url("/hero-golf.png") center / cover fixed !important;
+    url("/hero-golf.jpg") center / cover fixed !important;
 }
 
 /* The access guard is rendered before CoachShell, so it needs its own Coach
@@ -3040,7 +3041,7 @@ body:has([data-design-system]){
   min-height:calc(100vh - var(--header-h, 64px));
   background:
     linear-gradient(90deg, rgba(12,30,20,.88) 0%, rgba(16,38,25,.74) 42%, rgba(16,38,25,.28) 100%),
-    url("/hero-golf.png") center / cover fixed;
+    url("/hero-golf.jpg") center / cover fixed;
 }
 
 .coach-page-root > .role-guard-page-loading > .card{
@@ -3253,7 +3254,7 @@ body:has([data-design-system]){
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image: url("/hero-golf.png");
+    background-image: url("/hero-golf.jpg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -3283,7 +3284,7 @@ body:has([data-design-system]){
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image: url("/hero-golf.png");
+    background-image: url("/hero-golf.jpg");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;

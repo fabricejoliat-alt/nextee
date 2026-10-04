@@ -75,6 +75,9 @@
 @media(max-width:620px){
   .dialog.dialog{position:fixed;inset:calc(var(--header-h) + var(--safe-top)) 0 calc(var(--footer-h) + var(--safe-bottom)) 0;box-sizing:border-box;width:100%;max-width:none;height:auto;max-height:none;margin:0;border:0;border-radius:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;background:#fff;box-shadow:none;-webkit-overflow-scrolling:touch}
   .dialog.dialog::backdrop{background:transparent}
+  .mobileBack.mobileBack{border-bottom:1px solid #d6ddd6}
+  .mobileBack:focus,.mobileBack:focus-visible{outline:none}
+  .mobileBack:focus-visible{background:#f5f8f5}
 }
 @media(max-width:620px) and (display-mode:standalone), (max-width:620px) and (display-mode:fullscreen){
   .dialog.dialog{bottom:calc(var(--footer-h) + var(--safe-bottom) - 20px)}
