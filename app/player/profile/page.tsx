@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
 
@@ -1003,6 +1004,7 @@ export default function PlayerProfilePage() {
 
         {info && <div className={styles.successAlert}>{info}</div>}
 
+        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link></p>
         <section className={styles.profileContent}>
           <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 

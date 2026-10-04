@@ -1,0 +1,112 @@
+(node:49373) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/coach-permissions.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ les permissions Coach sont désactivées par défaut (0.654333ms)
+✔ les presets restent indépendants et limités (0.071875ms)
+✔ un coach voit ses juniors et un Head Coach les juniors de son club uniquement (0.058584ms)
+✔ seules les stratégies explicites d’activités futures sont acceptées (0.05ms)
+(node:49374) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/golf-round-metrics.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ calcule une partie complète de 9 trous (0.702709ms)
+✔ calcule les totaux aller, retour et total sur 18 trous (0.401792ms)
+✔ préserve les statistiques partielles d'une partie incomplète (0.084583ms)
+✔ classe les résultats et ignore les valeurs nulles (0.081875ms)
+✔ valide la grille sans imposer les trous encore vides (0.576ms)
+(node:49375) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-admin-routes.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ saving text serializes the JSON concurrency filter for real PostgREST request construction (55.834333ms)
+✔ approval rejects text modified since the reviewer opened it and performs no write (10.210625ms)
+✔ approval without a reviewed snapshot is denied for an old client (8.979083ms)
+✔ approval records exactly the reviewed text and preserves optimistic concurrency (8.275ms)
+(node:49376) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-parent-mail.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ parent code transport receives only the designated verified address and no secret is returned (0.736834ms)
+(node:49377) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-requirements.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ one current platform acceptance covers a multi-role adult while a new version requires a fresh decision (1.744208ms)
+✔ club scope stays isolated and an optional consent never blocks general access (0.102208ms)
+✔ a refusal or withdrawal cannot satisfy a required document even on the current version (0.067459ms)
+(node:49378) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-server-requirements.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ an unsupported required rule in club B does not block a coach only in club A (44.220583ms)
+✔ an unpublished required document in club B does not block club A (10.027916ms)
+✔ own-club unpublished required document still fails closed (6.400916ms)
+(node:49379) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-template.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ legal translations preserve every occurrence of a reviewed variable (0.645125ms)
+✔ unreviewed and malformed placeholders are rejected (0.072916ms)
+(node:49380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/manager-camp-conflict.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ camp stale versions preserve a 409 response for current and legacy SQL codes without retrying (30.226166ms)
+(node:49381) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/manager-event-editor.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ creation uses one atomic request, includes the head coach and prevents double submits (96.524791ms)
+✔ unknown creation outcome freezes the draft and retries the identical key and payload without duplicate notifications (43.272375ms)
+✔ known rejection preserves the draft and permits a corrected request with a new key (39.998042ms)
+✔ notification failure after confirmed creation does not permit duplicate activities (26.588208ms)
+✔ a denied or partially loaded roster never offers activity creation (86.051ms)
+✔ Manager creation honors selected juniors, guests and criteria instead of seeding the entire group (32.311125ms)
+✔ invalid criteria and a missing migration are definite rejections that preserve an editable draft (57.453709ms)
+✔ Manager recurrence and all four locales preserve the draft without extra reads (25.2725ms)
+✔ Manager planning return retains the chosen season (21.106542ms)
+(node:49382) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/manager-groups.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ group UI resolves four languages, complete count phrases and accessible labels (31.606791ms)
+✔ group filters, authored names and selected season survive a locale change (154.762584ms)
+✔ creation resumes a failed head step without repeating acknowledged writes (126.281083ms)
+✔ creation resumes a failed categories step without repeating acknowledged writes (92.350833ms)
+✔ creation resumes a failed junior step without repeating acknowledged writes (73.353ms)
+✔ editing group assignments keeps unsaved settings and releases buttons after a network failure (85.236875ms)
+✔ group list ignores an older season response after the selection changes (67.330042ms)
+✔ changing group club updates the URL and hides the previous club while loading (65.657375ms)
+✔ an older group club lookup cannot restore the wrong club (60.279875ms)
+(node:49383) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/manager-parents.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ parent directory includes unlinked and inactive parents and never exposes other clubs' families (56.907291ms)
+✔ parent directory rejects inactive managers, hides protected actions and paginates large clubs (31.427959ms)
+✔ parent deletion passes the server actor and confirmation snapshot to one transaction, never to an Auth deletion (9.607209ms)
+✔ stale links, absent migration and unauthorized parent deletions fail without fallback writes (36.419167ms)
+✔ parent directory searches and filters, preserves club navigation and confirms removal before updating its list (36.491042ms)
+✔ parent editing preserves credentials and other roles and interface strings resolve in all four languages (22.3915ms)
+✔ missing migration retains the parent and stale dialog handlers cannot remove a parent after changing clubs (17.214416ms)
+✔ a delayed removal result cannot replace another club's list or show a false success there (20.26325ms)
+✔ parent login search and password form validate confirmation, prevent duplicate submission and clear secrets (14.507583ms)
+✔ password errors retain the form and old club handlers cannot change credentials (17.787083ms)
+(node:49384) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/player-transactions.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /Users/activitee/Projects/nextee/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ maps transactional capacity and authorization failures to stable API responses (0.684125ms)
+✔ keeps consent, camps and multi-round creation inside database transactions (0.186375ms)
+✔ does not expose server-only transactional mutations to authenticated clients (0.875375ms)
+✔ creates player rounds without applying trim directly to the round type enum (0.06225ms)
+✔ the new round form only uses manually entered courses (0.075709ms)
+ℹ tests 56
+ℹ suites 0
+ℹ pass 56
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1050.838041

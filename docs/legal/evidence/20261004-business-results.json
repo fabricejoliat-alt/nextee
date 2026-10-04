@@ -1,0 +1,137 @@
+{
+  "run": "legalqa_20261004_673faa",
+  "results": [
+    {
+      "name": "group creation and own-club read",
+      "result": "PASS",
+      "proof": {
+        "group": "87e9b0d5-4d76-49c4-8291-fdf591f5ba2b",
+        "crossRows": 0
+      }
+    },
+    {
+      "name": "event creation including indirect thread trigger",
+      "result": "PASS",
+      "proof": {
+        "event": "f89262e5-2589-4fd7-8aa7-183c70b4e8c2",
+        "thread": "fa4de12f-a9b9-4380-9860-19263ed6f399"
+      }
+    },
+    {
+      "name": "staff seed attendees with guard off",
+      "result": "PASS",
+      "proof": {
+        "error": null,
+        "rows": 1
+      }
+    },
+    {
+      "name": "cross-club direct event read denied",
+      "result": "PASS",
+      "proof": {
+        "rows": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "cross-club event-thread RPC must not mutate",
+      "result": "FAIL",
+      "proof": {
+        "error": null,
+        "titleAfter": "JETABLE legalqa_20261004_673faa",
+        "event": "f89262e5-2589-4fd7-8aa7-183c70b4e8c2"
+      }
+    },
+    {
+      "name": "cross-club sync-participants RPC must be denied",
+      "result": "FAIL",
+      "proof": {
+        "error": null
+      }
+    },
+    {
+      "name": "message send, persisted body and second-club denial",
+      "result": "PASS",
+      "proof": {
+        "message": "5d36c707-63a2-43f2-9b99-a01b834fbaaa",
+        "crossRows": 0
+      }
+    },
+    {
+      "name": "player golf create and indirect OM trigger",
+      "result": "PASS",
+      "proof": {
+        "round": "39f3d159-b012-4253-9b94-e5842eff3aff",
+        "total_score": 4
+      }
+    },
+    {
+      "name": "parent golf edit and outsider denial",
+      "result": "PASS",
+      "proof": {
+        "parent": null,
+        "outsider": {
+          "code": "P0001",
+          "details": null,
+          "hint": null,
+          "message": "FORBIDDEN"
+        }
+      }
+    },
+    {
+      "name": "anonymous statistics RPC must not mutate a round",
+      "result": "FAIL",
+      "proof": {
+        "error": null,
+        "total_score_after": 5,
+        "expectedBefore": 777
+      }
+    },
+    {
+      "name": "manager OM own club and outsider denial",
+      "result": "PASS",
+      "proof": {
+        "ownError": null,
+        "crossError": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "anonymous performance sync entry must be denied",
+      "result": "FAIL",
+      "proof": {
+        "error": null,
+        "mutation": "No inconsistent fixture state introduced; entry-point test only"
+      }
+    },
+    {
+      "name": "Marketplace second-club isolation",
+      "result": "FAIL",
+      "proof": {
+        "id": "c07e980e-18b6-45e3-af85-4d698f08e885",
+        "crossRows": 1,
+        "anonRows": 1
+      }
+    },
+    {
+      "name": "direct private Storage upload denied",
+      "result": "PASS",
+      "proof": {
+        "error": "new row violates row-level security policy"
+      }
+    },
+    {
+      "name": "private Storage download denies outsider",
+      "result": "PASS",
+      "proof": {
+        "outsider": "{}",
+        "signedStatus": 200,
+        "ttl": 60
+      }
+    }
+  ]
+}

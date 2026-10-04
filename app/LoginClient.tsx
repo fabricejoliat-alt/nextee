@@ -192,6 +192,7 @@ export default function LoginPage() {
                   ) : null}
                 </div>
               ) : null}
+              <div style={{ marginTop: 16, fontSize: 13 }}><Link href="/legal">Documents juridiques</Link> · <Link href="/legal/request">Mes données</Link></div>
               {isLocalDev ? <div className={styles.devLink}><Link href="/dev/impersonate">Mode dev : se connecter en tant qu’un autre utilisateur</Link></div> : null}
             </form>
           </div>

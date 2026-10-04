@@ -1,0 +1,21 @@
+# Préparation groupée après le contrôle 20
+
+> **Mise à jour — campagne du 4 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md) et ses preuves. Les notes de préparation ci-dessous sont historiques. Le garde reste désactivé. Le lot correctif `20261102` a été vérifié dans une transaction annulée, sans application durable sur TEST. La validation complète avant activation reste bloquée.
+
+Le contrôle 20 reçu sur TEST confirme les huit signatures et leurs privilèges : quatre wrappers accessibles à `authenticated`, quatre corps métier réservés à `service_role`, garde présent, commande SQL inactive et zéro document actif. Il ne démontre pas que l'édition d'une occurrence ou d'une série fonctionne dans l'application.
+
+## Ce qui peut être regroupé
+
+1. L'inventaire consolidé a été exécuté en lecture seule dans l'éditeur SQL du projet Supabase **test** ouvert dans le navigateur. Une variante compacte de `21-consolidated-readiness-audit.sql` a retourné 174 lignes : 90 tables, 77 fonctions privilégiées, six buckets et un contrôle. Le verrou SQL est désactivé, sa contrainte d'inactivité est présente et aucun document n'est actif. Parmi les 90 tables, 81 n'ont pas de politique `legal_required_direct_access` restrictive. Parmi les 77 fonctions, 62 ne mentionnent pas `legal_required_` dans leur définition. Ces comptes sont une **sélection de revue**, pas une mesure de contournements : une fonction peut être un prédicat RLS, un appel interne ou avoir un autre contrôle dans son corps.
+2. `20261101_legal_remaining_rpc_batch.sql` regroupe **21 RPC** dont la signature et la portée ont été vérifiées dans les migrations locales ou sur TEST. Les noms publics gardent leurs arguments, vérifient le garde inactif et délèguent à leur corps métier réservé au service. Un helper interne perd l'exécution directe des clients. L'utilisateur l'a appliqué sur TEST après `20261031` ; les 43 lignes du postflight unique `22-remaining-rpc-batch-postflight.sql` confirment les privilèges attendus, avec le garde désactivé et zéro document actif. Les parcours métier restent à vérifier.
+3. Faire les essais métier sur fixtures fictives en une campagne : édition Coach/Manager, golf/OM, camps, messagerie, Marketplace, documents, rôles Parent/Player/Coach/Manager et accès direct PostgREST/RPC/Storage. Vérifier aussi les données persistées et les accès refusés depuis un autre club.
+
+## Pourquoi le module ne peut pas être activé après le contrôle 20
+
+- L'audit TEST consolidé signale encore 81 tables accessibles aux clients sans politique juridique restrictive. `app_translations` est volontairement publique ; les autres tables n'ont pas toutes été qualifiées par finalité ni portée de club. Une politique globale construite sur le seul nom de table pourrait bloquer la connexion ou laisser passer les documents propres à un club.
+- Ses 54 fonctions candidates comprennent des prédicats RLS, des appels internes et des RPC métier. Le lot 20261101 couvre 21 RPC supplémentaires mais ne prouve pas la couverture de tous les appels indirects ou des fonctions apparues ensuite. `create_manager_activity_batch_v1` vérifie ici la portée plateforme ; sa création d'événements par groupe repasse par le garde de groupe, mais le parcours sans groupe requiert encore une revue avant activation.
+- Cinq buckets sont publics. Une URL publique déjà distribuée ne peut pas être retirée par le garde des pages ou une politique de lecture PostgREST. Les envois directs et les tâches différées doivent être vérifiés par finalité.
+- Aucun parcours réel avec document fictif actif, décision parentale, nouvelle version, retrait, deux clubs et ancien client n'a été validé ici. Les contrôles de privilèges ne testent pas ces comportements.
+- Les règles d'applicabilité, textes, traductions, durées de conservation et responsabilités doivent être revus avant publication. `legal_enforcement_control.enabled=false` reste imposé par contrainte ; le drapeau HTTP doit rester absent.
+
+Ne pas appliquer en aveugle une politique restrictive à toutes les tables ni révoquer en bloc tous les RPC. Le lot final devra contenir la correspondance explicite entre chaque accès direct, son propriétaire, sa portée et son contrôle juridique, puis un scénario de non-régression. Aucun nouvel accord ou historique réel ne doit être créé pour cette vérification.

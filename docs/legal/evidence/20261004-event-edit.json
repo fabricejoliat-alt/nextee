@@ -1,0 +1,13 @@
+{
+  "name": "manager occurrence edit and optimistic concurrency through nested Coach RPC",
+  "result": "FAIL",
+  "proof": {
+    "updateError": null,
+    "persisted": {
+      "location_text": "JETABLE persisted edit"
+    },
+    "staleError": {
+      "message": "upstream request timeout"
+    }
+  }
+}

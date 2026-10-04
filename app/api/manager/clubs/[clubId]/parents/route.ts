@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireManagerClub } from "@/lib/server/managerAccess";
 import { managerMutationError } from "@/lib/server/managerMutationError";
+import { protectedParentAccounts } from "@/lib/server/parentCredentialAccess";
 import type { ManagerParent } from "@/lib/managerParents";
 
 type Context = { params: Promise<{ clubId: string }> };
@@ -29,13 +30,14 @@ export async function GET(req: NextRequest, ctx: Context) {
     const players = members.filter(row => row.role === "player");
     const playerById = new Map(players.map(row => [String(row.user_id), row]));
     const parentIds = parents.map(row => String(row.user_id));
-    const profiles = new Map<string, { first_name: string | null; last_name: string | null; phone: string | null }>();
+    const profiles = new Map<string, { first_name: string | null; last_name: string | null; phone: string | null; username: string | null }>();
     const links: Array<{ player_id: string; guardian_user_id: string }> = [];
-    const sharedPlayers = new Set<string>(), protectedParents = new Set<string>();
+    const sharedPlayers = new Set<string>();
+    const protectedAccounts = await protectedParentAccounts(db, parentIds);
     // Chunk IN filters and paginate each query; large clubs must not lose rows.
     const profileIds = Array.from(new Set([...parentIds, ...playerById.keys()]));
     for (let from = 0; from < profileIds.length; from += 100) {
-      const rows = await allRows((start, end) => db.from("profiles").select("id,first_name,last_name,phone")
+      const rows = await allRows((start, end) => db.from("profiles").select("id,first_name,last_name,phone,username")
         .in("id", profileIds.slice(from, from + 100)).order("id").range(start, end));
       for (const row of rows) profiles.set(String(row.id), row);
     }
@@ -44,9 +46,6 @@ export async function GET(req: NextRequest, ctx: Context) {
       const rows = await allRows((start, end) => db.from("player_guardians").select("player_id,guardian_user_id")
         .in("guardian_user_id", ids).order("player_id").order("guardian_user_id").range(start, end));
       links.push(...rows.filter(row => playerById.has(String(row.player_id))));
-      const admins = await db.from("app_admins").select("user_id").in("user_id", ids);
-      if (admins.error) throw admins.error;
-      for (const row of admins.data ?? []) protectedParents.add(String(row.user_id));
     }
     const linkedPlayers = Array.from(new Set(links.map(row => String(row.player_id))));
     for (let from = 0; from < linkedPlayers.length; from += 100) {
@@ -68,7 +67,9 @@ export async function GET(req: NextRequest, ctx: Context) {
       const userId = String(row.user_id), profile = profiles.get(userId);
       return { id: String(row.id), user_id: userId, first_name: profile?.first_name ?? "", last_name: profile?.last_name ?? "",
         email: emails.get(userId) ?? null, phone: profile?.phone ?? "", is_active: row.is_active === true,
-        can_manage: auth.isSuperadmin || !protectedParents.has(userId),
+        username: profile?.username ?? null,
+        can_manage: auth.isSuperadmin || !protectedAccounts.platform.has(userId),
+        can_change_password: auth.isSuperadmin || (row.is_active === true && !protectedAccounts.credentials.has(userId)),
         other_roles: members.filter(member => member.user_id === userId && member.role !== "parent").map(member => String(member.role)),
         juniors: links.filter(link => link.guardian_user_id === userId).map(link => {
           const junior = profiles.get(link.player_id);
@@ -96,7 +97,7 @@ export async function DELETE(req: NextRequest, ctx: Context) {
     const result = await db.rpc("remove_manager_parent_v1", { p_actor_id: auth.callerId, p_club_id: clubId,
       p_member_id: body.member_id, p_expected_player_ids: body.expected_player_ids, p_expected_shared_player_ids: body.expected_shared_player_ids });
     if (result.error) {
-      if (result.error.code === "40001") return NextResponse.json({ error: "parent_links_changed" }, { status: 409 });
+      if ((result.error.code === "PT409" || result.error.code === "40001")) return NextResponse.json({ error: "parent_links_changed" }, { status: 409 });
       if (result.error.code === "PGRST202") return NextResponse.json({ error: "parent_removal_migration_required" }, { status: 503 });
       const failure = managerMutationError(result.error);
       return NextResponse.json({ error: failure.error }, { status: failure.status });

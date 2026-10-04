@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { playerConsentAllowsAccess } from "@/lib/playerConsent";
+import { loadMissingLegalActions } from "@/lib/server/legalRequirements";
 
 export async function proxy(req: NextRequest) {
   const res = NextResponse.next({
@@ -118,6 +119,42 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  const isBusinessPage = isPlayerPage || path === "/coach" || path.startsWith("/coach/")
+    || path === "/manager" || path.startsWith("/manager/");
+  const isBusinessApi = path.startsWith("/api/player/") || path.startsWith("/api/coach/")
+    || path.startsWith("/api/manager/") || path.startsWith("/api/parent/")
+    || path.startsWith("/api/messages/");
+  const legalGateExempt = isConsentPage || path === "/player/help" || isConsentEndpoint;
+  if (process.env.LEGAL_ENFORCEMENT_ENABLED === "true" && (isBusinessPage || isBusinessApi) && !legalGateExempt) {
+    const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return NextResponse.json({ error: "Legal gate unavailable" }, { status: 503 });
+    const database = createClient(url, key, { auth: { persistSession: false } });
+    let actorId = data.user?.id ?? "";
+    if (bearerToken) {
+      const actor = await database.auth.getUser(bearerToken);
+      if (actor.error || !actor.data.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      actorId = actor.data.user.id;
+    }
+    if (!actorId) return NextResponse.json({ error: "Unauthorized" },
+      { status: 401, headers: { "Cache-Control": "no-store" } });
+    try {
+      const missing = await loadMissingLegalActions(database, actorId);
+      if (missing.length) {
+        if (isBusinessPage) {
+          const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";
+          return NextResponse.redirect(destination);
+        }
+        return NextResponse.json({ error: "Legal action required", code: "LEGAL_ACTION_REQUIRED", missing },
+          { status: 403, headers: { "Cache-Control": "no-store" } });
+      }
+    } catch {
+      return NextResponse.json({ error: "Legal status unavailable" },
+        { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
+  }
+
   // ✅ Si déjà loggé et va sur login, redirige vers la bonne zone (rôle)
   if (isLogin && data.user) {
     try {
@@ -161,6 +198,9 @@ export const config = {
     "/manager/:path*",
     "/admin/:path*",
     "/api/player/:path*",
+    "/api/coach/:path*",
+    "/api/manager/:path*",
+    "/api/parent/:path*",
     "/api/messages/:path*",
   ],
 };

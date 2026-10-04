@@ -1,0 +1,74 @@
+{
+  "run": "legalqa_20261004_673faa",
+  "results": [
+    {
+      "name": "mobile Admin save and approval persisted",
+      "result": "PASS",
+      "proof": {
+        "status": "approved",
+        "approved_by": "f3a9ef62-4a30-435a-9e24-486b25b793a8"
+      }
+    },
+    {
+      "name": "stale text approval rejected over HTTP",
+      "result": "PASS",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "Translation changed; reload and review"
+        }
+      }
+    },
+    {
+      "name": "AI translation produces unapproved proposal with placeholders",
+      "result": "PASS",
+      "proof": {
+        "status": 200,
+        "body": {
+          "proposed": true
+        },
+        "translationStatus": "proposed"
+      }
+    },
+    {
+      "name": "fictional data request and admin review persist",
+      "result": "PASS",
+      "proof": {
+        "request": "b6bc8657-cb42-4810-9e57-a735acdfd31c",
+        "status": "identity_check",
+        "reviewHttp": 200
+      }
+    },
+    {
+      "name": "document upload reservation finalize persistence",
+      "result": "PASS",
+      "proof": {
+        "status": 200,
+        "document": "c9480d99-fd40-43c1-b77c-b0cc7bb807bd"
+      }
+    },
+    {
+      "name": "document access player",
+      "result": "PASS",
+      "proof": {
+        "status": 200,
+        "documents": 1
+      }
+    },
+    {
+      "name": "document access parent",
+      "result": "PASS",
+      "proof": {
+        "status": 200,
+        "documents": 1
+      }
+    },
+    {
+      "name": "document access outsider",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    }
+  ]
+}

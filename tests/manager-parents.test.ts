@@ -14,13 +14,14 @@ test("parent directory includes unlinked and inactive parents and never exposes 
     {id:"parent-coach",user_id:"parent",club_id:"A",role:"coach",is_active:true},
     {id:"foreign-parent",user_id:"foreign",club_id:"B",role:"parent",is_active:true},
     {id:"shared",user_id:"player",club_id:"B",role:"player",is_active:false});
-  tables.profiles.push({id:"parent",first_name:"Parent",last_name:"QA",phone:"123"},{id:"unlinked",first_name:"Unlinked"});
+  tables.profiles.push({id:"parent",first_name:"Parent",last_name:"QA",phone:"123",username:"parent.qa"},{id:"unlinked",first_name:"Unlinked"});
   tables.player_guardians.push({player_id:"outside",guardian_user_id:"parent",can_view:true});
   const h=managerDatabase(tables,{users:[{id:"parent",email:"parent@example.invalid"},{id:"unlinked",email:"technical@noemail.local"}]});
   const r=await loadManagerModule(route,h.mocks).GET(managerRequest("GET"),context);
   assert.equal(r.status,200);const result=await r.json();assert.equal(result.parents.length,2);
   const parent=result.parents.find((row:any)=>row.user_id==="parent");
   assert.equal(parent.email,"parent@example.invalid");assert.deepEqual(parent.other_roles,["coach"]);
+  assert.equal(parent.username,"parent.qa");assert.equal(parent.can_change_password,false);
   assert.deepEqual(parent.juniors,[{player_id:"player",member_id:"player-A",name:"Junior",shared:true}]);
   assert.equal(result.parents.find((row:any)=>row.user_id==="unlinked").email,null);
   assert.ok(!JSON.stringify(result).includes("outside"));assert.deepEqual(h.writes,[]);
@@ -41,7 +42,7 @@ test("parent deletion passes the server actor and confirmation snapshot to one t
   assert.deepEqual(h.writes,[]);assert.deepEqual(h.authWrites,[]);
 });
 test("stale links, absent migration and unauthorized parent deletions fail without fallback writes",async()=>{
-  for(const [code,status,error]of [["40001",409,"parent_links_changed"],["PGRST202",503,"parent_removal_migration_required"],["42501",403,null]] as const){
+  for(const [code,status,error]of [["PT409",409,"parent_links_changed"],["40001",409,"parent_links_changed"],["PGRST202",503,"parent_removal_migration_required"],["42501",403,null]] as const){
     const h=managerDatabase(managerFixture(),{rpcError:{code,message:"private SQL detail"}});
     const r=await loadManagerModule(route,h.mocks).DELETE(managerRequest("DELETE",{member_id:"parent-A",expected_player_ids:[],expected_shared_player_ids:[]}),context);
     assert.equal(r.status,status);const json=await r.json();if(error)assert.equal(json.error,error);assert.doesNotMatch(json.error,/private SQL/);assert.deepEqual(h.writes,[]);
@@ -49,16 +50,17 @@ test("stale links, absent migration and unauthorized parent deletions fail witho
   const h=managerDatabase(managerFixture());assert.equal((await loadManagerModule(route,h.mocks).DELETE(managerRequest("DELETE",{member_id:"parent-A"}),context)).status,400);assert.equal(h.rpcs.length,0);
 });
 
-const parent=(id="p")=>({id,user_id:id,first_name:"Alex",last_name:"Parent",email:`${id}@example.invalid`,phone:"123",is_active:true,can_manage:true,other_roles:["coach"],juniors:[{player_id:"junior",member_id:"member",name:"Junior QA",shared:false}]});
+const parent=(id="p")=>({id,user_id:id,first_name:"Alex",last_name:"Parent",username:`login.${id}`,email:`${id}@example.invalid`,phone:"123",is_active:true,can_manage:true,can_change_password:true,other_roles:["coach"],juniors:[{player_id:"junior",member_id:"member",name:"Junior QA",shared:false}]});
 const button=(tree:any,name:string)=>{const value=elements(tree).find(n=>n.type==="button"&&(n.props["aria-label"]===name||textContent(n).trim()===name));assert.ok(value,name);return value;};
 async function settle(h:ReturnType<typeof coachComponentHarness>){let tree=h.render();for(let i=0;i<8;i++){await flush();tree=h.render();}return tree;}
-function setup(removeResponse?:()=>Promise<Response>){
+function setup(removeResponse?:()=>Promise<Response>, passwordResponse?:()=>Promise<Response>){
   const scope={clubs:[{id:"A",name:"Club A"},{id:"B",name:"Club B"}],clubId:"A",loading:false,error:"",setClubId:(id:string)=>{scope.clubId=id;}};
   let rows=[parent(),{...parent("orphan"),first_name:"Orphan",juniors:[],is_active:false}],reads=0;
   const writes:any[]=[];
   const h=coachComponentHarness(page,{modules:{"@/components/manager/useManagerClubSelection":{useManagerClubSelection:()=>scope},"./useManagerClubSelection":{useManagerClubSelection:()=>scope}},fetch:async(input,init)=>{
     if(!init?.method){reads++;return Response.json({parents:scope.clubId==="A"?rows:[{...parent("B-parent"),first_name:"Second"}]});}
     const body=JSON.parse(String(init.body));writes.push({url:String(input),method:init.method,body});
+    if(String(input).endsWith("/parents/password") && passwordResponse)return passwordResponse();
     if(init.method==="DELETE"){
       if(removeResponse)return removeResponse();
       rows=rows.filter(p=>p.id!==body.member_id);
@@ -110,4 +112,44 @@ test("a delayed removal result cannot replace another club's list or show a fals
     response.resolve(Response.json({ok:true}));await pending;tree=await settle(x.h);
     assert.ok(textContent(tree).includes("Parent Second"));assert.ok(!textContent(tree).includes(messages.fr["manager.administration.parents.removed"]));
   }finally{x.h.cleanup();}
+});
+
+test("parent login search and password form validate confirmation, prevent duplicate submission and clear secrets", async () => {
+  const pending=deferred<Response>();const x=setup(undefined,()=>pending.promise);
+  try {
+    let tree=await settle(x.h);
+    elements(tree).find(n=>n.type==="input")!.props.onChange({target:{value:"login.p"}});tree=x.h.render();
+    assert.ok(textContent(tree).includes("login.p"));assert.ok(!textContent(tree).includes("Parent Orphan"));
+    button(tree,"Changer le mot de passe de Alex Parent").props.onClick();tree=x.h.render();
+    const fill=(field:string,value:string)=>{elements(tree).find(n=>n.type==="input"&&n.props.name===field)!.props.onChange({target:{value}});tree=x.h.render();};
+    assert.equal(elements(tree).find(n=>n.type==="input"&&n.props.name==="username")!.props.value,"login.p");
+    fill("new-password","Fictional-password!");fill("confirm-password","Different-password!");
+    await elements(tree).find(n=>n.type==="form")!.props.onSubmit({preventDefault(){}});tree=x.h.render();
+    assert.equal(x.writes.length,0);assert.ok(textContent(tree).includes(messages.fr["manager.administration.parents.passwordMismatch"]));
+    fill("confirm-password","Fictional-password!");
+    const submit=elements(tree).find(n=>n.type==="form")!.props.onSubmit;
+    const saving=submit({preventDefault(){}});await submit({preventDefault(){}});await flush();tree=x.h.render();
+    assert.equal(x.writes.length,1);assert.equal(x.writes[0].url,"/api/manager/clubs/A/parents/password");
+    assert.deepEqual(x.writes[0].body,{member_id:"p",password:"Fictional-password!"});
+    assert.equal(button(tree,"Annuler").props.disabled,true);
+    pending.resolve(Response.json({ok:true}));await saving;tree=await settle(x.h);
+    assert.ok(textContent(tree).includes(messages.fr["manager.administration.parents.passwordSaved"]));
+    button(tree,"Changer le mot de passe de Alex Parent").props.onClick();tree=x.h.render();
+    for(const input of elements(tree).filter(n=>n.type==="input"&&n.props.type==="password"))assert.equal(input.props.value,"");
+    for(const locale of ["fr","en","de","it"] as const){x.h.setLocale(locale);tree=x.h.render();assert.doesNotMatch(textContent(tree),/manager\.administration\./);}
+  } finally {x.h.cleanup();}
+});
+
+test("password errors retain the form and old club handlers cannot change credentials", async () => {
+  const x=setup(undefined,async()=>Response.json({error:"same_password"},{status:400}));
+  try {
+    let tree=await settle(x.h);button(tree,"Changer le mot de passe de Alex Parent").props.onClick();tree=x.h.render();
+    for(const field of ["new-password","confirm-password"]){elements(tree).find(n=>n.type==="input"&&n.props.name===field)!.props.onChange({target:{value:"Fictional-password!"}});tree=x.h.render();}
+    const submit=elements(tree).find(n=>n.type==="form")!.props.onSubmit;
+    await submit({preventDefault(){}});tree=x.h.render();
+    assert.ok(textContent(tree).includes(messages.fr["manager.administration.parents.passwordSame"]));
+    assert.ok(elements(tree).some(n=>n.type==="form"));
+    x.scope.clubId="B";tree=await settle(x.h);await submit({preventDefault(){}});
+    assert.equal(x.writes.length,1);assert.ok(!elements(tree).some(n=>n.type==="form"));
+  } finally {x.h.cleanup();}
 });

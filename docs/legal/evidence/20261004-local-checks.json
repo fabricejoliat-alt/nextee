@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-04",
+  "target": "local checkout backed by Supabase TEST wizbeuuvjibmmuxyynly",
+  "node_tests": {
+    "passed": 56,
+    "failed": 0,
+    "log": "20261004-targeted-tests.txt"
+  },
+  "tsc": {
+    "command": "npx tsc --noEmit --incremental false",
+    "exit_code": 0
+  },
+  "eslint": {
+    "scope": [
+      "app/api/admin/legal/route.ts",
+      "app/api/admin/legal/translate/route.ts",
+      "components/legal/LegalAdminWorkspace.tsx",
+      "lib/legalTranslationReview.ts",
+      "lib/legalRequirements.ts",
+      "lib/server/legalRequirements.ts",
+      "app/api/manager/clubs/[clubId]/parents/route.ts",
+      "lib/server/managerCampSave.ts",
+      "tests/legal-admin-routes.test.ts",
+      "tests/legal-server-requirements.test.ts",
+      "tests/manager-parents.test.ts",
+      "tests/manager-camp-conflict.test.ts"
+    ],
+    "exit_code": 0
+  },
+  "candidate_sha256": "3ec660eb6b35a093a3cc6070f40a821255f9a31cec54b5eace46d1d7540e5cd6",
+  "candidate_committed_to_test": false,
+  "candidate_rollback_passed": 42
+}

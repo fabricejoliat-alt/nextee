@@ -29,7 +29,7 @@ export async function saveManagerCamp(db: SupabaseClient, actor: string, campId:
     },
   });
   if (result.error) {
-    if (result.error.code === "40001") return { status: 409, data: { error: "Le stage a changé depuis l’ouverture du formulaire. Rechargez la page pour conserver les dernières réponses." } };
+    if ((result.error.code === "PT409" || result.error.code === "40001")) return { status: 409, data: { error: "Le stage a changé depuis l’ouverture du formulaire. Rechargez la page pour conserver les dernières réponses." } };
     if (result.error.message.includes("camp_history_removal")) return { status: 409, data: { error: "Cette suppression ferait perdre un historique de présence, d’option ou d’évaluation. Conservez la journée ou le participant." } };
     if (result.error.message.includes("option_capacity")) return { status: 400, data: { error: "La capacité d’une option est dépassée." } };
     const failure = managerMutationError(result.error);

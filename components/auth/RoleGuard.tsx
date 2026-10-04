@@ -26,6 +26,21 @@ async function readJsonResponse(response: Response) {
   }
 }
 
+function needsLegalCheck(path: string) {
+  return (path === "/player" || path.startsWith("/player/") || path === "/coach" || path.startsWith("/coach/")
+    || path === "/manager" || path.startsWith("/manager/"))
+    && path !== "/player/consent-required" && path !== "/player/help";
+}
+
+async function readLegalStatus(token: string) {
+  const response = await fetch("/api/legal/status", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!response.ok) throw new Error("Vérification des documents indisponible. Réessayez en ligne.");
+  const result = await response.json();
+  if (typeof result?.enforcement_enabled !== "boolean" || !Array.isArray(result.missing))
+    throw new Error("Réponse de validation invalide.");
+  return result as { enforcement_enabled: boolean; missing: unknown[] };
+}
+
 export default function RoleGuard({
   allow,
   children,
@@ -48,6 +63,32 @@ export default function RoleGuard({
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const recheckLegalStatus = async () => {
+      if (statusRef.current !== "allowed" || document.visibilityState !== "visible"
+        || !needsLegalCheck(window.location.pathname)) return;
+      statusRef.current = "checking"; setStatus("checking");
+      try {
+        const token = (await supabase.auth.getSession()).data.session?.access_token;
+        if (!token) throw new Error("Session indisponible. Réessayez en ligne.");
+        const result = await readLegalStatus(token);
+        if (cancelled) return;
+        if (result.enforcement_enabled && result.missing.length) {
+          statusRef.current = "redirecting"; setStatus("redirecting"); router.replace("/legal/my");
+        } else { statusRef.current = "allowed"; setStatus("allowed"); }
+      } catch (error) {
+        if (cancelled) return;
+        setErrorMessage(error instanceof Error ? error.message : "Vérification indisponible.");
+        statusRef.current = "error"; setStatus("error");
+      }
+    };
+    window.addEventListener("focus", recheckLegalStatus);
+    document.addEventListener("visibilitychange", recheckLegalStatus);
+    return () => { cancelled = true; window.removeEventListener("focus", recheckLegalStatus);
+      document.removeEventListener("visibilitychange", recheckLegalStatus); };
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +144,10 @@ export default function RoleGuard({
 
         if (json.isSuperAdmin) {
           if (allowed.includes("admin")) {
+            if (needsLegalCheck(window.location.pathname)) {
+              const legal = await readLegalStatus(token);
+              if (legal.enforcement_enabled && legal.missing.length) { redirect("/legal/my"); return; }
+            }
             if (!cancelled) setStatus("allowed");
             return;
           }
@@ -160,6 +205,10 @@ export default function RoleGuard({
         }
 
         if (allowed.includes(role)) {
+          if (needsLegalCheck(currentPath)) {
+            const legal = await readLegalStatus(token);
+            if (legal.enforcement_enabled && legal.missing.length) { redirect("/legal/my"); return; }
+          }
           if (!cancelled) setStatus("allowed");
           return;
         }

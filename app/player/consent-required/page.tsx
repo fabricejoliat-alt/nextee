@@ -19,8 +19,11 @@ type ConsentPayload = {
 export default function PlayerConsentRequiredPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isSigningOut) return;
     let cancelled = false;
 
     (async () => {
@@ -53,7 +56,22 @@ export default function PlayerConsentRequiredPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, isSigningOut]);
+
+  async function handleLogout() {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    setLogoutError(null);
+
+    try {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw signOutError;
+      window.location.replace("/");
+    } catch {
+      setLogoutError("La déconnexion a échoué. Réessaie dans un instant.");
+      setIsSigningOut(false);
+    }
+  }
 
   return (
     <div className="auth-bg">
@@ -95,7 +113,18 @@ export default function PlayerConsentRequiredPage() {
             </div>
           </div>
 
-          {error ? <div className="auth-error">{error}</div> : null}
+          {error ? <div className="auth-error" role="alert">{error}</div> : null}
+
+          <button
+            type="button"
+            className="cta-green auth-submit"
+            onClick={handleLogout}
+            disabled={isSigningOut}
+            aria-busy={isSigningOut}
+          >
+            {isSigningOut ? "Déconnexion…" : "Se déconnecter et revenir à l’accueil"}
+          </button>
+          {logoutError ? <div className="auth-error" role="alert">{logoutError}</div> : null}
         </div>
       </div>
       <style>{`

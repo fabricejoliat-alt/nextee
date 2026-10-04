@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -203,6 +204,7 @@ export default function PlayerConsentGate() {
         >
           <div style={{ fontSize: 20, fontWeight: 900, color: "#2b2517" }}>Vérification temporairement indisponible</div>
           <p style={{ margin: 0, color: "#6c6354", lineHeight: 1.55 }}>{error}</p>
+          <p style={{ margin: 0 }}><Link href="/legal">Documents juridiques</Link> · <Link href="/legal/request">Demande relative à mes données</Link></p>
           <button type="button" className="btn btn-primary" onClick={() => void load()} disabled={loading}>
             {loading ? "Vérification…" : "Réessayer"}
           </button>
@@ -309,6 +311,7 @@ export default function PlayerConsentGate() {
               <div style={{ color: "#6c6354", fontSize: 13 }}>
                 Cette demande restera affichée tant qu’un enfant lié à votre compte est en attente de consentement.
               </div>
+              <div><Link href="/legal">Documents juridiques</Link> · <Link href="/legal/my">Mes décisions</Link> · <Link href="/legal/request">Mes données</Link></div>
               <button className="btn" type="button" onClick={submitParentConsent} disabled={!parentConsentChecked || busy}>
                 {busy ? "Validation…" : "Valider"}
               </button>

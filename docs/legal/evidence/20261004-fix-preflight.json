@@ -1,0 +1,338 @@
+[
+  {
+    "category": "control",
+    "item": "environment",
+    "evidence": {
+      "enabled": false,
+      "digest_exists": true,
+      "pgcrypto_schema": "extensions",
+      "active_documents": 0
+    }
+  },
+  {
+    "category": "function",
+    "item": "copy_manager_event_structure_v1_business(uuid,jsonb)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "b1d9c574564243bfe0c43a171398bd61",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": true,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "decide_legal_document(uuid,uuid,text,uuid,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "22a76b064f725277c13f62a1b9fecdd2",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "ensure_event_thread_for_event(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "b4c34ea33426bd8cf44740fdd8ccbc96",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": true,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "issue_legal_parent_challenge(uuid,uuid,text,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "b8cfc2eb165fe3e3817839231fe07545",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "pick_event_thread_actor_user_id(uuid)",
+    "evidence": {
+      "anon_execute": true,
+      "definition_md5": "1f45510ca3af55ee338db1e33158df54",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": true,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "present_legal_document(uuid,uuid,uuid,text,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "df939521bd6989855af48310d2189391",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "publish_legal_draft(uuid,uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "c461f545862bed46d28af7375c7a3b70",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "recompute_golf_round_stats(uuid)",
+    "evidence": {
+      "anon_execute": true,
+      "definition_md5": "752ffb07cca80feba28ff45d5972f2ad",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": true,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "remove_manager_parent_v1(uuid,uuid,uuid,uuid[],uuid[])",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "d119f77fa08676993a736654c0ff2a0c",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": true,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "save_manager_camp_v1(uuid,uuid,uuid,text,jsonb)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "17c50b635aa6264aa5ffbc81958d1df6",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": true,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "sync_event_thread_participants(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "57726f534da7934398023b27440fa450",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": true,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "sync_org_player_performance_from_groups(uuid)",
+    "evidence": {
+      "anon_execute": true,
+      "definition_md5": "734f196220cec001ff153edaa4036c72",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": true,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "update_manager_event_occurrence_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb,uuid[])",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "ba321b37dcc6a30afa1138c06dffddb4",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": true,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "update_manager_event_series_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb,uuid[],text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "69509e7a777eb03bca559e4ec7516e78",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": true,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "policy",
+    "item": "guardian_can_delete_child_marketplace_items",
+    "evidence": {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM player_guardians pg\n  WHERE ((pg.player_id = marketplace_items.user_id) AND (pg.guardian_user_id = auth.uid()) AND (COALESCE(pg.can_edit, false) = true))))",
+      "roles": [
+        "authenticated"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  },
+  {
+    "category": "policy",
+    "item": "guardian_can_insert_child_marketplace_items",
+    "evidence": {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM player_guardians pg\n  WHERE ((pg.player_id = marketplace_items.user_id) AND (pg.guardian_user_id = auth.uid()) AND (COALESCE(pg.can_edit, false) = true))))"
+    }
+  },
+  {
+    "category": "policy",
+    "item": "guardian_can_read_child_marketplace_items",
+    "evidence": {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM player_guardians pg\n  WHERE ((pg.player_id = marketplace_items.user_id) AND (pg.guardian_user_id = auth.uid()) AND (COALESCE(pg.can_view, true) = true))))",
+      "roles": [
+        "authenticated"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  },
+  {
+    "category": "policy",
+    "item": "guardian_can_update_child_marketplace_items",
+    "evidence": {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM player_guardians pg\n  WHERE ((pg.player_id = marketplace_items.user_id) AND (pg.guardian_user_id = auth.uid()) AND (COALESCE(pg.can_edit, false) = true))))",
+      "roles": [
+        "authenticated"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM player_guardians pg\n  WHERE ((pg.player_id = marketplace_items.user_id) AND (pg.guardian_user_id = auth.uid()) AND (COALESCE(pg.can_edit, false) = true))))"
+    }
+  },
+  {
+    "category": "policy",
+    "item": "legal_required_direct_access",
+    "evidence": {
+      "cmd": "ALL",
+      "qual": "legal_required_direct_access(club_id)",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "permissive": "RESTRICTIVE",
+      "with_check": "legal_required_direct_access(club_id)"
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_delete_own",
+    "evidence": {
+      "cmd": "DELETE",
+      "qual": "(user_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_insert",
+    "evidence": {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": "(auth.uid() = user_id)"
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_insert_club",
+    "evidence": {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": "((user_id = auth.uid()) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.user_id = auth.uid()) AND (cm.club_id = marketplace_items.club_id) AND (cm.is_active = true)))))"
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_select",
+    "evidence": {
+      "cmd": "SELECT",
+      "qual": "(is_active = true)",
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_select_club",
+    "evidence": {
+      "cmd": "SELECT",
+      "qual": "(((is_active = true) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.user_id = auth.uid()) AND (cm.club_id = marketplace_items.club_id) AND (cm.is_active = true))))) OR ((user_id = auth.uid()) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.user_id = auth.uid()) AND (cm.club_id = marketplace_items.club_id) AND (cm.is_active = true))))))",
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": null
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_update_own",
+    "evidence": {
+      "cmd": "UPDATE",
+      "qual": "(user_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "permissive": "PERMISSIVE",
+      "with_check": "(user_id = auth.uid())"
+    }
+  }
+]

@@ -1,0 +1,216 @@
+{
+  "run": "legalqa_20261004_673faa",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "at": "2026-10-04T18:33:28.178Z",
+  "results": [
+    {
+      "name": "admin denied anon",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "admin denied player",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "admin denied parent",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "admin denied coach",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "admin denied manager",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "admin denied outsider",
+      "result": "PASS",
+      "proof": {
+        "status": 403
+      }
+    },
+    {
+      "name": "direct legal table and service RPC denied player",
+      "result": "PASS",
+      "proof": {
+        "table": "42501",
+        "rpc": "42501"
+      }
+    },
+    {
+      "name": "HTTP enforcement stays off player",
+      "result": "PASS",
+      "proof": {
+        "missing": [],
+        "enforcement_enabled": false
+      }
+    },
+    {
+      "name": "direct legal table and service RPC denied parent",
+      "result": "PASS",
+      "proof": {
+        "table": "42501",
+        "rpc": "42501"
+      }
+    },
+    {
+      "name": "HTTP enforcement stays off parent",
+      "result": "PASS",
+      "proof": {
+        "missing": [],
+        "enforcement_enabled": false
+      }
+    },
+    {
+      "name": "direct legal table and service RPC denied coach",
+      "result": "PASS",
+      "proof": {
+        "table": "42501",
+        "rpc": "42501"
+      }
+    },
+    {
+      "name": "HTTP enforcement stays off coach",
+      "result": "PASS",
+      "proof": {
+        "missing": [],
+        "enforcement_enabled": false
+      }
+    },
+    {
+      "name": "direct legal table and service RPC denied manager",
+      "result": "PASS",
+      "proof": {
+        "table": "42501",
+        "rpc": "42501"
+      }
+    },
+    {
+      "name": "HTTP enforcement stays off manager",
+      "result": "PASS",
+      "proof": {
+        "missing": [],
+        "enforcement_enabled": false
+      }
+    },
+    {
+      "name": "direct legal table and service RPC denied outsider",
+      "result": "PASS",
+      "proof": {
+        "table": "42501",
+        "rpc": "42501"
+      }
+    },
+    {
+      "name": "HTTP enforcement stays off outsider",
+      "result": "PASS",
+      "proof": {
+        "missing": [],
+        "enforcement_enabled": false
+      }
+    },
+    {
+      "name": "terms: draft, four languages, review persisted",
+      "result": "PASS",
+      "proof": {
+        "id": "26f45674-f30f-4df1-88ac-357b9bbb4ebb"
+      }
+    },
+    {
+      "name": "terms: stale publication preview denied",
+      "result": "PASS",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "Publication preview changed; reload and review"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "name": "terms: publication",
+      "result": "FAIL",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "function digest(text, unknown) does not exist"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "name": "optional: draft, four languages, review persisted",
+      "result": "PASS",
+      "proof": {
+        "id": "fc4d05d7-02ed-4423-8e62-1e0038f40992"
+      }
+    },
+    {
+      "name": "optional: stale publication preview denied",
+      "result": "PASS",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "Publication preview changed; reload and review"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "name": "optional: publication",
+      "result": "FAIL",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "function digest(text, unknown) does not exist"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "name": "parent: draft, four languages, review persisted",
+      "result": "PASS",
+      "proof": {
+        "id": "d42f078d-458f-4575-adca-eba4552c83b9"
+      }
+    },
+    {
+      "name": "parent: stale publication preview denied",
+      "result": "PASS",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "Publication preview changed; reload and review"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    },
+    {
+      "name": "parent: publication",
+      "result": "FAIL",
+      "proof": {
+        "status": 409,
+        "body": {
+          "error": "function digest(text, unknown) does not exist"
+        },
+        "cache": "private, no-store, max-age=0"
+      }
+    }
+  ]
+}

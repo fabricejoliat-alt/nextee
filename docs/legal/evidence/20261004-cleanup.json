@@ -1,0 +1,126 @@
+{
+  "run": "legalqa_20261004_673faa",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "clubs": {
+    "A": "bb40f777-beb3-4180-b7b6-2718c6dc095c",
+    "B": "2a8f2ff3-6e5c-4737-8fbe-1057321083a0"
+  },
+  "users": {
+    "admin": "f3a9ef62-4a30-435a-9e24-486b25b793a8",
+    "player": "3738664c-5906-43a1-8d9e-0042950fa82f",
+    "parent": "73c32ac7-8852-4b1b-91c3-77d66ba649b9",
+    "coach": "e31feb48-5071-4d56-b3b5-bae425225b04",
+    "manager": "3f05bcca-fbb3-4212-8040-8fa66ad7388b",
+    "outsider": "d5c4021a-2b4d-4f3b-8363-f24bb0465465"
+  },
+  "documents": {
+    "terms": "26f45674-f30f-4df1-88ac-357b9bbb4ebb",
+    "optional": "fc4d05d7-02ed-4423-8e62-1e0038f40992",
+    "parent": "d42f078d-458f-4575-adca-eba4552c83b9"
+  },
+  "actions": [
+    {
+      "name": "fictional request closed",
+      "proof": {
+        "request": "b6bc8657-cb42-4810-9e57-a735acdfd31c"
+      }
+    },
+    {
+      "name": "fictional private objects removed",
+      "proof": {
+        "paths": [
+          "3738664c-5906-43a1-8d9e-0042950fa82f/legalqa_20261004_673faa.txt",
+          "player-documents/bb40f777-beb3-4180-b7b6-2718c6dc095c/3738664c-5906-43a1-8d9e-0042950fa82f/1791139597203-7e14f400-62fd-436d-a2a0-4e04ff99f9ba-legalqa_20261004_673faa.txt"
+        ]
+      }
+    },
+    {
+      "name": "fictional document row removed",
+      "proof": {
+        "document": "c9480d99-fd40-43c1-b77c-b0cc7bb807bd"
+      }
+    },
+    {
+      "name": "fixtures deactivated and administrative role removed",
+      "proof": {
+        "event": "f89262e5-2589-4fd7-8aa7-183c70b4e8c2",
+        "group": "87e9b0d5-4d76-49c4-8291-fdf591f5ba2b"
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "admin",
+        "id": "f3a9ef62-4a30-435a-9e24-486b25b793a8",
+        "banned_until": "2126-09-10T19:04:22.519624888Z",
+        "sessionRevoked": true
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "player",
+        "id": "3738664c-5906-43a1-8d9e-0042950fa82f",
+        "banned_until": "2126-09-10T19:04:22.640644154Z",
+        "sessionRevoked": true
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "parent",
+        "id": "73c32ac7-8852-4b1b-91c3-77d66ba649b9",
+        "banned_until": "2126-09-10T19:04:22.766926238Z",
+        "sessionRevoked": true
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "coach",
+        "id": "e31feb48-5071-4d56-b3b5-bae425225b04",
+        "banned_until": "2126-09-10T19:04:22.897682021Z",
+        "sessionRevoked": true
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "manager",
+        "id": "3f05bcca-fbb3-4212-8040-8fa66ad7388b",
+        "banned_until": "2126-09-10T19:04:23.028316171Z",
+        "sessionRevoked": false,
+        "signOutStatus": 400
+      }
+    },
+    {
+      "name": "fixture account banned",
+      "proof": {
+        "role": "outsider",
+        "id": "d5c4021a-2b4d-4f3b-8363-f24bb0465465",
+        "banned_until": "2126-09-10T19:04:23.147083191Z",
+        "sessionRevoked": true
+      }
+    },
+    {
+      "name": "final persisted state",
+      "proof": {
+        "enabled": false,
+        "versions": 0,
+        "decisions": 0,
+        "active_documents": 0,
+        "active_fixture_members": 0,
+        "fixture_admins": 0,
+        "active_fixture_marketplace": 0,
+        "fixture_document_rows": 0,
+        "remaining_private_objects": 0
+      }
+    },
+    {
+      "name": "temporary passwords and JWTs erased",
+      "proof": {
+        "retained": "Only inactive named fixtures and immutable legal rule/request audit rows; no published legal versions or decisions"
+      }
+    }
+  ]
+}

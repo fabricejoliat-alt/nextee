@@ -4,9 +4,11 @@ export type ManagerParent = {
   first_name: string;
   last_name: string;
   email: string | null;
+  username: string | null;
   phone: string;
   is_active: boolean;
   can_manage: boolean;
+  can_change_password: boolean;
   other_roles: string[];
   juniors: Array<{ player_id: string; member_id: string; name: string; shared: boolean }>;
 };

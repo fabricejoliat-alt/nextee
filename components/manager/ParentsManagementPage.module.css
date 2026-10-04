@@ -6,7 +6,7 @@
 .table th:nth-child(4), .table td:nth-child(4) { width: 14%; }
 .table th:nth-child(5), .table td:nth-child(5) { width: 22%; }
 .table th:nth-last-child(2), .table td:nth-last-child(2) { width: 88px; }
-.table th:last-child, .table td:last-child { width: 94px; }
+.table th:last-child, .table td:last-child { width: 140px; }
 .table td:nth-child(3) { overflow-wrap: anywhere; }
 .table td:last-child { white-space: nowrap; }
 .table td:last-child > button + button { margin-left: 6px; }
@@ -21,10 +21,12 @@
 .details { display: grid; gap: 5px; min-width: 0; }
 .details b { font-weight: 700; }
 .muted { color: #778278; font-size: 11px; font-weight: 400; }
+.login { color: #546457; font-size: 11px; overflow-wrap: anywhere; }
 .links { display: grid; gap: 6px; }
 .links a { color: #35483b; }
 
-.dialog { width: min(560px, calc(100vw - 32px)); box-sizing: border-box; border: 0; border-radius: 16px; padding: 24px; color: #35483b; }
+/* Override the shared dialog reset regardless of stylesheet loading order. */
+dialog.dialog { width: min(560px, calc(100vw - 32px)); box-sizing: border-box; border: 0; border-radius: 16px; padding: 24px; color: #35483b; }
 .dialog h2 { margin: 0 0 12px; font-size: 22px; }
 .dialog p { font-size: 13px; line-height: 1.6; }
 .form { display: grid; gap: 16px; }
@@ -35,11 +37,11 @@
   .sectionHeading { align-items: center; }
   .page .table tbody tr { grid-template-columns: 36px minmax(0, 1fr) 92px; }
   .page .table td:nth-child(2), .page .table td:nth-child(3), .page .table td:nth-child(4), .page .table td:nth-child(5) { width: auto; }
-  .page .table td:last-child { width: 92px; display: flex; align-items: flex-start; gap: 6px; }
+  .page .table td:last-child { width: 92px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
   .page .table td:last-child > button { width: 43px; min-width: 43px; height: 44px; }
   .page .table td:last-child > button + button { margin-left: 0; }
   .page .table td:nth-child(3) { overflow-wrap: anywhere; }
-  .dialog { padding: 20px; }
+  dialog.dialog { padding: 20px; }
   .dialogActions { display: grid; grid-template-columns: 1fr 1fr; }
   .dialogActions button { height: auto; padding: 10px; }
 }

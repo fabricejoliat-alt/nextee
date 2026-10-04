@@ -1,0 +1,295 @@
+[
+  {
+    "name": "anonymous actor lookup after candidate",
+    "result": "PASS",
+    "evidence": {
+      "error": "permission denied for function pick_event_thread_actor_user_id",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "name": "anonymous performance sync after candidate",
+    "result": "PASS",
+    "evidence": {
+      "error": "permission denied for function sync_org_player_performance_from_groups",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "name": "anonymous stats after candidate",
+    "result": "PASS",
+    "evidence": {
+      "error": "permission denied for function recompute_golf_round_stats",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "name": "candidate decision and idempotence coach",
+    "result": "PASS",
+    "evidence": {
+      "decision": "1dc22770-d18f-4583-874b-d11fbe237f50"
+    }
+  },
+  {
+    "name": "candidate decision and idempotence manager",
+    "result": "PASS",
+    "evidence": {
+      "decision": "81ef0ec0-b0c3-44ae-a670-c0bc079133e7"
+    }
+  },
+  {
+    "name": "candidate decision and idempotence parent",
+    "result": "PASS",
+    "evidence": {
+      "decision": "4877b158-2026-4e85-b9f4-2b6478834c2e"
+    }
+  },
+  {
+    "name": "candidate decision and idempotence player",
+    "result": "PASS",
+    "evidence": {
+      "decision": "aea47f6e-6a01-47e8-a80f-e5a2f4ba5438"
+    }
+  },
+  {
+    "name": "candidate Manager occurrence edit persists",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "candidate publication four reviewed languages",
+    "result": "PASS",
+    "evidence": {
+      "version": "04d71a01-3a25-4cd0-9a53-06331248169e",
+      "document": "d42f078d-458f-4575-adca-eba4552c83b9"
+    }
+  },
+  {
+    "name": "candidate publication four reviewed languages",
+    "result": "PASS",
+    "evidence": {
+      "version": "ff8866c4-87e8-4537-a274-2d8a20c110fd",
+      "document": "26f45674-f30f-4df1-88ac-357b9bbb4ebb"
+    }
+  },
+  {
+    "name": "candidate publication four reviewed languages",
+    "result": "PASS",
+    "evidence": {
+      "version": "18b1f822-7ca2-42d5-af45-c92ddeaa342e",
+      "document": "fc4d05d7-02ed-4423-8e62-1e0038f40992"
+    }
+  },
+  {
+    "name": "candidate stale Manager snapshot returns PT409",
+    "result": "PASS",
+    "evidence": {
+      "code": "PT409",
+      "message": "planning_conflict"
+    }
+  },
+  {
+    "name": "challenge throttling",
+    "result": "PASS",
+    "evidence": {
+      "error": "Challenge rate limited",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "consumed code cannot create second decision",
+    "result": "PASS",
+    "evidence": {
+      "error": "Confirmation required",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "cross-club event RPC after candidate",
+    "result": "PASS",
+    "evidence": {
+      "error": "permission denied for function ensure_event_thread_for_event",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "name": "cross-club sync RPC after candidate",
+    "result": "PASS",
+    "evidence": {
+      "error": "permission denied for function sync_event_thread_participants",
+      "sqlstate": "42501"
+    }
+  },
+  {
+    "name": "event trigger still updates thread after candidate",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "golf hole with recompute trigger after candidate",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "guardian link alone insufficient",
+    "result": "PASS",
+    "evidence": {
+      "error": "Forbidden",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "immutable decisions",
+    "result": "PASS",
+    "evidence": {
+      "error": "Published legal evidence is immutable",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "immutable presentations",
+    "result": "PASS",
+    "evidence": {
+      "error": "Published legal evidence is immutable",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "key mismatch coach",
+    "result": "PASS",
+    "evidence": {
+      "error": "Idempotency key reused for another decision",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "key mismatch manager",
+    "result": "PASS",
+    "evidence": {
+      "error": "Idempotency key reused for another decision",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "key mismatch parent",
+    "result": "PASS",
+    "evidence": {
+      "error": "Idempotency key reused for another decision",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "key mismatch player",
+    "result": "PASS",
+    "evidence": {
+      "error": "Idempotency key reused for another decision",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "Marketplace anonymous after candidate",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "Marketplace own club after candidate",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "Marketplace second club after candidate",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "old publication without preview",
+    "result": "PASS",
+    "evidence": {
+      "error": "Publication review required",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "parent idempotence after code consumed",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "prior version remains recorded",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "refusal persists",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "revoked authority cannot present",
+    "result": "PASS",
+    "evidence": {
+      "error": "Forbidden",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "second club presentation",
+    "result": "PASS",
+    "evidence": {
+      "error": "Forbidden",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "SQL enforcement remains disabled",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "stale presentation after version change",
+    "result": "PASS",
+    "evidence": {
+      "error": "Legal version changed",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "unknown locale",
+    "result": "PASS",
+    "evidence": {
+      "error": "Locale unavailable",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "verified parent authority and beneficiary recorded",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "withdrawal conflict blocks new consent",
+    "result": "PASS",
+    "evidence": {
+      "error": "Withdrawal conflict requires review",
+      "sqlstate": "P0001"
+    }
+  },
+  {
+    "name": "withdrawal history preserved after resolution",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "wrong code attempt persists",
+    "result": "PASS",
+    "evidence": {}
+  },
+  {
+    "name": "wrong role presentation",
+    "result": "PASS",
+    "evidence": {
+      "error": "Forbidden",
+      "sqlstate": "P0001"
+    }
+  }
+]
