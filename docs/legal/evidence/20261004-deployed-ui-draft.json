@@ -1,0 +1,19 @@
+{
+  "document": {
+    "id": "3d369782-c3b0-429f-8be5-3d70af434391",
+    "club_id": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+    "active": false
+  },
+  "draft": {
+    "source_revision": 2,
+    "translations": {
+      "fr": {
+        "body": "Essai jetable sans valeur juridique. Cette décision fictive ne crée aucun engagement réel.",
+        "title": "DOCUMENT FICTIF — TEST CHROME — FR",
+        "status": "needs_review",
+        "action_label": "Valider le test fictif",
+        "source_revision": 2
+      }
+    }
+  }
+}

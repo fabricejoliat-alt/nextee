@@ -1,0 +1,16 @@
+{
+  "name": "manager occurrence edit and optimistic concurrency through nested Coach RPC",
+  "result": "PASS",
+  "proof": {
+    "updateError": null,
+    "persisted": {
+      "location_text": "JETABLE persisted edit"
+    },
+    "staleError": {
+      "code": "PT409",
+      "details": null,
+      "hint": null,
+      "message": "planning_conflict"
+    }
+  }
+}

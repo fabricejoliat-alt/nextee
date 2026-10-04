@@ -1,0 +1,83 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "method": "Supabase re-read and RPC checks of disposable fixtures",
+  "results": [
+    {
+      "name": "Chrome V2 refusal; V1 retained",
+      "result": "PASS",
+      "proof": {
+        "version": "3dc02f53-0f89-49c0-a02b-c654aeaf9868",
+        "decision": "refused"
+      }
+    },
+    {
+      "name": "Chrome withdrawal resolved and consent renewed",
+      "result": "PASS",
+      "proof": {
+        "state": {
+          "document_id": "a85074e4-3b92-4860-82db-8e70e72fbf90",
+          "beneficiary_id": "e3ee49f1-99b0-49df-9fbe-967434ccd57a",
+          "club_scope": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+          "scope_key": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+          "version_id": "1bc45980-22ca-46bb-80de-3e2885bebd2b",
+          "decision_id": "dcc5201b-df3b-4c78-8186-b953532c5994",
+          "decision": "consented",
+          "decided_at": "2026-10-04T19:50:50.607756+00:00",
+          "conflict": false
+        },
+        "resolutions": [
+          {
+            "id": "f7f00dbc-baaf-4c3d-b1b8-59ae6ea4e269",
+            "document_id": "a85074e4-3b92-4860-82db-8e70e72fbf90",
+            "beneficiary_id": "e3ee49f1-99b0-49df-9fbe-967434ccd57a",
+            "club_scope": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+            "prior_decision_id": "6da47419-25f4-42f8-909c-e8102f4a70f3",
+            "resolved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+            "reason": "JETABLE : résolution technique du retrait fictif ; aucun consentement ni traitement réel.",
+            "resolved_at": "2026-10-04T19:50:44.441882+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "name": "concurrent duplicate decision creates one event",
+      "result": "PASS",
+      "proof": {
+        "ids": [
+          "e6615f4e-627f-4873-908f-9416d44a0c60",
+          "e6615f4e-627f-4873-908f-9416d44a0c60"
+        ],
+        "count": 1
+      }
+    },
+    {
+      "name": "five bad codes lock challenge",
+      "result": "PASS",
+      "proof": {
+        "message": "Confirmation required",
+        "challenge": "38bf79fe-438e-41f5-a732-ed45e775394b"
+      }
+    },
+    {
+      "name": "challenge rate limit",
+      "result": "PASS",
+      "proof": {
+        "message": "Challenge rate limited"
+      }
+    },
+    {
+      "name": "expired code refused",
+      "result": "PASS",
+      "proof": {
+        "message": "Confirmation required"
+      }
+    },
+    {
+      "name": "revoked representative refused",
+      "result": "PASS",
+      "proof": {
+        "message": "Forbidden"
+      }
+    }
+  ]
+}

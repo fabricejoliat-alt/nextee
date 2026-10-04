@@ -1,0 +1,80 @@
+{
+  "document": "3d369782-c3b0-429f-8be5-3d70af434391",
+  "club": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+  "versions": [
+    {
+      "id": "086b0145-b46d-423e-8cad-1d7c0a4e95eb",
+      "document_id": "3d369782-c3b0-429f-8be5-3d70af434391",
+      "version_number": 1,
+      "snapshot": {
+        "kind": "terms",
+        "scope": "club",
+        "club_id": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+        "required": true,
+        "action_kind": "accept",
+        "purpose_key": "JETABLE — document fictif de validation, sans valeur juridique",
+        "document_key": "legalqa_20261004_9a282f_ui",
+        "translations": {
+          "de": {
+            "body": "Ein Test ohne rechtliche Wirkung. Diese fiktive Entscheidung begründet keine echte Verpflichtung.",
+            "title": "FIKTIVES DOKUMENT — CHROME TEST — DE",
+            "status": "approved",
+            "approved_at": "2026-10-04T19:26:19.534Z",
+            "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+            "action_label": "Fiktiven Test bestätigen",
+            "source_revision": 2
+          },
+          "en": {
+            "body": "Disposable test with no legal effect. This fictional decision creates no real commitment.",
+            "title": "FICTIONAL DOCUMENT — CHROME TEST — EN",
+            "status": "approved",
+            "approved_at": "2026-10-04T19:25:58.150Z",
+            "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+            "action_label": "Confirm fictional test",
+            "source_revision": 2
+          },
+          "fr": {
+            "body": "Essai jetable sans valeur juridique. Cette décision fictive ne crée aucun engagement réel.",
+            "title": "DOCUMENT FICTIF — TEST CHROME — FR",
+            "status": "approved",
+            "approved_at": "2026-10-04T19:25:34.320Z",
+            "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+            "action_label": "Valider le test fictif",
+            "source_revision": 2
+          },
+          "it": {
+            "body": "Test senza valore legale. Questa decisione fittizia non crea alcun impegno reale.",
+            "title": "DOCUMENTO FITTIZIO — TEST CHROME — IT",
+            "status": "approved",
+            "approved_at": "2026-10-04T19:26:37.204Z",
+            "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+            "action_label": "Conferma il test fittizio",
+            "source_revision": 2
+          }
+        },
+        "applicability": {
+          "rule": "all_members",
+          "status": "approved",
+          "rationale": "JETABLE — revue technique fictive du parcours uniquement. Aucune validation juridique réelle."
+        },
+        "audience_roles": [
+          "player",
+          "parent",
+          "coach",
+          "manager"
+        ],
+        "change_summary": "Version 1 fictive du test navigateur ; aucun engagement réel.",
+        "required_locales": [
+          "fr",
+          "en",
+          "de",
+          "it"
+        ],
+        "allowed_variables": []
+      },
+      "content_sha256": "8b263a6b2f876f8fd9e60a910ad8dbefd707856c774d4de20ee5b5d3b4a658f8"
+    }
+  ],
+  "fictionalDocumentActive": true,
+  "sqlGuardEnabled": false
+}

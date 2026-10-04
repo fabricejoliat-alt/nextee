@@ -1,5 +1,5 @@
 import {writeFile} from 'node:fs/promises';
-import {db,read,save,assertOk,safety} from './context.mjs';
+import {resultPath,db,read,save,assertOk,safety} from './context.mjs';
 await safety();const f=await read();const users=Object.values(f.users).map(u=>u.id);const clubs=Object.values(f.clubs);
 // Abort before mutations if any identifier does not belong to this run.
 for(const u of Object.values(f.users)){
@@ -8,7 +8,12 @@ for(const u of Object.values(f.users)){
 }
 const named=assertOk(await db.from('clubs').select('id,name').in('id',clubs));
 if(named.length!==2 || named.some(c=>!c.name.startsWith('JETABLE '+f.run)))throw Error('Club ownership mismatch');
-const log=[];const record=async(name,proof)=>{log.push({name,proof});await writeFile('docs/legal/evidence/20261004-cleanup.json',JSON.stringify({run:f.run,project:f.project,clubs:f.clubs,users:Object.fromEntries(Object.entries(f.users).map(([k,u])=>[k,u.id])),documents:f.docs,actions:log},null,2));};
+const documentIds=Object.values(f.docs);
+const documents=assertOk(await db.from('legal_documents').select('id,document_key,club_id').in('id',documentIds));
+if(documents.length!==documentIds.length||documents.some(d=>d.club_id!==f.clubs.A||!d.document_key.startsWith(f.run+'_')))throw Error('Legal fixture ownership mismatch');
+const log=[];const record=async(name,proof)=>{log.push({name,proof});await writeFile(resultPath('cleanup'),JSON.stringify({run:f.run,project:f.project,clubs:f.clubs,users:Object.fromEntries(Object.entries(f.users).map(([k,u])=>[k,u.id])),documents:f.docs,actions:log},null,2));};
+assertOk(await db.from('legal_documents').update({active:false}).in('id',documentIds).eq('club_id',f.clubs.A));
+await record('fictional documents deactivated; immutable evidence retained',{documents:documentIds});
 if(f.request){assertOk(await db.rpc('review_legal_data_request',{p_request:f.request,p_actor:f.users.admin.id,p_status:'resolved',p_note:'JETABLE QA campaign closed. No real request or personal data.'}));await record('fictional request closed',{request:f.request});}
 const paths=[f.business.storagePath,f.business.documentPath].filter(Boolean);
 const prefixes=[f.users.player.id+'/',`player-documents/${f.clubs.A}/${f.users.player.id}/`];
@@ -31,8 +36,8 @@ for(const [role,u] of Object.entries(f.users)){
 }
 const state={enabled:assertOk(await db.from('legal_enforcement_control').select('enabled').single()).enabled};
 for(const [name,q] of [
- ['versions',db.from('legal_versions').select('*',{count:'exact',head:true})],
- ['decisions',db.from('legal_decisions').select('*',{count:'exact',head:true})],
+ ['retained_fixture_versions',db.from('legal_versions').select('*',{count:'exact',head:true}).in('document_id',documentIds)],
+ ['retained_fixture_decisions',db.from('legal_decisions').select('*',{count:'exact',head:true}).in('document_id',documentIds)],
  ['active_documents',db.from('legal_documents').select('*',{count:'exact',head:true}).eq('active',true)],
  ['active_fixture_members',db.from('club_members').select('*',{count:'exact',head:true}).in('user_id',users).eq('is_active',true)],
  ['fixture_admins',db.from('app_admins').select('*',{count:'exact',head:true}).in('user_id',users)],
@@ -41,7 +46,7 @@ for(const [name,q] of [
 ]){const r=await q;assertOk(r);state[name]=r.count;}
 state.remaining_private_objects=0;for(const prefix of prefixes){const objects=assertOk(await db.storage.from('player-documents').list(prefix.replace(/\/$/,'')));state.remaining_private_objects+=objects.length;}
 await record('final persisted state',state);
-if(Object.entries(state).some(([k,v])=>k==='enabled'?v!==false:v!==0))throw Error('Cleanup verification failed');
+if(Object.entries(state).some(([k,v])=>k==='enabled'?v!==false:!k.startsWith('retained_')&&v!==0))throw Error('Cleanup verification failed');
 f.cleaned=true;for(const u of Object.values(f.users)){delete u.token;delete u.password;}await save(f);
-await record('temporary passwords and JWTs erased',{retained:'Only inactive named fixtures and immutable legal rule/request audit rows; no published legal versions or decisions'});
+await record('temporary passwords and JWTs erased',{retained:'Inactive named fixtures and immutable fictional legal versions/decisions/audit, intentionally retained without bypassing immutability'});
 console.log({run:f.run,state,accountsBanned:users.length});

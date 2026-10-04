@@ -1,0 +1,16 @@
+[
+  {
+    "label": "optional",
+    "id": "a85074e4-3b92-4860-82db-8e70e72fbf90",
+    "version": "1bc45980-22ca-46bb-80de-3e2885bebd2b",
+    "scope": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+    "method": "Supabase fixture provisioning, not HTTP route proof"
+  },
+  {
+    "label": "parent",
+    "id": "0932e2e6-f468-4c2a-9c36-71ea2e71f3a6",
+    "version": "1aa6d961-e34a-40af-b35e-59cfa1274cde",
+    "scope": "efa61978-72ac-47f0-b0e4-0b692191c2bb",
+    "method": "Supabase fixture provisioning, not HTTP route proof"
+  }
+]

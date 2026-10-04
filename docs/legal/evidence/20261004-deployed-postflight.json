@@ -1,0 +1,208 @@
+[
+  {
+    "category": "control",
+    "item": "environment",
+    "evidence": {
+      "enabled": false,
+      "digest_exists": true,
+      "pgcrypto_schema": "extensions",
+      "active_documents": 0
+    }
+  },
+  {
+    "category": "function",
+    "item": "copy_manager_event_structure_v1_business(uuid,jsonb)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "7248799d3787b2153838d1fbb993686e",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": true
+    }
+  },
+  {
+    "category": "function",
+    "item": "decide_legal_document(uuid,uuid,text,uuid,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "f160666080633a9beb234b74e3d40c44",
+      "service_execute": true,
+      "qualified_digest": true,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "ensure_event_thread_for_event(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "b4c34ea33426bd8cf44740fdd8ccbc96",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "issue_legal_parent_challenge(uuid,uuid,text,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "861801b8b8b1f993eea2ec5904f1f055",
+      "service_execute": true,
+      "qualified_digest": true,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "pick_event_thread_actor_user_id(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "1f45510ca3af55ee338db1e33158df54",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "present_legal_document(uuid,uuid,uuid,text,text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "16d2b8b9602ef134645a6c79eec9cca3",
+      "service_execute": true,
+      "qualified_digest": true,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "publish_legal_draft(uuid,uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "aee4db3ef06ebc6513191e34b2bad4a1",
+      "service_execute": true,
+      "qualified_digest": true,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "recompute_golf_round_stats(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "752ffb07cca80feba28ff45d5972f2ad",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "remove_manager_parent_v1(uuid,uuid,uuid,uuid[],uuid[])",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "990b926ea6691863a17a0de5bb14381c",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": true
+    }
+  },
+  {
+    "category": "function",
+    "item": "save_manager_camp_v1(uuid,uuid,uuid,text,jsonb)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "9092b77fff7d5e438bf311d4b1806a5e",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": true
+    }
+  },
+  {
+    "category": "function",
+    "item": "sync_event_thread_participants(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "57726f534da7934398023b27440fa450",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "sync_org_player_performance_from_groups(uuid)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "734f196220cec001ff153edaa4036c72",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": false
+    }
+  },
+  {
+    "category": "function",
+    "item": "update_manager_event_occurrence_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb,uuid[])",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "9af66d622aa6718b8547a9c8c654f837",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": true
+    }
+  },
+  {
+    "category": "function",
+    "item": "update_manager_event_series_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb,uuid[],text)",
+    "evidence": {
+      "anon_execute": false,
+      "definition_md5": "c751d572d345620b507b5480d7d44daa",
+      "service_execute": true,
+      "qualified_digest": false,
+      "retry_code_present": false,
+      "authenticated_execute": false,
+      "http_conflict_present": true
+    }
+  },
+  {
+    "category": "policy",
+    "item": "marketplace_club_boundary",
+    "evidence": {
+      "cmd": "ALL",
+      "qual": "((auth.uid() IS NOT NULL) AND ((EXISTS ( SELECT 1\n   FROM club_members m\n  WHERE ((m.club_id = marketplace_items.club_id) AND (m.user_id = auth.uid()) AND m.is_active))) OR (EXISTS ( SELECT 1\n   FROM (player_guardians g\n     JOIN club_members m ON ((m.user_id = g.player_id)))\n  WHERE ((g.guardian_user_id = auth.uid()) AND (g.player_id = marketplace_items.user_id) AND COALESCE(g.can_view, false) AND (m.club_id = marketplace_items.club_id) AND (m.role = 'player'::club_role) AND m.is_active)))))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "permissive": "RESTRICTIVE",
+      "with_check": "((auth.uid() IS NOT NULL) AND ((EXISTS ( SELECT 1\n   FROM club_members m\n  WHERE ((m.club_id = marketplace_items.club_id) AND (m.user_id = auth.uid()) AND m.is_active))) OR (EXISTS ( SELECT 1\n   FROM (player_guardians g\n     JOIN club_members m ON ((m.user_id = g.player_id)))\n  WHERE ((g.guardian_user_id = auth.uid()) AND (g.player_id = marketplace_items.user_id) AND COALESCE(g.can_edit, false) AND (m.club_id = marketplace_items.club_id) AND (m.role = 'player'::club_role) AND m.is_active)))))"
+    }
+  }
+]

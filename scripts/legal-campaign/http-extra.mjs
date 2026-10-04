@@ -1,7 +1,7 @@
 import {writeFile} from 'node:fs/promises';
-import {db,api,client,read,save,safety,assertOk,refreshFixtureSessions} from './context.mjs';
+import {resultPath,db,api,client,read,save,safety,assertOk,refreshFixtureSessions} from './context.mjs';
 const f=await read();await safety();await refreshFixtureSessions(f);const results=[];
-const record=async(name,ok,proof)=>{results.push({name,result:ok?'PASS':'FAIL',proof});console.log(name,ok?'PASS':'FAIL',JSON.stringify(proof));await writeFile('docs/legal/evidence/20261004-extra-results.json',JSON.stringify({run:f.run,results},null,2));};
+const record=async(name,ok,proof)=>{results.push({name,result:ok?'PASS':'FAIL',proof});console.log(name,ok?'PASS':'FAIL',JSON.stringify(proof));await writeFile(resultPath('extra-results'),JSON.stringify({run:f.run,results},null,2));};
 let dr=assertOk(await db.from('legal_drafts').select('*').eq('document_id',f.docs.terms).single());
 await record('mobile Admin save and approval persisted',dr.translations.en.body.includes('Mobile UI verification.')&&dr.translations.en.status==='approved',{status:dr.translations.en.status,approved_by:dr.translations.en.approved_by});
 const stale=await api(f,'admin','/api/admin/legal',{operation:'approve_translation',document_id:f.docs.terms,locale:'en',expected_revision:dr.source_revision,expected_translation:{...dr.translations.en,body:'Old fictional text'}});

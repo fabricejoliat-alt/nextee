@@ -1,6 +1,6 @@
 # Scénarios à exécuter sur une base locale isolée
 
-> **Mise à jour — campagne du 4 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md) et ses preuves. Les notes de préparation ci-dessous sont historiques. Le garde reste désactivé. Le lot correctif `20261102` a été vérifié dans une transaction annulée, sans application durable sur TEST. La validation complète avant activation reste bloquée.
+> **Mise à jour — reprise TEST du 4 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md). Le lot `20261102` est appliqué sur TEST et son postflight de 16 lignes vérifié. Publication, décisions, V2, parent/code, refus et retrait ont été exercés avec fixtures dans Chrome ; corrections d’interface locales encore à déployer. Le garde reste désactivé. Les notes de préparation ci-dessous sont historiques ; elles ne remplacent pas cet état courant.
 
 Aucun de ces scénarios n'a été exécuté sur une base réelle pendant la préparation. Utiliser uniquement des comptes, clubs, adresses et textes fictifs. Vérifier les réponses API **et** l'état SQL après chaque opération.
 

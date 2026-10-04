@@ -1,0 +1,24 @@
+{
+  "project": "wizbeuuvjibmmuxyynly",
+  "branch": "test / PREVIEW",
+  "deployment": "CHY4v1K3XWvPuD6xoZ3eYyEuMedh",
+  "commit": "5a53f7c21561e984ab77c45746ea7ea4f7f63750",
+  "status": "Ready",
+  "application": "https://test.activitee.golf",
+  "browserFixtureOrigin": "https://nextee-35d1mrohi-fabrice-joliats-projects.vercel.app",
+  "vercelProjectEnvSearch": {
+    "query": "LEGAL_",
+    "scope": "All Environments",
+    "result": "No Results Found",
+    "configurationChanged": false
+  },
+  "directHttp": {
+    "status": 401,
+    "source": "Vercel deployment protection; application API not reached"
+  },
+  "cliBypass": {
+    "executed": false,
+    "reason": "Automatic approval rejected; explicit user approval pending"
+  },
+  "observedAt": "2026-10-04T19:53:04.729Z"
+}

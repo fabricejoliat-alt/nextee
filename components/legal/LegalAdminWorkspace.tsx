@@ -81,8 +81,8 @@ export default function LegalAdminWorkspace() {
     return translation?.status === "approved" && translation.source_revision === draft.source_revision;
   }));
   useEffect(() => { setPublicationConfirmed(false); }, [selected, document, draft, previous]);
-  useEffect(() => { setForm(draft?.translations?.[locale] ?? {}); setSummary(draft?.change_summary ?? "");
-    setVariables(draft?.allowed_variables ?? []); }, [draft, locale]);
+  useEffect(() => { setForm(draft?.translations?.[locale] ?? {}); }, [draft, locale]);
+  useEffect(() => { setSummary(draft?.change_summary ?? ""); setVariables(draft?.allowed_variables ?? []); }, [draft]);
   async function mutate(payload: Record<string, unknown>) {
     setBusy(true); setMessage("");
     try {
@@ -106,26 +106,26 @@ export default function LegalAdminWorkspace() {
     <section className={styles.panel}>
       <div className={styles.sectionHeader}><div><h2>Créer un brouillon</h2><span>Nouveau document</span></div></div>
       <div className={styles.formGrid}>
-        <label>Clé <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="conditions-utilisation" /></label>
-        <label>Finalité <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="utilisation du service" /></label>
-        <label>Type <select value={kind} onChange={(e) => { const next = e.target.value; setKind(next);
+        <label>Clé <input disabled={busy} value={key} onChange={(e) => setKey(e.target.value)} placeholder="conditions-utilisation" /></label>
+        <label>Finalité <input disabled={busy} value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="utilisation du service" /></label>
+        <label>Type <select disabled={busy} value={kind} onChange={(e) => { const next = e.target.value; setKind(next);
           setAction(({ terms: "accept", privacy: "acknowledge", parent_authorization: "authorize", specific_consent: "consent", junior_notice: "read" } as Record<string,string>)[next]);
           if (next === "parent_authorization") setScope("club"); }}>{["terms","privacy","parent_authorization","specific_consent","junior_notice"].map((v) => <option key={v} value={v}>{kindLabels[v]}</option>)}</select></label>
-        <label>Action <select value={action} onChange={(e) => setAction(e.target.value)}>{["accept","acknowledge","authorize","consent","read"].map((v) => <option key={v} value={v}>{actionLabels[v]}</option>)}</select></label>
-        <label>Audience <input value={audience} onChange={(e) => setAudience(e.target.value)} /></label>
-        <label>Portée <select value={scope} onChange={(e) => setScope(e.target.value)}><option value="platform">Plateforme</option><option value="club">Club</option></select></label>
-        {scope === "club" && <label>Club <select value={clubId} onChange={(e) => setClubId(e.target.value)}><option value="">Choisir un club</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
-        <label className={styles.checkboxField}><input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Validation requise</label>
+        <label>Action <select disabled={busy} value={action} onChange={(e) => setAction(e.target.value)}>{["accept","acknowledge","authorize","consent","read"].map((v) => <option key={v} value={v}>{actionLabels[v]}</option>)}</select></label>
+        <label>Audience <input disabled={busy} value={audience} onChange={(e) => setAudience(e.target.value)} /></label>
+        <label>Portée <select disabled={busy} value={scope} onChange={(e) => setScope(e.target.value)}><option value="platform">Plateforme</option><option value="club">Club</option></select></label>
+        {scope === "club" && <label>Club <select disabled={busy} value={clubId} onChange={(e) => setClubId(e.target.value)}><option value="">Choisir un club</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
+        <label className={styles.checkboxField}><input disabled={busy} type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Validation requise</label>
       </div><button className={styles.primaryButton} disabled={busy || !key || !purpose.trim() || (scope === "club" && !clubId)} onClick={() => mutate({ operation: "create", key, kind,
         purpose_key: purpose, action, audience: audience.split(",").map((x) => x.trim()), scope, club_id: scope === "club" ? clubId : null,
         required })}><Plus size={16} aria-hidden="true" /> Créer le brouillon</button>
     </section>
     <section className={styles.workspaceGrid}>
       <div className={styles.panel}><div className={styles.sectionHeader}><div><h2>Documents</h2><span>{docs.length} document{docs.length > 1 ? "s" : ""}</span></div></div>
-        <label className={styles.searchField}><Search size={16} aria-hidden="true" /><input value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} placeholder="Rechercher un document" aria-label="Rechercher un document" /></label>
+        <label className={styles.searchField}><Search size={16} aria-hidden="true" /><input disabled={busy} value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} placeholder="Rechercher un document" aria-label="Rechercher un document" /></label>
         {filteredDocs.length ? <div className={styles.tableFrame}><table className={styles.table}><thead><tr><th>Document</th><th>Portée</th><th>État</th></tr></thead><tbody>
           {filteredDocs.map((d) => <tr key={d.id} className={selected === d.id ? styles.selectedRow : ""}>
-            <td data-label="Document"><button type="button" className={styles.docSelect} aria-current={selected === d.id ? "true" : undefined} onClick={() => setSelected(d.id)}>{d.document_key}<span>{kindLabels[d.kind] ?? d.kind}</span></button></td>
+            <td data-label="Document"><button type="button" disabled={busy} className={styles.docSelect} aria-current={selected === d.id ? "true" : undefined} onClick={() => setSelected(d.id)}>{d.document_key}<span>{kindLabels[d.kind] ?? d.kind}</span></button></td>
             <td data-label="Portée">{d.scope === "club" ? clubs.find((club) => club.id === d.club_id)?.name ?? "Club" : "Plateforme"}</td>
             <td data-label="État"><span className={d.active ? styles.activeBadge : styles.inactiveBadge}>{d.active ? "Actif" : "Inactif"}</span></td>
           </tr>)}</tbody></table></div> : <p className={styles.emptyState}>{docs.length ? "Aucun document ne correspond à cette recherche." : "Aucun document pour le moment."}</p>}
@@ -136,28 +136,28 @@ export default function LegalAdminWorkspace() {
           <fieldset className={styles.fieldset}><legend>Variables du modèle</legend>
             <p>Les valeurs viennent des profils et du club au moment de l’affichage. Modifier cette liste relance la revue des quatre langues.</p>
             {(["child_name", "club_name", "user_name"] as const).map((name) => <label key={name} style={{ marginRight: 16 }}>
-              <input type="checkbox" checked={variables.includes(name)} onChange={(event) => setVariables((current) => event.target.checked
+              <input disabled={busy} type="checkbox" checked={variables.includes(name)} onChange={(event) => setVariables((current) => event.target.checked
                 ? [...current, name] : current.filter((item) => item !== name))} /> {name}</label>)}
             <div className={styles.actionRow}><button disabled={busy || !draft || JSON.stringify([...variables].sort()) === JSON.stringify([...(draft?.allowed_variables ?? [])].sort())}
               onClick={() => mutate({ operation: "save_variables", document_id: selected, expected_revision: draft?.source_revision,
                 variables })}>Enregistrer les variables</button></div>
           </fieldset>
-          <div className={styles.languageTabs} role="tablist" aria-label="Langues">{langs.map((l) => <button role="tab" aria-selected={l === locale} key={l} onClick={() => setLocale(l)}>{l.toUpperCase()} · {draft?.translations?.[l]?.status ?? "manquante"}</button>)}</div>
-          <label style={{ display: "block", marginTop: 16 }}>Titre<input style={{ display: "block", width: "100%" }} value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
-          <label style={{ display: "block", marginTop: 12 }}>Texte<textarea style={{ display: "block", width: "100%", minHeight: 240 }} value={form.body ?? ""} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
-          <label style={{ display: "block", marginTop: 12 }}>Libellé de validation<input style={{ display: "block", width: "100%" }} value={form.action_label ?? ""} onChange={(e) => setForm({ ...form, action_label: e.target.value })} /></label>
+          <div className={styles.languageTabs} role="tablist" aria-label="Langues">{langs.map((l) => <button disabled={busy} role="tab" aria-selected={l === locale} key={l} onClick={() => setLocale(l)}>{l.toUpperCase()} · {draft?.translations?.[l]?.status ?? "manquante"}</button>)}</div>
+          <label style={{ display: "block", marginTop: 16 }}>Titre<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
+          <label style={{ display: "block", marginTop: 12 }}>Texte<textarea disabled={busy} style={{ display: "block", width: "100%", minHeight: 240 }} value={form.body ?? ""} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
+          <label style={{ display: "block", marginTop: 12 }}>Libellé de validation<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.action_label ?? ""} onChange={(e) => setForm({ ...form, action_label: e.target.value })} /></label>
           <div className={styles.actionRow}><button className={styles.primaryButton} disabled={busy} onClick={() => mutate({ operation: "save_translation", document_id: selected, locale, ...form, expected_revision: draft?.source_revision })}>Enregistrer la langue</button>
           <button disabled={busy || unsavedTranslationChanges || !draft?.translations?.[locale]} onClick={() => mutate({ operation: "approve_translation", document_id: selected, locale, expected_revision: draft?.source_revision, expected_translation: draft?.translations?.[locale] })}>Approuver</button>
           {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await fetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
           <details><summary>Aperçu utilisateur</summary><h3>{form.title}</h3><p style={{ whiteSpace: "pre-wrap" }}>{form.body}</p><button disabled>{form.action_label}</button></details>
           <details><summary>Règle d’applicabilité (revue juridique)</summary>
             <p>Indiquer la juridiction, la base, l’âge/capacité, la qualité du représentant et la fonction concernée dans une configuration relue. Aucune règle universelle n’est préremplie.</p>
-            <label>Règle <select value={ruleType} onChange={(e) => setRuleType(e.target.value)}><option value="manual_review_required">À implémenter après revue</option><option value="all_members">Tous les membres actifs de l’audience</option></select></label>
-            <textarea aria-label="Justification de la revue juridique" placeholder="Référence et justification de la revue juridique" value={ruleNote} onChange={(e) => setRuleNote(e.target.value)} style={{ width: "100%" }} />
+            <label>Règle <select disabled={busy} value={ruleType} onChange={(e) => setRuleType(e.target.value)}><option value="manual_review_required">À implémenter après revue</option><option value="all_members">Tous les membres actifs de l’audience</option></select></label>
+            <textarea disabled={busy} aria-label="Justification de la revue juridique" placeholder="Référence et justification de la revue juridique" value={ruleNote} onChange={(e) => setRuleNote(e.target.value)} style={{ width: "100%" }} />
             <button disabled={busy || ruleNote.trim().length < 20} onClick={() => mutate({ operation: "review_rule", document_id: selected, note: ruleNote,
               configuration: { status: "approved", rule: ruleType, rationale: ruleNote } })}>Enregistrer la revue</button>
           </details>
-          <h3>Publication</h3><label>Résumé des changements<textarea style={{ display: "block", width: "100%" }} value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
+          <h3>Publication</h3><label>Résumé des changements<textarea disabled={busy} style={{ display: "block", width: "100%" }} value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
           <button disabled={busy} onClick={() => mutate({ operation: "summary", document_id: selected, summary })}>Enregistrer le résumé</button>
           <details><summary>Comparer et publier</summary>
             <p>Version à créer : {previous ? previous.version_number + 1 : 1}. Statut : {document.active ? "actif" : "inactif"}. La publication ne change pas ce statut.</p>
@@ -192,7 +192,7 @@ export default function LegalAdminWorkspace() {
             })}
             {unsavedPublicationChanges && <p role="status">Enregistre les modifications affichées avant de publier.</p>}
             {!languagesReady && <p role="status">Toutes les langues requises doivent être approuvées pour la révision actuelle.</p>}
-            <label style={{ display: "block", margin: "16px 0" }}><input type="checkbox" checked={publicationConfirmed}
+            <label style={{ display: "block", margin: "16px 0" }}><input disabled={busy} type="checkbox" checked={publicationConfirmed}
               onChange={(event) => setPublicationConfirmed(event.target.checked)} /> J’ai relu la portée, la règle, le résumé et les textes de toutes les langues de ce brouillon.</label>
             <button className={styles.primaryButton} disabled={busy || !publicationConfirmed || !expectedPublication || unsavedPublicationChanges || !languagesReady || !draft?.change_summary.trim() || document.applicability.status !== "approved"}
               onClick={() => mutate({ operation: "publish", document_id: selected, expected: expectedPublication })}>Publier cette version</button>
@@ -213,7 +213,7 @@ export default function LegalAdminWorkspace() {
       <h2>Demandes relatives aux données</h2><button onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
         const response = await fetch("/api/admin/legal/requests", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error); setRequests(data.requests); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les demandes</button>
-      <label>Note de suivi<input value={requestNote} onChange={(e) => setRequestNote(e.target.value)} placeholder="Contrôles effectués et décision" style={{ display: "block", width: "100%" }} /></label>
+      <label>Note de suivi<input disabled={busy} value={requestNote} onChange={(e) => setRequestNote(e.target.value)} placeholder="Contrôles effectués et décision" style={{ display: "block", width: "100%" }} /></label>
       {requests.map((row) => <details key={row.id}><summary>{row.request_kind} · {row.status} · {new Date(row.created_at).toLocaleString()}</summary>
         <p>{row.contact_email} · {row.description}</p>
         <button disabled={requestNote.trim().length < 10} onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -230,7 +230,7 @@ export default function LegalAdminWorkspace() {
         const response = await fetch("/api/admin/legal/conflicts", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error); setConflicts(data.conflicts); }
         catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les retraits</button>
-      <label>Motif de résolution<textarea value={resolutionReason} onChange={(e) => setResolutionReason(e.target.value)}
+      <label>Motif de résolution<textarea disabled={busy} value={resolutionReason} onChange={(e) => setResolutionReason(e.target.value)}
         placeholder="Contrôles réalisés et justification de la réautorisation" style={{ display: "block", width: "100%" }} /></label>
       {conflicts.map((row) => <details key={`${row.document_id}-${row.beneficiary_id}-${row.club_scope}`}>
         <summary>{row.decision} · {new Date(row.decided_at).toLocaleString()} · {row.beneficiary_id.slice(0, 8)}</summary>
@@ -249,7 +249,7 @@ export default function LegalAdminWorkspace() {
       <h2>Qualité de représentant</h2>
       <p>Le lien familial et l’accès au club sont contrôlés par le serveur. La qualité permettant une décision parentale nécessite une revue distincte et motivée.</p>
       <p>La liste est limitée à 500 adhésions actives ; la recherche ciblée reste à ajouter pour les clubs plus grands.</p>
-      <label>Club <select value={representativeClub} onChange={(e) => { setRepresentativeClub(e.target.value); setRepresentativeCandidates([]); setRepresentativePair(""); }}>
+      <label>Club <select disabled={busy} value={representativeClub} onChange={(e) => { setRepresentativeClub(e.target.value); setRepresentativeCandidates([]); setRepresentativePair(""); }}>
         <option value="">Choisir un club</option>{clubs.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}</select></label>
       <button disabled={!representativeClub || busy} onClick={async () => { try {
         const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -258,12 +258,12 @@ export default function LegalAdminWorkspace() {
         const data = await response.json(); if (!response.ok) throw new Error(data.error);
         setRepresentativeCandidates(data.candidates); setRepresentativeAssertions(data.assertions);
       } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les liens du club</button>
-      <label>Parent et enfant <select value={representativePair} onChange={(e) => setRepresentativePair(e.target.value)}>
+      <label>Parent et enfant <select disabled={busy} value={representativePair} onChange={(e) => setRepresentativePair(e.target.value)}>
         <option value="">Choisir un lien</option>{representativeCandidates.map((pair) => <option
           key={`${pair.guardian_id}:${pair.child_id}`} value={`${pair.guardian_id}:${pair.child_id}`}>
           {pair.guardian_name} → {pair.child_name} · {representativeAssertions.find((row) => row.guardian_id === pair.guardian_id && row.child_id === pair.child_id)?.status ?? "non vérifié"}
         </option>)}</select></label>
-      <label>Origine et motif de la revue<textarea value={representativeBasis} onChange={(e) => setRepresentativeBasis(e.target.value)}
+      <label>Origine et motif de la revue<textarea disabled={busy} value={representativeBasis} onChange={(e) => setRepresentativeBasis(e.target.value)}
         placeholder="Décrire la vérification réalisée, sans joindre systématiquement une pièce d’identité" style={{ display: "block", width: "100%" }} /></label>
       <button disabled={!representativePair || representativeBasis.trim().length < 20 || busy} onClick={async () => {
         const [guardian_id, child_id] = representativePair.split(":"); setBusy(true); try {

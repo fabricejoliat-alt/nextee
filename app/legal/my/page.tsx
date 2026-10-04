@@ -49,7 +49,8 @@ export default function MyLegalPage() {
     {status && <p role="status">{status}</p>}
     {docs.map((d) => <section key={d.id} style={{ border: "1px solid #ced9d0", borderRadius: 12, padding: 18, marginTop: 16 }}>
       <h2>{d.version?.snapshot.translations?.[locale]?.title ?? d.document_key}</h2><p>Version {d.version?.version_number ?? "—"} · {d.scope} · {d.required ? "requis" : "facultatif"}</p>
-      <p>État : {d.state?.version_id === d.version?.id ? d.state.decision : "validation requise"}{d.state?.conflict ? " · conflit à résoudre" : ""}</p>
+      {d.kind === "parent_authorization" ? <p>État par enfant : consulter « Décisions concernant mes enfants ».</p>
+        : <p>État pour moi : {d.state?.version_id === d.version?.id ? d.state.decision : "validation requise"}{d.state?.conflict ? " · conflit à résoudre" : ""}</p>}
       {d.kind !== "parent_authorization" && <button disabled={busy || !d.eligible_role} onClick={() => open(d)}>Lire et décider pour moi</button>}
       {d.kind === "parent_authorization" || d.kind === "specific_consent" ? children.filter((c) => d.scope === "platform" || c.club_id === d.club_id)
         .map((c) => <button key={`${d.id}-${c.child_id}-${c.club_id}`} disabled={busy} onClick={() => open(d, c.child_id)}>Pour l’enfant {c.child_id.slice(0, 8)}</button>) : null}

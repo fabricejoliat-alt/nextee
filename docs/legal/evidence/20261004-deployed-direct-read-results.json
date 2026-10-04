@@ -1,0 +1,669 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "state": {
+    "enabled": false,
+    "legal_versions": 4,
+    "legal_decisions": 10,
+    "active_documents": 3
+  },
+  "results": [
+    {
+      "relation": "access_invitation_logs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "access_invitation_tokens",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_access_invitation_mail_configs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_coaches",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_days",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_groups",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_players",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camps",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_event_coach_feedback",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_member_player_field_values",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_news_email_deliveries",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_parent_intake_configs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "club_player_fields",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_event_creation_requests",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_player_private_notes",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_debriefs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_preparation_insights",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_preparation_reads",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_conflict_resolutions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_current_state",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_data_request_events",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_data_requests",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_decisions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_documents",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_drafts",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_enforcement_control",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_legacy_current_refs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_legacy_references",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_parent_challenges",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_presentations",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_representative_assertions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_representative_events",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_rule_revisions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_versions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_activity_creation_requests",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_event_creation_requests",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_om_write_requests",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "player_camp_days",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "player_camps",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "player_document_storage_deletions",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "player_document_upload_reservations",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "player_validation_attempts",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "rules_quiz_attempt_clubs",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "training_volume_settings",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "training_volume_targets",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "validation_exercises",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "validation_sections",
+      "role": "anon",
+      "result": "PASS",
+      "status": 401,
+      "error": "42501"
+    },
+    {
+      "relation": "access_invitation_logs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "access_invitation_tokens",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_access_invitation_mail_configs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_coaches",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_days",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_groups",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camp_players",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_camps",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_event_coach_feedback",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_member_player_field_values",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_news_email_deliveries",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_parent_intake_configs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "club_player_fields",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_event_creation_requests",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_player_private_notes",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_debriefs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_preparation_insights",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "coach_training_preparation_reads",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_conflict_resolutions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_current_state",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_data_request_events",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_data_requests",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_decisions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_documents",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_drafts",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_enforcement_control",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_legacy_current_refs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_legacy_references",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_parent_challenges",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_presentations",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_representative_assertions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_representative_events",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_rule_revisions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "legal_versions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_activity_creation_requests",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_event_creation_requests",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "manager_om_write_requests",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "player_camp_days",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "player_camps",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "player_document_storage_deletions",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "player_document_upload_reservations",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "player_validation_attempts",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "rules_quiz_attempt_clubs",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "training_volume_settings",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "training_volume_targets",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "validation_exercises",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    },
+    {
+      "relation": "validation_sections",
+      "role": "player",
+      "result": "PASS",
+      "status": 403,
+      "error": "42501"
+    }
+  ]
+}

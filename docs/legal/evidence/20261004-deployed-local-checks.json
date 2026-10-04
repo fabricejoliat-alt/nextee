@@ -1,0 +1,18 @@
+{
+  "tests": {
+    "count": 58,
+    "passed": 58,
+    "failed": 0,
+    "log": "20261004-deployed-local-tests.txt"
+  },
+  "tsc": {
+    "command": "npx tsc --noEmit --incremental false",
+    "exit_code": 0
+  },
+  "eslint": {
+    "command": "npx eslint components/legal/LegalAdminWorkspace.tsx app/legal/my/page.tsx tests/legal-admin-workspace.test.ts scripts/legal-campaign/*.mjs",
+    "exit_code": 0
+  },
+  "deployed": false,
+  "base_commit": "5a53f7c21561e984ab77c45746ea7ea4f7f63750"
+}

@@ -1,0 +1,243 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "method": "Supabase RPC and persisted fixture rows",
+  "results": [
+    {
+      "name": "Chrome persisted snapshot player",
+      "result": "PASS",
+      "proof": {
+        "id": "5c1416f2-f14b-4da3-b474-546892ee7f6f",
+        "locale": "fr",
+        "sha256": "cd1ae5d3a9dc764d849a3c34d0d3f488e783f4c3d6f0ca22b8eaf621e3cc4a79"
+      }
+    },
+    {
+      "name": "retry stable player",
+      "result": "PASS",
+      "proof": {
+        "id": "5c1416f2-f14b-4da3-b474-546892ee7f6f"
+      }
+    },
+    {
+      "name": "key mismatch player",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Idempotency key reused for another decision"
+      }
+    },
+    {
+      "name": "Chrome persisted snapshot parent",
+      "result": "PASS",
+      "proof": {
+        "id": "ae15870b-46c8-4e16-95be-aefec96ba562",
+        "locale": "en",
+        "sha256": "e9fd3e2d96ff70ace0ee46fbde42efb504006e186afb98c9cdc84b55791a796d"
+      }
+    },
+    {
+      "name": "retry stable parent",
+      "result": "PASS",
+      "proof": {
+        "id": "ae15870b-46c8-4e16-95be-aefec96ba562"
+      }
+    },
+    {
+      "name": "key mismatch parent",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Idempotency key reused for another decision"
+      }
+    },
+    {
+      "name": "Chrome persisted snapshot coach",
+      "result": "PASS",
+      "proof": {
+        "id": "3899b0c8-83fe-4a58-a903-4d506412173d",
+        "locale": "de",
+        "sha256": "636e877407679d044bd7c1f0d68272e9b49b5f63ee47f51010c52f1262be637d"
+      }
+    },
+    {
+      "name": "retry stable coach",
+      "result": "PASS",
+      "proof": {
+        "id": "3899b0c8-83fe-4a58-a903-4d506412173d"
+      }
+    },
+    {
+      "name": "key mismatch coach",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Idempotency key reused for another decision"
+      }
+    },
+    {
+      "name": "Chrome persisted snapshot manager",
+      "result": "PASS",
+      "proof": {
+        "id": "f2b29717-783e-4937-8cb7-319a23d9f7e6",
+        "locale": "it",
+        "sha256": "1f0f5ceb8d6be9627832f50d9480613908eeaa53d722a63c5e2bbfc7f6999d9d"
+      }
+    },
+    {
+      "name": "retry stable manager",
+      "result": "PASS",
+      "proof": {
+        "id": "f2b29717-783e-4937-8cb7-319a23d9f7e6"
+      }
+    },
+    {
+      "name": "key mismatch manager",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Idempotency key reused for another decision"
+      }
+    },
+    {
+      "name": "Chrome parent authority and beneficiary",
+      "result": "PASS",
+      "proof": {
+        "id": "d1c87274-a51c-43fc-8cba-d6beacf8c5bf",
+        "authority": {
+          "role": "parent",
+          "authority": "verified_representative",
+          "parent_email_confirmed": true
+        }
+      }
+    },
+    {
+      "name": "bad code persisted; good code consumed",
+      "result": "PASS",
+      "proof": {
+        "id": "0acda495-7277-4d45-b1ae-cbba919c4e62",
+        "attempts": 2,
+        "used_at": "2026-10-04T19:45:51.694842+00:00"
+      }
+    },
+    {
+      "name": "parent retry after consumed code",
+      "result": "PASS",
+      "proof": {
+        "id": "d1c87274-a51c-43fc-8cba-d6beacf8c5bf"
+      }
+    },
+    {
+      "name": "consumed parent code reuse",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Confirmation required"
+      }
+    },
+    {
+      "name": "foreign club",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Forbidden"
+      }
+    },
+    {
+      "name": "false role",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Forbidden"
+      }
+    },
+    {
+      "name": "unknown locale",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Locale unavailable"
+      }
+    },
+    {
+      "name": "Chrome withdrawal conflict persisted",
+      "result": "PASS",
+      "proof": {
+        "decision": "withdrawn",
+        "conflict": true
+      }
+    },
+    {
+      "name": "immutable decision",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Published legal evidence is immutable"
+      }
+    },
+    {
+      "name": "immutable presentation",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Published legal evidence is immutable"
+      }
+    },
+    {
+      "name": "old publication missing snapshot",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Publication review required"
+      }
+    },
+    {
+      "name": "missing required language",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Missing or unapproved translation: it"
+      }
+    },
+    {
+      "name": "unreviewed translation",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Missing or unapproved translation: de"
+      }
+    },
+    {
+      "name": "unknown template variable",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Invalid placeholder: fr"
+      }
+    },
+    {
+      "name": "stale publication snapshot",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Publication preview changed; reload and review"
+      }
+    },
+    {
+      "name": "fixture version 2 persisted",
+      "result": "PASS",
+      "proof": {
+        "v1": "086b0145-b46d-423e-8cad-1d7c0a4e95eb",
+        "v2": "3dc02f53-0f89-49c0-a02b-c654aeaf9868",
+        "method": "Supabase fixture publication; UI stale decision tested next"
+      }
+    },
+    {
+      "name": "immutable version",
+      "result": "PASS",
+      "proof": {
+        "code": "P0001",
+        "message": "Published legal evidence is immutable"
+      }
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "results": [
+    {
+      "name": "group creation and own-club read",
+      "result": "PASS",
+      "proof": {
+        "group": "eab5aa57-f25f-4b5d-81e2-408dea246ff2",
+        "crossRows": 0
+      }
+    },
+    {
+      "name": "event creation including indirect thread trigger",
+      "result": "PASS",
+      "proof": {
+        "event": "65a28d29-1c19-48ce-a07a-86dd81d5fddd",
+        "thread": "0f2abeab-5cd2-4c92-b7a1-d622a42b1559"
+      }
+    },
+    {
+      "name": "staff seed attendees with guard off",
+      "result": "PASS",
+      "proof": {
+        "error": null,
+        "rows": 1
+      }
+    },
+    {
+      "name": "cross-club direct event read denied",
+      "result": "PASS",
+      "proof": {
+        "rows": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "cross-club event-thread RPC must not mutate",
+      "result": "PASS",
+      "proof": {
+        "error": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "permission denied for function ensure_event_thread_for_event"
+        },
+        "titleAfter": "JETABLE sentinel before unauthorized RPC",
+        "event": "65a28d29-1c19-48ce-a07a-86dd81d5fddd"
+      }
+    },
+    {
+      "name": "anonymous actor helper must be denied",
+      "result": "PASS",
+      "proof": {
+        "error": "42501"
+      }
+    },
+    {
+      "name": "cross-club sync-participants RPC must be denied",
+      "result": "PASS",
+      "proof": {
+        "error": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "permission denied for function sync_event_thread_participants"
+        }
+      }
+    },
+    {
+      "name": "message send, persisted body and second-club denial",
+      "result": "PASS",
+      "proof": {
+        "message": "a761e9d7-adf7-458f-893c-297d8d7274c4",
+        "crossRows": 0
+      }
+    },
+    {
+      "name": "player golf create and indirect OM trigger",
+      "result": "PASS",
+      "proof": {
+        "round": "9fc412b1-0235-4178-be6c-8e3d6e8dbd71",
+        "total_score": 4
+      }
+    },
+    {
+      "name": "parent golf edit and outsider denial",
+      "result": "PASS",
+      "proof": {
+        "parent": null,
+        "outsider": {
+          "code": "P0001",
+          "details": null,
+          "hint": null,
+          "message": "FORBIDDEN"
+        }
+      }
+    },
+    {
+      "name": "anonymous statistics RPC must not mutate a round",
+      "result": "PASS",
+      "proof": {
+        "error": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "permission denied for function recompute_golf_round_stats"
+        },
+        "total_score_after": 777,
+        "expectedBefore": 777
+      }
+    },
+    {
+      "name": "manager OM own club and outsider denial",
+      "result": "PASS",
+      "proof": {
+        "ownError": null,
+        "crossError": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "anonymous performance sync entry must be denied",
+      "result": "PASS",
+      "proof": {
+        "error": {
+          "code": "42501",
+          "details": null,
+          "hint": null,
+          "message": "permission denied for function sync_org_player_performance_from_groups"
+        },
+        "mutation": "No inconsistent fixture state introduced; entry-point test only"
+      }
+    },
+    {
+      "name": "Marketplace second-club isolation",
+      "result": "PASS",
+      "proof": {
+        "id": "291e5557-bbda-42ba-b98b-58d135199299",
+        "crossRows": 0,
+        "anonRows": 0
+      }
+    },
+    {
+      "name": "direct private Storage upload denied",
+      "result": "PASS",
+      "proof": {
+        "error": "new row violates row-level security policy"
+      }
+    },
+    {
+      "name": "private Storage download denies outsider",
+      "result": "PASS",
+      "proof": {
+        "outsider": "{}",
+        "signedStatus": 200,
+        "ttl": 60
+      }
+    }
+  ]
+}
