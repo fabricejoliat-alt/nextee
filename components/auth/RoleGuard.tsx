@@ -223,7 +223,14 @@ export default function RoleGuard({
   }
 
   if (status !== "allowed") {
-    if (quiet || status === "redirecting") return null;
+    if (quiet) {
+      return (
+        <main className="role-guard-startup" aria-busy="true" aria-label="Chargement d’ActiviTee">
+          <span className="role-guard-startup-brand" aria-hidden="true"><span>Activi</span><strong>Tee</strong></span>
+        </main>
+      );
+    }
+    if (status === "redirecting") return null;
     if (inline) {
       return <div className="role-guard-inline" aria-busy="true" aria-label="Chargement"><span /><span /><span /></div>;
     }

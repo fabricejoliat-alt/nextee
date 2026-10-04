@@ -4,12 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, BookOpen, ChevronRight, Lightbulb, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronRight, Lightbulb, RefreshCw, Sparkles, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { etiquetteText } from "@/lib/etiquetteLabels";
+import EtiquetteVisual from "./EtiquetteVisual";
+import visualStyles from "./EtiquetteVisual.module.css";
 import player from "@/components/rules/PlayerRulesWorkspace.module.css";
 import coach from "@/components/rules/CoachRulesWorkspace.module.css";
 import manager from "@/components/rules/RulesWorkspace.module.css";
@@ -97,22 +99,22 @@ export default function EtiquetteWorkspace({ scope }: { scope: Scope }) {
       : <><nav data-ui="breadcrumb" className={coach.breadcrumb} aria-label="Breadcrumb"><Link href="/coach">Coach</Link><ChevronRight size={14}/><span>{l.title}</span></nav>
       <header className={coach.topline}><div><h1>{l.title}</h1><p>{l.intro}</p></div><span className={coach.summary}><BookOpen size={18}/><span><b>{overview?.themes.length ?? "—"}</b> / 12</span></span></header></>}
     {error ? <section className={s.empty} role="alert"><BookOpen size={25}/><strong>{error}</strong><button onClick={() => void load()}><RefreshCw size={15}/>{l.retry}</button></section>
-      : !overview ? <section className={s.cardsSection} aria-label={l.loading}><div className={s.sectionHeading}><h2>{l.explore}</h2></div><div className={s.cardGrid} aria-hidden="true">{Array.from({ length: 3 }, (_, index) => <div className={s.loadingCard} key={index}><span className={s.loadingIcon}/><span className={s.loadingTitle}/><span className={s.loadingBadge}/><span className={s.loadingCardTitle}/><span className={s.loadingCopy}/></div>)}</div></section>
+      : !overview ? <section className={s.cardsSection} aria-label={l.loading}><div className={s.sectionHeading}><div><h2>{l.explore}</h2><p>{l.cards}</p></div></div><div className={s.cardGrid} aria-hidden="true">{Array.from({ length: 3 }, (_, index) => <div className={s.loadingCard} key={index}><span className={s.loadingIcon}/><span className={s.loadingTitle}/><span className={s.loadingBadge}/><span className={s.loadingCardTitle}/><span className={s.loadingCopy}/></div>)}</div></section>
       : !theme ? <section className={s.empty}><BookOpen size={25}/><strong>{l.unavailable}</strong></section>
       : <><section className={s.feature} aria-labelledby="etiquette-theme-title"><div className={s.featureCopy}>
         <span className={s.featureKicker}><Sparkles size={15}/>{l.theme} {String(theme.position).padStart(2, "0")}</span>
         <h2 id="etiquette-theme-title">{themeTitle}</h2><p>{l.intro}</p>
         <div className={s.featureBottom}><span className={s.phase}><BookOpen size={15}/>{summary}</span></div>
-      </div><div className={s.featureArt} aria-hidden="true"><div className={s.artOrbit}><BookOpen size={62} strokeWidth={1.25}/></div><span className={s.artChipOne}>01</span><span className={s.artChipTwo}>03</span></div></section>
-      <section className={s.cardsSection} aria-labelledby="etiquette-cards-title"><div className={s.sectionHeading}><h2 id="etiquette-cards-title">{l.explore}</h2><p>{frenchFallback ? l.fallback : l.cards}</p></div><div className={s.cardGrid}>{overview.cards.map((card) => <button type="button" className={s.card} key={card.id} onClick={() => open(card)}>
+      </div><div className={`${s.featureArt} ${visualStyles.featureArt}`} aria-hidden="true"><EtiquetteVisual /></div></section>
+      <section className={s.cardsSection} aria-labelledby="etiquette-cards-title"><div className={s.sectionHeading}><div><h2 id="etiquette-cards-title">{l.explore}</h2><p>{frenchFallback ? l.fallback : l.cards}</p></div></div><div className={s.cardGrid}>{overview.cards.map((card) => <button type="button" className={s.card} key={card.id} onClick={() => open(card)}>
         <span className={s.cardLabel}><span className={s.cardIcon}><BookOpen size={25} strokeWidth={1.6}/></span><span className={s.cardNumber}>{l.card} {card.position}</span></span>
         <span className={s.cardContent}><small>{card.version.official_reference}</small><strong lang={card.version.locale}>{card.version.title}</strong><span lang={card.version.locale}>{card.version.situation}</span></span>
         <span className={s.cardAction}>{l.read}<ArrowRight size={15}/></span></button>)}</div></section>
-      <section className={s.calendarSection} aria-labelledby="etiquette-themes-title"><div className={s.sectionHeading}><h2 id="etiquette-themes-title">{l.path}</h2><p>{l.themes}</p></div><div className={s.calendarGrid}>{overview.themes.map((item) => <Link key={item.id} href={`${base}?theme=${item.stable_key}`} className={`${s.calendarItem} ${item.id === theme.id ? s.calendarCurrent : ""}`}>
+      <section className={s.calendarSection} aria-labelledby="etiquette-themes-title"><div className={s.sectionHeading}><div><h2 id="etiquette-themes-title">{l.path}</h2><p>{l.themes}</p></div></div><div className={s.calendarGrid}>{overview.themes.map((item) => <Link key={item.id} href={`${base}?theme=${item.stable_key}`} className={`${s.calendarItem} ${item.id === theme.id ? s.calendarCurrent : ""}`}>
         <span className={s.calendarNumber}>{String(item.position).padStart(2, "0")}</span><span className={s.calendarText}><small>{l.theme}</small><strong>{item.title_i18n[locale] ?? item.title_i18n.fr}</strong></span>{item.id === theme.id && <span className={s.calendarNow}>{l.selected}</span>}
       </Link>)}</div></section></>}
     {selected && <AccessibleDialog className={s.dialog} labelledBy="etiquette-card-title" onClose={close}>
-      {scope === "player" && <button type="button" className={player.mobileBack} onClick={close}>{l.back}</button>}
+      {scope === "player" && <button type="button" className={player.mobileBack} onClick={close}><ArrowLeft size={19} />{l.back}</button>}
       <button type="button" className={s.close} onClick={close} aria-label={l.back}><X size={20}/></button>
       {selected.version.image_url && <div className={s.dialogImage}><Image src={selected.version.image_url} alt={selected.version.image_alt || selected.version.title} fill sizes="(max-width: 640px) 100vw, 640px" unoptimized/></div>}
       <div className={s.dialogBody}><CardReading card={selected} labels={l} s={s} coachTip={scope === "coach"}/><button type="button" className={s.done} onClick={close}>{l.back}<ArrowRight size={16}/></button></div>

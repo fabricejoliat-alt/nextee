@@ -16,6 +16,9 @@ import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BookOpen, CalendarCheck2
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { etiquetteText } from "@/lib/etiquetteLabels";
+import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
+import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
@@ -556,6 +559,15 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
         <p className={styles.rulesDescription}>{tr("Découvre les situations de la série à ton rythme, puis teste tes connaissances lors du quiz.", "Explore the situations in this series at your own pace, then test your knowledge in the quiz.")}</p>
       </> : <p>{tr("Six situations à découvrir dans la série en cours. Les bons réflexes, à ton rythme.", "Six situations in the current series. Learn the right reflexes at your own pace.")}</p>}
     </span>
+  </Link>;
+}
+
+function PlayerEtiquetteHomeCard({ locale }: { locale: string }) {
+  const labels = etiquetteText(locale);
+  return <Link href="/player/etiquette" className={`${playerUiStyles.panel} ${styles.rulesCard} ${styles.etiquetteCard}`}>
+    <span className={`${playerUiStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{labels.title}</h2><p>{pickLocaleText(locale, "Les bons gestes à partager sur le parcours.", "Good habits to share on the course.", "Gute Gewohnheiten auf dem Platz.", "Buone abitudini da condividere sul campo.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
+    <span className={`${etiquetteVisualStyles.visual} ${styles.etiquetteVisual}`}><EtiquetteVisual /></span>
+    <span className={styles.rulesBody}><span className={styles.rulesCurrent}><small>{labels.explore}</small><strong>{pickLocaleText(locale, "Joue juste, ensemble", "Play fair, play together", "Fair spielen, gemeinsam spielen", "Gioca lealmente, gioca insieme")}</strong></span><p className={styles.rulesDescription}>{pickLocaleText(locale, "Découvre les réflexes qui rendent chaque partie plus sûre et plus agréable pour tous.", "Discover the habits that make every round safer and more enjoyable for everyone.", "Entdecke, wie jede Runde für alle sicherer und angenehmer wird.", "Scopri i gesti che rendono ogni giro più sicuro e piacevole per tutti.")}</p></span>
   </Link>;
 }
 
@@ -1690,6 +1702,7 @@ export default function PlayerHomePage() {
               </section>
 
               <PlayerRulesHomeCard locale={locale} />
+              <PlayerEtiquetteHomeCard locale={locale} />
             </div>
           </section>
 

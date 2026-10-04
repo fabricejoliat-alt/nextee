@@ -71,6 +71,15 @@
 .leaderboardEmpty{margin:16px 0 0;padding:17px;border:1px dashed #dce6d9;border-radius:10px;background:#f8faf7;color:#6e7a70;font-size:11px;line-height:1.5}
 @media(max-width:760px){.leaderboardGrid{grid-template-columns:1fr}}
 
+/* Native player card dialogs sit in the browser top layer, outside the scrolling shell. */
+@media(max-width:620px){
+  .dialog.dialog{position:fixed;inset:calc(var(--header-h) + var(--safe-top)) 0 calc(var(--footer-h) + var(--safe-bottom)) 0;box-sizing:border-box;width:100%;max-width:none;height:auto;max-height:none;margin:0;border:0;border-radius:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;background:#fff;box-shadow:none;-webkit-overflow-scrolling:touch}
+  .dialog.dialog::backdrop{background:transparent}
+}
+@media(max-width:620px) and (display-mode:standalone), (max-width:620px) and (display-mode:fullscreen){
+  .dialog.dialog{bottom:calc(var(--footer-h) + var(--safe-bottom) - 20px)}
+}
+
 .loadingCard{grid-template-columns:44px minmax(0,1fr);grid-template-rows:44px 20px auto;align-content:start;column-gap:10px;row-gap:10px}
 .loadingCard .loadingIcon{grid-column:1;grid-row:1;width:44px;height:44px;border-radius:12px}
 .loadingCard .loadingTitle{grid-column:2;grid-row:1;align-self:center;justify-self:start;width:34%;height:14px}
