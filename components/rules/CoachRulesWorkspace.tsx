@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Clock3, Lightbulb, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Clock3, Lightbulb, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
@@ -77,7 +77,7 @@ export default function CoachRulesWorkspace({ series, current, cards, read, phas
 
     {selected ? <AccessibleDialog className={styles.dialog} labelledBy="coach-rule-title" onClose={() => setSelected(null)}><button type="button" className={styles.close} onClick={() => setSelected(null)} aria-label={t("common.close")}><X size={20} /></button>
       {selected.rules_card_versions.image_url ? <div className={styles.dialogImage}><Image src={selected.rules_card_versions.image_url} alt={selected.rules_card_versions.image_alt || selected.rules_card_versions.title} fill sizes="(max-width: 640px) 100vw, 640px" unoptimized /></div> : null}
-      <div className={styles.dialogBody}><span className={styles.dialogKicker}>{`${t("coach.rules.card")} ${selected.position}`} · {selected.rules_card_versions.official_reference}</span><h2 id="coach-rule-title">{selected.rules_card_versions.title}</h2><div className={styles.dialogSection}><small>{t("coach.rules.situation")}</small><p>{selected.rules_card_versions.situation}</p></div><div className={styles.dialogSection}><small>{t("coach.rules.understand")}</small><p>{selected.rules_card_versions.simple_explanation}</p></div><div className={styles.takeaway}><Lightbulb size={20} /><div><strong>{t("coach.rules.action")}</strong><p>{selected.rules_card_versions.action_text}</p></div></div><div className={styles.dialogSection}><small>{t("coach.rules.avoid")}</small><p>{selected.rules_card_versions.common_mistake}</p></div><div className={styles.dialogSection}><small>{t("coach.rules.tip")}</small><p>{selected.rules_card_versions.coach_tip}</p></div><button className={styles.done} type="button" onClick={() => setSelected(null)}>{t("coach.rules.back")}<ArrowRight size={16} /></button></div>
+      <div className={styles.dialogBody}><span className={styles.dialogKicker}>{`${t("coach.rules.card")} ${selected.position}`} · {selected.rules_card_versions.official_reference}</span><h2 id="coach-rule-title">{selected.rules_card_versions.title}</h2><div className={styles.dialogSection}><small>{t("coach.rules.situation")}</small><p>{selected.rules_card_versions.situation}</p></div><div className={styles.dialogSection}><small>{t("coach.rules.understand")}</small><p>{selected.rules_card_versions.simple_explanation}</p></div><div className={styles.takeaway}><Lightbulb size={20} /><div><strong>{t("coach.rules.action")}</strong><p>{selected.rules_card_versions.action_text}</p></div></div><div className={styles.dialogSection}><small>{t("coach.rules.avoid")}</small><p>{selected.rules_card_versions.common_mistake}</p></div><div className={styles.dialogSection}><small>{t("coach.rules.tip")}</small><p>{selected.rules_card_versions.coach_tip}</p></div><button className={styles.done} type="button" onClick={() => setSelected(null)}><ArrowLeft size={16} />{t("coach.rules.back")}</button></div>
     </AccessibleDialog> : null}
   </main>;
 }

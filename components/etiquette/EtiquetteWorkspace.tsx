@@ -117,7 +117,7 @@ export default function EtiquetteWorkspace({ scope }: { scope: Scope }) {
       {scope === "player" && <button type="button" className={player.mobileBack} onClick={close}><ArrowLeft size={19} />{l.back}</button>}
       <button type="button" className={s.close} onClick={close} aria-label={l.back}><X size={20}/></button>
       {selected.version.image_url && <div className={s.dialogImage}><Image src={selected.version.image_url} alt={selected.version.image_alt || selected.version.title} fill sizes="(max-width: 640px) 100vw, 640px" unoptimized/></div>}
-      <div className={s.dialogBody}><CardReading card={selected} labels={l} s={s} coachTip={scope === "coach"}/><button type="button" className={s.done} onClick={close}>{l.back}<ArrowRight size={16}/></button></div>
+      <div className={s.dialogBody}><CardReading card={selected} labels={l} s={s} coachTip={scope === "coach"}/><button type="button" className={s.done} onClick={close}><ArrowLeft size={16}/>{l.back}</button></div>
     </AccessibleDialog>}
   </main>;
 }

@@ -7,7 +7,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div className="player-page player-page-root">
       <AppI18nProvider>
-        <RoleGuard allow={["player", "parent"]} inline quiet>
+        <RoleGuard allow={["player", "parent"]} inline>
           <PlayerLayoutShell>
             {children}
           </PlayerLayoutShell>

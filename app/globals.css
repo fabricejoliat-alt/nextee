@@ -44,27 +44,6 @@ body{
   backdrop-filter: blur(2px);
 }
 
-.role-guard-startup{
-  position:fixed;
-  inset:0;
-  z-index:9998;
-  display:grid;
-  place-items:center;
-  min-height:100dvh;
-  padding:24px;
-  background:#35483b;
-  color:#fff;
-}
-.role-guard-startup-brand{
-  font-family:var(--font-inter-tight),"Helvetica Neue",Arial,sans-serif;
-  font-size:clamp(38px,10.5vw,72px);
-  font-weight:300;
-  letter-spacing:-.04em;
-  line-height:1;
-  white-space:nowrap;
-}
-.role-guard-startup-brand strong{font-weight:600}
-
 .route-loading-spinner{
   width: 56px;
   height: 56px;
@@ -2673,6 +2652,10 @@ body:has(.player-page)::before{
 .manager-page main[aria-busy="true"] > .card,
 .player-page main[aria-busy="true"] > .card{
   display: none !important;
+}
+
+.manager-page > .role-guard-page-loading > .card{
+  display: grid !important;
 }
 
 /* Keep fixed headers above all scrolling page layers. */
