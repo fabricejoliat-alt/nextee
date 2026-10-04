@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { etiquetteText } from "@/lib/etiquetteLabels";
 import { Home, Building2, Users, Bell, LogOut, X, Languages, ClipboardCheck, BookOpen, Newspaper } from "lucide-react";
 
 const ROUTES = {
@@ -14,6 +15,7 @@ const ROUTES = {
   translations: "/admin/translations",
   validations: "/admin/validations",
   rules: "/admin/rules",
+  etiquette: "/admin/etiquette",
   news: "/admin/news",
 } as const;
 
@@ -30,6 +32,7 @@ function isActive(pathname: string, href: string) {
 export default function AdminDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const [locale] = useState(() => typeof window === "undefined" ? "fr" : localStorage.getItem("app_locale") ?? "fr");
 
   const [fullName, setFullName] = useState<string>("Superadmin");
 
@@ -76,9 +79,10 @@ export default function AdminDesktopDrawer({ open, onClose }: Props) {
       { label: "Traductions", icon: Languages, href: ROUTES.translations },
       { label: "Gestion des validations", icon: ClipboardCheck, href: ROUTES.validations },
       { label: "Règles de golf", icon: BookOpen, href: ROUTES.rules },
+      { label: etiquetteText(locale).title, icon: BookOpen, href: ROUTES.etiquette },
       { label: "Notifications", icon: Bell, href: ROUTES.notifications },
     ],
-    []
+    [locale]
   );
 
   async function handleLogout() {

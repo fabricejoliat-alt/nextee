@@ -4,4 +4,5 @@ export const adminNav = [
   { href: "/admin/organizations", label: "Organisations" },
   { href: "/admin/events", label: "Événements" },
   { href: "/admin/rules", label: "Règles de golf" },
+  { href: "/admin/etiquette", label: "Étiquette & esprit du jeu" },
 ];

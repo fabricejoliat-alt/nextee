@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { etiquetteText } from "@/lib/etiquetteLabels";
 import {
   Home,
   Flag,
@@ -43,6 +44,7 @@ const ROUTES = {
   om: "/player/om",
   validations: "/player/validations",
   rules: "/player/rules",
+  etiquette: "/player/etiquette",
 
   marketplaceAll: "/player/marketplace",
   marketplaceMine: "/player/marketplace/mine",
@@ -138,7 +140,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
   const [pendingEvalCount, setPendingEvalCount] = useState(0);
@@ -475,6 +477,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             icon: BookOpen,
             href: ROUTES.rules,
           },
+          { label: etiquetteText(locale).title, icon: BookOpen, href: ROUTES.etiquette },
           ...(performanceEnabled
             ? [
                 {
@@ -491,7 +494,7 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         items: [{ label: t("nav.marketplace"), icon: Store, href: ROUTES.marketplaceAll }],
       },
     ],
-    [t, pendingEvalCount, performanceEnabled]
+    [t, locale, pendingEvalCount, performanceEnabled]
   );
 
   async function handleLogout() {

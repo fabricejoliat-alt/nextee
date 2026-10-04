@@ -8,11 +8,12 @@ import { supabase } from "@/lib/supabaseClient";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import styles from "./CoachDesktopDrawer.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { etiquetteText } from "@/lib/etiquetteLabels";
 
 const ROUTES = {
   home: "/coach", calendar: "/coach/calendar", groups: "/coach/groups", players: "/coach/players",
   camps: "/coach/camps", evaluations: "/coach/calendar?view=evaluations&period=year", validations: "/coach/validations",
-  merit: "/coach/om", rules: "/coach/rules", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
+  merit: "/coach/om", rules: "/coach/rules", etiquette: "/coach/etiquette", news: "/coach/news", notifications: "/coach/notifications", profile: "/coach/profile",
 } as const;
 
 type Props = { open: boolean; onClose: () => void; pendingEvaluationCount: number };
@@ -27,7 +28,7 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [fullName, setFullName] = useState(t("common.defaultName"));
 
   useEffect(() => {
@@ -61,12 +62,13 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
       { label: t("coach.nav.validations"), icon: CalendarCheck, href: ROUTES.validations },
       { label: t("coach.nav.merit"), icon: Medal, href: ROUTES.merit },
       { label: t("coach.nav.rules"), icon: BookOpen, href: ROUTES.rules },
+      { label: etiquetteText(locale).title, icon: BookOpen, href: ROUTES.etiquette },
     ] },
     { label: t("coach.nav.information"), items: [
       { label: t("nav.news"), icon: Newspaper, href: ROUTES.news },
       { label: t("coach.nav.notifications"), icon: Bell, href: ROUTES.notifications },
     ] },
-  ], [t, pendingEvaluationCount]);
+  ], [t, locale, pendingEvaluationCount]);
 
   async function logout() {
     await supabase.auth.signOut(); onClose(); router.push("/"); router.refresh();

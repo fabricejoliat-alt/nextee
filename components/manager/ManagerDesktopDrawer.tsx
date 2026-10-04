@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { etiquetteText } from "@/lib/etiquetteLabels";
 import { isManagerClubScopedRoute, managerScopedHref } from "@/lib/managerNavigationContext";
 import { requestManagerClubChange } from "@/components/manager/useManagerClubChangeGuard";
 import { User, LogOut, X, ShieldCheck, Building2, CalendarDays, List, PlusCircle, Trophy, Gauge, Mail, Tent, Users, Newspaper, ChevronRight, Settings, LayoutDashboard, UserRound, SlidersHorizontal, FolderKanban, Network, Medal, CalendarRange, Bell, KeyRound, ListChecks, Sparkles, ClipboardCheck, ChartNoAxesCombined, ChartSpline, BookOpen, WandSparkles } from "lucide-react";
@@ -34,6 +35,7 @@ const ROUTES = {
   evaluationCriteria: "/manager/evaluation-criteria",
   aiAssistance: "/manager/ai-assistance",
   rules: "/manager/rules",
+  etiquette: "/manager/etiquette",
   profileEdit: "/manager/profile",
 } as const;
 
@@ -54,7 +56,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fullName, setFullName] = useState<string>(t("common.defaultName"));
   const [organizationId, setOrganizationId] = useState<string>("");
@@ -176,6 +178,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: t("manager.nav.merit"), icon: Medal, href: ROUTES.om },
           { label: t("manager.nav.contests"), icon: ListChecks, href: ROUTES.omContests },
           { label: t("manager.nav.rules"), icon: BookOpen, href: ROUTES.rules },
+          { label: etiquetteText(locale).title, icon: BookOpen, href: ROUTES.etiquette },
         ],
       },
       {
@@ -193,7 +196,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
     ],
-    [t, activeOrganizationId]
+    [t, locale, activeOrganizationId]
   );
 
   async function handleLogout() {
