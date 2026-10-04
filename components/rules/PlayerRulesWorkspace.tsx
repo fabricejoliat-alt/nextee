@@ -10,6 +10,8 @@ import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import type { Card, RulesLeaderboard, RulesQuizAttempt, Series } from "./RulesWorkspace";
 import styles from "./PlayerRulesWorkspace.module.css";
+import RulesVisual from "./RulesVisual";
+import visualStyles from "./RulesVisual.module.css";
 
 type Props = {
   series: Series[];
@@ -115,7 +117,7 @@ export default function PlayerRulesWorkspace({ series, current, cards, read, pha
         </div>}
         <div className={styles.featureBottom}><span className={styles.phase}><Clock3 size={15} />{phaseLabel}</span><span>{cards.length} {tr("fiches disponibles", "cards available")}</span>{(quizOpen || quizAvailable || quizSubmitted) && current && <Link className={styles.quizLink} href={`/player/rules/quiz?series_id=${encodeURIComponent(current.id)}`}>{quizSubmitted ? <><Eye size={16} />{tr("Afficher mon quiz", "View my quiz")}</> : <>{phase === "results" || phase === "archived" ? tr("Rattraper le quiz", "Catch up on the quiz") : tr("Faire le quiz", "Take the quiz")}<ArrowRight size={16} /></>}</Link>}</div>
       </div>
-      <div className={styles.featureArt} aria-hidden="true"><div className={styles.artOrbit}><BookOpen size={62} strokeWidth={1.25} /></div><span className={styles.artChipOne}>01</span><span className={styles.artChipTwo}>06</span><span className={styles.artLine} /></div>
+      <div className={`${styles.featureArt} ${visualStyles.featureArt}`} aria-hidden="true"><RulesVisual priority /></div>
     </section>
 
     <section className={styles.cardsSection} aria-labelledby="cards-title"><div className={styles.sectionHeading}><div><h2 id="cards-title">{tr("À découvrir maintenant", "Explore now")}</h2><p>{tr("Les fiches de la série", "This series’ cards")}</p></div></div>

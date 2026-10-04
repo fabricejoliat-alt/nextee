@@ -3,13 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, BookOpen, ClipboardCheck } from "lucide-react";
+import { ArrowRight, ClipboardCheck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachText, coachDateLocale } from "@/lib/i18n/coachMessages";
 import { etiquetteText } from "@/lib/etiquetteLabels";
 import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
 import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
+import RulesVisual from "@/components/rules/RulesVisual";
+import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
 import styles from "./CoachLearningCards.module.css";
 
 type ValidationExercisePreview = {
@@ -82,7 +84,6 @@ export default function CoachLearningCards() {
   }, []);
 
   const current = rules?.series.find(series => series.id === rules.currentSeriesId) ?? null;
-  const cardCount = current ? rules?.cards.length ?? 0 : 6;
   const month = current ? new Intl.DateTimeFormat(coachDateLocale(locale), { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
   const etiquette = etiquetteText(locale);
 
@@ -101,7 +102,7 @@ export default function CoachLearningCards() {
       </section>
       <Link href="/coach/rules" className={styles.card}>
         <span className={styles.cardHeader}><span><h3>{t("coach.nav.rules")}</h3><p>{t("coach.learning.rulesIntro")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
-        <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.visualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.visualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
+        <span className={`${styles.rulesVisual} ${rulesVisualStyles.visual}`} aria-hidden="true"><RulesVisual /></span>
         <span className={styles.rulesBody}>{current ? <><small>{coachText(t, "coach.learning.series", { number: current.position, month })}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></> : <strong>{t("coach.learning.rulesTitle")}</strong>}<span>{t("coach.learning.rulesHint")}</span></span>
       </Link>
       <Link href="/coach/etiquette" className={styles.card}>

@@ -12,13 +12,15 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BookOpen, CalendarCheck2, CheckCircle2, ClipboardCheck, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { etiquetteText } from "@/lib/etiquetteLabels";
 import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
 import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
+import RulesVisual from "@/components/rules/RulesVisual";
+import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
@@ -548,11 +550,10 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
 
   const tr = (fr: string, en: string, de?: string, it?: string) => pickLocaleText(locale, fr, en, de, it);
   const current = overview?.series.find(item => item.id === overview.currentSeriesId) ?? null;
-  const cardCount = current ? overview?.cards.length ?? 0 : 6;
   const month = current ? new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", { month: "long", year: "numeric", timeZone: "Europe/Zurich" }).format(new Date(current.discovery_starts_at)) : "";
   return <Link href="/player/rules" className={`${playerUiStyles.panel} ${styles.rulesCard}`}>
     <span className={`${playerUiStyles.panelHeader} ${styles.learningCardHeader}`}><span><h2>{tr("Règles de golf", "Golf rules")}</h2><p>{tr("Découvre les fiches de la série et prépare ton quiz.", "Explore the series cards and get ready for your quiz.")}</p></span><ArrowRight size={16} aria-hidden="true" /></span>
-    <span className={styles.rulesVisual} aria-hidden="true"><span className={styles.rulesVisualBook}><BookOpen size={42} strokeWidth={1.4} /></span><span className={styles.rulesVisualDot}>{String(current?.position ?? 1).padStart(2, "0")}</span><span className={styles.rulesVisualDot}>{String(cardCount || 6).padStart(2, "0")}</span></span>
+    <span className={`${styles.rulesVisual} ${rulesVisualStyles.visual}`} aria-hidden="true"><RulesVisual /></span>
     <span className={styles.rulesBody}>
       {current ? <>
         <span className={styles.rulesCurrent}><small>{tr(`Série ${current.position} · ${month}`, `Series ${current.position} · ${month}`, `Serie ${current.position} · ${month}`, `Serie ${current.position} · ${month}`)}</small><strong>{current.title_i18n[locale] ?? current.title_i18n.fr}</strong></span>

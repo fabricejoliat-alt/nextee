@@ -105,7 +105,7 @@ export default function EtiquetteWorkspace({ scope }: { scope: Scope }) {
         <span className={s.featureKicker}><Sparkles size={15}/>{l.theme} {String(theme.position).padStart(2, "0")}</span>
         <h2 id="etiquette-theme-title">{themeTitle}</h2><p>{l.intro}</p>
         <div className={s.featureBottom}><span className={s.phase}><BookOpen size={15}/>{summary}</span></div>
-      </div><div className={`${s.featureArt} ${visualStyles.featureArt}`} aria-hidden="true"><EtiquetteVisual /></div></section>
+      </div><div className={`${s.featureArt} ${visualStyles.featureArt}`} aria-hidden="true"><EtiquetteVisual priority /></div></section>
       <section className={s.cardsSection} aria-labelledby="etiquette-cards-title"><div className={s.sectionHeading}><div><h2 id="etiquette-cards-title">{l.explore}</h2><p>{frenchFallback ? l.fallback : l.cards}</p></div></div><div className={s.cardGrid}>{overview.cards.map((card) => <button type="button" className={s.card} key={card.id} onClick={() => open(card)}>
         <span className={s.cardLabel}><span className={s.cardIcon}><BookOpen size={25} strokeWidth={1.6}/></span><span className={s.cardNumber}>{l.card} {card.position}</span></span>
         <span className={s.cardContent}><small>{card.version.official_reference}</small><strong lang={card.version.locale}>{card.version.title}</strong><span lang={card.version.locale}>{card.version.situation}</span></span>

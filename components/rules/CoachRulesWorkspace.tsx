@@ -9,6 +9,8 @@ import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import type { Card, Series } from "./RulesWorkspace";
 import styles from "./CoachRulesWorkspace.module.css";
+import RulesVisual from "./RulesVisual";
+import visualStyles from "./RulesVisual.module.css";
 
 type Props = {
   series: Series[];
@@ -63,7 +65,7 @@ export default function CoachRulesWorkspace({ series, current, cards, read, phas
         </div> : null}
         <div className={styles.featureBottom}><span className={styles.phase}><Clock3 size={15} aria-hidden="true" />{phaseLabel}</span><span>{coachText(t, "coach.rules.available", { count: cards.length })}</span></div>
       </div>
-      <div className={styles.featureArt} aria-hidden="true"><div className={styles.artOrbit}><BookOpen size={62} strokeWidth={1.25} /></div><span className={styles.artChipOne}>01</span><span className={styles.artChipTwo}>06</span></div>
+      <div className={`${styles.featureArt} ${visualStyles.featureArt}`} aria-hidden="true"><RulesVisual priority /></div>
     </section>
 
     <section className={styles.cardsSection} aria-labelledby="coach-rules-cards-title"><div className={styles.sectionHeading}><h2 id="coach-rules-cards-title">{t("coach.rules.explore")}</h2><p>{t("coach.rules.cardsHint")}</p></div>

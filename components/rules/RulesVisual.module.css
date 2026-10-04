@@ -1,5 +1,6 @@
 .visual{position:relative;display:block;width:100%;overflow:hidden;border-radius:11px}
-.visual img,.featureArt img{object-fit:cover;object-position:50% 40%}
+.visual img,.featureArt img{object-fit:cover;object-position:100% 65%}
+.visual.visual::before,.visual.visual::after{display:none}
 .featureArt{position:relative;display:block;min-height:264px;overflow:hidden}
 .featureArt.featureArt::before,.featureArt.featureArt::after{display:none}
 @media(max-width:620px){.featureArt{min-height:145px;aspect-ratio:16/9}}
