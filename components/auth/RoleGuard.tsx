@@ -221,18 +221,8 @@ export default function RoleGuard({
   }
 
   if (status !== "allowed") {
-    if (status === "redirecting") return null;
-    if (inline) {
-      return <div className="role-guard-inline" aria-busy="true" aria-label="Chargement"><span /><span /><span /></div>;
-    }
     return (
-      <main className="role-guard-page-loading" style={{ padding: 24 }} aria-busy="true" aria-live="polite">
-        <div className="card" style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 12 }}>
-          <div className="role-guard-loading-line role-guard-loading-line--short" />
-          <div className="role-guard-loading-line" />
-          <div className="role-guard-loading-line role-guard-loading-line--medium" />
-        </div>
-      </main>
+      <div className="role-guard-photo-loading" role="status" aria-busy="true" aria-label="Chargement" />
     );
   }
 

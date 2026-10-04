@@ -4,7 +4,7 @@
   padding-bottom: 38px !important;
 }
 
-.pageHeading h1 {
+:global(.player-page-root) .pageHeading h1 {
   margin: 0;
   color: #fff !important;
   font: 700 clamp(34px, 4vw, 54px) / 1 var(--font-inter-tight), var(--font-inter), sans-serif;
@@ -14,7 +14,7 @@
 
 .pageHeading p {
   margin: 9px 0 0;
-  color: rgba(255, 255, 255, .86) !important;
+  color: rgba(255, 255, 255, .9) !important;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -103,9 +103,9 @@
 .profileContent { display: grid; gap: 14px; }
 .contentHeading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
 .contentHeading > div { display: grid; gap: 4px; }
-.contentHeading span { color: rgba(255, 255, 255, .72); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
-.contentHeading h2 { margin: 0; color: #fff !important; font: 750 22px/1.15 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.025em; text-shadow: 0 2px 10px rgba(16, 33, 22, .2); }
-.contentHeading p { max-width: 420px; margin: 0; color: rgba(255, 255, 255, .78); font-size: 11px; line-height: 1.45; text-align: right; }
+.contentHeading span { color: rgba(255, 255, 255, .8); font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+:global(.player-page-root) .contentHeading h2 { margin: 0; color: #fff !important; font: 750 22px/1.15 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.025em; text-shadow: 0 2px 10px rgba(16, 33, 22, .2); }
+.contentHeading p { max-width: 420px; margin: 0; color: rgba(255, 255, 255, .84); font-size: 11px; line-height: 1.45; text-align: right; }
 
 .cardGrid,
 .skeletonGrid {

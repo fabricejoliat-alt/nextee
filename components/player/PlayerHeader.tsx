@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import PlayerDesktopDrawer from "@/components/player/PlayerDesktopDrawer";
 import { Bell, Menu } from "lucide-react";
-import LanguageToggle from "@/components/i18n/LanguageToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PushActivationBanner from "@/components/notifications/PushActivationBanner";
 import { applyPwaBadge, getUnreadNotificationsCount } from "@/lib/notifications";
@@ -182,7 +181,6 @@ export default function PlayerHeader() {
 
             {/* RIGHT: Bell */}
             <div className="header-right header-right--icon">
-              <LanguageToggle />
               <Link className="icon-btn icon-btn-notifications" href="/player/notifications" aria-label={t("common.notificationsSoon")}>
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
                 {unreadCount > 0 ? <span className="icon-btn-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}

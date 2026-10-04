@@ -7,6 +7,7 @@ import NextImage from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import type { AppLocale } from "@/lib/i18n/messages";
 import {
   ArrowDown,
   ArrowUp,
@@ -15,6 +16,7 @@ import {
   ContactRound,
   Gauge,
   History,
+  Languages,
   KeyRound,
   MapPin,
   Pencil,
@@ -233,7 +235,7 @@ function getJuniorCategory(birthDateISO: string) {
 }
 
 export default function PlayerProfilePage() {
-  const { t } = useI18n();
+  const { locale, setLocale, t } = useI18n();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1297,6 +1299,23 @@ export default function PlayerProfilePage() {
                     </Field>
                   </SectionCard>
                 ) : null}
+
+                <SectionCard title={t("playerProfile.interfaceSettings")} icon={<Languages size={17} />} wide>
+                  <div className={styles.field}>
+                    <label htmlFor="player-interface-language">{t("common.language")}</label>
+                    <select
+                      id="player-interface-language"
+                      value={locale}
+                      onChange={(event) => setLocale(event.target.value as AppLocale)}
+                    >
+                      <option value="fr">Français</option>
+                      <option value="en">English</option>
+                      <option value="de">Deutsch</option>
+                      <option value="it">Italiano</option>
+                    </select>
+                  </div>
+                  <p className={styles.helperText}>{t("playerProfile.interfaceLanguageHelp")}</p>
+                </SectionCard>
 
                 {viewerRole === "player" ? (
                   <SectionCard title={t("playerProfile.administrative")} icon={<ShieldCheck size={17} />} wide>
