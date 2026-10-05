@@ -6,9 +6,11 @@ import {
   normalizeCoachPreparationPoints,
   type CoachPreparationInsight,
 } from "@/lib/coachPreparationInsights";
-import { loadCoachPreparationSources } from "@/lib/server/coachPreparationSources";
+import { coachPreparationProviderInput, loadCoachPreparationSources } from "@/lib/server/coachPreparationSources";
 import { loadCoachPreparationReads } from "@/lib/server/coachPreparationReads";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
+import { CoachAiAuthorizationError, coachAiSourceFingerprint, requireCoachAiGrant } from "@/lib/server/coachAiAuthorization";
+import { legalNoStore } from "@/lib/server/legalAccess";
 
 type CacheRow = {
   player_id: string;
@@ -81,7 +83,7 @@ async function generateAttentionPoints(apiKey: string, playerHistory: unknown) {
     signal: AbortSignal.timeout(30_000),
   });
   const json = (await response.json().catch(() => ({}))) as OpenAIResponse;
-  if (!response.ok) throw new Error(json.error?.message || "AI analysis failed");
+  if (!response.ok) throw new Error("AI analysis failed");
   const parsed = JSON.parse(extractOutputText(json) || "{}") as unknown;
   const points = normalizeCoachPreparationPoints(parsed);
   if (points.length < 1) throw new Error("AI returned an empty private-note checklist");
@@ -110,12 +112,29 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
       .select("player_id")
       .eq("event_id", eventId);
     if (targetAttendeesRes.error) throw new Error(targetAttendeesRes.error.message);
-    const playerIds = Array.from(
+    let playerIds = Array.from(
       new Set((targetAttendeesRes.data ?? []).map((row) => String(row.player_id ?? "").trim()).filter(Boolean))
     );
     if (playerIds.length === 0) return NextResponse.json({ insights: [], history_event_count: 0 });
 
+    const grants = new Map<string, string>();
+    const unavailable = new Set<string>();
+    for (const playerId of playerIds) {
+      try { grants.set(playerId, await requireCoachAiGrant(supabaseAdmin, callerId, targetEvent, playerId)); }
+      catch (error) {
+        if (!(error instanceof CoachAiAuthorizationError)) throw error;
+        unavailable.add(playerId);
+      }
+    }
+    playerIds = playerIds.filter((playerId) => grants.has(playerId));
+    if (playerIds.length === 0) return NextResponse.json({
+      insights: [], history_event_count: 0, unavailable_player_ids: [...unavailable],
+    }, { headers: legalNoStore });
+
     const { sourceByPlayerId, historyEventIds } = await loadCoachPreparationSources(supabaseAdmin, targetEvent, playerIds);
+    for (const [playerId, sourceData] of sourceByPlayerId) {
+      sourceData.sourceHash = coachAiSourceFingerprint(sourceData.sourceHash, grants.get(playerId)!);
+    }
     const playersWithoutSource = playerIds.filter((playerId) => !sourceByPlayerId.has(playerId));
     if (playersWithoutSource.length > 0) {
       const cleanupRes = await supabaseAdmin
@@ -125,7 +144,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
         .in("player_id", playersWithoutSource);
       if (cleanupRes.error && !isMissingCacheTable(cleanupRes.error)) throw new Error(cleanupRes.error.message);
     }
-    if (sourceByPlayerId.size === 0) return NextResponse.json({ insights: [], history_event_count: historyEventIds.length });
+    if (sourceByPlayerId.size === 0) return NextResponse.json({
+      insights: [], history_event_count: historyEventIds.length, unavailable_player_ids: [...unavailable],
+    }, { headers: legalNoStore });
 
     let cacheAvailable = true;
     const cacheByPlayerId = new Map<string, CacheRow>();
@@ -166,19 +187,26 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
       for (let index = 0; index < misses.length; index += 3) {
         const batch = misses.slice(index, index + 3);
         const settled = await Promise.allSettled(
-          batch.map(async ([playerId, sourceData]) => ({
-            playerId,
-            sourceData,
-            points: await generateAttentionPoints(apiKey, sourceData.source),
-            generatedAt: new Date().toISOString(),
-          }))
+          batch.map(async ([playerId, sourceData]) => {
+            await requireCoachAiGrant(supabaseAdmin, callerId, targetEvent, playerId, grants.get(playerId));
+            return { playerId, sourceData,
+              points: await generateAttentionPoints(apiKey, coachPreparationProviderInput(sourceData.source)),
+              generatedAt: new Date().toISOString() };
+          })
         );
-        const generated = settled.flatMap((result) => {
+        const generated = settled.flatMap((result, resultIndex) => {
           if (result.status === "fulfilled") return [result.value];
-          firstGenerationError ??= result.reason;
+          if (result.reason instanceof CoachAiAuthorizationError) unavailable.add(batch[resultIndex][0]);
+          else firstGenerationError ??= result.reason;
           return [];
         });
         for (const item of generated) {
+          try { await requireCoachAiGrant(supabaseAdmin, callerId, targetEvent, item.playerId, grants.get(item.playerId)); }
+          catch (error) {
+            if (!(error instanceof CoachAiAuthorizationError)) throw error;
+            unavailable.add(item.playerId);
+            continue;
+          }
           insights.push({
             player_id: item.playerId,
             points: item.points,
@@ -213,20 +241,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
       if (insights.length === 0 && firstGenerationError) throw firstGenerationError;
     }
 
-    insights.sort((a, b) => playerIds.indexOf(a.player_id) - playerIds.indexOf(b.player_id));
+    const authorizedInsights: CoachPreparationInsight[] = [];
+    for (const insight of insights) {
+      try {
+        await requireCoachAiGrant(supabaseAdmin, callerId, targetEvent, insight.player_id, grants.get(insight.player_id));
+        authorizedInsights.push(insight);
+      } catch (error) {
+        if (!(error instanceof CoachAiAuthorizationError)) throw error;
+        unavailable.add(insight.player_id);
+      }
+    }
+    authorizedInsights.sort((a, b) => playerIds.indexOf(a.player_id) - playerIds.indexOf(b.player_id));
     const reads = await loadCoachPreparationReads(supabaseAdmin, callerId, [eventId]);
     return NextResponse.json({
-      insights: insights.map((insight) => ({
+      insights: authorizedInsights.map((insight) => ({
         ...insight,
         seen_at: reads.rows.find((read) => read.target_event_id === eventId && read.player_id === insight.player_id
           && read.source_fingerprint === insight.source_fingerprint)?.seen_at ?? null,
       })),
       read_tracking_available: reads.available && cacheAvailable,
       history_event_count: historyEventIds.length,
-    });
+      unavailable_player_ids: [...unavailable],
+    }, { headers: legalNoStore });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "forbidden" ? 403 : message === "event_not_found" ? 404 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: status === 500 ? "AI preparation unavailable" : message }, { status, headers: legalNoStore });
   }
 }

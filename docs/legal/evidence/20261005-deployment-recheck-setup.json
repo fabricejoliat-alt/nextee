@@ -1,0 +1,19 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "baseline": {
+    "enabled": false,
+    "active": 0,
+    "versions": 4,
+    "decisions": 10
+  },
+  "roles": [
+    "admin",
+    "player",
+    "parent",
+    "coach",
+    "manager",
+    "outsider"
+  ],
+  "noDocumentsActivated": true,
+  "noRepresentationsChanged": true
+}

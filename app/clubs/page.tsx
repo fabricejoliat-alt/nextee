@@ -19,7 +19,7 @@ export default function ClubsPage() {
       setMsg("Chargement...");
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
-        setMsg("❌ Pas connecté. Va sur /auth-test et connecte-toi.");
+        setMsg("❌ Pas connecté. Connecte-toi depuis la page d’accueil.");
         return;
       }
 

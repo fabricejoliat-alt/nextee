@@ -181,6 +181,12 @@ const rows = {
     "Die Analyse ist nicht verfügbar. Du kannst die Notizen weiterhin manuell eingeben.",
     "L’analisi non è disponibile. Puoi continuare a inserire le note manualmente."
   ],
+  "coach.error.aiAuthorization": [
+    "L’assistance IA n’est pas disponible pour ce joueur. Vous pouvez continuer la saisie manuelle.",
+    "AI assistance is unavailable for this player. You can continue entering notes manually.",
+    "Die KI-Unterstützung ist für diesen Spieler nicht verfügbar. Du kannst Notizen weiterhin manuell erfassen.",
+    "L’assistenza IA non è disponibile per questo giocatore. Puoi continuare a inserire le note manualmente.",
+  ],
   "coach.error.aiDisabled": [
     "L’assistance IA n’est pas activée pour votre compte dans ce club.",
     "AI assistance is not enabled for your account in this club.",

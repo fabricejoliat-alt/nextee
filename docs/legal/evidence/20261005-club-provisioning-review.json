@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-05",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "source": "GET /auth/v1/settings with TEST public anon key; only signup flag retained",
+  "disable_signup": false,
+  "remote_settings_changed": false,
+  "signup_attempted": false,
+  "accounts_created": 0,
+  "emails_sent": 0,
+  "local_changes": [
+    "app/auth-test/page.tsx redirects to /",
+    "app/clubs/page.tsx no longer recommends auth-test",
+    "supabase/config.toml auth and email enable_signup=false"
+  ],
+  "checks": {
+    "typescript": "passed",
+    "eslint_changed_pages": "passed",
+    "git_diff_check": "passed",
+    "remaining_app_signUp_calls": 0
+  },
+  "limits": [
+    "No claim that an Auth signup grants club membership or access",
+    "Hosted TEST setting is not changed by editing local config.toml",
+    "No production read or change",
+    "Browser redirect and Manager creation with remote signups disabled not retested"
+  ]
+}

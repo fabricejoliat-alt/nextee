@@ -4,6 +4,7 @@ import { loadCoachPreparationSources } from "./coachPreparationSources.ts";
 import { loadCoachPreparationReads } from "./coachPreparationReads.ts";
 import { isCoachTrainingAssistanceEnabled } from "./coachTrainingAssistance.ts";
 import { coachRows } from "./coachRows.ts";
+import { coachAiSourceFingerprint, loadCoachAiPlayerGrant } from "./coachAiAuthorization.ts";
 
 type Event = { id: string; group_id: string; club_id: string; event_type: string | null; starts_at: string; status: string };
 /** Authorized events only. Returns booleans, never private notes or generated points. No AI calls. */
@@ -37,11 +38,19 @@ export async function loadCoachPreparationStatus(db: SupabaseClient, coachId: st
   for (const groupEvents of groups.values()) {
     const ids = new Set(groupEvents.map((event) => event.id));
     const people = attendees.filter((attendee) => ids.has(attendee.event_id));
-    const playerIds = [...new Set(people.map((person) => person.player_id))];
+    const grants = new Map<string, string>();
+    for (const playerId of new Set(people.map((person) => person.player_id))) {
+      // An unavailable optional AI registry must not break the manual calendar.
+      const grant = await loadCoachAiPlayerGrant(db, groupEvents[0].club_id, playerId).catch(() => null);
+      if (grant) grants.set(playerId, grant);
+    }
+    const playerIds = [...grants.keys()];
     const hashes = new Map<string, string>();
     for (let index = 0; index < playerIds.length; index += 150) {
       const sources = await loadCoachPreparationSources(db, groupEvents[0], playerIds.slice(index, index + 150));
-      sources.sourceByPlayerId.forEach((source, playerId) => hashes.set(playerId, source.sourceHash));
+      sources.sourceByPlayerId.forEach((source, playerId) => hashes.set(
+        playerId, coachAiSourceFingerprint(source.sourceHash, grants.get(playerId)!)
+      ));
     }
     for (const event of groupEvents) {
       result[event.id] = people.some((person) => person.event_id === event.id

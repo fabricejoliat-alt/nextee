@@ -24,11 +24,11 @@ test("manager navigation and Coach details expose the individual setting", () =>
   assert.match(drawer, /icon: WandSparkles/);
   assert.match(page, /coach_training_assistance_enabled/);
   assert.match(page, /ManagerMemberAvatar/);
-  assert.match(page, /user-mgmt-field-label">Recherche/);
+  assert.match(page, /user-mgmt-field-label">\{t\("manager.settings.search"\)\}/);
   assert.doesNotMatch(page, /Voir la fiche/);
   assert.match(page, /role="switch"/);
   assert.match(page, /aria-checked=\{enabled\}/);
-  assert.match(coachDetails, /label="Assistance IA"/);
+  assert.match(coachDetails, /label=\{t\("manager.nav.ai"\)\}/);
 });
 
 test("Coach AI routes pass the authenticated Coach id to the authorization helper", () => {

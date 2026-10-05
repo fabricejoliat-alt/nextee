@@ -3,6 +3,8 @@ import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
 import { COACH_PRIVATE_NOTE_MAX_LENGTH } from "@/lib/coachDebrief";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
+import { CoachAiAuthorizationError, requireCoachAiGrant } from "@/lib/server/coachAiAuthorization";
+import { legalNoStore } from "@/lib/server/legalAccess";
 
 type OpenAIResponse = {
   output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
@@ -66,16 +68,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     if (attendeeRes.error) throw new Error(attendeeRes.error.message);
     if (!attendeeRes.data) return NextResponse.json({ error: "Player is not part of this session." }, { status: 400 });
 
-    const profileRes = await supabaseAdmin
-      .from("profiles")
-      .select("id,first_name,last_name")
-      .eq("id", playerId)
-      .maybeSingle();
-    if (profileRes.error) throw new Error(profileRes.error.message);
-    const displayName = `${profileRes.data?.first_name ?? ""} ${profileRes.data?.last_name ?? ""}`.trim();
-
     const apiKey = String(process.env.OPENAI_API_KEY ?? "").trim();
     if (!apiKey) return NextResponse.json({ error: "AI analysis is not configured." }, { status: 503 });
+
+    const grant = await requireCoachAiGrant(supabaseAdmin, callerId, event, playerId);
 
     const openAIRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -98,7 +94,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
           {
             role: "user",
             content: JSON.stringify({
-              player: { player_id: playerId, display_name: displayName },
+              player: { player_id: "subject" },
               audience,
               output_language: outputLanguage,
               individual_source: sourceText,
@@ -113,7 +109,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
             schema: {
               type: "object",
               properties: {
-                player_id: { type: "string", enum: [playerId] },
+                player_id: { type: "string", enum: ["subject"] },
                 text: { type: "string" },
                 rationale: { type: "string" },
                 confidence: { type: "string", enum: ["high", "medium"] },
@@ -128,15 +124,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     });
     const openAIJson = (await openAIRes.json().catch(() => ({}))) as OpenAIResponse & { error?: { message?: string } };
     if (!openAIRes.ok) {
-      return NextResponse.json({ error: openAIJson.error?.message || "AI analysis failed." }, { status: 502 });
+      return NextResponse.json({ error: "AI analysis failed." }, { status: 502, headers: legalNoStore });
     }
 
     const parsed = JSON.parse(extractOutputText(openAIJson) || "{}") as Record<string, unknown>;
     const proposalText = String(parsed.text ?? "").trim();
-    if (String(parsed.player_id ?? "") !== playerId || !proposalText || proposalText.length > COACH_PRIVATE_NOTE_MAX_LENGTH) {
+    if (String(parsed.player_id ?? "") !== "subject" || !proposalText || proposalText.length > COACH_PRIVATE_NOTE_MAX_LENGTH) {
       return NextResponse.json({ error: "AI returned an invalid player proposal." }, { status: 502 });
     }
 
+    await requireCoachAiGrant(supabaseAdmin, callerId, event, playerId, grant);
     return NextResponse.json({
       proposal: {
         player_id: playerId,
@@ -144,10 +141,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
         rationale: String(parsed.rationale ?? "").trim(),
         confidence: parsed.confidence === "high" ? "high" : "medium",
       },
-    });
+    }, { headers: legalNoStore });
   } catch (error: unknown) {
+    if (error instanceof CoachAiAuthorizationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 403, headers: legalNoStore });
+    }
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "forbidden" ? 403 : message === "event_not_found" ? 404 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: status === 500 ? "AI analysis unavailable" : message }, { status, headers: legalNoStore });
   }
 }

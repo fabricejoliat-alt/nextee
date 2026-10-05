@@ -5,6 +5,7 @@ import { isFutureTraining, normalizeCoachPreparationPoints } from "@/lib/coachPr
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
 import { loadCoachPreparationSources } from "@/lib/server/coachPreparationSources";
 import { isMissingPreparationReads } from "@/lib/server/coachPreparationReads";
+import { CoachAiAuthorizationError, coachAiSourceFingerprint, requireCoachAiGrant } from "@/lib/server/coachAiAuthorization";
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: string }> }) {
   try {
@@ -27,18 +28,21 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       .eq("event_id", eventId).eq("player_id", body.player_id).maybeSingle();
     if (attendee.error) throw new Error(attendee.error.message);
     if (!attendee.data) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    const grant = await requireCoachAiGrant(db, callerId, event, body.player_id);
     const [{ sourceByPlayerId }, cache] = await Promise.all([
       loadCoachPreparationSources(db, event, [body.player_id]),
       db.from("coach_training_preparation_insights").select("source_fingerprint,attention_points")
         .eq("target_event_id", eventId).eq("player_id", body.player_id).maybeSingle(),
     ]);
     if (cache.error) throw new Error(cache.error.message);
-    if (sourceByPlayerId.get(body.player_id)?.sourceHash !== body.source_fingerprint
+    const sourceHash = sourceByPlayerId.get(body.player_id)?.sourceHash;
+    if (!sourceHash || coachAiSourceFingerprint(sourceHash, grant) !== body.source_fingerprint
       || cache.data?.source_fingerprint !== body.source_fingerprint
       || !normalizeCoachPreparationPoints(cache.data?.attention_points).length) {
       return NextResponse.json({ error: "preparation_changed" }, { status: 409 });
     }
     const seenAt = new Date().toISOString();
+    await requireCoachAiGrant(db, callerId, event, body.player_id, grant);
     const saved = await db.from("coach_training_preparation_reads").upsert({
       target_event_id: eventId, player_id: body.player_id, coach_id: callerId,
       source_fingerprint: body.source_fingerprint, seen_at: seenAt,
@@ -47,6 +51,9 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (saved.error) throw new Error(saved.error.message);
     return NextResponse.json({ ok: true, seen_at: saved.data.seen_at });
   } catch (error) {
+    if (error instanceof CoachAiAuthorizationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 403 });
+    }
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "Invalid token" ? 401 : message === "forbidden" ? 403 : message === "event_not_found" ? 404 : 500;
     return NextResponse.json({ error: status === 500 ? "Server error" : message }, { status });

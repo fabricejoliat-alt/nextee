@@ -27,6 +27,16 @@ type ValidatedPrivateNote = {
 
 
 const COACH_PREPARATION_GENERATION_VERSION = 2;
+// Keep identifiers and exact timestamps in the local fingerprint, outside the provider payload.
+export function coachPreparationProviderInput(source: unknown) {
+  const history = source as { private_notes_by_session?: Array<{ private_notes?: Array<{ text?: string }> }> };
+  return {
+    sessions: (history.private_notes_by_session ?? []).map((session, index) => ({
+      recency_order: index + 1,
+      notes: (session.private_notes ?? []).map((note) => String(note.text ?? "")),
+    })),
+  };
+}
 function recordKey(eventId: string, playerId: string) { return `${eventId}:${playerId}`; }
 function fingerprint(value: unknown) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 

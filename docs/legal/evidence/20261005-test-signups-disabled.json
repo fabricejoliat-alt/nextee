@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-10-05T11:32:44.314Z",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "source": "Supabase TEST dashboard saved; independent GET /auth/v1/settings",
+  "disable_signup": true,
+  "authorized_by": "User explicitly authorized closing public signups on TEST",
+  "remote_setting_changed": "Allow new users to sign up: on -> off",
+  "accounts_created": 0,
+  "signup_attempted": false,
+  "emails_sent": 0,
+  "production_accessed": false,
+  "legal_flags_changed": false,
+  "limits": "Configuration verification only; no new login or Manager provisioning test"
+}

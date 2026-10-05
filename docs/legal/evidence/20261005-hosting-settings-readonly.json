@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-05",
+  "purpose": "Finalisation documentaire des pays de traitement et limites de conservation",
+  "authorization": "Accord utilisateur explicite pour lire uniquement les réglages hébergement/conservation Supabase et Vercel en production, sans données utilisateur ni modification ; OpenAI et Brevo ouverts par l'utilisateur pour lire région/rétention/aperçus",
+  "supabase_test": {
+    "project": "wizbeuuvjibmmuxyynly",
+    "branch": "test PREVIEW",
+    "region": "eu-west-1",
+    "label": "West EU (Ireland)",
+    "source": "https://supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/settings/general"
+  },
+  "supabase_production": {
+    "project": "qgyshibomgcuaxhyhrgo",
+    "branch": "main PRODUCTION",
+    "region": "eu-west-1",
+    "label": "West EU (Ireland)",
+    "source": "https://supabase.com/dashboard/project/qgyshibomgcuaxhyhrgo/settings/general",
+    "scheduled_backup_dates_visible": [
+      "2026-10-05",
+      "2026-10-04",
+      "2026-10-03",
+      "2026-10-02",
+      "2026-10-01",
+      "2026-09-30",
+      "2026-09-29",
+      "2026-09-28"
+    ],
+    "backup_source": "https://supabase.com/dashboard/project/qgyshibomgcuaxhyhrgo/database/backups/scheduled",
+    "storage_objects_in_database_backups": false,
+    "pitr_state": "Add-on not enabled; Enable add-on offered",
+    "pitr_source": "https://supabase.com/dashboard/project/qgyshibomgcuaxhyhrgo/database/backups/pitr"
+  },
+  "vercel": {
+    "project": "nextee",
+    "scope": "Project settings; not an inspection of every active deployment",
+    "function_region_checked": "iad1",
+    "label": "Washington, D.C., USA (East) - us-east-1 - iad1",
+    "source": "https://vercel.com/fabrice-joliats-projects/nextee/settings/functions",
+    "fluid_compute_enabled": true,
+    "drains_state": "No drains are associated with this project",
+    "drains_source": "https://vercel.com/fabrice-joliats-projects/nextee/settings/drains"
+  },
+  "openai": {
+    "project_name": "ActiviTee",
+    "residency_label": "Global",
+    "data_retention_label": "Standard Retention",
+    "zero_data_retention_enabled_for_observed_project": false,
+    "source": "https://platform.openai.com/settings/organization/projects",
+    "organization_api_call_logging": "Enabled per call",
+    "logging_source": "https://platform.openai.com/settings/organization/data-controls/data-retention",
+    "integration_key_binding_checked": false
+  },
+  "brevo": {
+    "account_name": "ActiviTee",
+    "scope_selected": "Tous les expéditeurs",
+    "transactional_logs_retention_months": 1,
+    "email_preview_option_selected": "Ne pas conserver les aperçus",
+    "new_transactional_email_previews_stored": false,
+    "legacy_previews_checked": false,
+    "source": "https://app.brevo.com/transactional/email/settings/retention-rules"
+  },
+  "limits": [
+    "No configuration changed",
+    "No user table, SQL query, file, message or actual log inspected",
+    "No backup downloaded or restored",
+    "Visible backup dates do not prove expiry of all copies",
+    "Vercel project setting does not alone prove runtime region of every existing deployment",
+    "OpenAI and Brevo displayed settings read only; no saved change and no API key viewed",
+    "OpenAI observed project not matched to deployed integration keys",
+    "Brevo no-preview option concerns new messages; legacy previews not inspected",
+    "No claim that account-specific contracts or all subprocessor countries were verified",
+    "No production legal behavior verified"
+  ]
+}

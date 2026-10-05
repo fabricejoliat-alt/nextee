@@ -1,6 +1,8 @@
 # Scénarios à exécuter sur une base locale isolée
 
-> **Mise à jour — 5 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md), sections 11–12. Le lot SQL `20261103` est **appliqué sur TEST** : 50/50 postflight, quatre scénarios SQL sur fixtures annulées et 57/57 contrôles finaux. Ne pas rejouer les migrations. Les modifications applicatives restent à déployer ; gardes désactivés, zéro document actif. Les choix de finalité et la couverture active restent ouverts. Les notes ci-dessous sont historiques.
+> **Mise à jour — 5 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md), sections 11–13. Le lot SQL `20261103` est **appliqué sur TEST** : 50/50 postflight, quatre scénarios SQL sur fixtures annulées et 57/57 contrôles finaux. Le code est déployé dans **`2af721a`**, Vercel Ready : 24 états Chrome desktop/mobile et huit lectures PostgREST ciblées réussis. Nettoyage vérifié, garde SQL false, zéro document actif. **Aucune migration à rejouer ni activation à effectuer.** Les choix de finalité et la couverture active restent ouverts. Les notes ci-dessous sont historiques.
+
+> **Préparation suivante — 5 octobre :** lancement limité aux clubs suisses et exploitant déclaré ActiviTee — Fabrice Joliat, confirmés par l’utilisateur. Propositions de règles, textes FR et recette dans [decisions.md](decisions.md), [drafts.md](drafts.md) et le [rapport unique, section 14](campaign-report-2026-10-04.md). Arbitrage produit et revue juridique encore requis ; aucune activation.
 
 Aucun de ces scénarios n'a été exécuté sur une base réelle pendant la préparation. Utiliser uniquement des comptes, clubs, adresses et textes fictifs. Vérifier les réponses API **et** l'état SQL après chaque opération.
 

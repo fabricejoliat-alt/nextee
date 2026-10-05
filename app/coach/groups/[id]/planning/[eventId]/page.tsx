@@ -270,6 +270,7 @@ export default function CoachEventDetailPage() {
   const [preparationInsightsByPlayerId, setPreparationInsightsByPlayerId] = useState<Map<string, PlayerPreparationInsight>>(new Map());
   const [preparationInsightsLoading, setPreparationInsightsLoading] = useState(false);
   const [preparationInsightsError, setPreparationInsightsError] = useState(false);
+  const [preparationUnavailablePlayers, setPreparationUnavailablePlayers] = useState<Set<string>>(new Set());
   const preparationRequestRef = useRef(0);
   const [coachClubCount, setCoachClubCount] = useState(1);
   const [readTrackingAvailable, setReadTrackingAvailable] = useState(false);
@@ -318,6 +319,7 @@ export default function CoachEventDetailPage() {
     const requestId = ++preparationRequestRef.current;
     setPreparationInsightsByPlayerId(new Map());
     setPreparationInsightsError(false);
+    setPreparationUnavailablePlayers(new Set());
     setReadTrackingAvailable(false);
     const startsAt = new Date(targetEvent.starts_at).getTime();
     if (!assistanceEnabled || targetEvent.event_type !== "training" || !Number.isFinite(startsAt) || startsAt <= Date.now()) {
@@ -336,6 +338,8 @@ export default function CoachEventDetailPage() {
       if (!response.ok) throw new Error(String(json?.error ?? "Preparation insights unavailable"));
       if (requestId !== preparationRequestRef.current) return;
       setReadTrackingAvailable(json.read_tracking_available === true);
+      setPreparationUnavailablePlayers(new Set(Array.isArray(json.unavailable_player_ids)
+        ? json.unavailable_player_ids.filter((id: unknown) => typeof id === "string") : []));
       const insights = Array.isArray(json?.insights) ? (json.insights as PlayerPreparationInsight[]) : [];
       setPreparationInsightsByPlayerId(
         new Map(
@@ -819,7 +823,9 @@ export default function CoachEventDetailPage() {
                           {preparationInsight.points.map((point, index) => <li key={`${attendee.player_id}-${index}`}>{point.text}</li>)}
                         </ul>
                       ) : (
-                        <p className={eventStyles.preparationEmpty}>{preparationInsightsError ? tr("Points d’attention momentanément indisponibles.", "Focus points are temporarily unavailable.") : tr("Aucune note privée exploitable sur les cinq dernières séances.", "No usable private note from the last five sessions.")}</p>
+                        <p className={eventStyles.preparationEmpty}>{preparationUnavailablePlayers.has(attendee.player_id)
+                          ? t("coach.error.aiAuthorization")
+                          : preparationInsightsError ? tr("Points d’attention momentanément indisponibles.", "Focus points are temporarily unavailable.") : tr("Aucune note privée exploitable sur les cinq dernières séances.", "No usable private note from the last five sessions.")}</p>
                       )}
                     </div>
                   ) : null}

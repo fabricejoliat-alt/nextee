@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-10-05T10:54:10.283422+00:00",
+  "project": "wizbeuuvjibmmuxyynly",
+  "git_head": "2af721ad29110da2f5502fa883949c66e435b203",
+  "clean_checkout_at_start": true,
+  "branch": "test",
+  "vercel_deployment": "8TsD6QEq7DyxRyg8g3cwbk7oZ1mc",
+  "vercel_status": "Ready",
+  "origin": "https://nextee-or71byo11-fabrice-joliats-projects.vercel.app",
+  "evidence_source": "Authenticated Chrome Vercel Deployments page; exact commit/branch/status/origin displayed",
+  "application_mutations": "none planned; read-only page and API loads",
+  "fixtures": "existing disposable legalqa_20261004_9a282f accounts only"
+}

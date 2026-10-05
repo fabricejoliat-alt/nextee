@@ -239,7 +239,7 @@ test("the guided UI and API save exactly one player without exposing collective 
   assert.match(page, /audience: "private", locale/);
   assert.doesNotMatch(page, /coachDebrief\.aiDisclosure/);
   assert.doesNotMatch(page, /scopeChoice|collectiveSummary|analyzeReport/);
-  assert.match(playerAnalyzeRoute, /enum: \[playerId\]/);
+  assert.match(playerAnalyzeRoute, /enum: \["subject"\]/);
   assert.match(playerAnalyzeRoute, /individual_source: sourceText/);
   assert.match(playerAnalyzeRoute, /body\?\.audience === "private"/);
   assert.match(playerAnalyzeRoute, /responseLanguage\(body\?\.locale\)/);

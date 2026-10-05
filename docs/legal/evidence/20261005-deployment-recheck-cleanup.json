@@ -1,0 +1,14 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "final": {
+    "enabled": false,
+    "active": 0,
+    "versions": 4,
+    "decisions": 10
+  },
+  "activeMemberships": 0,
+  "admins": 0,
+  "allUsersBanned": true,
+  "baselineRelationsRestored": true,
+  "secretsErased": true
+}

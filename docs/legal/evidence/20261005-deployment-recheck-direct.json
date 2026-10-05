@@ -1,0 +1,69 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "checks": [
+    {
+      "role": "manager",
+      "table": "coach_groups",
+      "expected": 1,
+      "rows": 1,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "coach",
+      "table": "club_events",
+      "expected": 1,
+      "rows": 1,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "player",
+      "table": "thread_messages",
+      "expected": 1,
+      "rows": 1,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "player",
+      "table": "golf_rounds",
+      "expected": 1,
+      "rows": 1,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "parent",
+      "table": "golf_rounds",
+      "expected": 1,
+      "rows": 1,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "outsider",
+      "table": "club_events",
+      "expected": 0,
+      "rows": 0,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "outsider",
+      "table": "thread_messages",
+      "expected": 0,
+      "rows": 0,
+      "error": null,
+      "ok": true
+    },
+    {
+      "role": "outsider",
+      "table": "marketplace_items",
+      "expected": 0,
+      "rows": 0,
+      "error": null,
+      "ok": true
+    }
+  ]
+}
