@@ -1,0 +1,222 @@
+[
+  {
+    "item": "baseline_inactive_coach_reaches_seed",
+    "ok": "true"
+  },
+  {
+    "item": "candidate_active_coach_seed_idempotent",
+    "ok": "true"
+  },
+  {
+    "item": "candidate_inactive_coach_denied",
+    "ok": "true"
+  },
+  {
+    "item": "candidate_outside_club_denied",
+    "ok": "true"
+  },
+  {
+    "item": "club_evaluation_criteria",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_coaches",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_evaluation_criteria",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_evaluation_responses",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_player_structure_items",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_series",
+    "ok": "true"
+  },
+  {
+    "item": "club_event_structure_items",
+    "ok": "true"
+  },
+  {
+    "item": "club_news",
+    "ok": "true"
+  },
+  {
+    "item": "club_seasons",
+    "ok": "true"
+  },
+  {
+    "item": "club_training_attendance",
+    "ok": "true"
+  },
+  {
+    "item": "club_training_coach_evals",
+    "ok": "true"
+  },
+  {
+    "item": "club_trainings",
+    "ok": "true"
+  },
+  {
+    "item": "coach_group_categories",
+    "ok": "true"
+  },
+  {
+    "item": "coach_group_coaches",
+    "ok": "true"
+  },
+  {
+    "item": "coach_player_group_transfers",
+    "ok": "true"
+  },
+  {
+    "item": "coach_players",
+    "ok": "true"
+  },
+  {
+    "item": "golf_round_holes",
+    "ok": "true"
+  },
+  {
+    "item": "golf_rounds",
+    "ok": "true"
+  },
+  {
+    "item": "helper club_training",
+    "ok": "true"
+  },
+  {
+    "item": "helper contest",
+    "ok": "true"
+  },
+  {
+    "item": "helper round",
+    "ok": "true"
+  },
+  {
+    "item": "helper thread",
+    "ok": "true"
+  },
+  {
+    "item": "helpers_off_do_not_filter",
+    "ok": "true"
+  },
+  {
+    "item": "inactive_constraint",
+    "ok": "true"
+  },
+  {
+    "item": "inactive_control",
+    "ok": "true"
+  },
+  {
+    "item": "message_threads",
+    "ok": "true"
+  },
+  {
+    "item": "metadata_gate",
+    "ok": "true"
+  },
+  {
+    "item": "no_active_documents",
+    "ok": "true"
+  },
+  {
+    "item": "om_bonus_entries",
+    "ok": "true"
+  },
+  {
+    "item": "om_exceptional_tournaments",
+    "ok": "true"
+  },
+  {
+    "item": "om_internal_contest_results",
+    "ok": "true"
+  },
+  {
+    "item": "om_internal_contests",
+    "ok": "true"
+  },
+  {
+    "item": "om_tournament_scores",
+    "ok": "true"
+  },
+  {
+    "item": "platform_news_clubs",
+    "ok": "true"
+  },
+  {
+    "item": "player_activity_events",
+    "ok": "true"
+  },
+  {
+    "item": "player_dashboard_documents",
+    "ok": "true"
+  },
+  {
+    "item": "player_handicap_history",
+    "ok": "true"
+  },
+  {
+    "item": "player_periodic_report_deliveries",
+    "ok": "true"
+  },
+  {
+    "item": "player_periodic_reports",
+    "ok": "true"
+  },
+  {
+    "item": "round_creation_club",
+    "ok": "true"
+  },
+  {
+    "item": "rules_card_progress",
+    "ok": "true"
+  },
+  {
+    "item": "rules_club_participations",
+    "ok": "true"
+  },
+  {
+    "item": "rules_coach_coverage",
+    "ok": "true"
+  },
+  {
+    "item": "rules_quiz_attempts",
+    "ok": "true"
+  },
+  {
+    "item": "rules_rewards",
+    "ok": "true"
+  },
+  {
+    "item": "seed_active_staff",
+    "ok": "true"
+  },
+  {
+    "item": "seed_anon_closed",
+    "ok": "true"
+  },
+  {
+    "item": "seed_authenticated",
+    "ok": "true"
+  },
+  {
+    "item": "seed_guard",
+    "ok": "true"
+  },
+  {
+    "item": "thread_messages",
+    "ok": "true"
+  },
+  {
+    "item": "thread_participants",
+    "ok": "true"
+  }
+]

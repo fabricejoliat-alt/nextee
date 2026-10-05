@@ -1,0 +1,21 @@
+{
+  "commit": "90f41d46af688f4489d8ba74e00d4b50944db207",
+  "deployment": "DdB72FdcGYC8YYHC3tZDuzJSW1zV",
+  "status": "Ready",
+  "branch": "test",
+  "origin": "https://nextee-2u5qfnis3-fabrice-joliats-projects.vercel.app",
+  "project": "wizbeuuvjibmmuxyynly",
+  "tests": {
+    "command": "node --experimental-strip-types --test tests/legal-admin-workspace.test.ts",
+    "passed": 2,
+    "failed": 0
+  },
+  "lint": {
+    "command": "npx eslint app/legal/my/page.tsx scripts/legal-campaign/ui-recheck.mjs",
+    "exit_code": 0
+  },
+  "browserChecks": 9,
+  "localOnlyChange": "app/legal/my/page.tsx: opaque white reading background",
+  "migrationApplied": false,
+  "flagsChanged": false
+}

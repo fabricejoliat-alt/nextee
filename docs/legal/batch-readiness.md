@@ -1,6 +1,6 @@
 # Préparation groupée après le contrôle 20
 
-> **Mise à jour — reprise TEST du 4 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md). Le lot `20261102` est appliqué sur TEST et son postflight de 16 lignes vérifié. Publication, décisions, V2, parent/code, refus et retrait ont été exercés avec fixtures dans Chrome ; corrections d’interface locales encore à déployer. Le garde reste désactivé. Les notes de préparation ci-dessous sont historiques ; elles ne remplacent pas cet état courant.
+> **Mise à jour — 5 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md), sections 11–12. Le lot SQL `20261103` est **appliqué sur TEST** : 50/50 postflight, quatre scénarios SQL sur fixtures annulées et 57/57 contrôles finaux. Ne pas rejouer les migrations. Les modifications applicatives restent à déployer ; gardes désactivés, zéro document actif. Les choix de finalité et la couverture active restent ouverts. Les notes ci-dessous sont historiques.
 
 Le contrôle 20 reçu sur TEST confirme les huit signatures et leurs privilèges : quatre wrappers accessibles à `authenticated`, quatre corps métier réservés à `service_role`, garde présent, commande SQL inactive et zéro document actif. Il ne démontre pas que l'édition d'une occurrence ou d'une série fonctionne dans l'application.
 

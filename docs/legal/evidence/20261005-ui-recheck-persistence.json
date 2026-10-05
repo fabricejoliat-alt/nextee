@@ -1,0 +1,63 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "draft": {
+    "change_summary": "JETABLE contrôle 20261005 mobile — résumé conservé FR EN DE IT",
+    "source_revision": 3,
+    "translations": {
+      "de": {
+        "body": "Ein Test ohne rechtliche Wirkung. Diese fiktive Entscheidung begründet keine echte Verpflichtung. [FICTIVE V2]",
+        "title": "FIKTIVES DOKUMENT — CHROME TEST — DE",
+        "status": "approved",
+        "approved_at": "2026-10-04T19:26:19.534Z",
+        "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+        "action_label": "Fiktiven Test bestätigen",
+        "source_revision": 3
+      },
+      "en": {
+        "body": "Disposable test with no legal effect. This fictional decision creates no real commitment. [FICTIVE V2]",
+        "title": "FICTIONAL DOCUMENT — CHROME TEST — EN",
+        "status": "approved",
+        "approved_at": "2026-10-04T19:25:58.150Z",
+        "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+        "action_label": "Confirm fictional test",
+        "source_revision": 3
+      },
+      "fr": {
+        "body": "Essai jetable sans valeur juridique. Cette décision fictive ne crée aucun engagement réel. [FICTIVE V2]",
+        "title": "DOCUMENT FICTIF — TEST CHROME — FR",
+        "status": "approved",
+        "approved_at": "2026-10-04T19:25:34.320Z",
+        "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+        "action_label": "Valider le test fictif",
+        "source_revision": 3
+      },
+      "it": {
+        "body": "Test senza valore legale. Questa decisione fittizia non crea alcun impegno reale. [FICTIVE V2]",
+        "title": "DOCUMENTO FITTIZIO — TEST CHROME — IT",
+        "status": "approved",
+        "approved_at": "2026-10-04T19:26:37.204Z",
+        "approved_by": "891caa14-8572-41fb-b4bb-ec151c5fcdac",
+        "action_label": "Conferma il test fittizio",
+        "source_revision": 3
+      }
+    },
+    "allowed_variables": []
+  },
+  "state": {
+    "enabled": false,
+    "versions": 4,
+    "decisions": 10,
+    "active_documents": 2
+  },
+  "parent_decisions": [
+    {
+      "id": "d1c87274-a51c-43fc-8cba-d6beacf8c5bf",
+      "decision": "authorized",
+      "actor_id": "2a9f8eca-2a34-4f68-a143-d98bcedd0ea0",
+      "beneficiary_id": "e3ee49f1-99b0-49df-9fbe-967434ccd57a",
+      "version_id": "1aa6d961-e34a-40af-b35e-59cfa1274cde"
+    }
+  ],
+  "newDecisions": 0,
+  "newVersions": 0
+}

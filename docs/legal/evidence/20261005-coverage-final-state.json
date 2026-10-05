@@ -1,0 +1,214 @@
+[
+  {
+    "item": "create_player_golf_rounds_transactional(uuid,jsonb,timestamp with time zone[],jsonb)",
+    "ok": "true"
+  },
+  {
+    "item": "decisions_unchanged",
+    "ok": "true"
+  },
+  {
+    "item": "fixture_admin_removed",
+    "ok": "true"
+  },
+  {
+    "item": "fixture_event_cancelled",
+    "ok": "true"
+  },
+  {
+    "item": "fixture_group_inactive",
+    "ok": "true"
+  },
+  {
+    "item": "fixture_memberships_inactive",
+    "ok": "true"
+  },
+  {
+    "item": "fixture_users_banned",
+    "ok": "true"
+  },
+  {
+    "item": "inactive_control",
+    "ok": "true"
+  },
+  {
+    "item": "legal_required_direct_access(uuid)",
+    "ok": "true"
+  },
+  {
+    "item": "new helper club_training",
+    "ok": "true"
+  },
+  {
+    "item": "new helper contest",
+    "ok": "true"
+  },
+  {
+    "item": "new helper round",
+    "ok": "true"
+  },
+  {
+    "item": "new helper thread",
+    "ok": "true"
+  },
+  {
+    "item": "no_active_documents",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_evaluation_criteria",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_coaches",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_evaluation_criteria",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_evaluation_responses",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_player_structure_items",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_series",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_event_structure_items",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_news",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_seasons",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_training_attendance",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_training_coach_evals",
+    "ok": "true"
+  },
+  {
+    "item": "RLS club_trainings",
+    "ok": "true"
+  },
+  {
+    "item": "RLS coach_group_categories",
+    "ok": "true"
+  },
+  {
+    "item": "RLS coach_group_coaches",
+    "ok": "true"
+  },
+  {
+    "item": "RLS coach_player_group_transfers",
+    "ok": "true"
+  },
+  {
+    "item": "RLS coach_players",
+    "ok": "true"
+  },
+  {
+    "item": "RLS golf_round_holes",
+    "ok": "true"
+  },
+  {
+    "item": "RLS golf_rounds",
+    "ok": "true"
+  },
+  {
+    "item": "RLS message_threads",
+    "ok": "true"
+  },
+  {
+    "item": "RLS om_bonus_entries",
+    "ok": "true"
+  },
+  {
+    "item": "RLS om_exceptional_tournaments",
+    "ok": "true"
+  },
+  {
+    "item": "RLS om_internal_contest_results",
+    "ok": "true"
+  },
+  {
+    "item": "RLS om_internal_contests",
+    "ok": "true"
+  },
+  {
+    "item": "RLS om_tournament_scores",
+    "ok": "true"
+  },
+  {
+    "item": "RLS platform_news_clubs",
+    "ok": "true"
+  },
+  {
+    "item": "RLS player_activity_events",
+    "ok": "true"
+  },
+  {
+    "item": "RLS player_dashboard_documents",
+    "ok": "true"
+  },
+  {
+    "item": "RLS player_handicap_history",
+    "ok": "true"
+  },
+  {
+    "item": "RLS player_periodic_report_deliveries",
+    "ok": "true"
+  },
+  {
+    "item": "RLS player_periodic_reports",
+    "ok": "true"
+  },
+  {
+    "item": "RLS rules_card_progress",
+    "ok": "true"
+  },
+  {
+    "item": "RLS rules_club_participations",
+    "ok": "true"
+  },
+  {
+    "item": "RLS rules_coach_coverage",
+    "ok": "true"
+  },
+  {
+    "item": "RLS rules_quiz_attempts",
+    "ok": "true"
+  },
+  {
+    "item": "RLS rules_rewards",
+    "ok": "true"
+  },
+  {
+    "item": "RLS thread_messages",
+    "ok": "true"
+  },
+  {
+    "item": "RLS thread_participants",
+    "ok": "true"
+  },
+  {
+    "item": "staff_seed_group_players_attendees(uuid)",
+    "ok": "true"
+  },
+  {
+    "item": "versions_unchanged",
+    "ok": "true"
+  }
+]

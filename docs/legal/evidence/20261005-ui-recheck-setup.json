@@ -1,0 +1,18 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "baseline": {
+    "enabled": false,
+    "versions": 4,
+    "decisions": 10,
+    "active_documents": 0
+  },
+  "temporary_documents": [
+    "3d369782-c3b0-429f-8be5-3d70af434391",
+    "0932e2e6-f468-4c2a-9c36-71ea2e71f3a6"
+  ],
+  "temporary_logins": [
+    "admin",
+    "parent"
+  ],
+  "guardsChanged": false
+}

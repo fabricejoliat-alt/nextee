@@ -29,5 +29,15 @@ test("a refusal or withdrawal cannot satisfy a required document even on the cur
     documents: [terms], versions: [{ id: "v1", document_id: "terms", version_number: 1 }],
     states: [{ document_id: "terms", version_id: "v1", club_scope: null, decision: "refused", conflict: false }] };
   assert.equal(findMissingLegalActions(base).length, 1);
+  assert.equal(findMissingLegalActions({ ...base, states: [{ ...base.states[0], decision: "withdrawn" }] }).length, 1);
   assert.equal(findMissingLegalActions({ ...base, states: [{ ...base.states[0], decision: "accepted", conflict: true }] }).length, 1);
+});
+
+test("optional refusal, withdrawal and representative conflict never become a global account block", () => {
+  for (const decision of ["refused", "withdrawn", "consented"]) {
+    const input = { memberships: [{ club_id: "club-a", role: "parent" }], isAdmin: false,
+      documents: [optionalPhoto], versions: [{ id: "photo-v1", document_id: "photo", version_number: 1 }],
+      states: [{ document_id: "photo", version_id: "photo-v1", club_scope: "club-a", decision, conflict: true }] };
+    assert.deepEqual(findMissingLegalActions(input), []);
+  }
 });

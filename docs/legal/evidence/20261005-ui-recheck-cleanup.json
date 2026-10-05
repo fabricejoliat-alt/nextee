@@ -1,0 +1,14 @@
+{
+  "run": "legalqa_20261004_9a282f",
+  "state": {
+    "enabled": false,
+    "versions": 4,
+    "decisions": 10,
+    "active_documents": 0
+  },
+  "active_fixture_members": 0,
+  "fixture_admins": 0,
+  "draft_summary_restored": true,
+  "logins_banned": true,
+  "secretsErased": true
+}

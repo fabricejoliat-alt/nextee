@@ -1,0 +1,67 @@
+{
+  "at": "2026-10-05T10:11:35.892073+00:00",
+  "environment": "local; stub gates only; no real enforcement flag changed",
+  "commands": [
+    {
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--test",
+        "tests/legal-access-coverage.test.ts",
+        "tests/legal-admin-routes.test.ts",
+        "tests/legal-admin-workspace.test.ts",
+        "tests/legal-parent-mail.test.ts",
+        "tests/legal-requirements.test.ts",
+        "tests/legal-server-requirements.test.ts",
+        "tests/legal-template.test.ts"
+      ],
+      "exit_code": 0,
+      "stdout": "(node:68041) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-access-coverage.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 old clients calling business APIs directly receive a non-cacheable refusal (47.205917ms)\n\u2714 page refusal redirects to the recovery surface; accepted requests also avoid HTTP caching (26.99375ms)\n\u2714 gate off does not consult legal state, and recovery remains reachable (5.827333ms)\n\u2714 unavailable legal state and invalid bearer tokens fail closed (13.483ms)\n\u2714 every classified API is reached by the actual Next matcher (5.930958ms)\n\u2714 metadata drift rejects an otherwise accepted current version; only the latest version is checked (5.538333ms)\n\u2714 coverage batch scopes match actual TEST columns and preserve permission boundaries (3.299042ms)\n(node:68042) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-admin-routes.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 saving text serializes the JSON concurrency filter for real PostgREST request construction (50.910625ms)\n\u2714 approval rejects text modified since the reviewer opened it and performs no write (9.34375ms)\n\u2714 approval without a reviewed snapshot is denied for an old client (8.020875ms)\n\u2714 approval records exactly the reviewed text and preserves optimistic concurrency (6.669ms)\n(node:68043) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-admin-workspace.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 Admin cannot type into fields or switch document language while a save refresh is pending (69.639334ms)\n\u2714 changing the translation language preserves an unsaved change summary (19.873375ms)\n(node:68044) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-parent-mail.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 parent code transport receives only the designated verified address and no secret is returned (0.7285ms)\n(node:68045) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-requirements.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 one current platform acceptance covers a multi-role adult while a new version requires a fresh decision (0.747959ms)\n\u2714 club scope stays isolated and an optional consent never blocks general access (0.084583ms)\n\u2714 a refusal or withdrawal cannot satisfy a required document even on the current version (0.074709ms)\n\u2714 optional refusal, withdrawal and representative conflict never become a global account block (0.063167ms)\n(node:68046) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-server-requirements.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 an unsupported required rule in club B does not block a coach only in club A (39.092208ms)\n\u2714 an unpublished required document in club B does not block club A (6.995625ms)\n\u2714 own-club unpublished required document still fails closed (5.482125ms)\n(node:68047) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/activitee/Projects/nextee/tests/legal-template.test.ts is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /Users/activitee/Projects/nextee/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n\u2714 legal translations preserve every occurrence of a reviewed variable (0.524333ms)\n\u2714 unreviewed and malformed placeholders are rejected (0.067583ms)\n\u2139 tests 23\n\u2139 suites 0\n\u2139 pass 23\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 322.260375\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "npx",
+        "eslint",
+        "proxy.ts",
+        "lib/legalRouteCoverage.ts",
+        "lib/server/legalRequirements.ts",
+        "tests/legal-access-coverage.test.ts",
+        "tests/legal-requirements.test.ts",
+        "tests/helpers/managerRouteHarness.ts"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "sha256": {
+    "proxy.ts": "77a405a9c5223946ce8cdc2cea30db0a7c9472f9742a83dccdf3e4faf7fe72fe",
+    "lib/legalRouteCoverage.ts": "5ab3fd45b421295a9c0b5b7e4b8bde06f3b6bdfda99126f4e6a27a18eaa13c6b",
+    "lib/server/legalRequirements.ts": "2b387735f5070771407102b296f34f96e6acf0b94750976eae5e0d18d45107db",
+    "supabase/migrations/20261103_legal_access_coverage.sql": "e2ddbf434781464fa72dad3932b618264c355f15ca4ca7fcc3ba769c37652cae",
+    "docs/legal/26-coverage-batch-preflight.sql": "ef6130f5112dfb0e766907da3ecc8d37de17f4adc1fc7f9a97dd35678dcfb406",
+    "docs/legal/27-coverage-batch-postflight.sql": "f28520b43d28159d2f518274dffd1a01d72983bf47f79f9d79547c281045ad1e",
+    "docs/legal/28-coverage-batch-rollback-test.sql": "3c9ae828f294a965c69b88c971beedecb6619cc2029949bfcbd9c5c590297498"
+  }
+}

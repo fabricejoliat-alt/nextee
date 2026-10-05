@@ -7,7 +7,7 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, "../..");
 export type Row = Record<string, any>;
-export function loadManagerModule<T = any>(path: string, mocks: Record<string, unknown>): T {
+export function loadManagerModule<T = any>(path: string, mocks: Record<string, unknown>, env: Record<string, string> = {}): T {
   const source = readFileSync(resolve(root, path), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const compiledModule = { exports: {} };
@@ -15,10 +15,10 @@ export function loadManagerModule<T = any>(path: string, mocks: Record<string, u
     if (id in mocks) return mocks[id];
     if (id.startsWith("@/") || id.startsWith(".")) {
       const base = id.startsWith("@/") ? id.slice(2) : resolve(path, "..", id);
-      return loadManagerModule(existsSync(resolve(root, base)) ? base : base + ".ts", mocks);
+      return loadManagerModule(existsSync(resolve(root, base)) ? base : base + ".ts", mocks, env);
     }
     return require(id);
-  }, compiledModule, compiledModule.exports, { env: { SUPABASE_URL: "https://test.invalid", NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid", SUPABASE_SERVICE_ROLE_KEY: "test", CRON_SECRET: "test", PERIODIC_REPORT_TRANSPORT: "brevo", BREVO_API_KEY: "test" } }, mocks.fetch ?? (() => { throw new Error("Unexpected network access in test"); }));
+  }, compiledModule, compiledModule.exports, { env: { SUPABASE_URL: "https://test.invalid", NEXT_PUBLIC_SUPABASE_URL: "https://test.invalid", SUPABASE_SERVICE_ROLE_KEY: "test", CRON_SECRET: "test", PERIODIC_REPORT_TRANSPORT: "brevo", BREVO_API_KEY: "test", ...env } }, mocks.fetch ?? (() => { throw new Error("Unexpected network access in test"); }));
   return compiledModule.exports as T;
 }
 

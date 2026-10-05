@@ -1,0 +1,7 @@
+{
+  "environment": "local only, not deployed",
+  "url": "http://localhost:3000/legal/my",
+  "mainBackground": "rgb(255, 255, 255)",
+  "scrollWidth": 393,
+  "width": 393
+}

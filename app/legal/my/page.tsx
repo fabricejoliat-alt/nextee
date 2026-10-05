@@ -42,7 +42,7 @@ export default function MyLegalPage() {
   function download(row: Decision) { const blob = new Blob([JSON.stringify(row, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `activitee-decision-${row.id}.json`;
     link.click(); URL.revokeObjectURL(url); }
-  return <main style={{ maxWidth: 820, margin: "auto", padding: "32px 20px max(100px, env(safe-area-inset-bottom))" }}>
+  return <main style={{ maxWidth: 820, margin: "auto", backgroundColor: "#fff", padding: "32px 20px max(100px, env(safe-area-inset-bottom))" }}>
     <h1>Documents et consentements</h1><p>Chaque document indique l’action demandée. Une autorisation facultative peut être refusée sans bloquer les autres fonctions.</p>
     <label>Langue du document <select value={locale} onChange={(e) => { setLocale(e.target.value); setPresentation(null); }}>
       {["fr","en","de","it"].map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}</select></label>

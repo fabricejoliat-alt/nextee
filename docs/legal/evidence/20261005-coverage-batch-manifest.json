@@ -1,0 +1,202 @@
+{
+  "target": "wizbeuuvjibmmuxyynly",
+  "guard": "remains false",
+  "function_md5_before": {
+    "legal_required_direct_access(uuid)": "155b5f5c5d5d0762ed85245b0d23a1b4",
+    "staff_seed_group_players_attendees(uuid)": "a0615e63c6c97c8c5286591186e3d2e7",
+    "create_player_golf_rounds_transactional(uuid,jsonb,timestamp with time zone[],jsonb)": "199fd7e14679c1927194288a71636f18"
+  },
+  "policies": {
+    "club_evaluation_criteria": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "club_event_series": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "club_news": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "club_seasons": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "club_trainings": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "coach_player_group_transfers": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "coach_players": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "player_periodic_reports": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "player_periodic_report_deliveries": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "rules_club_participations": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "rules_quiz_attempts": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "rules_rewards": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "platform_news_clubs": {
+      "expression": "public.legal_required_direct_access(club_id)",
+      "scope": "club_id; null only for interclub rewards => platform",
+      "replace": false
+    },
+    "club_event_coaches": {
+      "expression": "public.legal_required_event_access(event_id)",
+      "scope": "canonical event club, resolved by definer",
+      "replace": false
+    },
+    "club_event_evaluation_criteria": {
+      "expression": "public.legal_required_event_access(event_id)",
+      "scope": "canonical event club, resolved by definer",
+      "replace": false
+    },
+    "club_event_evaluation_responses": {
+      "expression": "public.legal_required_event_access(event_id)",
+      "scope": "canonical event club, resolved by definer",
+      "replace": false
+    },
+    "club_event_player_structure_items": {
+      "expression": "public.legal_required_event_access(event_id)",
+      "scope": "canonical event club, resolved by definer",
+      "replace": false
+    },
+    "club_event_structure_items": {
+      "expression": "public.legal_required_event_access(event_id)",
+      "scope": "canonical event club, resolved by definer",
+      "replace": false
+    },
+    "coach_group_coaches": {
+      "expression": "public.legal_required_group_access(group_id)",
+      "scope": "canonical group club, resolved by definer",
+      "replace": false
+    },
+    "coach_group_categories": {
+      "expression": "public.legal_required_group_access(group_id)",
+      "scope": "canonical group club, resolved by definer",
+      "replace": false
+    },
+    "rules_coach_coverage": {
+      "expression": "public.legal_required_group_access(group_id)",
+      "scope": "canonical group club, resolved by definer",
+      "replace": false
+    },
+    "message_threads": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "organization_id FK references clubs.id",
+      "replace": false
+    },
+    "player_dashboard_documents": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "organization_id FK references clubs.id",
+      "replace": false
+    },
+    "thread_messages": {
+      "expression": "public.legal_required_thread_access(thread_id)",
+      "scope": "canonical message thread club, resolved by definer",
+      "replace": false
+    },
+    "thread_participants": {
+      "expression": "public.legal_required_thread_access(thread_id)",
+      "scope": "canonical message thread club, resolved by definer",
+      "replace": false
+    },
+    "player_activity_events": {
+      "expression": "public.legal_required_direct_access()",
+      "scope": "personal platform activity; no unique club in row",
+      "replace": false
+    },
+    "player_handicap_history": {
+      "expression": "public.legal_required_direct_access()",
+      "scope": "personal platform activity; no unique club in row",
+      "replace": false
+    },
+    "rules_card_progress": {
+      "expression": "public.legal_required_direct_access()",
+      "scope": "personal platform activity; no unique club in row",
+      "replace": false
+    },
+    "om_bonus_entries": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "existing OM contract: organization_id used as club; non-club organizations remain a separate applicability decision",
+      "replace": false
+    },
+    "om_exceptional_tournaments": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "existing OM contract: organization_id used as club; non-club organizations remain a separate applicability decision",
+      "replace": false
+    },
+    "om_internal_contests": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "existing OM contract: organization_id used as club; non-club organizations remain a separate applicability decision",
+      "replace": false
+    },
+    "om_tournament_scores": {
+      "expression": "public.legal_required_direct_access(organization_id)",
+      "scope": "existing OM contract: organization_id used as club; non-club organizations remain a separate applicability decision",
+      "replace": false
+    },
+    "om_internal_contest_results": {
+      "expression": "public.legal_required_contest_access(contest_id)",
+      "scope": "canonical OM contest organization, same existing OM contract",
+      "replace": false
+    },
+    "golf_rounds": {
+      "expression": "public.legal_required_direct_access(om_organization_id)",
+      "scope": "same club scope as golf save/update RPCs; club_id means course, not membership",
+      "replace": true
+    },
+    "golf_round_holes": {
+      "expression": "public.legal_required_round_access(round_id)",
+      "scope": "canonical round OM organization",
+      "replace": true
+    },
+    "club_training_attendance": {
+      "expression": "public.legal_required_club_training_access(training_id)",
+      "scope": "canonical legacy club training; owner/helper branches bypass parent RLS",
+      "replace": false
+    },
+    "club_training_coach_evals": {
+      "expression": "public.legal_required_club_training_access(training_id)",
+      "scope": "canonical legacy club training; owner/helper branches bypass parent RLS",
+      "replace": false
+    }
+  },
+  "new_helpers": [
+    "legal_required_club_training_access(uuid)",
+    "legal_required_thread_access(uuid)",
+    "legal_required_round_access(uuid)",
+    "legal_required_contest_access(uuid)"
+  ]
+}

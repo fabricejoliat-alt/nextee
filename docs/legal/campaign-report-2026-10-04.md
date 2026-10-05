@@ -1,15 +1,16 @@
 # Rapport unique — campagne de validation des documents juridiques
 
-Date : 4 octobre 2026, deux phases sur TEST. Dépôt : `/Users/activitee/Projects/nextee`, branche `test`.
+Dates : 4–5 octobre 2026, campagne, contrôle des ajustements et complément de couverture sur TEST. Dépôt : `/Users/activitee/Projects/nextee`, branche `test`.
 
 ## Conclusion actuelle
 
 **Le correctif SQL déployé fonctionne sur les scénarios retestés. Le module reste inactif et ne doit pas encore être activé.** Les blocages de publication, les cinq RPC internes exposés, la lecture Marketplace interclub et le conflit d’édition d’événement de la première phase sont résolus sur TEST. La publication et les décisions ont maintenant été exercées dans Chrome avec des textes et utilisateurs fictifs, puis relues en base.
 
-- Déploiement TEST vérifié : **`5a53f7c21561e984ab77c45746ea7ea4f7f63750`**, Vercel **Ready**. Postflight après application : **16 lignes**.
+- Dernier déploiement TEST vérifié : **`90f41d46af688f4489d8ba74e00d4b50944db207`**, Vercel **Ready**. Les trois ajustements d’interface sont validés dans Chrome le 5 octobre (section 10). La campagne fonctionnelle du 4 octobre portait sur `5a53f7c` ; son postflight après application comporte **16 lignes**.
 - **29 états Chrome** enregistrés, desktop 1280 × 900 et mobile 393 × 852, sur Admin, Player, Parent, Coach, Manager et un Player d’un second club. Aucun débordement horizontal dans ces états.
 - **29 contrôles d’intégrité + 7 contrôles finaux réussis** sur les fixtures persistées ; **16 contrôles métier/accès**, édition d’événement avec conflit **PT409**, **94 refus de lecture PostgREST** réussis.
-- **58 tests locaux réussis**, TypeScript et ESLint ciblé sans erreur. Deux corrections de saisie Admin et une clarification d’état parental sont **locales, non déployées**.
+- **58 tests locaux réussis** pendant la campagne, TypeScript et ESLint ciblé sans erreur. Les deux tests de saisie Admin sont rejoués le 5 octobre : **2/2**. Les deux corrections Admin et le libellé parental sont déployés et contrôlés. Le contraste de `/legal/my` et le complément de couverture de la section 11 restent **locaux, non déployés**.
+- Complément du 5 octobre : **23 tests locaux, 55 contrôles SQL en transaction annulée et 53 contrôles finaux réussis**. Le lot `20261103` a ensuite été **appliqué par l’utilisateur et contrôlé sur TEST** : 50/50 lignes de postflight et quatre scénarios SQL supplémentaires réussis (section 12). Il contient 35 politiques restrictives ajoutées, deux corrigées, quatre résolveurs de portée et trois fonctions corrigées. Les modifications applicatives restent locales ; les limites avant activation sont conservées en section 11.
 - Nettoyage vérifié : **garde SQL false, aucun document actif, six comptes fictifs bannis**, appartenances désactivées, rôle Admin fictif retiré et objets privés supprimés. Quatre versions et dix décisions entièrement fictives sont conservées par les protections d’immutabilité.
 
 Aucune donnée personnelle réelle modifiée, aucun vrai courriel, aucun accord réel, aucune activation et aucune opération sur la production. Ces résultats ne constituent aucune attestation de conformité juridique ou Store.
@@ -73,7 +74,7 @@ Preuves récentes : [29 contrôles d’intégrité](evidence/20261004-deployed-i
 
 Un premier contrôle du compteur parental attendait à tort une seule tentative après le succès : l’implémentation compte toutes les soumissions, y compris la bonne. L’assertion a été corrigée à deux, après vérification de la tentative incorrecte seule (une) et du code SQL. Ce faux échec du script n’est pas une anomalie produit masquée.
 
-## 3. Contrôle visuel et corrections locales restantes
+## 3. Contrôle visuel et corrections d’interface
 
 L’éditeur Admin a été utilisé avec le document fictif sélectionné, sur les quatre langues ; la publication, l’historique, la représentation parentale et les retraits ont été manipulés. Les écrans de présentation/décision Player, Parent, Coach et Manager ont été observés dans les deux tailles. L’historique Player non vide a été déplié sur mobile. Les 29 états sauvegardés n’ont pas de débordement horizontal. Cela ne constitue pas une validation native iOS ou une validation d’accessibilité complète.
 
@@ -81,13 +82,13 @@ L’éditeur Admin a été utilisé avec le document fictif sélectionné, sur l
 
 [Éditeur mobile](evidence/deployed-admin-editor-mobile.png) · [Présentation Player mobile](evidence/deployed-player-presentation-mobile.png) · [Historique Player mobile](evidence/deployed-player-history-mobile.png) · [Parcours Parent mobile](evidence/deployed-parent-authorized-mobile.png).
 
-Trois ajustements ont été faits dans le dépôt **après** le commit déployé :
+Trois ajustements ont été préparés après `5a53f7c`, puis déployés par l’utilisateur dans **`90f41d4`** et contrôlés dans Chrome le 5 octobre (section 10) :
 
-| Défaut ou ambiguïté observé | Correction locale | Vérification |
+| Défaut ou ambiguïté observé | Correction déployée | Vérification |
 |---|---|---|
-| Saisie du résumé pendant une sauvegarde/relecture, puis perte de cette saisie et erreur `Summary required` | Champs et changements de sélection/langue désactivés pendant l’opération | Test de régression avec réponse différée ; échec avant, succès après |
-| Changer de langue efface un résumé non sauvegardé | Séparer l’initialisation du texte traduit et des propriétés communes du brouillon | Test de régression ; échec avant, succès après |
-| Carte d’autorisation parentale affichant encore « validation requise » après une décision pour l’enfant | Ne plus présenter l’état personnel du parent comme celui de l’enfant ; renvoi à l’historique par enfant, état personnel libellé « pour moi » | Cause confirmée dans la réponse/lecture du code : la projection listée vise le parent ; TypeScript/lint. Pas de retest Chrome de ce changement local |
+| Saisie du résumé pendant une sauvegarde/relecture, puis perte de cette saisie et erreur `Summary required` | Champs et changements de sélection/langue désactivés pendant l’opération | Test de régression avec réponse différée ; échec avant, succès après ; verrouillage et réouverture constatés dans Chrome desktop/mobile |
+| Changer de langue efface un résumé non sauvegardé | Séparer l’initialisation du texte traduit et des propriétés communes du brouillon | Test de régression ; échec avant, succès après ; changements FR/EN/DE/IT contrôlés dans Chrome desktop/mobile |
+| Carte d’autorisation parentale affichant encore « validation requise » après une décision pour l’enfant | Ne plus présenter l’état personnel du parent comme celui de l’enfant ; renvoi à l’historique par enfant, état personnel libellé « pour moi » | Cause confirmée dans le code ; libellé corrigé et historique de l’enfant autorisé contrôlés dans Chrome desktop/mobile |
 
 La charte et les styles Admin sont conservés. La protection ajoutée ne promet pas de conserver toutes les modifications non enregistrées lors de toute navigation ou de toute autre sauvegarde.
 
@@ -132,7 +133,7 @@ La classification du registre sert au triage. Une signature, un grant ou l’abs
 - **Couverture métier complète** : grilles golf 9/18 trous, Miss cut, toutes les surcharges OM ; éditions de séries, présences/évaluations existantes, archivages, camps, compétitions, quiz, publication Étiquette et toutes les mutations du lot 20261101. Les tests métier ciblés réussis ne couvrent pas chaque variante ni tous leurs écrans Chrome.
 - **Clients et concurrence** : ancienne application/PWA réellement installée, cache hors ligne, changement de rôle/club/enfant ; concurrence publication/décision et traduction FR/IA. Le double appel de décision identique a été testé, pas toutes les interleavings.
 - **Cas parentaux supplémentaires** : deux représentants en désaccord, changement d’e-mail, code lié à un autre enfant ; profils sans nom et variable `child_name` pour un adulte. Les comptes fictifs n’ont pas servi à prétendre valider une véritable autorité légale.
-- **Ergonomie complète** : navigation clavier, lecteur d’écran, safe area/native iOS, noms lisibles à la place des UUID abrégés, traduction des libellés d’interface (les documents eux-mêmes ont quatre langues), historique enfant après changement de focus. Le correctif parental local et les deux corrections Admin doivent être revus après déploiement.
+- **Ergonomie complète** : navigation clavier, lecteur d’écran, safe area/native iOS, noms lisibles à la place des UUID abrégés, traduction des libellés d’interface (les documents eux-mêmes ont quatre langues), historique enfant après changement de focus. Les trois ajustements d’interface ont été contrôlés après déploiement (section 10). Le correctif de contraste trouvé ensuite reste local.
 - **API Vercel hors navigateur** : lot automatisé applicatif bloqué par la protection d’accès ; aucun bypass exécuté. La preuve Chrome des mutations citées reste valable et distincte.
 - **Mail** : transport/délivrabilité réels non testés volontairement. Le défi parental a été provisionné via Supabase, puis sa saisie/validation a été testée dans Chrome.
 - **Rétention et droits** : restauration des preuves, purge à échéance, suppression de compte, sauvegardes, journaux, exports et traitements différés. Aucun effacement d’une preuve immuable n’a été tenté en contournant ses protections.
@@ -160,7 +161,7 @@ Le checkout était propre au départ, HEAD `5a53f7c`. Les corrections de la prem
 - `cleanup.mjs` : contrôle de propriété des documents, désactivation et conservation des preuves fictives immuables.
 - Ce rapport, les pointeurs README/readiness/matrice et les preuves `evidence/20261004-deployed-*` / captures `deployed-*`.
 
-Aucun commit, push ou déploiement effectué par l’agent dans cette reprise. Les deux fichiers applicatifs modifiés restent à déployer sur TEST.
+Aucun commit, push ou déploiement effectué par l’agent. Les deux fichiers applicatifs de la reprise du 4 octobre ont depuis été déployés par l’utilisateur dans `90f41d4`. Le contrôle du 5 octobre est détaillé en section 10.
 
 ### Contrôles locaux exécutés
 
@@ -184,7 +185,7 @@ Les six comptes sont bannis, les appartenances inactives, le rôle Admin retiré
 
 ## 8. Décisions humaines et prochaine étape
 
-1. Déployer les deux ajustements d’interface locaux sur TEST puis revoir la saisie Admin et le libellé parental. Aucun SQL supplémentaire n’est nécessaire pour eux.
+1. Les ajustements Admin et parental sont maintenant validés sur TEST. Un correctif local supplémentaire ajoute un fond blanc à `/legal/my` pour lire les textes au-dessus de la photo globale ; le déployer lors du prochain envoi TEST. Le contrôle UI ne nécessitait aucun SQL ; le complément de couverture ultérieur prépare le lot unique `20261103` (section 11).
 2. Faire approuver les textes/traductions et règles par rôle, âge, territoire, club et représentant ; distinguer contrat, notice et consentement facultatif.
 3. Définir les effets du refus/retrait, les conflits entre représentants et les traitements qui doivent cesser ; achever leur couverture d’accès direct/indirect et leurs scénarios métier.
 4. Arrêter conservation, purge, sauvegardes, preuves et demandes de droits, y compris le traitement ultérieur des traces fictives.
@@ -198,3 +199,126 @@ Avant l’application utilisateur du lot, le run `legalqa_20261004_673faa` avait
 Les corrections déjà déployées incluent aussi la sérialisation JSON PostgREST des traductions, la comparaison du texte réellement relu, le filtrage d’applicabilité avant validation et la compatibilité des conflits `PT409`/`40001`.
 
 Preuves historiques : [HTTP](evidence/20261004-http-results.json), [métier](evidence/20261004-business-results.json), [compléments](evidence/20261004-extra-results.json), [timeout événement](evidence/20261004-event-edit.json), [42 contrôles SQL annulés](evidence/20261004-candidate-rollback-results.json), [20 états Chrome](evidence/20261004-browser-results.json), [nettoyage initial](evidence/20261004-cleanup.json). La première clôture avait zéro version/décision ; la clôture actuelle en conserve quatre/dix, entièrement fictives.
+
+## 10. Contrôle du déploiement des ajustements — 5 octobre 2026
+
+**Périmètre limité aux trois corrections livrées.** Le checkout était propre, HEAD `90f41d46af688f4489d8ba74e00d4b50944db207`. Dans Chrome, Vercel affichait **Ready**, branche `test`, déploiement `DdB72FdcGYC8YYHC3tZDuzJSW1zV`, origine `https://nextee-2u5qfnis3-fabrice-joliats-projects.vercel.app`. Cette origine a permis une connexion fictive indépendante de la session réelle sur `test.activitee.golf`.
+
+| Contrôle | Résultat |
+|---|---|
+| Résumé non sauvegardé conservé après FR → EN → DE → IT → FR, desktop | RÉUSSI |
+| Champs et onglets désactivés pendant la sauvegarde, desktop | RÉUSSI, état transitoire capturé dans le DOM |
+| Résumé conservé, champs de nouveau modifiables après sauvegarde, desktop | RÉUSSI |
+| Même séquence de conservation sur mobile 393 × 852 | RÉUSSI |
+| Verrouillage pendant sauvegarde sur mobile | RÉUSSI, état transitoire capturé |
+| Réouverture des champs et résumé sauvegardé sur mobile | RÉUSSI, valeur relue dans Supabase |
+| Carte parentale : état par enfant, distinct de « État pour moi », mobile | RÉUSSI |
+| Même libellé et historique de l’enfant contenant l’autorisation fictive existante, desktop | RÉUSSI |
+| Historique de l’enfant sur mobile | RÉUSSI |
+
+**9 contrôles Chrome réussis**, sans débordement horizontal dans les états enregistrés. Les deux tests ciblés `tests/legal-admin-workspace.test.ts` passent sur le commit déployé. ESLint et `git diff --check` passent pour les changements du contrôle. Aucun nouveau test SQL de structure ni migration n’a été exécuté : les changements vérifiés sont applicatifs.
+
+L’ouverture initiale a rencontré `ERR_NETWORK_CHANGED`. Quelques attentes de navigation ont expiré pendant le chargement ; les pages finales ont ensuite été chargées, les actions recontrôlées et leurs résultats capturés. Ces incidents de session ne sont pas transformés en défaut produit confirmé.
+
+### Défaut visuel supplémentaire et correctif local
+
+La capture mobile de `/legal/my` montre le texte superposé à la photo globale : le libellé est correct mais peu lisible. Un fond blanc a été ajouté **uniquement au conteneur principal de cette page**, dans `app/legal/my/page.tsx`. Vérification locale à 393 × 852 : fond calculé `rgb(255, 255, 255)`, aucun débordement ; capture inspectée. L’écran local ne contenait pas de document actif, les fixtures étant déjà nettoyées. **Ce correctif n’est pas déployé dans `90f41d4`.** Aucun autre code applicatif n’a été modifié pendant ce contrôle.
+
+### Fixtures et retour à l’état initial
+
+Seuls les anciens comptes fictifs Admin/Parent ont reçu des identifiants temporaires de test ; le compte enfant est resté banni. Les appartenances Parent/enfant, le lien fictif et l’assertion ont été temporairement rétablis pour consulter l’historique existant. Deux documents du club jetable A ont été temporairement actifs. Aucun document plateforme actif, nouvelle version, nouvelle décision ou courriel.
+
+Après contrôle : documents inactifs, appartenance Parent/enfant inactive, assertion révoquée, lien désactivé, rôle Admin retiré, comptes réutilisés bannis, secrets effacés, sessions Chrome fictives déconnectées et viewport réinitialisé. Le résumé du brouillon a été restauré à sa valeur initiale. Deux écritures de revue de représentation fictive restent dans l’audit normal (réouverture/clôture), sans contournement d’immutabilité.
+
+**État final : garde SQL false, zéro document actif ; toujours quatre versions et dix décisions fictives.** Le drapeau d’enforcement applicatif n’a pas été modifié. Aucune conclusion supplémentaire sur l’activation ou la production.
+
+Preuves : [environnement et tests](evidence/20261005-ui-recheck-environment.json), [9 états Chrome](evidence/20261005-ui-recheck-browser.json), [persistance](evidence/20261005-ui-recheck-persistence.json), [nettoyage](evidence/20261005-ui-recheck-cleanup.json), [contraste local](evidence/20261005-ui-recheck-local-readability.json).
+
+[Admin desktop](evidence/ui-recheck-admin-desktop.png) · [Admin mobile](evidence/ui-recheck-admin-mobile.png) · [Parent desktop](evidence/ui-recheck-parent-desktop.png) · [Parent mobile sur TEST](evidence/ui-recheck-parent-mobile.png) · [Fond de lecture corrigé localement](evidence/ui-recheck-local-readable-mobile.png).
+
+Fichiers de cette vérification : `app/legal/my/page.tsx` (fond blanc local), `scripts/legal-campaign/ui-recheck.mjs` (provision/relecture/nettoyage bornés aux fixtures existantes), rapport et pointeurs README/readiness/matrice, preuves `20261005-ui-recheck-*` et captures `ui-recheck-*`. Aucun commit, push ou déploiement par l’agent.
+
+
+## 11. Complément de couverture technique — 5 octobre 2026
+
+### Environnement et limites d’intervention
+
+Checkout `test`, base de code `90f41d46af688f4489d8ba74e00d4b50944db207`. Les changements de la section 10 étaient déjà présents avant cette phase. Dans Chrome, le projet a été recontrôlé comme **golf-juniors-app / test Preview / `wizbeuuvjibmmuxyynly`**. L’inventaire SQL en lecture seule du 5 octobre à 09:56:44 UTC contient 368 lignes : 223 fonctions, 138 relations, six buckets et l’état de contrôle. Il confirme quatre versions et dix décisions fictives, aucun document actif, garde false. Aucun déploiement plus récent que celui de la section 10 n’est revendiqué.
+
+Aucune migration déjà appliquée n’a été rejouée. Le nouveau lot a été installé **uniquement à l’intérieur de transactions terminées par `ROLLBACK`**, avec les fixtures existantes du club A et l’identité fictive du club B. Le garde SQL est resté false même pendant ces essais ; aucun fichier de configuration ou drapeau réel n’a été activé. Aucun compte n’a été débanni, aucune connexion fictive supplémentaire nécessaire, aucun courriel, aucune publication ou décision juridique créée. La vérification finale retrouve les trois définitions originales et l’absence des quatre nouveaux helpers : **le lot reste à appliquer durablement**.
+
+### Défauts, corrections et portée des preuves
+
+| Cas | Constat et résultat |
+|---|---|
+| Ancienne RPC `staff_seed_group_players_attendees` | **Défaut reproduit en SQL TEST** : un head coach dont l’appartenance est inactive peut atteindre la mutation. Le correctif ajoute l’appartenance active Coach/Manager du club de l’événement, conserve les conditions de groupe existantes, ferme l’appel anonyme et ajoute le garde événement. Dans la transaction : inactif refusé, actif autorisé, répétition sans doublon, acteur du club B refusé. Contexte JWT fictif en SQL sous fonction definer ; ce n’est pas un nouvel essai de connexion PostgREST d’un utilisateur banni. Aucun appel à cette RPC trouvé dans le code applicatif actuel ; l’entrée reste pertinente pour un ancien client. |
+| Métadonnées changées après publication | **Écart de logique démontré** : les RPC de présentation/décision vérifient déjà `legal_version_matches_document`, mais les gardes SQL/HTTP pouvaient encore satisfaire une ancienne acceptation. Les deux gardes vérifient maintenant la correspondance de la dernière version. Test HTTP serveur simulé : acceptation courante valide autorisée, métadonnées différentes refusées. La définition SQL est contrôlée, sans activer son branchement sur TEST. |
+| Messagerie, documents joueur, événements, groupes, entraînements historiques, rapports et activités personnelles | **Lacunes de couverture structurelles**, pas des fuites interclubs automatiquement confirmées : certaines politiques permissives utilisent des propriétaires ou helpers definer et n’héritent donc pas du garde du parent. Le lot ajoute des conditions restrictives avec la portée réelle de la ligne, de l’événement, du groupe, du fil ou de l’entraînement. Elles ne confèrent aucun droit métier. |
+| Golf/OM | Les sauvegardes RPC vérifient déjà `om_organization_id` ; création et tables directes utilisaient seulement la portée plateforme. Création, parties et trous sont alignés sur la même portée OM. `golf_rounds.club_id` n’est pas utilisé comme appartenance : c’est la référence de parcours. Les organisations historiques non assimilables à un club demandent encore une règle explicite. |
+| API Règles, Étiquette, champs de profil de club | Les routes sont authentifiées et utilisent le service, mais étaient absentes du matcher et du filtre juridique. Elles sont ajoutées dans `proxy.ts` et `lib/legalRouteCoverage.ts`. Le garde reste conditionné au drapeau existant. Huit familles d’API sont exercées avec un ancien client simulé : 403 `LEGAL_ACTION_REQUIRED`, identité Bearer prioritaire sur le cookie, 401 sans identité valide, 503 si le contrôle échoue. |
+| Cache HTTP et récupération d’accès | Réponses autorisées, refus et redirections du garde portent `no-store`. Les documents juridiques, décisions, demandes de droits, connexion et récupération restent hors du blocage. Le mode désactivé ne consulte pas l’état juridique. Ceci ne purge pas les données déjà affichées ou enregistrées sur un appareil. |
+| Refus/retrait | Tests locaux : une décision requise refusée, retirée, en conflit ou sur une ancienne version ne suffit pas ; une décision facultative refusée/retirée/en conflit ne bloque pas globalement le compte. **L’arrêt effectif d’un traitement facultatif n’est pas implémenté sans sa correspondance à une finalité.** |
+
+### Qualification des accès restants
+
+La [revue actualisée des 367 objets](evidence/20261005-access-review.csv) conserve finalité, rôles, portée et appels indirects. Le [manifeste du lot](evidence/20261005-coverage-batch-manifest.json) nomme chacune des 37 politiques et sa portée. Les recherches textuelles servent à repérer les dépendances ; leur absence ne suffit pas à confirmer une faille.
+
+- **58 relations métier de la revue initiale** : 35 reçoivent un garde dans le lot ; neuf héritent d’un parent contrôlé dans leurs branches non Admin ; dix exposent des catalogues pédagogiques publiés ; deux ne disposent que de politiques Admin ; deux concernent les notifications et restent ouvertes à une décision de finalité. Les deux politiques golf déjà présentes sont corrigées en plus de ces 35 ajouts.
+- **Héritage qualifié** : feedback et rappels via événements, cibles d’actualité via actualités club, dossiers de saison via saisons, images Marketplace via annonces, actualités plateforme/traductions via ciblage club, groupes de participation et gagnants via leurs parents. Plusieurs parents reçoivent le nouveau garde seulement dans le lot candidat. Les branches Admin de Rules restent un choix d’applicabilité séparé.
+- **Helpers indirects** : les prédicats de permissions qui lisent en definer ne sont pas traités comme des RPC de mutation ; les gardes sont placés sur les lignes et résolvent leur parent sans dépendre d’une lecture filtrée par RLS. Les cinq helpers internes fermés par `20261102` le sont toujours. Les triggers/traitements exécutés par le service ne sont pas couverts par une politique client restrictive.
+- **Storage** : `storage.objects` a RLS mais aucune politique permissive dans l’inventaire ; les essais de la campagne ont refusé lecture/envoi directs privés. Les appels de signature de documents repérés sont dans les API Player/Coach couvertes. Les liens privés signés expirent après **15 minutes** (`PLAYER_DOCUMENT_SIGNED_URL_TTL_SECONDS`) ; un lien déjà distribué n’est pas revalidé à chaque téléchargement. Le fallback de documents historiques dans `marketplace` public doit être inventorié/migré avant de promettre la révocation de leur accès. Les cinq buckets publics ne deviennent pas privés grâce au garde. Aucune conversion de fichiers réels n’a été effectuée.
+- **Anciens clients** : le service worker ne possède ni gestionnaire `fetch` ni cache de documents hors ligne. Le contrôle des API et des RPC ne dépend pas des nouveaux boutons ; les tests de refus HTTP sont toutefois **locaux avec états simulés**. Cache mémoire d’un onglet déjà ouvert, retour au premier plan, navigateur hors ligne et Capacitor avec document requis actif restent **non vérifiés**.
+
+### Points encore ouverts avant toute activation
+
+1. Associer chaque consentement facultatif/autorisation parentale à ses traitements : photos, IA, communications, etc. Définir refus/retrait, conflits de représentants, arrêt des tâches différées et sort des données déjà produites. Les tâches de notifications/push, rappels et rapports tournent avec le rôle de service : elles ne consultent pas automatiquement la projection juridique du destinataire.
+2. Qualifier `notifications` / `notification_recipients`, les API avatar/push, les douze tables d’identité/bootstrap et les catalogues publiés. Les alertes de compte et de récupération doivent rester distinguées des communications facultatives ; aucune exemption juridique globale n’est déclarée approuvée.
+3. Fixer le comportement d’un utilisateur appartenant à plusieurs clubs : le filtre HTTP actuel considère tous ses documents applicables, alors que le garde SQL vérifie plateforme + club de la ligne. Un refus propre à B peut donc bloquer l’interface globale d’un utilisateur aussi membre de A. Le cas déjà testé « utilisateur uniquement A, document uniquement B » passe ; le choix de navigation isolée A/B reste à implémenter après décision.
+4. Aligner l’applicabilité personnelle Admin entre HTTP, RPC et tables ; définir la correspondance des organisations OM historiques (club, académie, canton, fédération). Les contrôles métier existants ne remplacent pas cette matrice juridique.
+5. Décider de la durée acceptable d’accès aux URL signées, traiter les fichiers publics historiques et les données conservées sur un appareil. Ni un retrait ni une redirection n’effacent un contenu déjà reçu.
+6. Après ces décisions et corrections, autoriser séparément une campagne d’enforcement sur un environnement isolé. Les **refus actifs de bout en bout en Chrome / PostgREST / Storage sur toutes les familles ne sont pas validés** par les tests actuels, puisque les deux gardes sont restés désactivés.
+
+### Tests et preuves de cette phase
+
+| Contrôle | Résultat |
+|---|---|
+| Préflight initial en lecture seule | **43/43** ; la version finale comprend 46 contrôles, rejoués dans les 53 contrôles finaux |
+| Première transaction annulée | **52/52** ; conservée pour traçabilité, avant ajout des deux tables d’entraînements historiques |
+| Transaction finale annulée | **55/55** : 50 contrôles de structure du lot + cinq scénarios/contrôles de fixtures |
+| Retour à l’état initial et préflight final | **53/53** : définitions initiales, quatre helpers absents, garde false, zéro actif, six comptes bannis, appartenances inactives, groupe inactif, événement annulé, quatre versions/dix décisions |
+| `node --experimental-strip-types --test tests/legal-*.test.ts` | **23/23**, sans accès réseau ; les états « garde actif » sont des objets de test et un environnement injecté dans le chargeur de modules |
+| `npx tsc --noEmit`, ESLint ciblé, `git diff --check` | **RÉUSSIS** |
+| Rejeu Chrome desktop/mobile avec le nouveau code déployé | **NON VÉRIFIÉ** : ce lot est local ; la section 10 reste la preuve du dernier déploiement UI |
+| Activation / production / conformité juridique | **NON VÉRIFIÉES et non effectuées** |
+
+Preuves : [inventaire TEST](evidence/20261005-coverage-inventory.json), [préflight initial](evidence/20261005-coverage-preflight.json), [premier essai annulé](evidence/20261005-coverage-rollback-initial.json), [55 contrôles finaux du lot annulé](evidence/20261005-coverage-rollback-final.json), [retour à l’état initial](evidence/20261005-coverage-final-state.json), [tests locaux et empreintes des fichiers](evidence/20261005-coverage-local-tests.json).
+
+### Fichiers et livraison
+
+**Code de cette phase** : `proxy.ts`, `lib/legalRouteCoverage.ts`, `lib/server/legalRequirements.ts` ; tests `legal-access-coverage.test.ts`, `legal-requirements.test.ts` et paramètre d’environnement isolé dans `tests/helpers/managerRouteHarness.ts`. Aucun composant Admin modifié dans cette phase. Le fond blanc de `/legal/my` appartient au contrôle précédent et reste à livrer avec le prochain déploiement.
+
+**Lot SQL unique** : `supabase/migrations/20261103_legal_access_coverage.sql`. Préflight **26** et postflight **27** en lecture seule ; script **28** de reproduction intégralement annulée sur les anciennes fixtures ; contrôle final **29** en lecture seule. Le script 28 est une preuve de campagne avec IDs fictifs fixes, **pas une migration à appliquer**. Rapport, pointeurs et preuves actualisés.
+
+**Prochaine livraison TEST** : exécuter 26, appliquer uniquement `20261103`, exécuter 27 (50 résultats vrais), puis déployer les changements applicatifs et rejouer les parcours touchés sur fixtures. Ne pas rejouer `20261020` à `20261102`, ni activer les gardes. Aucun commit, push ou déploiement n’a été fait par l’agent. Les décisions et travaux encore ouverts ci-dessus restent des prérequis à l’activation ; ce lot ne clôt pas à lui seul la préparation juridique.
+
+
+## 12. Confirmation de l’application de `20261103` sur TEST
+
+Après le retour utilisateur « les 50 résultats sont à true », l’éditeur SQL Chrome a été contrôlé sur **`wizbeuuvjibmmuxyynly`**, `golf-juniors-app / test Preview`. L’export complet confirme **50/50 résultats vrais** du postflight 27, dont garde désactivé, contrainte d’inactivité présente, zéro document actif, portées des 37 politiques, quatre résolveurs et contrôles de la RPC corrigée. **La migration n’a pas été rejouée par l’agent.**
+
+Le script `30-applied-coverage-fixture-test.sql` exerce les fonctions désormais installées, sans embarquer de migration. Dans une transaction entièrement annulée, uniquement sur les anciens IDs `legalqa_20261004_9a282f` :
+
+| Contrôle SQL, avec identité JWT fictive | Résultat |
+|---|---|
+| Coach inactif refusé par `staff_seed_group_players_attendees` | RÉUSSI |
+| Coach actif autorisé, deuxième appel sans doublon | RÉUSSI |
+| Acteur du club B refusé sur l’événement A | RÉUSSI |
+| Quatre résolveurs de portée n’ajoutent aucun filtrage lorsque le garde est désactivé | RÉUSSI |
+
+Les libellés `candidate_*` conservés dans l’export proviennent des mêmes scénarios de comparaison que la section 11 ; ils ont bien été rejoués ici sur les **fonctions installées**, sans remplacement de leur définition. Il s’agit de tests SQL de la fonction definer, pas de nouveaux parcours de connexion Chrome ou d’enforcement actif.
+
+La relecture finale combine le postflight 27 et sept assertions de nettoyage : **57/57 résultats vrais**. Comptes fictifs toujours bannis, appartenances et groupe inactifs, événement annulé, rôle Admin fictif retiré ; toujours quatre versions et dix décisions fictives, aucun document actif, garde false. Aucun nouveau texte, décision, courriel, déblocage de compte ou modification durable de fixture.
+
+Preuves : [50 résultats du lot appliqué](evidence/20261005-coverage-applied-postflight.json), [quatre scénarios sur les fonctions installées](evidence/20261005-coverage-applied-fixtures.json), [57 contrôles finaux](evidence/20261005-coverage-applied-final.json).
+
+**Suite : déployer les modifications applicatives sur TEST.** Le checkout est encore sur `90f41d4` avec les modifications du lot non commitées ; aucun nouveau déploiement applicatif n’est validé dans cette phase. Les 23 tests locaux et le contrôle de types/lint de la section 11 restent la preuve du code préparé. Après le déploiement, contrôler les parcours concernés dans Chrome sur la version livrée. Ne plus appliquer `20261103`, ni les migrations précédentes. Ne pas exécuter les scripts historiques 28/29 conçus pour comparer au schéma avant application. Les choix et limites d’activation de la section 11 restent ouverts ; aucune conclusion sur la production.

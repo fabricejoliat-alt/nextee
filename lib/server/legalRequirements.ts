@@ -30,10 +30,16 @@ export async function loadMissingLegalActions(db: SupabaseClient, actorId: strin
   ]);
   if (versions.error || states.error) throw new Error(versions.error?.message ?? states.error?.message);
   for (const doc of applicableDocs) {
-    if (["terms", "privacy", "junior_notice"].includes(doc.kind)
-      && !(versions.data ?? []).some((version) => version.document_id === doc.id)) {
+    if (!["terms", "privacy", "junior_notice"].includes(doc.kind)) continue;
+    const latest = (versions.data ?? []).filter((version) => version.document_id === doc.id)
+      .sort((a, b) => b.version_number - a.version_number)[0];
+    if (!latest) {
       throw new Error("An active required legal document has no published version");
     }
+    // The decision/presentation RPCs already reject changed published metadata.
+    // Apply the same invariant before letting an old acceptance unlock business data.
+    const matching = await db.rpc("legal_version_matches_document", { p_document: doc.id, p_version: latest.id });
+    if (matching.error || matching.data !== true) throw new Error("Published legal metadata changed");
   }
   return findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: Boolean(admin.data),
     documents: applicableDocs as Parameters<typeof findMissingLegalActions>[0]["documents"],

@@ -1,6 +1,6 @@
 # Documents juridiques — état du chantier
 
-> **Mise à jour — reprise TEST du 4 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md). Le lot `20261102` est appliqué sur TEST et son postflight de 16 lignes vérifié. Publication, décisions, V2, parent/code, refus et retrait ont été exercés avec fixtures dans Chrome ; corrections d’interface locales encore à déployer. Le garde reste désactivé. Les notes de préparation ci-dessous sont historiques ; elles ne remplacent pas cet état courant.
+> **Mise à jour — 5 octobre 2026 :** voir le [rapport unique](campaign-report-2026-10-04.md), sections 11–12. Le lot SQL `20261103` est **appliqué sur TEST** : 50/50 postflight, quatre scénarios SQL sur fixtures annulées et 57/57 contrôles finaux. Ne pas rejouer les migrations. Les modifications applicatives restent à déployer ; gardes désactivés, zéro document actif. Les choix de finalité et la couverture active restent ouverts. Les notes ci-dessous sont historiques.
 
 Cette première livraison est **inactive**. Elle ajoute un registre de brouillons, des versions publiées immuables, des présentations et décisions horodatées par le serveur, des routes de consultation et une demande persistée relative aux données. Elle ne remplace pas encore les contrôles d'accès actuels et ne doit pas être activée en production.
 

@@ -1,0 +1,18 @@
+[
+  {
+    "item": "candidate_active_coach_seed_idempotent",
+    "ok": "true"
+  },
+  {
+    "item": "candidate_inactive_coach_denied",
+    "ok": "true"
+  },
+  {
+    "item": "candidate_outside_club_denied",
+    "ok": "true"
+  },
+  {
+    "item": "helpers_off_do_not_filter",
+    "ok": "true"
+  }
+]
