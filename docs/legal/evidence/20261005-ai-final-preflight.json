@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-05T19:56:40.859Z",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "commit": "b3f8ae4b7d8c9e38b6f1b38153efb6b9efd82a2f",
+  "baseline": {
+    "enabled": false,
+    "legal_documents": 0,
+    "legal_versions": 4,
+    "legal_decisions": 10
+  },
+  "fixtureIdentityVerified": true,
+  "inactiveMemberships": 3,
+  "groupInactive": true,
+  "events": {
+    "past": "87b4804d-be48-492c-bc44-084f86661679",
+    "future": "78e1aedf-f09e-4848-811a-554018c01815"
+  }
+}

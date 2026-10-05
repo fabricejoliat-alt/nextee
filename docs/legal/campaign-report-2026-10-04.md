@@ -4,7 +4,9 @@ Dates : 4–5 octobre 2026, campagne, contrôle des ajustements et complément d
 
 ## Conclusion actuelle
 
-**Dernier complément local :** seuil ZDR ramené à 13 ans à la demande utilisateur ; parcours de reformulation des mineurs avec accords et aperçu conservé, fermé par défaut. 118 tests réussis, aucune activation. Voir section 23. Le dernier déploiement IA TEST contrôlé reste `a13dad9` (section 21) ; le nouveau parcours n’y a pas encore été vérifié.
+**Recette complémentaire du 5 octobre (section 25) :** le commit `b3f8ae4` relié à TEST a été exercé avec un Coach et un joueur fictifs dans Chrome. La reformulation est refusée sans accord actif avant 13 ans et au jour des 13 ans ; le formulaire reste utilisable à 390 px. Les 118 tests locaux passent. Les fixtures temporaires ont été nettoyées ; le registre garde 18 documents, zéro actif, quatre versions et dix décisions fictives. L’aperçu positif avec consentements fictifs et le transport fournisseur restent non vérifiés sur le déploiement ; aucune ouverture du module n’en découle. Les conclusions des sections antérieures sont datées de leurs contrôles respectifs.
+
+**État antérieur, section 23 :** seuil ZDR ramené à 13 ans à la demande utilisateur ; parcours de reformulation des mineurs avec accords et aperçu conservé, fermé par défaut. 118 tests réussis, aucune activation. Au moment de ce contrôle, le dernier déploiement IA TEST vérifié était `a13dad9` (section 21) ; le complément Chrome de `b3f8ae4` figure en section 25.
 
 **Le correctif SQL déployé fonctionne sur les scénarios retestés. Le module reste inactif et ne doit pas encore être activé.** Les blocages de publication, les cinq RPC internes exposés, la lecture Marketplace interclub et le conflit d’édition d’événement de la première phase sont résolus sur TEST. La publication et les décisions ont maintenant été exercées dans Chrome avec des textes et utilisateurs fictifs, puis relues en base.
 
@@ -531,8 +533,7 @@ La suite ciblée exécute **64 tests réussis**, dont les scénarios de refus, r
 node --experimental-strip-types --test tests/coach-ai-authorization.test.ts tests/coachAiAssistance.test.ts tests/coachPreparationInsights.test.ts tests/coach-activity-workflow.test.ts tests/coachDebrief.test.ts
 ```
 
-`npx tsc --noEmit` : réussi. ESLint ciblé serveur/lib/tests : sans erreur ni avertissement. La page Coach modifiée conserve quatorze avertissements préexistants (symboles inutilisés, image et dépendance de hook), sans erreur. `git diff --check` : réussi. Les fixtures des anciennes préparations ont été enrichies avec l’accord adulte explicite ; deux assertions UI obsolètes sur du français codé en dur et l’assertion d’UUID envoyé au fournisseur ont été alignées sur les traductions et la minimisation.
-
+`npx tsc --noEmit` : réussi. ESLint ciblé serveur/lib/tests : sans erreur ni avertissement. La page Coach modifiée conserve quatorze avertissements préexistants (symboles inutilisés, image et dépendance de hook), sans erreur. `git diff --check` : réussi. Les fixtures des anciennes préparations ont été enrichies avec l’accord adulte explicite ; deux assertions UI obsolètes sur du français codé en dur et l’assertion d’UUID envoyé au fournisseur ont été alignées sur les traductions et la minimisation
 **Non vérifiés dans ce lot :** build Vercel, déploiement, Chrome desktop/mobile et états persistés sur TEST ; transport fournisseur réel ; validation juridique ; consentement ou ZDR pour mineurs. Aucun résultat de cette suite ne doit être présenté comme une nouvelle recette distante. Les requêtes déjà parties et les copies déjà reçues ne peuvent pas être rappelées ; les relectures avant/après transport ne constituent pas une transaction atomique avec le fournisseur. Une ancienne copie de cache peut encore rester en base sans être retournée : sa purge relève du lot conservation.
 
 ### Accès directs, fichiers et suite
@@ -653,3 +654,96 @@ Le seuil est calculé au 13e anniversaire selon le calendrier suisse. L’autori
 - Aucun vrai transport OpenAI, aucune création d’accord ni modification de profil. La base et le fournisseur sont simulés. Le nouveau parcours Chrome et le déploiement de ces changements restent **non vérifiés** ; les preuves TEST des lots précédents ne prouvent pas ce nouveau code.
 
 Fichiers de ce correctif : `lib/server/coachAiAuthorization.ts`, `lib/server/coachAiRewrite.ts`, route Coach `debrief/analyze-player`, `tests/coach-ai-authorization.test.ts`, `docs/legal/drafts.md` r6, décisions, README, readiness et ce rapport. Les modifications antérieures sont préservées. **Aucun SQL à appliquer.** Le drapeau d’ouverture mineurs et les deux drapeaux juridiques restent inchangés ; aucun commit, push ou déploiement effectué dans ce lot.
+
+
+## 24. Import des brouillons FR dans TEST — 5 octobre 2026
+
+**Périmètre autorisé :** l’utilisateur demande l’insertion des textes préparés et choisit explicitement les trois clubs : Golf Club de Sion, Golf Club Augusta et Centre de Performance Valais. Cette insertion porte sur des brouillons réels de travail dans TEST, séparés des fixtures. Aucune publication, approbation juridique, activation ni acceptation réelle.
+
+### Environnement et déploiement
+
+- Checkout initial propre, branche `test`, commit `b3f8ae4b7d8c9e38b6f1b38153efb6b9efd82a2f`.
+- Chrome / Vercel Deployment Details : `FL8BjBqWMJuwkA5EdxZBekrrhRwk`, Preview **Ready**, branche `test`, commit `b3f8ae4`, créé le 5 octobre à 20:32:25 Europe/Zurich. La page détail rattache explicitement `test.activitee.golf` à `nextee-f8utinc8i-fabrice-joliats-projects.vercel.app`.
+- Supabase confirmé avant écriture : `wizbeuuvjibmmuxyynly.supabase.co`. Six documents, tous inactifs, quatre versions, dix décisions et `legal_enforcement_control.enabled=false`.
+- Aucune consultation de données personnelles de membres, aucune intervention en production et aucune migration rejouée. Le formulaire de création et l’éditeur Admin authentifiés effectuent les écritures, avec l’attribution normale de l’application. La relecture de preuve utilise uniquement les tables juridiques de TEST.
+
+### Documents insérés
+
+Source : [drafts.md](drafts.md), révision **FR-2026-10-05-r6** du commit ci-dessus. Le texte utilisateur est séparé des annotations de rédaction. Le moteur affichant du texte brut, les titres, listes et tableaux Markdown ont été convertis en paragraphes lisibles, sans changement de fond. Les variables de gabarit sont conservées et déclarées dans chaque brouillon ; le résumé des changements cite la révision source.
+
+| Texte | Portée et quantité | Type / action | Finalité |
+|---|---|---|---|
+| Conditions d’utilisation | Plateforme, 1 | `terms` / `accept` | `service.terms` |
+| Notice sur les données personnelles | Plateforme, 1 | `privacy` / `acknowledge` | `service.privacy` |
+| Notice junior | Plateforme, 1 | `junior_notice` / `read` | `service.junior_notice` |
+| Autorisation d’usage pour un enfant | Un par club, 3 | `parent_authorization` / `authorize` | `service.parent_authorization` |
+| Reformulation IA pour un joueur mineur | Un par club, 3 | `specific_consent` / `consent` | `coaching.rewrite` |
+| Assistance IA personnelle du majeur | Un par club, 3 | `specific_consent` / `consent` | `coaching.ai` |
+
+Les clés commencent par `activitee_`, avec suffixes `sion`, `augusta`, `performance_valais` pour les textes de club. Les six documents de test `legalqa_…` sont conservés séparément et inactifs ; ils n’ont pas été remplacés.
+
+Métadonnées préparatoires : CGU et notice générale pour `player,parent,coach,manager,admin`, notice junior pour `player`, autorisation pour `parent`, reformulation pour `parent,player`, option majeur pour `player`. Les deux options IA sont facultatives (`required=false`) ; les trois textes de plateforme et l’autorisation portent `required=true`. **Toutes les règles d’applicabilité restent `unapproved` / non exécutables** : ces choix ne constituent pas une revue par rôle/âge/capacité ni une permission de publier. En particulier, l’audience `player` ne distingue pas à elle seule juniors et majeurs.
+
+### Résultats et preuves
+
+| Contrôle | Résultat / portée |
+|---|---|
+| Création, variables, FR, résumé par l’Admin TEST | **12/12 enregistrés.** Aucun appel de traduction ou fournisseur. |
+| Relecture indépendante des données persistées | **12/12 identiques** pour titre, corps, libellé, résumé, variables, portée/club, type, action, audience et finalité. Empreintes SHA-256 dans la [preuve JSON](evidence/20261005-drafts-import-test.json). |
+| État des brouillons | FR `needs_review`, EN/DE/IT absents, règle `unapproved`, aucun document actif. Révision source en base 2 pour les textes sans variable et 3 pour les textes avec variables. Ce numéro de brouillon ne constitue pas une version publiée. |
+| Registre après insertion | 18 documents = 12 nouveaux + 6 fixtures. Zéro actif, quatre versions et dix décisions, mêmes comptes qu’avant insertion. Garde SQL false. Le contenu intégral antérieur des fixtures n’a pas fait l’objet d’un hash avant/après. |
+| Chrome après rechargement | Liste filtrée sur les 12 clés `activitee_`, autorisation Sion sélectionnée, titre/texte/variables relus, aperçu ouvert. [Capture desktop](evidence/20261005-drafts-import-desktop.png). |
+| Largeur desktop | `innerWidth=scrollWidth=1504`, aucun débordement horizontal observé. |
+| Contrôle mobile de cette insertion | **Non vérifié.** L’outil a accepté la demande 390 × 844 mais le DOM et la capture sont restés à 1504 px, y compris après rechargement. L’override a été réinitialisé ; cette tentative n’est pas présentée comme une preuve mobile. |
+| Nouveau parcours IA du commit `b3f8ae4` | **Non retesté de bout en bout** dans cette insertion documentaire ; le rattachement du déploiement est vérifié, les tests locaux précédents restent des preuves distinctes. |
+
+Une création au Centre de Performance Valais a dépassé le délai d’attente de l’outil : le contrôle suivant a confirmé sa création avant reprise de l’édition. Aucun doublon n’a été recréé. La première assertion de relecture comparait à tort une audience triée à une audience non triée ; corrigée pour comparer les mêmes ensembles, la vérification complète a réussi sans modification de données.
+
+### Travail restant et livraison
+
+Les textes français sont rédigés et disponibles dans [l’Admin TEST](https://test.activitee.golf/admin/legal). Avant publication : préparer EN/DE/IT, faire relire les quatre langues, valider les règles par rôle/âge/club/capacité et traiter les prérequis de `drafts.md` (contrats/transferts, conservation/purges, droits, fichiers et IA). Le masquage n’équivaut pas à une anonymisation et le seuil produit de 13 ans ne constitue pas une règle juridique universelle. La recette du nouveau parcours IA reste à réaliser sur fixtures.
+
+**Aucun SQL à appliquer et aucun changement de code applicatif dans ce lot.** Aucun nouveau test unitaire/build n’est nécessaire pour cette insertion de contenu ; assertions ciblées sur les douze textes persistés et `git diff --check` exécutés. Fichiers ajoutés/modifiés : ce rapport unique, README, readiness, preuve JSON et capture desktop. Pas de commit/push supplémentaire. Aucune activation de `LEGAL_ENFORCEMENT_ENABLED`, du garde SQL ou de l’IA ; aucun courriel, aucune acceptation réelle et aucun réglage de fournisseur modifié. Ces résultats concernent TEST et ne prouvent ni la conformité juridique/Store ni l’état de production.
+
+## 25. Recette complémentaire IA et nettoyage des fixtures — 5 octobre 2026
+
+Le commit `b3f8ae4` est le déploiement Vercel Preview **Ready** rattaché à `test.activitee.golf` (section 24). L’alias Vercel de la branche `test` a permis de connecter dans Chrome un Coach fictif sans modifier la session Admin de l’utilisateur. La recette porte exclusivement sur Supabase TEST `wizbeuuvjibmmuxyynly`. Avant la création de données temporaires : 18 documents dont 12 brouillons FR et six fixtures, zéro actif, quatre versions, dix décisions, garde SQL `false`, trois adhésions QA inactives. Une ancienne séance `JETABLE legalqa_20261004_9a282f` existait déjà ; elle est restée hors du nettoyage ciblé.
+
+Le script [ai-final-recheck.mjs](../../scripts/legal-campaign/ai-final-recheck.mjs) vérifie les identités et clubs `legalqa_20261004_9a282f`, ouvre temporairement deux séances fictives et le compte Coach fictif, puis restaure tous les états enregistrés. Il n’active aucun document juridique, ne recueille aucune décision et ne transmet aucun texte à un fournisseur IA. [Préflight](evidence/20261005-ai-final-preflight.json), [contrôles directs et blocage HTTP](evidence/20261005-ai-final-api.json), [nettoyage](evidence/20261005-ai-final-cleanup.json), [audit final](evidence/20261005-ai-final-audit.json).
+
+| Contrôle | Résultat et portée |
+|---|---|
+| Suite locale du code `b3f8ae4` | **118/118** tests ciblés, zéro échec ; `npx tsc --noEmit --incremental false` réussi. Les tests couvrent les frontières 13/18 ans, consentements parent et junior, club/version/retrait, aperçu signé, masquage et transport **simulé**. |
+| Appels HTTP depuis le terminal vers `test.activitee.golf` | **Non vérifiés au niveau applicatif** : Vercel Authentication a intercepté le premier appel en 401 avant l’application. Le script a interrompu les autres appels HTTP et l’a enregistré comme blocage, pas comme refus juridique réussi. |
+| Lectures PostgREST directes du cache et des accusés | **6/6 refus attendus** (`42501`) pour `anon`, Coach fictif et utilisateur de l’autre club. Aucun accusé ajouté ni cache fictif remplacé après ces refus. |
+| Chrome, Coach fictif, débrief sur l’alias Vercel `test` | Séance chargée. Tentative de reformulation d’une note fictive refusée avec « L’assistance IA n’est pas disponible pour ce joueur. Vous pouvez continuer la saisie manuelle. » ; aucun aperçu ni proposition affiché. Contrôles avec joueur **de moins de 13 ans** et **au jour de ses 13 ans**, sans consentement actif. [Capture desktop](evidence/20261005-ai-final-coach-denial.png). Ce refus commun ne prouve pas à lui seul la branche ZDR positive. |
+| Chrome mobile, Coach fictif | Débrief à **390 × 844**, `innerWidth=scrollWidth=390`, action IA accessible et même refus. [Capture mobile](evidence/20261005-ai-final-coach-denial-mobile.png). |
+| Chrome, `/legal/my` du Coach fictif | Aucun des 12 brouillons inactifs n’est présenté comme nouvelle décision ; seul l’historique fictif antérieur reste visible. |
+| Chrome mobile, `/admin/legal` | Contrôle ultérieur de l’insertion de la section 24 à **390 × 844**, `innerWidth=scrollWidth=390` : brouillon Sion, variables et statuts FR/EN visibles sans débordement. [Capture Admin mobile](evidence/20261005-drafts-import-mobile-verified.png). La section 24 consignait correctement l’échec de l’override lors de l’essai précédent. |
+| Nettoyage et relecture finale | Deux séances temporaires supprimées, dates/adhésions/organisations/groupe restaurés, comptes fictifs rebannis et leurs secrets temporaires effacés : **18/18 contrôles de nettoyage**. Zéro nouveau cache/accusé. Les **12 corps FR** ont conservé leur SHA-256 ; 18 documents, zéro actif, quatre versions et dix décisions inchangées en nombre. |
+
+**Limites :** le parcours positif de l’aperçu IA dans le déploiement n’a pas été ouvert, car aucun document de finalité `coaching.rewrite` n’est actif et aucun accord fictif parent/junior n’a été présenté pour ce parcours. Les tests locaux utilisent un transport fournisseur simulé ; ils ne prouvent ni les réglages OpenAI réels ni un envoi réel. Le contrôle direct HTTP sur le domaine TEST reste bloqué par Vercel Authentication ; la recette Chrome sur l’alias Vercel relève du même commit déployé, mais ne remplace pas toutes les assertions de réponse HTTP. Une ouverture réelle de la fonction exigera les décisions humaines, les quatre langues, les règles d’applicabilité et les autres prérequis détaillés en section 24.
+
+Les six documents `legalqa_…`, les clubs et comptes QA restent **inactifs** et portent des versions/décisions fictives immuables de la campagne précédente. Les supprimer à l’aveugle détruirait ou casserait cette preuve ; aucune suppression de ces anciennes fixtures n’a été tentée. Les deux séances créées pour cette recette ont été retirées. Aucun réglage fournisseur, drapeau IA ou garde juridique n’a été activé, aucune migration rejouée et aucun document réel publié ou accepté.
+
+Fichiers ajoutés dans ce lot : script de recette ciblée, preuves JSON et captures des deux interfaces. Documentation mise à jour : rapport, README, readiness et matrice. ESLint du script, `git diff --check` et vérification finale en base réussis. Aucun correctif applicatif ni SQL nécessaire au vu des défauts observés ; aucun commit/push/déploiement effectué dans ce lot. **Résultats TEST uniquement.**
+
+## 26. Traductions EN/DE/IT des brouillons — 5–6 octobre 2026
+
+À la demande de l’utilisateur, les **six textes français canoniques** de `FR-2026-10-05-r6` ont été traduits en anglais, allemand de Suisse et italien de Suisse. Les trois textes de plateforme sont uniques ; les trois gabarits liés au club sont réutilisés pour Sion, Augusta et Centre de Performance Valais. Cela représente **36 entrées de traduction** dans les **12 brouillons TEST**. Les fichiers de travail sont [EN](translations/en.md), [DE](translations/de.md) et [IT](translations/it.md). Les blocs séparés par clé contiennent titre, libellé d’action et corps ; les textes publiables sont générés en texte brut, comme le FR.
+
+La traduction a été rédigée localement. Une tentative d’utiliser l’API OpenAI a été refusée par la revue automatique, parce que les modèles contiennent notamment l’adresse personnelle de l’exploitant et que cet envoi externe n’avait pas été autorisé spécifiquement. **Aucun brouillon n’a été envoyé à OpenAI pour ce travail.** Le refus a été respecté ; aucune voie indirecte n’a été employée.
+
+Le contrôle local [prepare-translations.mjs](../../scripts/legal-campaign/prepare-translations.mjs) compare la source FR et les trois langues : six blocs par langue, 12 documents après déclinaison par club, 36 entrées, variables `{{child_name}}` et `{{club_name}}` aux mêmes occurrences, nombres et durées chiffrées, URLs attendues, occurrences de l’adresse de contact, dix rubriques des CGU et dix de la notice. Il refuse les textes incomplets ou anormalement courts. Il ne prouve pas l’équivalence juridique ou linguistique.
+
+Le préflight TEST a confirmé le projet `wizbeuuvjibmmuxyynly.supabase.co`, les 12 clés `activitee_`, leurs portées de club et les 36 langues absentes avant import. L’import a appliqué des mises à jour conditionnelles sur `legal_drafts` avec la révision FR et le contenu précédent comme conditions de concurrence ; aucun document, version, décision, règle ni consentement n’a été créé. Une relecture initiale a trouvé 36/36 textes persistés, statut `needs_review`, FR inchangé, garde SQL false et zéro document actif. [Preuve des empreintes](evidence/20261005-translations-apply-test.json). Un problème de comparaison des objets JSONB réordonnés a été corrigé par normalisation des clés ; la relecture suivante a réussi.
+
+Dans Chrome, `/admin/legal` a été rechargé ; le document parental de Sion affiche FR/EN/DE/IT en `needs_review`, et l’éditeur anglais affiche le titre, le texte et le libellé attendus. [Capture de l’éditeur](evidence/20261005-translations-admin-en-test.png). Le registre reste à **18 documents, zéro actif, quatre versions et dix décisions** ; les 48 traductions FR/EN/DE/IT des 12 documents portent `needs_review`. Les six documents fictifs `legalqa_` n’ont pas été modifiés par l’import.
+
+Une relecture éditoriale supplémentaire a corrigé l’expression allemande « dates exactes » dans l’option IA majeure et repéré des pages de l’autorité suisse en EN/DE/IT pour les liens de la notice. Les trois options allemandes de club ont été synchronisées dans TEST. La notice de confidentialité a ensuite été corrigée en TEST pour les trois liens et la précision allemande. Le premier essai de sauvegarde du long texte avait rencontré `Unavailable` / `fetch failed`. L’analyse du script a montré que le filtre de concurrence envoyait environ 50 Ko de JSON dans l’URL de la requête ; un contrôle du contenu courant, puis une condition courte sur `updated_at` et la révision ont permis la mise à jour ciblée du seul brouillon de notice. La [preuve après écriture](evidence/20261005-translations-apply-test.json) montre 12 brouillons et 36 traductions relus, zéro document actif et garde false. Le [contrôle indépendant final](evidence/20261005-translations-check-test.json) donne **12 documents, aucune langue manquante, aucune différence** avec les fichiers locaux. Le lot SQL préparatoire est devenu inutile et n’a pas été appliqué.
+
+Le même filtre JSON intégral existe encore dans les routes Admin de sauvegarde et d’approbation. La panne réseau observée sur un long texte le rend suspect, mais la cause exacte du retour `Unavailable` de l’interface n’a pas été isolée. Ce point doit être corrigé avec une comparaison atomique courte ou un RPC transactionnel avant de s’appuyer sur l’édition de longues notices en production. Le petit correctif local de l’interface traduit désormais les statuts `needs_review` et `unapproved` en libellés français sans changer les valeurs stockées ; **il n’est pas encore déployé ni revérifié visuellement**, le Mac étant verrouillé.
+
+Les quatre langues, y compris le français, restent **à relire humainement** ; aucune langue n’a été approuvée, aucune règle d’applicabilité validée, aucun texte publié, aucune décision utilisateur enregistrée et aucun garde activé. Le contrôle de liens, la revue juridique, la revue linguistique et les prérequis fournisseurs/conservation de [drafts.md](drafts.md) restent nécessaires avant publication. Aucun résultat ici ne concerne la production ou ne certifie la conformité juridique ou Store.
+
+Vérifications locales de cette reprise : génération/contrôle des 36 traductions, **24/24 tests juridiques ciblés**, `npx tsc --noEmit`, ESLint des fichiers touchés et `git diff --check`. La vérification visuelle du nouveau libellé Admin attend l’accès à Chrome ; les résultats de cette section concernent uniquement TEST et le checkout local.

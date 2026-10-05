@@ -1,0 +1,189 @@
+{
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "mode": "--apply",
+  "at": "2026-10-05T22:51:24.001Z",
+  "gate": false,
+  "active_documents": 0,
+  "source_revision": "FR-2026-10-05-r6",
+  "source_sha256": "945e3cd44c14dc3ff14690ae626c66f7fc3c9352575027b3ab5084a0dd27f83a",
+  "rows": [
+    {
+      "document_key": "activitee_assistance_ia_majeurs_sion",
+      "document_id": "595cc675-b5bd-46fe-8e45-4c36ea8d003a",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "revision": 3,
+      "fr_sha256": "39e56ae620ce3ef557e0f0c2061e862a009328601347ef64dbd1c5dd60d74db3",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "b632b074a475116d26004655efef305d7d0d37d884935bed5a31a4437cad9e09",
+        "de": "902e91451460267819c830e3b6b5d9e22685d25ac7ff87fff02c950ec098b828",
+        "it": "93e4180db57563bd6028c5a94fcf8fded55ce17429cdee8ee90fadaba8731936"
+      }
+    },
+    {
+      "document_key": "activitee_conditions_utilisation",
+      "document_id": "d720dcef-c6cf-48f2-9fca-ca610af17be8",
+      "club_id": null,
+      "revision": 2,
+      "fr_sha256": "3a1a380b779008cf2a49f4e7056a1c0520ade48359a907850183e5ae9db064f2",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "b7248f2fdff671c2627212451fc9a986d13763ca3552c028e7ed343e512fa411",
+        "de": "8c2eafe0acc251b3d53f8fec425f369398e122d2017b4edeafa0083186d80add",
+        "it": "3871dfbce225a784a151cfdb604162e67e2390993b70378817cb069c52bdd6e7"
+      }
+    },
+    {
+      "document_key": "activitee_notice_donnees_personnelles",
+      "document_id": "c9e23bbb-0014-47f2-b637-3bde538b5799",
+      "club_id": null,
+      "revision": 2,
+      "fr_sha256": "eb909557732726206225e01e2339b093e3907d4910c225f900dc4e98355cd857",
+      "missing_before": [],
+      "changed_before": [
+        "en",
+        "de",
+        "it"
+      ],
+      "translation_sha256": {
+        "en": "dc70e1f3caa8d988db294ec54f31c2693fad639c9757fb73a6146cf965e925a5",
+        "de": "2ebe0f3c060b87c274f8b62d7bfdf598858f5e0f0820d3caecf24340d7c3ad75",
+        "it": "e722b28639eca96107a2c9940c676608fafb0cefb72ff56da221e0afdd9e35d1"
+      }
+    },
+    {
+      "document_key": "activitee_notice_juniors",
+      "document_id": "399c7e10-2ed2-41a0-aaf1-1799d5ff503c",
+      "club_id": null,
+      "revision": 2,
+      "fr_sha256": "1908f1c70905a591b3955d85fb7948ace0e6e9d47148414fe5ef7ae665941411",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "45c4b33a4de1ea49ef00fd001d29ed42e1d36a3378613887688dfefbdde3de1a",
+        "de": "55715583877ed97c737acb599378711cb5a59660c06e239d388dce5c04d7455b",
+        "it": "82852bf64383d594ed4e6bd5ca4e1a556f9f662ea3647a2324d9eb24d4f90f26"
+      }
+    },
+    {
+      "document_key": "activitee_autorisation_parentale_sion",
+      "document_id": "2d2311ec-6ad6-45ca-b664-681458e4cc43",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "revision": 3,
+      "fr_sha256": "52ac018af8b749f17ede26b26d15f4d36966ac012b747511e442f6343604383a",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "aa48f89f4ecd9eeafbbb2f61a59c6ca836b4eaf336412e0cfceec1c808e76f21",
+        "de": "e30acb13b0125db72a4dfc52c40f5237d7c160aa64208d2f446bcbc63b278caf",
+        "it": "7369cdc6a87c4a7cf318202fd5b640d34fb321a3aa3007e843348d336c6d3673"
+      }
+    },
+    {
+      "document_key": "activitee_reformulation_ia_juniors_sion",
+      "document_id": "11842ac6-e7bf-4cbb-8458-f93a0b3201ca",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "revision": 3,
+      "fr_sha256": "402b4285d51e0f56ca3a1c2dfc2b495a31f9f3916f793aafd0354fc78178a386",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "c9755ae27c0f6674661e004c465eaad84cf24385df2d0fd803d2fc91298d7d09",
+        "de": "96494aa58824c61bb6a6fd77c951a33d2d483ac5884363d054e6dac20c53c8f1",
+        "it": "479a70257bb51b2b718038098dde057d3c65c9641f11ad9d8b51357459bd637f"
+      }
+    },
+    {
+      "document_key": "activitee_autorisation_parentale_augusta",
+      "document_id": "df6a0e10-413f-4f13-995c-cb7e198bc019",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "revision": 3,
+      "fr_sha256": "52ac018af8b749f17ede26b26d15f4d36966ac012b747511e442f6343604383a",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "aa48f89f4ecd9eeafbbb2f61a59c6ca836b4eaf336412e0cfceec1c808e76f21",
+        "de": "e30acb13b0125db72a4dfc52c40f5237d7c160aa64208d2f446bcbc63b278caf",
+        "it": "7369cdc6a87c4a7cf318202fd5b640d34fb321a3aa3007e843348d336c6d3673"
+      }
+    },
+    {
+      "document_key": "activitee_reformulation_ia_juniors_augusta",
+      "document_id": "5f980286-766d-426d-ba0b-cd13c640c54e",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "revision": 3,
+      "fr_sha256": "402b4285d51e0f56ca3a1c2dfc2b495a31f9f3916f793aafd0354fc78178a386",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "c9755ae27c0f6674661e004c465eaad84cf24385df2d0fd803d2fc91298d7d09",
+        "de": "96494aa58824c61bb6a6fd77c951a33d2d483ac5884363d054e6dac20c53c8f1",
+        "it": "479a70257bb51b2b718038098dde057d3c65c9641f11ad9d8b51357459bd637f"
+      }
+    },
+    {
+      "document_key": "activitee_assistance_ia_majeurs_augusta",
+      "document_id": "37d54f9c-01d5-41e5-8293-7d08cb50865e",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "revision": 3,
+      "fr_sha256": "39e56ae620ce3ef557e0f0c2061e862a009328601347ef64dbd1c5dd60d74db3",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "b632b074a475116d26004655efef305d7d0d37d884935bed5a31a4437cad9e09",
+        "de": "902e91451460267819c830e3b6b5d9e22685d25ac7ff87fff02c950ec098b828",
+        "it": "93e4180db57563bd6028c5a94fcf8fded55ce17429cdee8ee90fadaba8731936"
+      }
+    },
+    {
+      "document_key": "activitee_autorisation_parentale_performance_valais",
+      "document_id": "1dd6e03e-277b-4c10-857c-2097e0161cab",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "revision": 3,
+      "fr_sha256": "52ac018af8b749f17ede26b26d15f4d36966ac012b747511e442f6343604383a",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "aa48f89f4ecd9eeafbbb2f61a59c6ca836b4eaf336412e0cfceec1c808e76f21",
+        "de": "e30acb13b0125db72a4dfc52c40f5237d7c160aa64208d2f446bcbc63b278caf",
+        "it": "7369cdc6a87c4a7cf318202fd5b640d34fb321a3aa3007e843348d336c6d3673"
+      }
+    },
+    {
+      "document_key": "activitee_reformulation_ia_juniors_performance_valais",
+      "document_id": "4950b6d5-fdea-488f-b6dc-0bbaf0973652",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "revision": 3,
+      "fr_sha256": "402b4285d51e0f56ca3a1c2dfc2b495a31f9f3916f793aafd0354fc78178a386",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "c9755ae27c0f6674661e004c465eaad84cf24385df2d0fd803d2fc91298d7d09",
+        "de": "96494aa58824c61bb6a6fd77c951a33d2d483ac5884363d054e6dac20c53c8f1",
+        "it": "479a70257bb51b2b718038098dde057d3c65c9641f11ad9d8b51357459bd637f"
+      }
+    },
+    {
+      "document_key": "activitee_assistance_ia_majeurs_performance_valais",
+      "document_id": "739bd0ef-60d0-4db5-92aa-035852464f97",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "revision": 3,
+      "fr_sha256": "39e56ae620ce3ef557e0f0c2061e862a009328601347ef64dbd1c5dd60d74db3",
+      "missing_before": [],
+      "changed_before": [],
+      "translation_sha256": {
+        "en": "b632b074a475116d26004655efef305d7d0d37d884935bed5a31a4437cad9e09",
+        "de": "902e91451460267819c830e3b6b5d9e22685d25ac7ff87fff02c950ec098b828",
+        "it": "93e4180db57563bd6028c5a94fcf8fded55ce17429cdee8ee90fadaba8731936"
+      }
+    }
+  ],
+  "readback": {
+    "drafts": 12,
+    "translations": 36,
+    "active_documents": 0,
+    "gate": false
+  }
+}

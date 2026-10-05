@@ -1,0 +1,77 @@
+{
+  "checked_at": "2026-10-05T20:03:39.184Z",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "commit": "b3f8ae4",
+  "documents": 18,
+  "activeDocuments": 0,
+  "preparedDrafts": 12,
+  "oldQaDocuments": 6,
+  "publishedVersions": 4,
+  "decisions": 10,
+  "fixtureMembersInactive": 3,
+  "temporaryEventsRemaining": 0,
+  "cleanupChecks": 18,
+  "allCleanupChecksPassed": true,
+  "preparedDraftHashes": [
+    {
+      "key": "activitee_conditions_utilisation",
+      "sha256": "1e3ca0fe96229cf111c81a454434957ef93ccba495cd580f05480fcbe272ea69",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_notice_donnees_personnelles",
+      "sha256": "91d20e4dc02ade027a89ccd8ec3dd1fac00e72f1f200220f04316cd5232745b1",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_notice_juniors",
+      "sha256": "e5a305bb68eb75171ab7ab54f9e449508097e5377e9a24fc48e0e02456795a44",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_autorisation_parentale_sion",
+      "sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_reformulation_ia_juniors_sion",
+      "sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_assistance_ia_majeurs_sion",
+      "sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_autorisation_parentale_augusta",
+      "sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_reformulation_ia_juniors_augusta",
+      "sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_assistance_ia_majeurs_augusta",
+      "sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_autorisation_parentale_performance_valais",
+      "sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_reformulation_ia_juniors_performance_valais",
+      "sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "unchanged": true
+    },
+    {
+      "key": "activitee_assistance_ia_majeurs_performance_valais",
+      "sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "unchanged": true
+    }
+  ]
+}

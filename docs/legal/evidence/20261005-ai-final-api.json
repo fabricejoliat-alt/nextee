@@ -1,0 +1,58 @@
+{
+  "origin": "https://test.activitee.golf",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "at": "2026-10-05T19:56:57.992Z",
+  "checks": [
+    {
+      "name": "under13_no_consent: preview refused",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "anon: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "anon: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "coach: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "coach: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "outsider: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "outsider: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "denials persisted no read or cache replacement",
+      "ok": true
+    }
+  ]
+}

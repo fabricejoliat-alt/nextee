@@ -1,0 +1,494 @@
+{
+  "verified_at": "2026-10-05T18:45:11.341Z",
+  "environment": "TEST",
+  "host": "wizbeuuvjibmmuxyynly.supabase.co",
+  "git_commit": "b3f8ae4b7d8c9e38b6f1b38153efb6b9efd82a2f",
+  "deployment": {
+    "environment": "Preview",
+    "status": "Ready",
+    "branch": "test",
+    "id": "FL8BjBqWMJuwkA5EdxZBekrrhRwk",
+    "url": "https://nextee-f8utinc8i-fabrice-joliats-projects.vercel.app",
+    "alias": "https://test.activitee.golf",
+    "created_local": "2026-10-05 20:32:25 Europe/Zurich",
+    "verified_by": "Chrome Vercel Deployment Details"
+  },
+  "source": "docs/legal/drafts.md",
+  "source_revision": "FR-2026-10-05-r6",
+  "source_sha256": "945e3cd44c14dc3ff14690ae626c66f7fc3c9352575027b3ab5084a0dd27f83a",
+  "entry_method": "Authenticated Admin UI on https://test.activitee.golf/admin/legal",
+  "baseline_before_insertion": {
+    "documents": 6,
+    "active_documents": 0,
+    "versions": 4,
+    "decisions": 10,
+    "enforcement_enabled": false
+  },
+  "after": {
+    "documents": 18,
+    "new_drafts": 12,
+    "active_documents": 0,
+    "versions": 4,
+    "decisions": 10,
+    "enforcement_enabled": false
+  },
+  "documents": [
+    {
+      "id": "d720dcef-c6cf-48f2-9fca-ca610af17be8",
+      "key": "activitee_conditions_utilisation",
+      "kind": "terms",
+      "scope": "platform",
+      "club_id": null,
+      "club_name": null,
+      "active": false,
+      "required": true,
+      "audience": [
+        "player",
+        "parent",
+        "coach",
+        "manager",
+        "admin"
+      ],
+      "purpose": "service.terms",
+      "action": "accept",
+      "applicability_status": "unapproved",
+      "source_revision": 2,
+      "variables": [],
+      "title": "Conditions d’utilisation d’ActiviTee",
+      "characters": 9731,
+      "expected_sha256": "1e3ca0fe96229cf111c81a454434957ef93ccba495cd580f05480fcbe272ea69",
+      "persisted_sha256": "1e3ca0fe96229cf111c81a454434957ef93ccba495cd580f05480fcbe272ea69",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:40:35.051+00:00"
+    },
+    {
+      "id": "c9e23bbb-0014-47f2-b637-3bde538b5799",
+      "key": "activitee_notice_donnees_personnelles",
+      "kind": "privacy",
+      "scope": "platform",
+      "club_id": null,
+      "club_name": null,
+      "active": false,
+      "required": true,
+      "audience": [
+        "player",
+        "parent",
+        "coach",
+        "manager",
+        "admin"
+      ],
+      "purpose": "service.privacy",
+      "action": "acknowledge",
+      "applicability_status": "unapproved",
+      "source_revision": 2,
+      "variables": [],
+      "title": "Notice sur les données personnelles d’ActiviTee",
+      "characters": 16516,
+      "expected_sha256": "91d20e4dc02ade027a89ccd8ec3dd1fac00e72f1f200220f04316cd5232745b1",
+      "persisted_sha256": "91d20e4dc02ade027a89ccd8ec3dd1fac00e72f1f200220f04316cd5232745b1",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:41:00.716+00:00"
+    },
+    {
+      "id": "399c7e10-2ed2-41a0-aaf1-1799d5ff503c",
+      "key": "activitee_notice_juniors",
+      "kind": "junior_notice",
+      "scope": "platform",
+      "club_id": null,
+      "club_name": null,
+      "active": false,
+      "required": true,
+      "audience": [
+        "player"
+      ],
+      "purpose": "service.junior_notice",
+      "action": "read",
+      "applicability_status": "unapproved",
+      "source_revision": 2,
+      "variables": [],
+      "title": "Tes informations dans ActiviTee",
+      "characters": 2072,
+      "expected_sha256": "e5a305bb68eb75171ab7ab54f9e449508097e5377e9a24fc48e0e02456795a44",
+      "persisted_sha256": "e5a305bb68eb75171ab7ab54f9e449508097e5377e9a24fc48e0e02456795a44",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:41:07.001+00:00"
+    },
+    {
+      "id": "2d2311ec-6ad6-45ca-b664-681458e4cc43",
+      "key": "activitee_autorisation_parentale_sion",
+      "kind": "parent_authorization",
+      "scope": "club",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "club_name": "Golf Club de Sion",
+      "active": false,
+      "required": true,
+      "audience": [
+        "parent"
+      ],
+      "purpose": "service.parent_authorization",
+      "action": "authorize",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "child_name",
+        "club_name"
+      ],
+      "title": "Utilisation d’ActiviTee par {{child_name}} auprès de {{club_name}}",
+      "characters": 2008,
+      "expected_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "persisted_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:41:39.647+00:00"
+    },
+    {
+      "id": "11842ac6-e7bf-4cbb-8458-f93a0b3201ca",
+      "key": "activitee_reformulation_ia_juniors_sion",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "club_name": "Golf Club de Sion",
+      "active": false,
+      "required": false,
+      "audience": [
+        "parent",
+        "player"
+      ],
+      "purpose": "coaching.rewrite",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Reformulation facultative des commentaires sportifs — {{club_name}}",
+      "characters": 2208,
+      "expected_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "persisted_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:41:49.744+00:00"
+    },
+    {
+      "id": "595cc675-b5bd-46fe-8e45-4c36ea8d003a",
+      "key": "activitee_assistance_ia_majeurs_sion",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "ec516bee-09fb-4ff9-8ca6-7131918c5cb0",
+      "club_name": "Golf Club de Sion",
+      "active": false,
+      "required": false,
+      "audience": [
+        "player"
+      ],
+      "purpose": "coaching.ai",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Assistance IA facultative pour mon suivi sportif — {{club_name}}",
+      "characters": 1136,
+      "expected_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "persisted_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:41:58.082+00:00"
+    },
+    {
+      "id": "df6a0e10-413f-4f13-995c-cb7e198bc019",
+      "key": "activitee_autorisation_parentale_augusta",
+      "kind": "parent_authorization",
+      "scope": "club",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "club_name": "Golf Club Augusta",
+      "active": false,
+      "required": true,
+      "audience": [
+        "parent"
+      ],
+      "purpose": "service.parent_authorization",
+      "action": "authorize",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "child_name",
+        "club_name"
+      ],
+      "title": "Utilisation d’ActiviTee par {{child_name}} auprès de {{club_name}}",
+      "characters": 2008,
+      "expected_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "persisted_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:42:14.147+00:00"
+    },
+    {
+      "id": "5f980286-766d-426d-ba0b-cd13c640c54e",
+      "key": "activitee_reformulation_ia_juniors_augusta",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "club_name": "Golf Club Augusta",
+      "active": false,
+      "required": false,
+      "audience": [
+        "parent",
+        "player"
+      ],
+      "purpose": "coaching.rewrite",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Reformulation facultative des commentaires sportifs — {{club_name}}",
+      "characters": 2208,
+      "expected_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "persisted_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:42:23.283+00:00"
+    },
+    {
+      "id": "37d54f9c-01d5-41e5-8293-7d08cb50865e",
+      "key": "activitee_assistance_ia_majeurs_augusta",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "d6135ac9-2ab1-4ac8-bc95-a8c8cd71c33b",
+      "club_name": "Golf Club Augusta",
+      "active": false,
+      "required": false,
+      "audience": [
+        "player"
+      ],
+      "purpose": "coaching.ai",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Assistance IA facultative pour mon suivi sportif — {{club_name}}",
+      "characters": 1136,
+      "expected_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "persisted_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:42:31.45+00:00"
+    },
+    {
+      "id": "1dd6e03e-277b-4c10-857c-2097e0161cab",
+      "key": "activitee_autorisation_parentale_performance_valais",
+      "kind": "parent_authorization",
+      "scope": "club",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "club_name": "Centre de Performance Valais",
+      "active": false,
+      "required": true,
+      "audience": [
+        "parent"
+      ],
+      "purpose": "service.parent_authorization",
+      "action": "authorize",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "child_name",
+        "club_name"
+      ],
+      "title": "Utilisation d’ActiviTee par {{child_name}} auprès de {{club_name}}",
+      "characters": 2008,
+      "expected_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "persisted_sha256": "08db592b07ccded718c75a4a7ab15d4001e75276f54dfa9158d939ade4afcb1c",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:42:47.617+00:00"
+    },
+    {
+      "id": "4950b6d5-fdea-488f-b6dc-0bbaf0973652",
+      "key": "activitee_reformulation_ia_juniors_performance_valais",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "club_name": "Centre de Performance Valais",
+      "active": false,
+      "required": false,
+      "audience": [
+        "parent",
+        "player"
+      ],
+      "purpose": "coaching.rewrite",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Reformulation facultative des commentaires sportifs — {{club_name}}",
+      "characters": 2208,
+      "expected_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "persisted_sha256": "fc6c596e8cae33c9246a87bd736b7cf2731dfa20d1ae10994804d6ac7aa535bd",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:43:20.994+00:00"
+    },
+    {
+      "id": "739bd0ef-60d0-4db5-92aa-035852464f97",
+      "key": "activitee_assistance_ia_majeurs_performance_valais",
+      "kind": "specific_consent",
+      "scope": "club",
+      "club_id": "229b431a-1c84-4a0f-8101-f8089ebbd829",
+      "club_name": "Centre de Performance Valais",
+      "active": false,
+      "required": false,
+      "audience": [
+        "player"
+      ],
+      "purpose": "coaching.ai",
+      "action": "consent",
+      "applicability_status": "unapproved",
+      "source_revision": 3,
+      "variables": [
+        "club_name"
+      ],
+      "title": "Assistance IA facultative pour mon suivi sportif — {{club_name}}",
+      "characters": 1136,
+      "expected_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "persisted_sha256": "672f7e922ceec0f35b41e7a3b9386cbff8710e321b1bd2de2c2fc5929690e5b7",
+      "exact_text_match": true,
+      "locale": "fr",
+      "review_status": "needs_review",
+      "missing_locales": [
+        "en",
+        "de",
+        "it"
+      ],
+      "updated_at": "2026-10-05T18:43:31.895+00:00"
+    }
+  ],
+  "existing_fixtures": [
+    {
+      "id": "26f45674-f30f-4df1-88ac-357b9bbb4ebb",
+      "key": "legalqa_20261004_673faa_terms",
+      "active": false
+    },
+    {
+      "id": "fc4d05d7-02ed-4423-8e62-1e0038f40992",
+      "key": "legalqa_20261004_673faa_optional",
+      "active": false
+    },
+    {
+      "id": "d42f078d-458f-4575-adca-eba4552c83b9",
+      "key": "legalqa_20261004_673faa_parent",
+      "active": false
+    },
+    {
+      "id": "a85074e4-3b92-4860-82db-8e70e72fbf90",
+      "key": "legalqa_20261004_9a282f_optional",
+      "active": false
+    },
+    {
+      "id": "0932e2e6-f468-4c2a-9c36-71ea2e71f3a6",
+      "key": "legalqa_20261004_9a282f_parent",
+      "active": false
+    },
+    {
+      "id": "3d369782-c3b0-429f-8be5-3d70af434391",
+      "key": "legalqa_20261004_9a282f_ui",
+      "active": false
+    }
+  ],
+  "notes": [
+    "No publication, activation, legal acceptance, outgoing mail or provider call performed.",
+    "FR plain text is derived from r6: formatting only; tables converted to successive labelled paragraphs; editorial notes excluded.",
+    "Draft metadata is provisional and applicability remains unapproved. Human review, EN/DE/IT and technical prerequisites remain required before publication.",
+    "Unchanged fixture count and inactive status verified; no complete pre-import content hash was taken."
+  ],
+  "browser": {
+    "desktop": {
+      "width": 1504,
+      "scroll_width": 1504,
+      "reload_verified": true,
+      "selected_document": "activitee_autorisation_parentale_sion",
+      "filtered_documents": 12,
+      "preview_opened": true,
+      "screenshot": "20261005-drafts-import-desktop.png"
+    },
+    "mobile": {
+      "verified": false,
+      "reason": "Viewport override requested 390x844 but effective DOM and screenshot remained 1504px; override reset."
+    }
+  }
+}

@@ -17,6 +17,14 @@ const kindLabels: Record<string, string> = {
 const actionLabels: Record<string, string> = {
   accept: "Accepter", acknowledge: "Confirmer la lecture", authorize: "Autoriser", consent: "Consentir", read: "Lire",
 };
+const translationStatusLabels: Record<string, string> = {
+  needs_review: "à relire", approved: "approuvée", proposed: "proposée",
+};
+const ruleStatusLabels: Record<string, string> = {
+  approved: "approuvée", unapproved: "à valider", manual_review_required: "à valider",
+};
+const translationStatusLabel = (status?: string) => status ? translationStatusLabels[status] ?? status : "manquante";
+const ruleStatusLabel = (status?: string) => status ? ruleStatusLabels[status] ?? status : "à valider";
 
 export default function LegalAdminWorkspace() {
   const [docs, setDocs] = useState<Doc[]>([]); const [drafts, setDrafts] = useState<Draft[]>([]); const [versions, setVersions] = useState<Version[]>([]);
@@ -132,7 +140,7 @@ export default function LegalAdminWorkspace() {
       </div>
       <div className={`${styles.panel} ${styles.editorPanel}`}>
         {!document ? <p>Sélectionne un document.</p> : <>
-          <h2>{document.document_key}</h2><p>{document.scope} · {document.audience_roles.join(", ")} · règle {document.applicability.status ?? "à valider"}</p>
+          <h2>{document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · règle {ruleStatusLabel(document.applicability.status)}</p>
           <fieldset className={styles.fieldset}><legend>Variables du modèle</legend>
             <p>Les valeurs viennent des profils et du club au moment de l’affichage. Modifier cette liste relance la revue des quatre langues.</p>
             {(["child_name", "club_name", "user_name"] as const).map((name) => <label key={name} style={{ marginRight: 16 }}>
@@ -142,7 +150,7 @@ export default function LegalAdminWorkspace() {
               onClick={() => mutate({ operation: "save_variables", document_id: selected, expected_revision: draft?.source_revision,
                 variables })}>Enregistrer les variables</button></div>
           </fieldset>
-          <div className={styles.languageTabs} role="tablist" aria-label="Langues">{langs.map((l) => <button disabled={busy} role="tab" aria-selected={l === locale} key={l} onClick={() => setLocale(l)}>{l.toUpperCase()} · {draft?.translations?.[l]?.status ?? "manquante"}</button>)}</div>
+          <div className={styles.languageTabs} role="tablist" aria-label="Langues">{langs.map((l) => <button disabled={busy} role="tab" aria-selected={l === locale} key={l} onClick={() => setLocale(l)}>{l.toUpperCase()} · {translationStatusLabel(draft?.translations?.[l]?.status)}</button>)}</div>
           <label style={{ display: "block", marginTop: 16 }}>Titre<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
           <label style={{ display: "block", marginTop: 12 }}>Texte<textarea disabled={busy} style={{ display: "block", width: "100%", minHeight: 240 }} value={form.body ?? ""} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
           <label style={{ display: "block", marginTop: 12 }}>Libellé de validation<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.action_label ?? ""} onChange={(e) => setForm({ ...form, action_label: e.target.value })} /></label>
@@ -183,7 +191,7 @@ export default function LegalAdminWorkspace() {
             {document.required_locales.map((language) => {
               const oldText = previous?.snapshot.translations?.[language];
               const newText = draft?.translations?.[language];
-              return <details key={language}><summary>{language.toUpperCase()} · {newText?.status ?? "manquante"} · révision {newText?.source_revision ?? "—"}</summary>
+              return <details key={language}><summary>{language.toUpperCase()} · {translationStatusLabel(newText?.status)} · révision {newText?.source_revision ?? "—"}</summary>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,240px),1fr))", gap: 16 }}>
                   <div><strong>Version publiée {previous?.version_number ?? "—"}</strong><p>{oldText?.title ?? "Aucune version"}</p><p style={{ whiteSpace: "pre-wrap" }}>{oldText?.body}</p><p>{oldText?.action_label}</p></div>
                   <div><strong>Brouillon à publier</strong><p>{newText?.title ?? "Titre manquant"}</p><p style={{ whiteSpace: "pre-wrap" }}>{newText?.body}</p><p>{newText?.action_label}</p></div>

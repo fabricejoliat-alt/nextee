@@ -17,7 +17,7 @@ test('Admin cannot type into fields or switch document language while a save ref
   const pending=button(h.render(),'Approuver').props.onClick();const tree=h.render();
   assert.equal(field(tree,'Résumé des changements').props.disabled,true);
   assert.equal(field(tree,'Titre').props.disabled,true);
-  assert.equal(button(tree,'EN · approved').props.disabled,true);
+  assert.equal(button(tree,'EN · approuvée').props.disabled,true);
   mutation.resolve(Response.json({ok:true}));await pending;
   for(let i=0;i<4;i++){h.render();await flush();}
   assert.equal(field(h.render(),'Résumé des changements').props.disabled,false);
@@ -26,7 +26,18 @@ test('Admin cannot type into fields or switch document language while a save ref
 test('changing the translation language preserves an unsaved change summary',async()=>{
  const {h}=await setup();try{
   field(h.render(),'Résumé des changements').props.onChange({target:{value:'Unsaved fictional summary'}});
-  button(h.render(),'EN · approved').props.onClick();h.render();
+  button(h.render(),'EN · approuvée').props.onClick();h.render();
   assert.equal(field(h.render(),'Résumé des changements').props.value,'Unsaved fictional summary');
+ }finally{h.cleanup();}
+});
+test('Admin displays review states in French without changing stored values',async()=>{
+ const pendingDraft={...draft,translations:{...draft.translations,en:{...draft.translations.en,status:'needs_review'}}};
+ const h=coachComponentHarness('components/legal/LegalAdminWorkspace.tsx',{fetch:async()=>Response.json({documents:[{...doc,applicability:{status:'unapproved'}}],drafts:[pendingDraft],versions:[],clubs:[{id:'A',name:'Fixture club'}]})});
+ try{
+  for(let i=0;i<5;i++){h.render();await flush();}
+  button(h.render(),'fixture terms Conditions d’utilisation').props.onClick();
+  const tree=h.render();
+  assert.ok(button(tree,'EN · à relire'));
+  assert.match(textContent(tree).replace(/\s+/g,' '),/Club · player · règle à valider/);
  }finally{h.cleanup();}
 });
