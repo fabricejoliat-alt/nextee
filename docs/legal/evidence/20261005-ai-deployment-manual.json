@@ -1,0 +1,22 @@
+{
+  "event": "2a36488d-4cf9-45ba-9af5-b40a4a02f3d0",
+  "attendee": {
+    "coach_recorded_status": "present",
+    "coach_recorded_by": "5d56ae08-76ba-438a-b50c-2daf82ed3fba",
+    "coach_recorded_at": "2026-10-05T13:11:04.937779+00:00"
+  },
+  "feedback": {
+    "engagement": 4,
+    "attitude": 4,
+    "performance": 4,
+    "player_note": "JETABLE 20261005 : saisie manuelle conservee sans IA.",
+    "private_note": "JETABLE 20261005 : note privee manuelle."
+  },
+  "debrief": {
+    "individual_comments": {
+      "e3ee49f1-99b0-49df-9fbe-967434ccd57a": "JETABLE 20261005 : saisie manuelle conservee sans IA."
+    },
+    "report_version": 1
+  },
+  "ok": true
+}

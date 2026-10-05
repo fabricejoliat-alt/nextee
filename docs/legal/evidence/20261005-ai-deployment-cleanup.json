@@ -1,0 +1,85 @@
+{
+  "at": "2026-10-05T13:17:18.916Z",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "final": {
+    "enabled": false,
+    "legal_documents": 0,
+    "legal_versions": 4,
+    "legal_decisions": 10
+  },
+  "checks": [
+    {
+      "name": "club_events empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "club_event_attendees empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "club_event_coach_feedback empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "coach_training_debriefs empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "coach_training_preparation_insights empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "coach_training_preparation_reads empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "message_threads empty for new fixtures",
+      "ok": true
+    },
+    {
+      "name": "legal state unchanged",
+      "ok": true
+    },
+    {
+      "name": "members restored",
+      "ok": true
+    },
+    {
+      "name": "org membership restored",
+      "ok": true
+    },
+    {
+      "name": "org membership restored",
+      "ok": true
+    },
+    {
+      "name": "org membership restored",
+      "ok": true
+    },
+    {
+      "name": "organization restored",
+      "ok": true
+    },
+    {
+      "name": "organization restored",
+      "ok": true
+    },
+    {
+      "name": "group restored",
+      "ok": true
+    },
+    {
+      "name": "date restored",
+      "ok": true
+    },
+    {
+      "name": "coach banned",
+      "ok": true
+    },
+    {
+      "name": "outsider banned",
+      "ok": true
+    }
+  ],
+  "secretsErased": true
+}

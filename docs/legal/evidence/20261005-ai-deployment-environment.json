@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-10-05T13:19:54.483Z",
+  "project": "wizbeuuvjibmmuxyynly",
+  "git_head": "a13dad9d961f860d77ec53258464c2722e9963dc",
+  "branch": "test",
+  "clean_checkout_at_start": true,
+  "vercel_deployment": "9QHGuyJqJz5PpySx22xzVJWRcQUD",
+  "vercel_status": "Ready",
+  "created_at_visible": "2026-10-05 14:55:07 UTC+2",
+  "origin": "https://nextee-6ahekovpv-fabrice-joliats-projects.vercel.app",
+  "source": "Chrome Vercel Deployments: exact commit, branch, Ready and Preview URL; fixture login and events confirm TEST data",
+  "api_origin": "https://test.activitee.golf",
+  "api_limitation": "Unauthenticated at Vercel edge despite fixture application bearer; no application verdict inferred",
+  "local_followup": "Authorization before missing provider key, not yet deployed"
+}

@@ -181,6 +181,42 @@ const rows = {
     "Die Analyse ist nicht verfügbar. Du kannst die Notizen weiterhin manuell eingeben.",
     "L’analisi non è disponibile. Puoi continuare a inserire le note manualmente."
   ],
+  "coach.error.aiReview": [
+      "L’aperçu a expiré ou le texte a changé. Préparez un nouvel aperçu avant l’envoi.",
+      "The preview expired or the text changed. Prepare a new preview before sending.",
+      "Die Vorschau ist abgelaufen oder der Text wurde geändert. Erstelle vor dem Senden eine neue Vorschau.",
+      "L’anteprima è scaduta o il testo è cambiato. Prepara una nuova anteprima prima dell’invio."
+  ],
+  "coach.ai.prepare": [
+      "Préparer la reformulation IA",
+      "Prepare AI rewrite",
+      "KI-Umformulierung vorbereiten",
+      "Prepara la riformulazione IA"
+  ],
+  "coach.ai.previewTitle": [
+      "Texte qui sera envoyé à OpenAI",
+      "Text to be sent to OpenAI",
+      "Text, der an OpenAI gesendet wird",
+      "Testo da inviare a OpenAI"
+  ],
+  "coach.ai.previewHelp": [
+      "Aucun envoi à ce stade. Les noms connus du joueur et certaines coordonnées sont masqués ; le texte peut encore l’identifier. Retirez du commentaire d’origine les autres détails identifiants, les informations de santé et les données sur des tiers, puis préparez un nouvel aperçu.",
+      "Nothing has been sent yet. Known player names and some contact details are masked; the text may still identify them. Remove other identifying details, health information and third-party data from the original note, then prepare a new preview.",
+      "Es wurde noch nichts gesendet. Bekannte Namen und einige Kontaktdaten werden maskiert; der Text kann die Person weiterhin identifizieren. Entferne weitere identifizierende Angaben, Gesundheitsdaten und Daten Dritter aus der ursprünglichen Notiz und erstelle eine neue Vorschau.",
+      "Non è stato ancora inviato nulla. I nomi noti del giocatore e alcuni recapiti sono mascherati; il testo può ancora identificarlo. Rimuovi altri dettagli identificativi, informazioni sanitarie e dati di terzi dalla nota originale, poi prepara una nuova anteprima."
+  ],
+  "coach.ai.reviewChoice": [
+      "J’ai relu ce texte : il ne contient que les observations sportives nécessaires, sans identité, information de santé ni donnée sur un tiers.",
+      "I reviewed this text: it contains only necessary sports observations, with no identity, health information or third-party data.",
+      "Ich habe den Text geprüft: Er enthält nur notwendige sportliche Beobachtungen, ohne Identität, Gesundheitsdaten oder Daten Dritter.",
+      "Ho riletto il testo: contiene solo le osservazioni sportive necessarie, senza identità, informazioni sanitarie o dati di terzi."
+  ],
+  "coach.ai.send": [
+      "Envoyer à OpenAI",
+      "Send to OpenAI",
+      "An OpenAI senden",
+      "Invia a OpenAI"
+  ],
   "coach.error.aiAuthorization": [
     "L’assistance IA n’est pas disponible pour ce joueur. Vous pouvez continuer la saisie manuelle.",
     "AI assistance is unavailable for this player. You can continue entering notes manually.",

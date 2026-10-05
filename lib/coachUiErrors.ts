@@ -10,6 +10,7 @@ const messages: Record<string, string> = {
   event_not_finished: "coach.error.notFinished",
   event_cancelled: "coach.error.cancelled",
   assistance_disabled: "coach.error.aiDisabled",
+  ai_review_required: "coach.error.aiReview",
   ai_authorization_required: "coach.error.aiAuthorization",
   invalid_custom_responses: "coach.error.invalid",
   invalid_custom_criterion: "coach.error.invalid",

@@ -52,7 +52,11 @@ type AiProposal = {
   confidence: "high" | "medium";
 };
 
+type AiPreview = { text: string; review: { expires: number; signature: string } };
+
 type IndividualAiState = {
+  preview: AiPreview | null;
+  reviewConfirmed: boolean;
   analyzing: boolean;
   approved: boolean;
   error: string | null;
@@ -93,6 +97,8 @@ type DebriefAiProposal = {
 };
 
 const EMPTY_AI_STATE: IndividualAiState = {
+  preview: null,
+  reviewConfirmed: false,
   analyzing: false,
   approved: false,
   error: null,
@@ -266,12 +272,16 @@ export default function CoachTrainingDebriefPage() {
 
   function setStatus(playerId: string, status: CoachAttendanceStatus) {
     patchIndividualAi(playerId, {
+      preview: null,
+      reviewConfirmed: false,
       approved: false,
       error: null,
       success: null,
       proposal: status === "absent" ? null : individualAi[playerId]?.proposal ?? null,
     });
     patchPrivateNoteAi(playerId, {
+      preview: null,
+      reviewConfirmed: false,
       approved: false,
       error: null,
       success: null,
@@ -288,6 +298,8 @@ export default function CoachTrainingDebriefPage() {
   function updateIndividualComment(playerId: string, value: string) {
     setIndividualComments((current) => ({ ...current, [playerId]: value }));
     patchIndividualAi(playerId, {
+      preview: null,
+      reviewConfirmed: false,
       approved: false,
       error: null,
       success: null,
@@ -299,6 +311,8 @@ export default function CoachTrainingDebriefPage() {
   function updatePrivateNote(playerId: string, value: string) {
     setPrivateNotes((current) => ({ ...current, [playerId]: value }));
     patchPrivateNoteAi(playerId, {
+      preview: null,
+      reviewConfirmed: false,
       approved: false,
       error: null,
       success: null,
@@ -314,102 +328,67 @@ export default function CoachTrainingDebriefPage() {
     return token;
   }
 
-  async function analyzeCurrentPlayer() {
+  async function requestRewrite(audience: "junior" | "private", send = false) {
     if (!currentReview || currentReview.status !== "present") return;
-    const sourceText = String(individualComments[currentReview.player_id] ?? "").trim();
-    if (!sourceText) {
-      patchIndividualAi(currentReview.player_id, {
-        error: t("coachDebrief.individualSourceRequired"),
-        success: null,
-      });
-      return;
-    }
-
-    patchIndividualAi(currentReview.player_id, {
-      analyzing: true,
-      approved: false,
-      error: null,
-      success: null,
-    });
+    const playerId = currentReview.player_id;
+    const state = audience === "private" ? currentPrivateAi : currentAi;
+    const patch = audience === "private" ? patchPrivateNoteAi : patchIndividualAi;
+    const sourceText = String((audience === "private" ? privateNotes : individualComments)[playerId] ?? "").trim();
+    if (!sourceText || (send && (!state.preview || !state.reviewConfirmed))) return;
+    patch(playerId, { analyzing: true, approved: false, error: null, success: null, proposal: null });
     try {
       const token = await authToken();
       const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/debrief/analyze-player`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "junior", locale }),
+        body: JSON.stringify({ player_id: playerId, source_text: sourceText, audience, locale,
+          intent: send ? "rewrite" : "preview", review: send ? state.preview?.review : undefined,
+          review_confirmed: send && state.reviewConfirmed }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.ai"));
-      const raw = (json?.proposal ?? {}) as DebriefAiProposal;
-      if (String(raw.player_id ?? "") !== currentReview.player_id || !String(raw.text ?? "").trim()) {
-        throw new Error("coach.error.ai");
+      if (!send) {
+        const preview = json?.preview as AiPreview | undefined;
+        if (typeof preview?.text !== "string" || !preview.review?.signature || !preview.review.expires) throw new Error("coach.error.ai");
+        patch(playerId, { preview, reviewConfirmed: false });
+        return;
       }
-      patchIndividualAi(currentReview.player_id, {
-        proposal: {
-          player_id: currentReview.player_id,
-          text: String(raw.text ?? ""),
-          rationale: String(raw.rationale ?? ""),
-          confidence: raw.confidence === "high" ? "high" : "medium",
-        },
+      const raw = (json?.proposal ?? {}) as DebriefAiProposal;
+      if (String(raw.player_id ?? "") !== playerId || !String(raw.text ?? "").trim()) throw new Error("coach.error.ai");
+      patch(playerId, {
+        preview: null, reviewConfirmed: false,
+        proposal: { player_id: playerId, text: String(raw.text ?? ""), rationale: String(raw.rationale ?? ""),
+          confidence: raw.confidence === "high" ? "high" : "medium" },
         success: t("coachDebrief.individualProposalReady"),
       });
     } catch (caught: unknown) {
-      patchIndividualAi(currentReview.player_id, {
-        error: coachCaughtErrorKey(caught, "coach.error.ai"),
-        proposal: null,
-      });
+      patch(playerId, { error: coachCaughtErrorKey(caught, "coach.error.ai"), proposal: null, preview: null, reviewConfirmed: false });
     } finally {
-      patchIndividualAi(currentReview.player_id, { analyzing: false });
+      patch(playerId, { analyzing: false });
     }
   }
 
-  async function analyzeCurrentPrivateNote() {
-    if (!currentReview || currentReview.status !== "present") return;
-    const sourceText = String(privateNotes[currentReview.player_id] ?? "").trim();
-    if (!sourceText) {
-      patchPrivateNoteAi(currentReview.player_id, {
-        error: t("coachDebrief.privateSourceRequired"),
-        success: null,
-      });
-      return;
-    }
-
-    patchPrivateNoteAi(currentReview.player_id, {
-      analyzing: true,
-      approved: false,
-      error: null,
-      success: null,
-    });
-    try {
-      const token = await authToken();
-      const res = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}/debrief/analyze-player`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ player_id: currentReview.player_id, source_text: sourceText, audience: "private", locale }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(coachUiErrorKey(res.status, json, "coach.error.ai"));
-      const raw = (json?.proposal ?? {}) as DebriefAiProposal;
-      if (String(raw.player_id ?? "") !== currentReview.player_id || !String(raw.text ?? "").trim()) {
-        throw new Error("coach.error.ai");
-      }
-      patchPrivateNoteAi(currentReview.player_id, {
-        proposal: {
-          player_id: currentReview.player_id,
-          text: String(raw.text ?? ""),
-          rationale: String(raw.rationale ?? ""),
-          confidence: raw.confidence === "high" ? "high" : "medium",
-        },
-        success: t("coachDebrief.individualProposalReady"),
-      });
-    } catch (caught: unknown) {
-      patchPrivateNoteAi(currentReview.player_id, {
-        error: coachCaughtErrorKey(caught, "coach.error.ai"),
-        proposal: null,
-      });
-    } finally {
-      patchPrivateNoteAi(currentReview.player_id, { analyzing: false });
-    }
+  function rewritePreview(audience: "junior" | "private") {
+    if (!currentReview || !assistanceEnabled) return null;
+    const state = audience === "private" ? currentPrivateAi : currentAi;
+    const patch = audience === "private" ? patchPrivateNoteAi : patchIndividualAi;
+    if (!state.preview) return null;
+    return <div className={styles.aiPreview}>
+      <label className={styles.commentField}>
+        <span>{t("coach.ai.previewTitle")}</span>
+        <small>{t("coach.ai.previewHelp")}</small>
+        <textarea readOnly value={state.preview.text} rows={5} />
+      </label>
+      <label className={styles.aiReviewChoice}>
+        <input type="checkbox" checked={state.reviewConfirmed} disabled={busy || state.analyzing}
+          onChange={(event) => patch(currentReview.player_id, { reviewConfirmed: event.target.checked })} />
+        <span>{t("coach.ai.reviewChoice")}</span>
+      </label>
+      <button type="button" className={styles.cardAiAction} disabled={busy || state.analyzing || !state.reviewConfirmed}
+        onClick={() => void requestRewrite(audience, true)}>
+        <Sparkles size={17} aria-hidden="true" />{state.analyzing ? t("coachDebrief.analyzing") : t("coach.ai.send")}
+      </button>
+    </div>;
   }
 
   function approveCurrentProposal() {
@@ -726,10 +705,12 @@ export default function CoachTrainingDebriefPage() {
                       </label>
 
                       {assistanceEnabled ? (
-                        <button type="button" className={styles.cardAiAction} disabled={busy || currentAi.analyzing || !String(individualComments[currentReview.player_id] ?? "").trim()} onClick={() => void analyzeCurrentPlayer()}>
-                          <Sparkles size={17} aria-hidden="true" />{currentAi.analyzing ? t("coachDebrief.analyzing") : t("coachDebrief.analyzeActivitee")}
+                        <button type="button" className={styles.cardAiAction} disabled={busy || currentAi.analyzing || !String(individualComments[currentReview.player_id] ?? "").trim()} onClick={() => void requestRewrite("junior")}>
+                          <Sparkles size={17} aria-hidden="true" />{currentAi.analyzing ? t("coachDebrief.analyzing") : t("coach.ai.prepare")}
                         </button>
                       ) : null}
+
+                      {rewritePreview("junior")}
 
                       {assistanceEnabled && currentAi.proposal ? (
                         <div className={`${styles.individualProposal} ${currentAi.approved ? styles.proposalApproved : ""}`}>
@@ -749,15 +730,17 @@ export default function CoachTrainingDebriefPage() {
                       <label className={styles.commentField}>
                         <span>{t("coachDebrief.privateNote")}</span>
                         <small className={styles.privatePreparationHelp}>{t("coachDebrief.privateNoteHelp")}</small>
-                        <textarea aria-label={`${t("coachDebrief.privateNote")} — ${playerName(currentReview.profile)}`} value={privateNotes[currentReview.player_id] ?? ""} disabled={busy} onChange={(event) => updatePrivateNote(currentReview.player_id, event.target.value)} placeholder={t("coachDebrief.privateNotePlaceholder")} maxLength={4000} rows={4} />
+                        <textarea aria-label={`${t("coachDebrief.privateNote")} — ${playerName(currentReview.profile)}`} value={privateNotes[currentReview.player_id] ?? ""} disabled={busy || currentPrivateAi.analyzing} onChange={(event) => updatePrivateNote(currentReview.player_id, event.target.value)} placeholder={t("coachDebrief.privateNotePlaceholder")} maxLength={4000} rows={4} />
                         <span className={styles.characterCount}>{String(privateNotes[currentReview.player_id] ?? "").length}/4 000</span>
                       </label>
 
                       {assistanceEnabled ? (
-                        <button type="button" className={styles.cardAiAction} disabled={busy || currentPrivateAi.analyzing || !String(privateNotes[currentReview.player_id] ?? "").trim()} onClick={() => void analyzeCurrentPrivateNote()}>
-                          <Sparkles size={17} aria-hidden="true" />{currentPrivateAi.analyzing ? t("coachDebrief.analyzing") : t("coachDebrief.analyzeActivitee")}
+                        <button type="button" className={styles.cardAiAction} disabled={busy || currentPrivateAi.analyzing || !String(privateNotes[currentReview.player_id] ?? "").trim()} onClick={() => void requestRewrite("private")}>
+                          <Sparkles size={17} aria-hidden="true" />{currentPrivateAi.analyzing ? t("coachDebrief.analyzing") : t("coach.ai.prepare")}
                         </button>
                       ) : null}
+
+                      {rewritePreview("private")}
 
                       {assistanceEnabled && currentPrivateAi.proposal ? (
                         <div className={`${styles.individualProposal} ${currentPrivateAi.approved ? styles.proposalApproved : ""}`}>

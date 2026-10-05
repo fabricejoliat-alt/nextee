@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-05T13:17:14.979Z",
+  "reads": 0,
+  "cache": {
+    "model": "fixture-no-provider",
+    "source_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "attention_points": [
+      {
+        "text": "JETABLE ancien cache : doit rester inaccessible sans accord."
+      }
+    ]
+  },
+  "noGeneratedCache": true,
+  "noAcknowledgement": true
+}

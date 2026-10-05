@@ -1,0 +1,179 @@
+{
+  "origin": "https://test.activitee.golf",
+  "project": "wizbeuuvjibmmuxyynly.supabase.co",
+  "at": "2026-10-05T13:05:23.933Z",
+  "checks": [
+    {
+      "name": "minor: analysis",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "minor: preparation excludes old cache",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "minor: old acknowledgement",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "adult_without_consent: analysis",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "adult_without_consent: preparation excludes old cache",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "adult_without_consent: old acknowledgement",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "unknown_age: analysis",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "unknown_age: preparation excludes old cache",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "unknown_age: old acknowledgement",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "anonymous analysis",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "other club analysis",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "other club preparation",
+      "status": 401,
+      "body": {
+        "message": "Protected by Vercel Authentication"
+      },
+      "cache": "no-store, max-age=0",
+      "ok": false,
+      "outcome": "NOT_VERIFIED",
+      "blocker": "Vercel Authentication before application"
+    },
+    {
+      "name": "anon: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "anon: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "coach: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "coach: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "outsider: direct coach_training_preparation_insights",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "outsider: direct coach_training_preparation_reads",
+      "code": "42501",
+      "rows": null,
+      "ok": true
+    },
+    {
+      "name": "denials persisted no read or cache replacement",
+      "ok": true
+    }
+  ]
+}

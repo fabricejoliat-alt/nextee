@@ -3,8 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
-type Doc = { id: string; document_key: string; kind: string; scope: string; club_id: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
+type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
   version: { id: string; version_number: number; published_at: string; snapshot: { translations?: Record<string, { title: string }> } } | null;
+  own_choice: { version_id: string; decision: string } | null;
   state: { version_id: string; decision: string; conflict: boolean } | null };
 type Presentation = { id: string; rendered_snapshot: { title: string; body: string; action_label: string; version_number: number; locale: string }; expires_at: string };
 type Decision = { id: string; actor_id: string; beneficiary_id: string; decision: string; rendered_snapshot: { title: string; body: string; locale: string }; decided_at: string };
@@ -50,6 +51,9 @@ export default function MyLegalPage() {
     {docs.map((d) => <section key={d.id} style={{ border: "1px solid #ced9d0", borderRadius: 12, padding: 18, marginTop: 16 }}>
       <h2>{d.version?.snapshot.translations?.[locale]?.title ?? d.document_key}</h2><p>Version {d.version?.version_number ?? "—"} · {d.scope} · {d.required ? "requis" : "facultatif"}</p>
       {d.kind === "parent_authorization" ? <p>État par enfant : consulter « Décisions concernant mes enfants ».</p>
+        : d.purpose_key === "coaching.rewrite" ? <p>Mon choix personnel : {d.own_choice && d.version && d.own_choice.version_id === d.version.id ? d.own_choice.decision : "aucun choix pour cette version"}.
+          Pour un mineur, l’accord du représentant et le choix positif du junior sont nécessaires. Un accord parental ne remplace pas le choix du junior.
+          {d.state?.conflict ? " Un retrait nécessite un examen avant toute reprise." : ""}</p>
         : <p>État pour moi : {d.state?.version_id === d.version?.id ? d.state.decision : "validation requise"}{d.state?.conflict ? " · conflit à résoudre" : ""}</p>}
       {d.kind !== "parent_authorization" && <button disabled={busy || !d.eligible_role} onClick={() => open(d)}>Lire et décider pour moi</button>}
       {d.kind === "parent_authorization" || d.kind === "specific_consent" ? children.filter((c) => d.scope === "platform" || c.club_id === d.club_id)

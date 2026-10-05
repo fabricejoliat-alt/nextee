@@ -309,3 +309,7 @@
   .skeletonDivider,
   .skeletonActions span { animation: none; }
 }
+
+.aiPreview { display: grid; min-width: 0; gap: 12px; padding: 12px; border: 1px solid #cfe0cc; border-radius: 14px; background: #fff; }
+.aiReviewChoice { display: flex; align-items: flex-start; gap: 10px; color: #405a43; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.aiReviewChoice input { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green-dark); }

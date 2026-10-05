@@ -23,7 +23,7 @@ export function loadManagerModule<T = any>(path: string, mocks: Record<string, u
 }
 
 export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
-  caller?: string | null; users?: Row[]; failureTable?: string; rpcError?: Row; rpcResult?: Row; maxRows?: number;
+  caller?: string | null; users?: Row[]; failureTable?: string; rpcError?: Row; rpcResult?: Row; maxRows?: number; applyOrder?: boolean;
 } = {}) {
   const writes: Array<{ table: string; method: string; values: any; rows: Row[] }> = [];
   const rpcs: Array<{ name: string; args: Row }> = [];
@@ -45,6 +45,7 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
     rpc: async (name: string, args: Row) => { rpcs.push({ name, args }); return { error: options.rpcError ?? null, data: options.rpcResult ?? { ok: true, consent: { status: args.p_values?.status }, history: [] } }; },
     from(table: string) {
       let rows = [...(tables[table] ?? [])];
+      const ordering: Array<{ key: string; ascending: boolean }> = [];
       let singular = false, head = false;
       let mutation: { method: string; values: any } | null = null;
       const query = {
@@ -59,7 +60,17 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
         lt(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) < value); return query; },
         gt(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) > value); return query; },
         contains(key: string, values: unknown[]) { rows = rows.filter((row) => values.every((v) => row[key]?.includes(v))); return query; },
-        order() { return query; },
+        order(key: string, opts?: { ascending?: boolean }) {
+          ordering.push({ key, ascending: opts?.ascending !== false });
+          if (options.applyOrder) rows.sort((a, b) => {
+            for (const order of ordering) {
+              const delta = (a[order.key] < b[order.key] ? -1 : a[order.key] > b[order.key] ? 1 : 0) * (order.ascending ? 1 : -1);
+              if (delta) return delta;
+            }
+            return 0;
+          });
+          return query;
+        },
         limit(count: number) { rows = rows.slice(0, count); return query; },
         range(from: number, to: number) { rows = rows.slice(from, to + 1); return query; },
         maybeSingle() { singular = true; return query; },

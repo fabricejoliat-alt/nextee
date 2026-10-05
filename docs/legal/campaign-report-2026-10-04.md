@@ -4,9 +4,11 @@ Dates : 4–5 octobre 2026, campagne, contrôle des ajustements et complément d
 
 ## Conclusion actuelle
 
+**Dernier complément local :** seuil ZDR ramené à 13 ans à la demande utilisateur ; parcours de reformulation des mineurs avec accords et aperçu conservé, fermé par défaut. 118 tests réussis, aucune activation. Voir section 23. Le dernier déploiement IA TEST contrôlé reste `a13dad9` (section 21) ; le nouveau parcours n’y a pas encore été vérifié.
+
 **Le correctif SQL déployé fonctionne sur les scénarios retestés. Le module reste inactif et ne doit pas encore être activé.** Les blocages de publication, les cinq RPC internes exposés, la lecture Marketplace interclub et le conflit d’édition d’événement de la première phase sont résolus sur TEST. La publication et les décisions ont maintenant été exercées dans Chrome avec des textes et utilisateurs fictifs, puis relues en base.
 
-- Dernier déploiement TEST vérifié : **`2af721ad29110da2f5502fa883949c66e435b203`**, Vercel **Ready**. Le complément applicatif et le fond blanc de `/legal/my` sont livrés ; **24 états Chrome et huit lectures PostgREST ciblées réussis** le 5 octobre (section 13). Les trois ajustements d’interface sont validés dans Chrome le 5 octobre (section 10). La campagne fonctionnelle du 4 octobre portait sur `5a53f7c` ; son postflight après application comporte **16 lignes**.
+- Déploiement TEST de la campagne juridique : **`2af721ad29110da2f5502fa883949c66e435b203`**, Vercel **Ready**. Le complément applicatif et le fond blanc de `/legal/my` sont livrés ; **24 états Chrome et huit lectures PostgREST ciblées réussis** le 5 octobre (section 13). Les trois ajustements d’interface sont validés dans Chrome le 5 octobre (section 10). La campagne fonctionnelle du 4 octobre portait sur `5a53f7c` ; son postflight après application comporte **16 lignes**.
 - **29 états Chrome** enregistrés, desktop 1280 × 900 et mobile 393 × 852, sur Admin, Player, Parent, Coach, Manager et un Player d’un second club. Aucun débordement horizontal dans ces états.
 - **29 contrôles d’intégrité + 7 contrôles finaux réussis** sur les fixtures persistées ; **16 contrôles métier/accès**, édition d’événement avec conflit **PT409**, **94 refus de lecture PostgREST** réussis.
 - **58 tests locaux réussis** pendant la campagne, TypeScript et ESLint ciblé sans erreur. Les deux tests de saisie Admin sont rejoués le 5 octobre : **2/2**. Les deux corrections Admin et le libellé parental sont déployés et contrôlés. Le contraste de `/legal/my` et le complément de couverture de la section 11 sont maintenant **déployés dans `2af721a` et contrôlés** (section 13).
@@ -540,3 +542,114 @@ Les migrations `20260926_add_coach_training_preparation_insights.sql` et `202610
 Fichiers applicatifs du lot : `lib/server/coachAiAuthorization.ts` (nouveau), `coachPreparationSources.ts`, `coachPreparationStatus.ts`, les routes `debrief/analyze-player`, `preparation-insights`, `preparation-seen`, la page Coach d’activité, `lib/coachUiErrors.ts` et `lib/i18n/coachMessages.ts`. Tests : nouveau `coach-ai-authorization.test.ts`, adaptations `coach-activity-workflow.test.ts`, `coachAiAssistance.test.ts`, `coachDebrief.test.ts`. Documentation : ce rapport, `decisions.md`, `drafts.md` r4, README et readiness. Les autres changements déjà présents sont préservés.
 
 Suite concrète : déployer ce code sur **TEST**, vérifier que les aides IA sont refusées sans document/décision valables et que la saisie manuelle reste utilisable, puis poursuivre retraits, droits et conservation. Le registre étant sans document actif lors du dernier contrôle, le refus général du coaching IA serait le comportement attendu après déploiement si cet état demeure. Aucun des deux drapeaux juridiques ne doit être activé pour essayer ce lot. Les textes réels restent non publiés ; aucune conclusion sur la production.
+
+## 21. Contrôle TEST de a13dad9 et correction ciblée — 5 octobre 2026
+
+L’utilisateur confirme le commit et le déploiement. Le checkout `test` est propre au début, à **`a13dad9d961f860d77ec53258464c2722e9963dc`**. Chrome affiche ce même commit, la branche `test` et **Ready**, déploiement Vercel `9QHGuyJqJz5PpySx22xzVJWRcQUD`, créé à 14:55:07 UTC+2. Les parcours sont contrôlés sur son origine dédiée `https://nextee-6ahekovpv-fabrice-joliats-projects.vercel.app`, afin de préserver la session utilisateur de `test.activitee.golf`. La connexion et les séances fictives permettent de confirmer l’utilisation de Supabase TEST **`wizbeuuvjibmmuxyynly`**. [Environnement](evidence/20261005-ai-deployment-environment.json).
+
+Le préflight relit `enabled=false`, **zéro document actif, quatre versions et dix décisions**. Seules les fixtures déjà identifiées `legalqa_20261004_9a282f` sont utilisées. Les comptes Coach et autre club sont temporairement débloqués, trois adhésions fictives réactivées, l’option IA du seul Coach fictif activée, et deux séances jetables créées. Un cache fictif obsolète permet de vérifier qu’aucun de ses points n’apparaît. Les dates de naissance testées sont 2012-01-01, 1990-01-01 et null. Aucun texte, version ou accord juridique n’est créé/activé ; aucune migration rejouée. [Préflight](evidence/20261005-ai-deployment-preflight.json).
+
+### Scénarios et preuves
+
+| Scénario | Résultat | Preuve et limite |
+|---|---|---|
+| Préparation d’un mineur | **Réussi** | Chrome desktop et mobile : message explicite « L’assistance IA n’est pas disponible… », aucun point du cache ni action d’accusé de lecture. Recontrôlé après correction du format de la fixture de cache et avec une note privée enregistrée. |
+| Préparation d’un adulte sans accord | **Réussi** | Le profil fictif adulte, avec adhésion active mais aucun document actif, reçoit le même message d’indisponibilité. |
+| Préparation avec âge inconnu | **Réussi** | Même résultat après passage de la seule date fictive à null et rechargement. |
+| Saisie manuelle sans accord IA | **Réussi, persisté** | Enregistrement dans Chrome mobile : présence, trois notes à 4, commentaire junior et note privée. Relecture indépendante de `club_event_attendees`, `club_event_coach_feedback` et `coach_training_debriefs`, puis rechargement et « Revoir les évaluations » : valeurs identiques, version du rapport 1. [Preuve en base](evidence/20261005-ai-deployment-manual.json). |
+| Mobile 390 × 844 | **Réussi pour les écrans ciblés** | Préparation, formulaire manuel et valeurs rechargées : `scrollWidth=390`, `innerWidth=390`. [Capture préparation](evidence/20261005-ai-preparation-mobile.jpg), [enregistrement](evidence/20261005-ai-manual-mobile-saved.jpg). Ce contrôle Chrome n’est pas un essai iOS natif. |
+| Lecture directe du cache et des accusés | **6/6 refus attendus** | `coach_training_preparation_insights` et `coach_training_preparation_reads` refusent `anon`, Coach et utilisateur d’un autre club : PostgREST `42501`. L’essai porte sur la lecture ; il ne reteste pas tous les verbes ni les autres tables. |
+| Cache/accusés après les essais Chrome | **Réussi** | Aucun accusé ajouté, cache conservé avec modèle fictif `fixture-no-provider`, aucune génération enregistrée. [État avant nettoyage](evidence/20261005-ai-deployment-post-browser.json). Cela ne démontre pas une purge des anciens caches. |
+| Reformulation : message d’autorisation attendu | **Écart démontré et corrigé localement** | Dans Chrome, l’analyse d’une note fictive retourne **503**, visible dans DevTools, avec message générique. Dans le code déployé, le contrôle de configuration du fournisseur précède celui de l’accord. Ce résultat ne prouve donc pas le refus juridique 403 de cette route. Voir correction ci-dessous. |
+| Matrice HTTP hors navigateur : analyse, préparation, ancien accusé, anonyme/autre club | **Non vérifiée au niveau applicatif** | Les douze tentatives sur `test.activitee.golf` sont interceptées par **Vercel Authentication**, HTTP 401 `Protected deployment`. Aucune n’est comptée comme réussite de garde applicative, y compris l’essai anonyme. Aucune protection Vercel n’a été changée. [Résultats HTTP et PostgREST](evidence/20261005-ai-deployment-api.json). |
+| Nettoyage | **18/18 contrôles réussis** | Séances, fils et dépendances jetables supprimés ; adhésions, organisations, groupe, option Coach et date restaurés ; comptes temporaires rebloqués, mots de passe remplacés et journal de secrets effacé. [Nettoyage](evidence/20261005-ai-deployment-cleanup.json). |
+
+Les [observations Chrome](evidence/20261005-ai-deployment-browser.json) conservent les états chargés. Les deux premières observations de préparation précèdent la correction d’une fixture de cache dont les points n’avaient pas le champ `text` attendu ; elles prouvent le message affiché, pas l’éligibilité de ce cache. Les essais adulte, âge inconnu et dernier essai mineur utilisent des points valides. L’empreinte du cache reste volontairement obsolète : ces essais ne remplacent pas les tests de changement/retrait de décision des 66 tests locaux.
+
+### Correction et tests
+
+Dans `app/api/coach/events/[eventId]/debrief/analyze-player/route.ts`, le contrôle d’autorisation passe maintenant **avant** la vérification de `OPENAI_API_KEY`. Un joueur sans accord reçoit ainsi son refus 403 même lorsque le fournisseur n’est pas configuré. La réponse 503, réservée ensuite au joueur autorisé, reçoit aussi `Cache-Control: no-store`. Aucun secret fournisseur n’est ajouté ou modifié. Le diagnostic de configuration vient du 503 observé et de l’unique branche 503 de cette route ; les variables Vercel n’ont pas été ouvertes.
+
+Deux tests de régression supplémentaires vérifient ces deux branches sans transport réel. Suite de la section 20 relancée : **66/66 réussis**. `npx tsc --noEmit` réussi ; ESLint de la route, du test et du script de campagne réussi. `git diff --check` réussi. **Ce petit correctif est local, non commité et non déployé** ; son 403 doit être relu dans Chrome après le prochain déploiement TEST. Le 503 observé n’est pas présenté comme un appel IA autorisé ni comme un envoi démontré.
+
+### Livraison, suite et portée
+
+Fichiers applicatifs modifiés : la route `debrief/analyze-player` et `tests/coach-ai-authorization.test.ts`. Ajout du script journalisé `scripts/legal-campaign/ai-deployment-recheck.mjs` et des preuves `evidence/20261005-ai-*`. Documents actualisés : ce rapport, README, readiness, état introductif des brouillons et décisions. Les textes utilisateurs FR r4 ne changent pas.
+
+**Aucun lot SQL à appliquer.** La garde SQL reste false, zéro document est actif, quatre versions et dix décisions demeurent. Le drapeau applicatif n’a pas été modifié ; le succès de la saisie manuelle n’est pas une lecture de sa valeur dans Vercel. Aucun courriel ni accord réel, aucune modification de donnée personnelle réelle ou de production.
+
+Suite : commiter/déployer la correction ciblée, relire son message de refus puis poursuivre les effets des retraits, les demandes relatives aux données et leur conservation. Les scénarios d’accord actif, révocation pendant un transport, changement de version et ancien accusé restent validés **localement avec transport simulé**, pas par un nouveau parcours distant de cette phase. Aucun test fournisseur réel ni nouvelle recette globale Parent/Player/Manager/Admin/Storage n’est revendiqué. Les candidats d’accès directs et les écarts historiques restent ceux des sections antérieures ; la présente phase ne clôt que les lectures des deux tables de préparation.
+
+Avant activation demeurent les décisions humaines sur capacité/représentation, finalités et portée par club, prestataires/garanties et durées effectives, revue des textes et des quatre langues, et dispositifs IA pour les mineurs. Les preuves ci-dessus concernent **TEST uniquement** et ne constituent ni validation juridique ni conclusion sur la production.
+
+## 22. Reformulation IA avec aperçu et choix des mineurs — 5 octobre 2026
+
+> Historique du lot initial : l’extension de ZDR à tous les moins de 18 ans décrite ici est remplacée par le seuil de 13 ans en section 23.
+
+**État : implémenté et testé localement, fermé par défaut pour les mineurs.** Cette intervention répond à la demande de reformulation avec accord du représentant et retrait des noms. Le socle reste la branche `test`, commit `a13dad9` ; les fichiers/proofs déjà en attente en section 21 sont préservés. Aucun projet distant n’a été modifié ni interrogé pour cette phase. Le dernier TEST identifié reste `wizbeuuvjibmmuxyynly` ; aucun résultat ci-dessous n’est une observation de production ou une nouvelle recette Chrome TEST.
+
+### Analyse et portée juridique
+
+L’usage peut être envisagé sous conditions ; la suppression du prénom/nom ne garantit pas l’anonymat. La LPD reste pertinente si le contexte permet d’identifier une personne. Le responsable garde ses obligations d’information, de proportionnalité, de sécurité et d’encadrement de ses prestataires/transferts. L’accord parental ne règle pas à lui seul la capacité de discernement ni les droits du mineur. Sources officielles consultées : [PFPDT, IA au quotidien](https://www.edoeb.admin.ch/fr/ia-au-quotidien), [devoir d’informer](https://www.edoeb.admin.ch/fr/devoir-dinformer), [sous-traitance](https://www.edoeb.admin.ch/fr/externalisation-sous-traitance), [OFSP, bases légales, section 4.2.3](https://www.bag.admin.ch/dam/fr/sd-web/XJ-6Hxy1P0P4/Intervention_precoce_aupres_des_enfants_et_des_jeunes-Bases%20l%C3%A9gales.pdf). Cette dernière source traite de la capacité/du consentement dans son propre contexte ; elle ne certifie pas ce parcours sportif.
+
+OpenAI demande ZDR avant le traitement des données personnelles des moins de 13 ans ou sous l’âge applicable de consentement numérique : [guide moins de 18 ans](https://developers.openai.com/api/docs/guides/safety-checks/under-18-api-guidance). Ni l’absence d’entraînement par défaut ni `store:false` ne constituent ZDR : [contrôles des données](https://developers.openai.com/api/docs/guides/your-data). La politique proposée étend par précaution l’exigence ZDR à tous les mineurs ; ce n’est pas une interprétation qui ferait de 18 ans le seuil légal suisse. Le dernier compte observé était en conservation standard ; ce réglage n’a pas été revérifié ici.
+
+### Corrections et protections
+
+- Reformulation du seul texte choisi, pour commentaire junior ou note interne, sans lecture automatique d’historique. Masquage côté serveur du prénom/nom connus, composants de noms composés, UUID et certaines coordonnées. Les accents hors correspondances sont conservés. Le texte libre peut encore identifier quelqu’un ; l’aperçu explique cette limite et demande au coach d’enlever les autres détails identifiants, les informations de santé et les données sur des tiers.
+- Premier clic = aperçu, sans OpenAI. Second clic = confirmation de relecture et envoi. Le serveur signe un ticket de cinq minutes lié au texte brut/masqué, coach, cible, événement, langue, audience et accords ; changer un élément invalide le ticket. Un ancien client sans aperçu reçoit `409 ai_review_required`. La proposition reste à relire/adopter et n’est jamais enregistrée automatiquement par la route.
+- Mineur : document facultatif distinct `coaching.rewrite`, exact club/version, choix personnel positif, absence de dernier choix négatif d’un autre représentant sur cette version, et dernier accord représentatif positif confirmé par code, représentation toujours autorisée, sans conflit. Une décision seule ne suffit pas. Recontrôle avant envoi et retour ; préparation automatique toujours fermée. La saisie manuelle reste disponible. `/legal/my` affiche séparément le choix personnel du junior.
+- Clé et projet dédiés aux mineurs ; ouverture et attestation ZDR explicites, tous absents par défaut. L’en-tête `OpenAI-Project` lie la requête au projet configuré ([référence API](https://developers.openai.com/api/reference/overview#authentication)). Ces variables sont des contrôles applicatifs/attestations, pas un mécanisme de configuration ou de vérification automatique de ZDR. Les choix et paramètres exacts sont dans `decisions.md`, section 10.
+- Brouillons FR r5 : option limitée aux mineurs, variante personnelle majeure distincte, notice junior et notice générale adaptées. Aucun texte importé, traduit par fournisseur, publié ou accepté. Les chaînes de l’aperçu Coach sont disponibles en FR/EN/DE/IT ; cela ne constitue pas une revue des quatre traductions juridiques.
+
+### Vérifications locales
+
+| Scénario | Résultat / preuve |
+|---|---|
+| Aperçu sans fournisseur ; envoi du seul texte masqué au projet dédié ; aucune écriture automatique | Réussi, route exécutée avec base et transport simulés dans `coach-ai-authorization.test.ts`. |
+| Accord parent seul ou junior seul ; confirmation absente ; représentant non autorisé ; mauvais club/version/finalité ; refus/conflit ; date inconnue ; passage à la majorité | Refus vérifiés, zéro appel transport. La confirmation par code est représentée par la preuve serveur existante ; aucune émission réelle de code dans ce lot. |
+| Désaccord entre représentants, y compris après 500 entrées d’historique | Refus vérifiés ; un autre accord ne remplace pas le dernier refus d’un représentant. |
+| Retrait parent/junior entre aperçu et envoi, ou pendant l’appel ; changement de droits/événement/version | Refus ou résultat écarté vérifiés. Les relectures ne constituent pas une transaction atomique avec OpenAI et ne rappellent pas les données déjà parties. |
+| Ancien client, faux ticket, texte/langue/audience modifiés, expiration | Refus vérifiés ; tests de liaison de la signature dans `coach-ai-rewrite.test.ts`. |
+| Noms avec accents/casse/composants ; identifiants/coordonnées ; détails contextuels restants | Vérifié. Le test conserve explicitement un détail pouvant identifier une personne : aucune garantie d’anonymisation. |
+| Mineur autorisé à reformuler tentant la préparation automatique | Refus avant lecture de l’historique ; zéro appel fournisseur. |
+| État global alimenté par le parent affiché comme choix propre du junior | Corrigé et testé sur la route Documents ; les choix d’un autre acteur/bénéficiaire sont exclus. |
+| Chrome desktop/mobile de ce nouvel aperçu, décisions réellement persistées pour ce nouveau parcours, déploiement Vercel, ZDR réel, qualité d’une réponse réelle | **Non vérifiés dans ce lot.** Les captures TEST de la section 21 précèdent ces modifications. |
+
+Commande exécutée :
+
+```sh
+node --experimental-strip-types --test tests/coach-ai-authorization.test.ts tests/coach-ai-rewrite.test.ts tests/coachAiAssistance.test.ts tests/coachPreparationInsights.test.ts tests/coach-activity-workflow.test.ts tests/coachDebrief.test.ts tests/legal-admin-routes.test.ts tests/legal-template.test.ts tests/legal-parent-mail.test.ts
+```
+
+**107 tests réussis, zéro échec.** `npx tsc --noEmit --incremental false` réussi ; ESLint ciblé sans erreur ni avertissement ; `git diff --check` réussi. Ces tests utilisent des données fictives et aucun vrai transport fournisseur. Aucun build/déploiement n’est revendiqué.
+
+### Livraison et prochaine étape
+
+Fichiers applicatifs : `lib/server/coachAiRewrite.ts` (nouveau), `coachAiAuthorization.ts`, route Coach `debrief/analyze-player`, page/CSS Coach de débrief, `lib/coachUiErrors.ts`, `lib/i18n/coachMessages.ts`, `app/api/legal/documents/route.ts`, `app/legal/my/page.tsx`. Tests : `coach-ai-rewrite.test.ts` (nouveau), `coach-ai-authorization.test.ts`, assertions adaptées dans `coachDebrief.test.ts`, tri optionnel du simulateur de base `managerRouteHarness.ts` pour éprouver le dernier choix/version. Documentation : ce rapport unique, décisions, brouillons r5, README et readiness. Les modifications/proofs de la section 21 restent en attente avec ce lot.
+
+**Aucun SQL à appliquer.** Les tables de décisions, snapshots, versions, code parental et RPC `legal_actor_allowed` existants sont réutilisés ; aucune permission PostgREST/RPC/Storage n’est ajoutée. Les autres accès et sujets encore ouverts dans les sections précédentes ne sont pas résolus par cette modification. `legal_enforcement_control` et `LEGAL_ENFORCEMENT_ENABLED` ne sont pas activés ; aucun réglage distant ni donnée réelle n’a changé.
+
+Avant ouverture : revue humaine de capacité/accords et de la proportionnalité ; validation effective du projet/clé/modèle ZDR et des contrats/transferts ; mise à jour de la notice fournisseur et revue des traductions ; déploiement et recette TEST sur fixtures avec transports simulés, puis décision d’activation distincte. Ce parcours ne constitue pas une attestation de conformité juridique ou Store.
+
+
+## 23. Seuil ZDR ramené à 13 ans — 5 octobre 2026
+
+**Demande explicite : appliquer 13 ans, au lieu de 18 ans, au seuil de l’exigence ZDR.** Cette modification du code local ne change pas l’âge de majorité ni les accords parent/junior. Aucune configuration distante, donnée utilisateur, publication ou migration n’est modifiée.
+
+| Âge | Contrôle ZDR pour la reformulation | Autres conditions |
+|---|---|---|
+| Moins de 13 ans | ZDR confirmé obligatoire ; absence/valeur false = refus avant transport. | Accords versionnés représentant/junior, représentation vérifiée, bon club, aperçu confirmé, projet/clé dédiés et drapeau d’ouverture. |
+| 13–17 ans | L’absence de confirmation ZDR ne bloque plus. | Mêmes accords, contrôles et configuration dédiée. |
+| 18 ans et plus | Pas de changement. | Accord personnel majeur `coaching.ai` et configuration existante. |
+| Âge absent, invalide ou futur | Refus. | Aucun envoi sur la base d’un âge présumé. |
+
+Le seuil est calculé au 13e anniversaire selon le calendrier suisse. L’autorisation signée d’aperçu inclut la tranche d’âge : une correction qui change de tranche exige un nouvel aperçu. La représentation conserve son seuil de 18 ans ; la préparation automatique à partir de l’historique reste exclue pour tous les mineurs, car la finalité proposée reste la seule reformulation. La règle de 13 ans est le paramètre demandé pour le lancement suisse ; elle ne constitue pas une attestation de conformité ou une détermination automatique de l’âge applicable dans d’autres situations.
+
+### Preuves locales et limites
+
+- **118 tests réussis, zéro échec**, avec la même commande de neuf fichiers qu’en section 22. Ajout de onze tests : frontière exacte de 13 ans et maintien de la majorité à 18, envoi simulé des 13–17 ans sans ZDR, envoi des moins de 13 ans avec ZDR, refus sans les accords/avec retrait/autre club/âge inconnu, invalidation d’aperçu après correction de date et réponse écartée après retour sous le seuil pendant l’appel. Les tests des réglages ZDR manquants utilisent maintenant une fixture de moins de 13 ans.
+- `npx tsc --noEmit --incremental false` : réussi. ESLint ciblé sur les trois fichiers serveur et les tests modifiés : réussi. `git diff --check` : réussi.
+- Aucun vrai transport OpenAI, aucune création d’accord ni modification de profil. La base et le fournisseur sont simulés. Le nouveau parcours Chrome et le déploiement de ces changements restent **non vérifiés** ; les preuves TEST des lots précédents ne prouvent pas ce nouveau code.
+
+Fichiers de ce correctif : `lib/server/coachAiAuthorization.ts`, `lib/server/coachAiRewrite.ts`, route Coach `debrief/analyze-player`, `tests/coach-ai-authorization.test.ts`, `docs/legal/drafts.md` r6, décisions, README, readiness et ce rapport. Les modifications antérieures sont préservées. **Aucun SQL à appliquer.** Le drapeau d’ouverture mineurs et les deux drapeaux juridiques restent inchangés ; aucun commit, push ou déploiement effectué dans ce lot.

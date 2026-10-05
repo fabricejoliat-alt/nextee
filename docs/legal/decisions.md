@@ -1,6 +1,6 @@
 # Décisions et matrice de traitements à valider
 
-**État courant : voir les sections 8–9, source FR-2026-10-05-r4 et correctif IA local.** Les sections 1–7 conservent la préparation et ses arbitrages antérieurs. Les informations établies, les choix rédactionnels confiés par l’utilisateur et les limites encore ouvertes sont distingués des corrections non déployées ; ils ne constituent pas une validation juridique. La matrice initiale ci-dessous reste un inventaire historique, sans base juridique certifiée.
+**État courant : voir les sections 8–9, source FR-2026-10-05-r4 et recette IA TEST du rapport, section 21.** Les sections 1–7 conservent la préparation et ses arbitrages antérieurs. Les informations établies, les choix rédactionnels confiés par l’utilisateur et les limites encore ouvertes sont distingués des corrections non déployées ; ils ne constituent pas une validation juridique. La matrice initiale ci-dessous reste un inventaire historique, sans base juridique certifiée.
 
 | Finalité repérée dans le code | Données | Acteurs/destinataires à confirmer | Base envisagée à arbitrer | Conservation/transfert à renseigner |
 |---|---|---|---|---|
@@ -253,12 +253,44 @@ Aucun changement de réglage ou de route IA n’est réalisé dans cette phase d
 
 ### 9. Contrôle local des usages IA — 5 octobre 2026
 
-La poursuite demandée a produit le correctif décrit en [section 20 du rapport unique](campaign-report-2026-10-04.md#20-correctif-local-des-usages-ia--5-octobre-2026). Aucun déploiement n’est effectué.
+La poursuite demandée a produit le correctif décrit en [section 20 du rapport unique](campaign-report-2026-10-04.md#20-correctif-local-des-usages-ia--5-octobre-2026), puis déployé sur TEST dans `a13dad9`. Voir la [section 21](campaign-report-2026-10-04.md#21-contrôle-test-de-a13dad9-et-correction-ciblée--5-octobre-2026) pour les preuves Chrome, le nettoyage et le petit ajustement de priorité du refus restant local.
 
 - Mineur d’après la date enregistrée, date absente/invalide : IA bloquée. Cette exclusion temporaire de tous les moins de 18 ans est un choix conservatoire en attendant la revue du dispositif fournisseur, de l’âge et de la représentation ; elle n’assimile pas tous les mineurs au seuil OpenAI. La fiabilité et les droits de modification de la date de naissance restent à examiner avant une ouverture effective.
 - Adulte : adhésion active au bon club, document facultatif unique `specific_consent` de finalité `coaching.ai` pour ce club, règle approuvée exécutable, dernière version cohérente, décision personnelle `consented` issue du parcours et prise après majorité, sans conflit. Absence ou erreur = refus de l’IA. Aucun statut historique ou consentement parental ne devient un accord personnel.
 - Coach, événement et participant recontrôlés avant envoi, avant écriture du cache et avant retour des résultats. Un retrait/version modifiée observé pendant la génération écarte la réponse. L’empreinte du cache et de sa lecture comprend la décision ; un nouvel accord ne réutilise pas silencieusement l’ancien résultat.
-- Les noms et identifiants techniques ajoutés automatiquement sont retirés des charges envoyées ; le texte libre reste personnel. La rédaction FR r4 décrit cette minimisation, conditionnée au déploiement du correctif.
+- Les noms et identifiants techniques ajoutés automatiquement sont retirés des charges envoyées ; le texte libre reste personnel. La rédaction FR r4 décrit cette minimisation ; le déploiement TEST ne constitue pas une validation de la production.
 - Les contrôles sont indépendants des drapeaux d’enforcement global, laissés inactifs. Sans document actif et décision spécifique, les aides IA de coaching resteront indisponibles après déploiement ; les parcours manuels n’exigent pas cet accord facultatif.
 
 La vérification couvre les routes de génération, l’accusé de lecture et le calcul du statut de préparation. Les tables de cache et de lectures sont réservées au service dans les migrations relues, sans nouvelle permission client. Aucun SQL supplémentaire n’est nécessaire pour ces corrections. La suppression des anciennes copies, les demandes de droits, le retrait parental du service et le moteur général d’applicabilité restent distincts et inachevés. Les tests simulés ne prouvent pas les privilèges déployés ni les écrans Chrome TEST.
+
+### 10. Reformulation limitée pour mineurs — préparation locale du 5 octobre 2026
+
+À la demande de l’utilisateur, le code prépare un usage distinct : correction/amélioration du seul texte choisi par le coach, après masquage local des noms connus et aperçu. Voir les sections 22–23 du rapport unique et la rédaction **FR-2026-10-05-r6**. Le seuil ZDR, initialement étendu à tous les mineurs, est ramené à **13 ans** à la demande explicite de l’utilisateur. Cette possibilité reste désactivée ; retirer un nom et obtenir un accord parental ne suffisent pas à eux seuls à établir la licéité du traitement.
+
+#### 10.1 Règles retenues
+
+- Document facultatif distinct `coaching.rewrite`, par club, `specific_consent`, action `consent`, rôles `parent` + `player`, règle approuvée `all_members`, version publiée cohérente. Le garde exige à la fois le dernier accord représentatif confirmé par code et le dernier choix personnel positif du junior, sur la version courante. Il revérifie l’habilitation actuelle du représentant et bloque aussi lorsqu’un autre représentant a un dernier choix négatif sur cette version, sans se limiter à la première page d’historique. Refus, retrait, conflit, autre club, version obsolète ou âge inconnu bloquent l’appel. L’accord d’utilisation de l’application n’est pas réutilisé.
+- Les deux choix concernent les moins de 18 ans ; le seuil ZDR est distinct et fixé à 13 ans. Le parcours accompagné reste une précaution produit, pas une définition légale de la capacité. La compréhension et la capacité doivent être examinées ; une personne qui ne peut pas prendre ce choix reste en saisie manuelle jusqu’à décision humaine sur un parcours adapté. Aucune exception automatique « le parent a cliqué ».
+- Prénom/nom connus, certaines coordonnées et UUID sont masqués côté serveur. La détection est volontairement limitée : surnoms, fautes, tiers et détails contextuels peuvent subsister. Le coach doit relire l’aperçu exact et retirer les autres informations identifiantes, sanitaires ou concernant des tiers du texte d’origine. Masquage ne signifie pas anonymisation.
+- Aperçu sans appel fournisseur, autorisation signée de cinq minutes liée au texte, destinataire, coach, événement, langue, audience et accords. L’envoi exige la confirmation de relecture ; tout changement exige un nouvel aperçu. Les contrôles d’accès/choix sont refaits avant transport et avant retour. Une révocation peut écarter le résultat mais ne rappelle pas une requête déjà partie.
+- La préparation automatique des mineurs à partir de l’historique reste fermée. Les majeurs conservent l’option personnelle `coaching.ai` ; leur reformulation bénéficie aussi de l’aperçu. La modification locale de `/legal/my` distingue le choix propre du junior de l’état collectif alimenté par un parent.
+
+#### 10.2 Conditions d’ouverture, sans activation dans cette intervention
+
+| Réglage serveur | Rôle |
+|---|---|
+| `COACH_AI_MINOR_REWRITE_ENABLED` | Doit rester absent ou `false` jusqu’à validation des prérequis et recette TEST. |
+| `OPENAI_COACH_ZDR_CONFIRMED` | Requis uniquement avant 13 ans. Attestation opérateur après vérification effective de ZDR ; cette variable ne configure ni ne prouve ZDR chez OpenAI. |
+| `OPENAI_COACH_PROJECT_ID` | Identifiant du projet dédié vérifié, transmis dans `OpenAI-Project`. |
+| `OPENAI_COACH_API_KEY` | Secret serveur rattaché à ce projet ; aucune reprise automatique de la clé générale pour les mineurs. |
+| `OPENAI_COACH_MODEL` | Modèle de coaching réellement employé, `gpt-4o-mini` par défaut ; l’attestation doit couvrir ce modèle et l’endpoint Responses, y compris après une modification. |
+
+Le drapeau d’ouverture, le projet dédié et sa clé restent nécessaires pour tous les mineurs. L’attestation ZDR est requise uniquement avant le 13e anniversaire ; son absence ou la valeur `false` ne bloque plus les 13–17 ans. Aucun réglage distant n’a été ajouté ou activé. Le seuil technique demandé est 13 ans pour le lancement suisse ; la documentation OpenAI mentionne les moins de 13 ans ou l’âge applicable de consentement numérique. Ce paramétrage ne détermine pas à lui seul le droit applicable. `store:false` ne remplace pas ZDR. Le dernier constat du compte était Global/Standard Retention ; aucun nouveau contrôle de ce réglage n’est revendiqué ici.
+
+Avant ouverture : vérifier les contrats, transferts et sous-traitants et, pour les moins de 13 ans, l’éligibilité et l’activation réelle de ZDR pour les endpoints/modèles concernés ; revoir la capacité, les conflits de représentants et la fiabilité des dates de naissance ; mettre à jour la notice fournisseur, traduire/revoir les textes, puis faire une recette sur fixtures avec transports simulés. La revue des garanties, des informations adaptées aux mineurs et de la proportionnalité reste humaine. Les permissions de consulter les réglages n’autorisent pas à accepter des contrats ni à envoyer une demande commerciale.
+
+Aucune migration, activation juridique globale, publication ni acceptation réelle. Aucun changement de permissions PostgREST/RPC/Storage. Les résultats locaux de ce lot ne prouvent pas son déploiement ni un parcours en production.
+
+#### 10.3 Vérification du seuil demandé
+
+Le calcul distingue explicitement 13 et 18 ans selon le calendrier Europe/Zurich. Le 13e anniversaire lève le prérequis ZDR ; il ne transforme pas un accord parental en accord personnel majeur et n’ouvre pas la préparation automatique des mineurs. Le ticket d’aperçu comprend la tranche d’âge (`under13` ou `13plus`) : une correction de date qui change cette tranche impose un nouvel aperçu. Un âge inconnu/invalide reste refusé. Les tests simulés couvrent aussi le retour sous 13 ans pendant une génération sans ZDR, dont le résultat est alors écarté. Aucun envoi déjà parti ne peut être rappelé.
