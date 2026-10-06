@@ -1,6 +1,6 @@
 # ActiviTee legal draft translations — English
 
-Unapproved translation of the French revision FR-2026-10-05-r6. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
+Unapproved translation of the French revision FR-2026-10-06-r7. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: ActiviTee Terms of Use
@@ -10,13 +10,13 @@ Action: I accept the ActiviTee Terms of Use.
 
 ActiviTee is operated by Fabrice Joliat in his own name, Chemin de la Pavya 22, 1965 Savièse, Switzerland. The application helps clubs organise and follow sporting activities: schedules, training, competitions, results, educational content, communications and documents, according to the features made available by the club.
 
-These terms govern personal use of the service. They are separate from the commercial contract between ActiviTee and the club, the club's rules and the rules specific to sporting activities. The club contract covers, in particular, subscription and billing; these terms cover access and use by people assigned an account. Any specific rules of a sporting organisation are presented to you in the relevant context.
+These terms govern personal use of the service. They are separate from the commercial contract between ActiviTee and the club, the club's rules and the rules specific to sporting activities. The club contract covers, in particular, the annual licence and its billing; these terms cover access and use by people assigned an account. Any specific rules of a sporting organisation are presented to you in the relevant context.
 
 2. Accounts and fees
 
 Junior, Parent and Coach accounts are created exclusively by authorised club staff. These users cannot register themselves. The account and available features depend on the assigned role and associations; platform administration has a process for managing authorised accounts.
 
-At launch, the club pays ActiviTee. Juniors, parents and coaches are not asked to take out an individual ActiviTee subscription. This does not set club membership fees, training or competition fees, other amounts that the club may charge, or the price of a Marketplace listing. Accepting these terms does not create an individual subscription obligation. Any future paid individual offering must be presented separately and agreed to separately.
+The club purchases and pays for an annual ActiviTee licence. Juniors, parents and coaches are not required to take out an individual ActiviTee subscription. Any club membership fees and fees for training or competitions are set by the club independently of this licence. Accepting these terms does not require these users to pay ActiviTee.
 
 3. First use and minors
 

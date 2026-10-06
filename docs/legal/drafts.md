@@ -1,12 +1,12 @@
 # Textes juridiques FR — version de rédaction du 5 octobre 2026
 
-**Révision : FR-2026-10-05-r6.** Cette révision conserve l’option IA limitée à la reformulation manuelle d’un texte sélectionné et applique le seuil ZDR de 13 ans demandé par l’utilisateur. Le code local associé et ses limites figurent en sections 22–23 du rapport ; son déploiement n’est pas vérifié. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
+**Révision : FR-2026-10-06-r7.** Cette révision précise que le club paie une licence annuelle à ActiviTee et supprime, dans la rubrique « Comptes et frais », les mentions d’un prix Marketplace et d’une éventuelle offre individuelle payante. Elle conserve l’option IA limitée à la reformulation manuelle d’un texte sélectionné et le seuil ZDR de 13 ans demandé par l’utilisateur. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
 
 ## Version de travail FR du 5 octobre — lancement suisse
 
 ActiviTee est exploité par **Fabrice Joliat, en nom propre**, Chemin de la Pavya 22, 1965 Savièse, Suisse. **info@activitee.golf** reçoit les demandes relatives aux données, l’assistance technique et les signalements de contenus ; Fabrice Joliat en assure le suivi au lancement.
 
-Le lancement vise les clubs suisses. Les comptes Junior, Parent et Coach sont créés par le club. Le club paie le service ; aucun abonnement individuel n’est prévu. La Marketplace assure une mise en relation sans paiement dans l’application ni commission, avec intervention du représentant pour les transactions d’un mineur. L’IA est facultative ; aucun marketing ni publication publique de photos de personnes n’est prévu au lancement.
+Le lancement vise les clubs suisses. Les comptes Junior, Parent et Coach sont créés par le club. Le club paie une licence annuelle à ActiviTee ; aucun abonnement individuel n’est prévu. La Marketplace assure une mise en relation sans paiement dans l’application ni commission, avec intervention du représentant pour les transactions d’un mineur. L’IA est facultative ; aucun marketing ni publication publique de photos de personnes n’est prévu au lancement.
 
 Les variables `{{child_name}}` et `{{club_name}}` seront remplacées par le serveur lors de la présentation. Leur présence est voulue ; elles ne sont pas des informations rédactionnelles manquantes. Les versions applicables et liens doivent être affichés par le parcours juridique, sans inventer une variable supplémentaire. La traduction administrative reçoit le gabarit avant ce remplacement, ainsi que les informations directement écrites dans celui-ci : ne pas y insérer de données de membres.
 
@@ -158,13 +158,13 @@ Chaque version indique sa date et les changements apportés. Lorsqu’un nouveau
 
 ActiviTee est exploité par Fabrice Joliat, en nom propre, Chemin de la Pavya 22, 1965 Savièse, Suisse. L’application aide les clubs à organiser et suivre les activités sportives : planning, entraînements, compétitions, résultats, contenus pédagogiques, échanges et documents, selon les fonctions ouvertes par le club.
 
-Ces conditions encadrent l’utilisation personnelle du service. Elles sont distinctes du contrat commercial conclu entre ActiviTee et le club, du règlement du club et des règles propres aux activités sportives. Le contrat du club règle notamment la souscription et la facturation ; ces conditions règlent les accès et l’usage des personnes auxquelles un compte est attribué. Les éventuelles règles spécifiques d’une organisation sportive vous sont présentées dans le cadre concerné.
+Ces conditions encadrent l’utilisation personnelle du service. Elles sont distinctes du contrat commercial conclu entre ActiviTee et le club, du règlement du club et des règles propres aux activités sportives. Le contrat du club règle notamment la licence annuelle et sa facturation ; ces conditions règlent les accès et l’usage des personnes auxquelles un compte est attribué. Les éventuelles règles spécifiques d’une organisation sportive vous sont présentées dans le cadre concerné.
 
 #### D2. Comptes et frais
 
 Les comptes Junior, Parent et Coach sont créés exclusivement par les personnes habilitées du club. Ces utilisateurs ne peuvent pas s’inscrire librement. Le compte et les fonctions accessibles dépendent du rôle et des rattachements attribués ; l’administration de la plateforme dispose d’un circuit de gestion des comptes habilités.
 
-Au lancement, le club paie ActiviTee. Aucun abonnement individuel à ActiviTee n’est demandé aux juniors, parents ou coachs. Cette règle ne fixe pas les cotisations, frais d’entraînement, de compétition ou autres montants éventuellement demandés par le club, ni le prix d’une annonce Marketplace. Aucune obligation d’abonnement individuel ne résulte de l’acceptation de ces conditions. Une éventuelle offre payante individuelle future devra être présentée et faire l’objet d’un accord distinct.
+Le club souscrit et paie une licence annuelle à ActiviTee. Aucun abonnement individuel à ActiviTee n’est demandé aux juniors, parents ou coachs. Les éventuelles cotisations du club et les frais liés aux entraînements ou aux compétitions sont fixés par le club, indépendamment de cette licence. L’acceptation de ces conditions n’entraîne aucun paiement à ActiviTee pour ces utilisateurs.
 
 #### D3. Première utilisation et mineurs
 

@@ -1,6 +1,6 @@
 # ActiviTee Rechtstexte — Deutsch
 
-Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-05-r6. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
+Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-06-r7. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: Nutzungsbedingungen von ActiviTee
@@ -10,13 +10,13 @@ Action: Ich akzeptiere die Nutzungsbedingungen von ActiviTee.
 
 ActiviTee wird von Fabrice Joliat im eigenen Namen betrieben, Chemin de la Pavya 22, 1965 Savièse, Schweiz. Die Anwendung hilft Clubs bei der Organisation und Begleitung sportlicher Aktivitäten: Planung, Training, Wettkämpfe, Ergebnisse, Lerninhalte, Austausch und Dokumente, je nach den vom Club freigeschalteten Funktionen.
 
-Diese Bedingungen regeln die persönliche Nutzung des Dienstes. Sie sind vom Geschäftsvertrag zwischen ActiviTee und dem Club, den Clubregeln und den Regeln für sportliche Aktivitäten zu unterscheiden. Der Clubvertrag regelt insbesondere das Abonnement und die Rechnungsstellung; diese Bedingungen regeln den Zugang und die Nutzung durch Personen, denen ein Konto zugeteilt wurde. Allfällige besondere Regeln einer Sportorganisation werden Ihnen im jeweiligen Zusammenhang angezeigt.
+Diese Bedingungen regeln die persönliche Nutzung des Dienstes. Sie sind vom Geschäftsvertrag zwischen ActiviTee und dem Club, den Clubregeln und den Regeln für sportliche Aktivitäten zu unterscheiden. Der Clubvertrag regelt insbesondere die Jahreslizenz und deren Rechnungsstellung; diese Bedingungen regeln den Zugang und die Nutzung durch Personen, denen ein Konto zugeteilt wurde. Allfällige besondere Regeln einer Sportorganisation werden Ihnen im jeweiligen Zusammenhang angezeigt.
 
 2. Konten und Kosten
 
 Konten für Junioren, Eltern und Coaches werden ausschliesslich von berechtigten Personen des Clubs erstellt. Diese Nutzerinnen und Nutzer können sich nicht selbst registrieren. Das Konto und die verfügbaren Funktionen hängen von der zugewiesenen Rolle und den Verknüpfungen ab; für die Verwaltung berechtigter Konten durch die Plattform gibt es ein eigenes Verfahren.
 
-Zum Start bezahlt der Club ActiviTee. Von Junioren, Eltern und Coaches wird kein individuelles ActiviTee-Abonnement verlangt. Dies regelt weder Clubbeiträge, Trainings- oder Wettkampfgebühren oder andere vom Club gegebenenfalls verlangte Beträge noch den Preis eines Marketplace-Inserats. Aus der Annahme dieser Bedingungen entsteht keine Verpflichtung zu einem individuellen Abonnement. Ein allfälliges späteres kostenpflichtiges Angebot für Einzelpersonen muss gesondert vorgestellt und vereinbart werden.
+Der Club schliesst eine Jahreslizenz für ActiviTee ab und bezahlt sie. Von Junioren, Eltern und Coaches wird kein individuelles ActiviTee-Abonnement verlangt. Allfällige Clubbeiträge sowie Gebühren für Training oder Wettkämpfe legt der Club unabhängig von dieser Lizenz fest. Aus der Annahme dieser Bedingungen entsteht für diese Nutzerinnen und Nutzer keine Zahlungspflicht gegenüber ActiviTee.
 
 3. Erste Nutzung und Minderjährige
 
