@@ -67,10 +67,11 @@ export default function RoleGuard({
 
   useEffect(() => {
     let cancelled = false;
+    let recheckInProgress = false;
     const recheckLegalStatus = async () => {
-      if (statusRef.current !== "allowed" || document.visibilityState !== "visible"
+      if (recheckInProgress || statusRef.current !== "allowed" || document.visibilityState !== "visible"
         || !needsLegalCheck(window.location.pathname)) return;
-      statusRef.current = "checking"; setStatus("checking");
+      recheckInProgress = true;
       try {
         const token = (await supabase.auth.getSession()).data.session?.access_token;
         if (!token) throw new Error("Session indisponible. Réessayez en ligne.");
@@ -78,11 +79,13 @@ export default function RoleGuard({
         if (cancelled) return;
         if (result.enforcement_enabled && result.missing.length) {
           statusRef.current = "redirecting"; setStatus("redirecting"); router.replace("/legal/my");
-        } else { statusRef.current = "allowed"; setStatus("allowed"); }
+        }
       } catch (error) {
         if (cancelled) return;
         setErrorMessage(error instanceof Error ? error.message : "Vérification indisponible.");
         statusRef.current = "error"; setStatus("error");
+      } finally {
+        recheckInProgress = false;
       }
     };
     window.addEventListener("focus", recheckLegalStatus);

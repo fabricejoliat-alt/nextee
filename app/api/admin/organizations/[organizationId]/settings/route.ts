@@ -59,6 +59,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ organ
   if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 400 });
   if (!organization) return NextResponse.json({ error: "Organisation introuvable" }, { status: 404 });
 
+  // A club with legal documents cannot be deleted through the ordinary flow.
+  // Check before removing the organization half of the legacy dual record.
+  const legal = await access.client.from("legal_documents").select("id").eq("club_id", organizationId).limit(1);
+  if (legal.error) return NextResponse.json({ error: legal.error.message }, { status: 400 });
+  if ((legal.data?.length ?? 0) > 0) return NextResponse.json({ error: "Ce club possède des documents juridiques. Sa suppression nécessite un traitement dédié de leurs preuves et de leurs versions." }, { status: 409 });
+
   // Legacy data uses clubs while the current administration uses organizations.
   // Remove dependent legacy records first, then both organization representations.
   const coachPlayers = await access.client.from("coach_players").delete().eq("club_id", organizationId);

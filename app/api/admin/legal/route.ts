@@ -11,17 +11,20 @@ export async function GET(req: Request) {
   try {
     const db = legalDb();
     if (!await legalAdmin(req, db)) return reply({ error: "Forbidden" }, 403);
-    const [docs, drafts, versions, clubs, control] = await Promise.all([
+    const [docs, drafts, versions, clubs, control, templates] = await Promise.all([
       db.from("legal_documents").select("*").order("created_at", { ascending: false }),
       db.from("legal_drafts").select("*"),
       db.from("legal_versions").select("*").order("version_number", { ascending: false }),
       db.from("clubs").select("id,name").order("name", { ascending: true }),
       db.from("legal_enforcement_control").select("enabled,updated_at").eq("singleton", true).single(),
+      db.from("legal_club_templates").select("purpose_key"),
     ]);
     if (docs.error || drafts.error || versions.error || clubs.error || control.error)
       throw new Error(docs.error?.message ?? drafts.error?.message ?? versions.error?.message ?? clubs.error?.message ?? control.error?.message);
+    if (templates.error && !["42P01", "PGRST205"].includes(templates.error.code)) throw new Error(templates.error.message);
     return reply({ documents: docs.data, drafts: drafts.data, versions: versions.data,
-      clubs: clubs.data, enforcement_enabled: control.data.enabled });
+      clubs: clubs.data, enforcement_enabled: control.data.enabled,
+      club_template_purposes: templates.data?.map((template) => template.purpose_key) ?? [] });
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Unavailable" }, 503); }
 }
 
@@ -46,6 +49,16 @@ export async function POST(req: Request) {
       });
       if (created.error) return reply({ error: created.error.message }, 409);
       return reply({ id: created.data }, 201);
+    }
+    if (input.operation === "create_club_templates") {
+      const clubId = String(input.club_id ?? "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clubId))
+        return reply({ error: "Invalid club" }, 400);
+      const created = await db.rpc("create_club_legal_drafts_from_templates", {
+        p_club: clubId, p_actor: actor.id,
+      });
+      if (created.error) return reply({ error: created.error.message }, 409);
+      return reply({ ids: created.data }, 201);
     }
     if (input.operation === "set_enforcement") {
       if (typeof input.enabled !== "boolean" || typeof input.expected_enabled !== "boolean")

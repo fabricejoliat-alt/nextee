@@ -29,6 +29,7 @@ export default function OrganizationsAdmin() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [createdClubName, setCreatedClubName] = useState<string | null>(null);
 
   // Create form
   const [name, setName] = useState("");
@@ -84,6 +85,7 @@ export default function OrganizationsAdmin() {
   async function createOrganization(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setCreatedClubName(null);
 
     const finalSlug = (slug || slugify(name)).trim() || null;
     const orgId = crypto.randomUUID();
@@ -123,6 +125,7 @@ export default function OrganizationsAdmin() {
     setOrgType("club");
     setSlugTouched(false);
     await loadOrganizations();
+    if (orgType === "club") setCreatedClubName(finalName);
   }
 
   return (
@@ -139,6 +142,10 @@ export default function OrganizationsAdmin() {
           {error}
         </div>
       )}
+      {createdClubName && <div className={styles.successAlert} role="status">
+        <span>{createdClubName} a été créé. Prépare ses trois brouillons juridiques avant d’ouvrir les accès aux membres.</span>
+        <Link href="/admin/legal">Ouvrir les documents juridiques</Link>
+      </div>}
 
       <section className={styles.creationCard} id="new-organization">
         <div className={styles.sectionHeader}>

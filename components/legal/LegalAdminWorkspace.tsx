@@ -26,6 +26,8 @@ const translationStatusLabel = (status?: string) => status ? translationStatusLa
 export default function LegalAdminWorkspace() {
   const [docs, setDocs] = useState<Doc[]>([]); const [drafts, setDrafts] = useState<Draft[]>([]); const [versions, setVersions] = useState<Version[]>([]);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
+  const [clubTemplatePurposes, setClubTemplatePurposes] = useState<string[]>([]);
+  const [templateClubId, setTemplateClubId] = useState("");
   const [selected, setSelected] = useState(""); const [locale, setLocale] = useState("fr"); const [form, setForm] = useState<Translation>({});
   const [message, setMessage] = useState(""); const [summary, setSummary] = useState(""); const [busy, setBusy] = useState(false);
   const [variables, setVariables] = useState<string[]>([]);
@@ -52,10 +54,13 @@ export default function LegalAdminWorkspace() {
     const response = await fetch("/api/admin/legal", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
     const data = await response.json(); if (!response.ok) throw new Error(data.error);
     setDocs(data.documents); setDrafts(data.drafts); setVersions(data.versions); setClubs(data.clubs ?? []);
+    setClubTemplatePurposes(data.club_template_purposes ?? []);
     setEnforcementEnabled(data.enforcement_enabled); setActivationConfirmed(false);
   }, []);
   useEffect(() => { load().catch((e) => setMessage(String(e))); }, [load]);
   const document = docs.find((d) => d.id === selected);
+  const selectedClubTemplateDocuments = docs.filter((d) => d.scope === "club" && d.club_id === templateClubId
+    && clubTemplatePurposes.includes(d.purpose_key));
   const audienceConfigured = document?.applicability.status === "approved" && document.applicability.rule === "all_members";
   const { groups, fixtures } = useMemo(() => legalAdminGroups(docs), [docs]);
   const filteredGroups = useMemo(() => groups.filter((group) => {
@@ -116,7 +121,8 @@ export default function LegalAdminWorkspace() {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       const response = await fetch("/api/admin/legal", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      await load(); setMessage("Enregistré."); if (data.id) setSelected(data.id);
+      await load(); setMessage(payload.operation === "create_club_templates" ? "Les trois brouillons du club sont créés et restent inactifs." : "Enregistré.");
+      if (data.id) setSelected(data.id);
     } catch (error) {
       if (["publish", "set_enforcement", "set_document_active"].includes(String(payload.operation))) {
         setPublicationConfirmed(false); setActivationConfirmed(false); await load().catch(() => undefined);
@@ -164,6 +170,19 @@ export default function LegalAdminWorkspace() {
         onClick={() => mutate({ operation: "set_enforcement", enabled: !enforcementEnabled, expected_enabled: enforcementEnabled })}>
         {enforcementEnabled ? "Désactiver le contrôle" : "Activer le contrôle"}</button>
     </section>
+    {clubTemplatePurposes.length === 3 && <section className={styles.panel}>
+      <div className={styles.sectionHeader}><div><h2>Documents d’un nouveau club</h2><span>3 modèles disponibles</span></div></div>
+      <p>Après la création du club, prépare ses trois documents à partir des modèles. Ils restent inactifs jusqu’à leur revue, publication et activation.</p>
+      <label>Club <select disabled={busy} value={templateClubId} onChange={(event) => setTemplateClubId(event.target.value)}>
+        <option value="">Choisir un club</option>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+      </select></label>
+      {templateClubId && selectedClubTemplateDocuments.length > 0 && <p role="status">{selectedClubTemplateDocuments.length} document{selectedClubTemplateDocuments.length > 1 ? "s" : ""} déjà créé{selectedClubTemplateDocuments.length > 1 ? "s" : ""} pour ce club.</p>}
+      <div className={styles.actionRow}><button className={styles.primaryButton}
+        disabled={busy || !templateClubId || selectedClubTemplateDocuments.length > 0}
+        onClick={() => mutate({ operation: "create_club_templates", club_id: templateClubId })}>
+        <Plus size={16} aria-hidden="true" /> Créer les 3 brouillons du club
+      </button></div>
+    </section>}
     <section className={styles.panel}>
       <div className={styles.sectionHeader}><div><h2>Créer un brouillon</h2><span>Nouveau document</span></div></div>
       <div className={styles.formGrid}>

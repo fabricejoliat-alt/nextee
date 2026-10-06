@@ -65,6 +65,22 @@
   font-weight:650;
 }
 
+.successAlert{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:13px 15px;
+  border:1px solid #cbdcc8;
+  border-radius:12px;
+  background:#f4f8f2;
+  color:#35483b;
+  font-size:13px;
+  font-weight:650;
+}
+.successAlert a{color:inherit;font-weight:800;text-decoration:underline;text-underline-offset:2px}
+@media(max-width:680px){.successAlert{align-items:flex-start;flex-direction:column}}
+
 .creationCard,.listCard{
   border:1px solid #e1e7e0;
   border-radius:16px;

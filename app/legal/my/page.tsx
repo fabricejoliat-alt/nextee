@@ -44,8 +44,8 @@ export default function MyLegalPage() {
       ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
     const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Erreur"); return data;
   }, []);
-  const refresh = useCallback(async () => {
-    setAccess({ state: "loading" });
+  const refresh = useCallback(async (background = false) => {
+    if (!background) setAccess({ state: "loading" });
     try {
       const [d, h, c, gate, redirect] = await Promise.all([
         api("/api/legal/documents"), api("/api/legal/history"), api("/api/legal/children"),
@@ -61,9 +61,20 @@ export default function MyLegalPage() {
       setLoading(false);
     } catch (error) { setAccess({ state: "error" }); setLoading(false); throw error; }
   }, [api]);
-  useEffect(() => { refresh().catch((e) => { setStatus(String(e)); setLoading(false); }); const onFocus = () => { if (document.visibilityState === "visible") refresh().catch(() => {}); };
-    window.addEventListener("focus", onFocus); document.addEventListener("visibilitychange", onFocus);
-    return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); }; }, [refresh]);
+  useEffect(() => {
+    let initialRefreshInProgress = true;
+    let focusRefreshInProgress = false;
+    refresh().catch((e) => { setStatus(String(e)); setLoading(false); })
+      .finally(() => { initialRefreshInProgress = false; });
+    const onFocus = () => {
+      if (document.visibilityState !== "visible" || initialRefreshInProgress || focusRefreshInProgress) return;
+      focusRefreshInProgress = true;
+      refresh(true).catch(() => {}).finally(() => { focusRefreshInProgress = false; });
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+  }, [refresh]);
   useEffect(() => { if (!presentation) return; const overflow = document.body.style.overflow; document.body.style.overflow = "hidden"; closeButton.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { setPresentation(null); triggerButton.current?.focus(); } };
     window.addEventListener("keydown", onKeyDown); return () => { document.body.style.overflow = overflow; window.removeEventListener("keydown", onKeyDown); }; }, [presentation]);
