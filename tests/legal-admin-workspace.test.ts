@@ -9,7 +9,7 @@ async function setup(){
  const mutation=deferred<Response>();
  const h=coachComponentHarness('components/legal/LegalAdminWorkspace.tsx',{fetch:async(_input,init)=>init?.method==='POST'?mutation.promise:Response.json({documents:[doc],drafts:[draft],versions:[],clubs:[{id:'A',name:'Fixture club'}]})});
  for(let i=0;i<5;i++){h.render();await flush();}
- button(h.render(),'fixture terms Conditions d’utilisation').props.onClick();h.render();h.render();
+ elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();h.render();h.render();
  return {h,mutation};
 }
 test('Admin cannot type into fields or switch document language while a save refresh is pending',async()=>{
@@ -35,9 +35,36 @@ test('Admin displays review states in French without changing stored values',asy
  const h=coachComponentHarness('components/legal/LegalAdminWorkspace.tsx',{fetch:async()=>Response.json({documents:[{...doc,applicability:{status:'unapproved'}}],drafts:[pendingDraft],versions:[],clubs:[{id:'A',name:'Fixture club'}]})});
  try{
   for(let i=0;i<5;i++){h.render();await flush();}
-  button(h.render(),'fixture terms Conditions d’utilisation').props.onClick();
+  elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();
   const tree=h.render();
   assert.ok(button(tree,'EN · à relire'));
   assert.match(textContent(tree).replace(/\s+/g,' '),/Club · player · règle à valider/);
+ }finally{h.cleanup();}
+});
+test('three club copies have one model row and save one shared text request',async()=>{
+ const documents=['Sion','Augusta','Valais'].map((club,index)=>({...doc,id:`club-${index}`,document_key:`activitee_autorisation_parentale_${club.toLowerCase()}`,purpose_key:'service.parent_authorization',club_id:`club-${index}`}));
+ const draftRows=documents.map((item)=>({...draft,document_id:item.id}));
+ const posts:Array<Record<string,unknown>>=[];
+ const h=coachComponentHarness('components/legal/LegalAdminWorkspace.tsx',{fetch:async(_input,init)=>{
+  if(init?.method==='POST'){posts.push(JSON.parse(String(init.body)));return Response.json({source_revision:2,updated_documents:3});}
+  return Response.json({documents,drafts:draftRows,versions:[],clubs:documents.map((item,index)=>({id:item.club_id,name:['Sion','Augusta','Valais'][index]}))});
+ }});
+ try{
+  for(let i=0;i<5;i++){h.render();await flush();}
+  const row=elements(h.render()).find((node)=>node.type==='button'&&textContent(node).includes('Autorisation parentale')&&textContent(node).includes('3 clubs'));
+  assert.ok(row);row.props.onClick();h.render();h.render();
+  assert.equal(elements(h.render()).filter((node)=>node.type==='tr').length,2);
+  const clubSelect=()=>{const label=elements(h.render()).find((node)=>node.type==='label'&&textContent(node).includes('Club concerné'));assert.ok(label);return elements(label).find((node)=>node.type==='select')!;};
+  assert.equal(clubSelect().props.disabled,false);
+  field(h.render(),'Titre').props.onChange({target:{value:'Fictional edit'}});
+  assert.equal(clubSelect().props.disabled,true);
+  button(h.render(),'Annuler les modifications').props.onClick();
+  assert.equal(clubSelect().props.disabled,false);
+  const save=button(h.render(),'Enregistrer dans 3 clubs');
+  assert.equal(save.props.disabled,false);
+  await save.props.onClick();
+  assert.equal(posts.length,1);
+  assert.equal(posts[0].group_purpose,'service.parent_authorization');
+  assert.deepEqual(Object.keys(posts[0].expected_drafts as object).sort(),documents.map((item)=>item.id).sort());
  }finally{h.cleanup();}
 });

@@ -1,4 +1,5 @@
 import { legalTranslationReviewMatches } from "@/lib/legalTranslationReview";
+import { sharedClubPurposeLabels } from "@/lib/legalAdminGroups";
 import { NextResponse } from "next/server";
 import { legalAdmin, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
       return reply({ id: created.data }, 201);
     }
     const documentId = String(input.document_id ?? "");
-    const doc = await db.from("legal_documents").select("id,required_locales,active").eq("id", documentId).maybeSingle();
+    const doc = await db.from("legal_documents").select("id,document_key,purpose_key,scope,required_locales,active").eq("id", documentId).maybeSingle();
     if (doc.error || !doc.data) return reply({ error: "Document missing" }, 404);
     if (input.operation === "save_variables") {
       const variables = input.variables;
@@ -62,22 +63,30 @@ export async function POST(req: Request) {
     if (input.operation === "save_translation") {
       const locale = String(input.locale ?? "");
       if (!locales.includes(locale)) return reply({ error: "Invalid locale" }, 400);
-      const current = await db.from("legal_drafts").select("*").eq("document_id", documentId).single();
-      if (current.error) throw current.error;
-      if (Number(input.expected_revision) !== current.data.source_revision) return reply({ error: "Draft changed; reload" }, 409);
-      const old = current.data.translations ?? {};
-      const sourceRevision = locale === "fr" ? current.data.source_revision + 1 : current.data.source_revision;
-      const translations: Record<string, unknown> = { ...old };
-      if (locale === "fr") for (const lang of ["en","de","it"]) {
-        if (translations[lang] && typeof translations[lang] === "object") translations[lang] = { ...translations[lang] as object, status: "needs_review" };
+      const groupPurpose = input.group_purpose == null ? null : String(input.group_purpose);
+      let expected: Record<string, unknown>;
+      if (groupPurpose) {
+        if (!Object.hasOwn(sharedClubPurposeLabels, groupPurpose) || doc.data.scope !== "club"
+          || !doc.data.document_key.startsWith("activitee_") || doc.data.purpose_key !== groupPurpose
+          || !input.expected_drafts || typeof input.expected_drafts !== "object" || Array.isArray(input.expected_drafts))
+          return reply({ error: "Invalid shared draft" }, 400);
+        expected = input.expected_drafts;
+        const selected = expected[documentId] as { source_revision?: number } | undefined;
+        if (!selected || selected.source_revision !== Number(input.expected_revision))
+          return reply({ error: "Draft changed; reload" }, 409);
+      } else {
+        const current = await db.from("legal_drafts").select("source_revision,translations").eq("document_id", documentId).single();
+        if (current.error) throw current.error;
+        if (Number(input.expected_revision) !== current.data.source_revision) return reply({ error: "Draft changed; reload" }, 409);
+        expected = { [documentId]: { source_revision: current.data.source_revision, translations: current.data.translations } };
       }
-      translations[locale] = { title: String(input.title ?? "").trim(), body: String(input.body ?? "").trim(),
-        action_label: String(input.action_label ?? "").trim(), status: "needs_review", source_revision: sourceRevision };
-      const saved = await db.from("legal_drafts").update({ translations, source_revision: sourceRevision, updated_by: actor.id,
-        updated_at: new Date().toISOString() }).eq("document_id", documentId).eq("source_revision", current.data.source_revision).eq("translations", JSON.stringify(current.data.translations)).select("document_id");
-      if (saved.error) throw saved.error;
-      if (!saved.data?.length) return reply({ error: "Concurrent draft edit" }, 409);
-      return reply({ source_revision: sourceRevision });
+      const saved = await db.rpc("save_legal_draft_text_checked", {
+        p_expected: expected, p_group_purpose: groupPurpose, p_locale: locale,
+        p_title: String(input.title ?? ""), p_body: String(input.body ?? ""),
+        p_action_label: String(input.action_label ?? ""), p_actor: actor.id,
+      });
+      if (saved.error) return reply({ error: saved.error.message }, 409);
+      return reply({ source_revision: saved.data?.[documentId], updated_documents: Object.keys(saved.data ?? {}).length });
     }
     if (input.operation === "approve_translation") {
       const locale = String(input.locale ?? "");
@@ -89,11 +98,10 @@ export async function POST(req: Request) {
         !legalTranslationReviewMatches(input.expected_translation, tr))
         return reply({ error: "Translation changed; reload and review" }, 409);
       if (!tr || tr.source_revision !== current.data.source_revision || !tr.title || !tr.body) return reply({ error: "Translation needs review" }, 409);
-      const translations = { ...current.data.translations, [locale]: { ...tr, status: "approved", approved_by: actor.id, approved_at: new Date().toISOString() } };
-      const saved = await db.from("legal_drafts").update({ translations, updated_by: actor.id }).eq("document_id", documentId)
-        .eq("source_revision", current.data.source_revision).eq("translations", JSON.stringify(current.data.translations)).select("document_id");
-      if (saved.error) throw saved.error;
-      if (!saved.data?.length) return reply({ error: "Concurrent draft edit" }, 409);
+      const saved = await db.rpc("approve_legal_draft_translation_checked", {
+        p_document: documentId, p_locale: locale, p_expected: input.expected_translation, p_actor: actor.id,
+      });
+      if (saved.error) return reply({ error: saved.error.message }, 409);
       return reply({ ok: true });
     }
     if (input.operation === "summary") {

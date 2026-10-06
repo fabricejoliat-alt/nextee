@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, FileText, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { legalAdminGroups } from "@/lib/legalAdminGroups";
 import styles from "./LegalAdminWorkspace.module.css";
 
 type Translation = { title?: string; body?: string; action_label?: string; status?: string; source_revision?: number };
@@ -33,6 +34,7 @@ export default function LegalAdminWorkspace() {
   const [message, setMessage] = useState(""); const [summary, setSummary] = useState(""); const [busy, setBusy] = useState(false);
   const [variables, setVariables] = useState<string[]>([]);
   const [publicationConfirmed, setPublicationConfirmed] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   const [key, setKey] = useState(""); const [kind, setKind] = useState("terms"); const [action, setAction] = useState("accept");
   const [audience, setAudience] = useState("player,parent,coach,manager");
   const [purpose, setPurpose] = useState(""); const [scope, setScope] = useState("platform");
@@ -57,12 +59,24 @@ export default function LegalAdminWorkspace() {
   }, []);
   useEffect(() => { load().catch((e) => setMessage(String(e))); }, [load]);
   const document = docs.find((d) => d.id === selected);
-  const filteredDocs = useMemo(() => docs.filter((doc) => {
+  const { groups, fixtures } = useMemo(() => legalAdminGroups(docs), [docs]);
+  const filteredGroups = useMemo(() => groups.filter((group) => {
     const query = documentSearch.trim().toLocaleLowerCase("fr");
-    return !query || [doc.document_key, doc.purpose_key, kindLabels[doc.kind] ?? doc.kind,
-      clubs.find((club) => club.id === doc.club_id)?.name ?? ""].some((value) => value.toLocaleLowerCase("fr").includes(query));
-  }), [clubs, docs, documentSearch]);
+    return !query || [group.label, group.key, ...group.documents.flatMap((doc) => [doc.document_key, doc.purpose_key,
+      kindLabels[doc.kind] ?? doc.kind, clubs.find((club) => club.id === doc.club_id)?.name ?? ""])].some((value) => value.toLocaleLowerCase("fr").includes(query));
+  }), [clubs, groups, documentSearch]);
+  const selectedGroup = groups.find((group) => group.documents.some((doc) => doc.id === selected));
   const draft = drafts.find((d) => d.document_id === selected);
+  const sharedDrafts = selectedGroup?.shared ? selectedGroup.documents.map((doc) => drafts.find((item) => item.document_id === doc.id)) : [];
+  const sharedTextAligned = Boolean(selectedGroup?.shared && draft && sharedDrafts.every((item) => item
+    && item.source_revision === draft.source_revision
+    && JSON.stringify([...item.allowed_variables].sort()) === JSON.stringify([...draft.allowed_variables].sort())
+    && ["title", "body", "action_label"].every((field) => (item.translations?.[locale]?.[field as keyof Translation] ?? "")
+      === (draft.translations?.[locale]?.[field as keyof Translation] ?? ""))));
+  const sharedExpectedDrafts = selectedGroup?.shared ? Object.fromEntries(selectedGroup.documents.map((doc) => {
+    const item = drafts.find((candidate) => candidate.document_id === doc.id);
+    return [doc.id, item ? { source_revision: item.source_revision, translations: item.translations } : null];
+  })) : null;
   const history = useMemo(() => versions.filter((v) => v.document_id === selected), [versions, selected]);
   const previous = history[0];
   const expectedPublication = document && draft ? {
@@ -79,7 +93,7 @@ export default function LegalAdminWorkspace() {
     (form.body ?? "") !== (draft.translations?.[locale]?.body ?? "") ||
     (form.action_label ?? "") !== (draft.translations?.[locale]?.action_label ?? "")));
   const unsavedPublicationChanges = Boolean(draft && (
-    summary.trim() !== draft.change_summary ||
+    summary.trim() !== draft.change_summary.trim() ||
     JSON.stringify([...variables].sort()) !== JSON.stringify([...draft.allowed_variables].sort()) ||
     (form.title ?? "") !== (draft.translations?.[locale]?.title ?? "") ||
     (form.body ?? "") !== (draft.translations?.[locale]?.body ?? "") ||
@@ -89,6 +103,7 @@ export default function LegalAdminWorkspace() {
     return translation?.status === "approved" && translation.source_revision === draft.source_revision;
   }));
   useEffect(() => { setPublicationConfirmed(false); }, [selected, document, draft, previous]);
+  useEffect(() => { setEditorDirty(false); }, [selected, draft]);
   useEffect(() => { setForm(draft?.translations?.[locale] ?? {}); }, [draft, locale]);
   useEffect(() => { setSummary(draft?.change_summary ?? ""); setVariables(draft?.allowed_variables ?? []); }, [draft]);
   async function mutate(payload: Record<string, unknown>) {
@@ -129,43 +144,55 @@ export default function LegalAdminWorkspace() {
         required })}><Plus size={16} aria-hidden="true" /> Créer le brouillon</button>
     </section>
     <section className={styles.workspaceGrid}>
-      <div className={styles.panel}><div className={styles.sectionHeader}><div><h2>Documents</h2><span>{docs.length} document{docs.length > 1 ? "s" : ""}</span></div></div>
-        <label className={styles.searchField}><Search size={16} aria-hidden="true" /><input disabled={busy} value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} placeholder="Rechercher un document" aria-label="Rechercher un document" /></label>
-        {filteredDocs.length ? <div className={styles.tableFrame}><table className={styles.table}><thead><tr><th>Document</th><th>Portée</th><th>État</th></tr></thead><tbody>
-          {filteredDocs.map((d) => <tr key={d.id} className={selected === d.id ? styles.selectedRow : ""}>
-            <td data-label="Document"><button type="button" disabled={busy} className={styles.docSelect} aria-current={selected === d.id ? "true" : undefined} onClick={() => setSelected(d.id)}>{d.document_key}<span>{kindLabels[d.kind] ?? d.kind}</span></button></td>
-            <td data-label="Portée">{d.scope === "club" ? clubs.find((club) => club.id === d.club_id)?.name ?? "Club" : "Plateforme"}</td>
-            <td data-label="État"><span className={d.active ? styles.activeBadge : styles.inactiveBadge}>{d.active ? "Actif" : "Inactif"}</span></td>
-          </tr>)}</tbody></table></div> : <p className={styles.emptyState}>{docs.length ? "Aucun document ne correspond à cette recherche." : "Aucun document pour le moment."}</p>}
+      <div className={styles.panel}><div className={styles.sectionHeader}><div><h2>Modèles ActiviTee</h2><span>{groups.length} modèle{groups.length > 1 ? "s" : ""}</span></div></div>
+        <label className={styles.searchField}><Search size={16} aria-hidden="true" /><input disabled={busy} value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} placeholder="Rechercher un modèle ou un club" aria-label="Rechercher un modèle ou un club" /></label>
+        {filteredGroups.length ? <div className={styles.tableFrame}><table className={styles.table}><thead><tr><th>Modèle</th><th>Portée</th><th>État</th></tr></thead><tbody>
+          {filteredGroups.map((group) => <tr key={group.key} className={selectedGroup?.key === group.key ? styles.selectedRow : ""}>
+            <td data-label="Modèle"><button type="button" disabled={busy} className={styles.docSelect} aria-current={selectedGroup?.key === group.key ? "true" : undefined} onClick={() => setSelected(group.documents[0].id)}>{group.label}<span>{group.shared ? `${group.documents.length} clubs · ${kindLabels[group.documents[0].kind] ?? group.documents[0].kind}` : group.documents[0].document_key}</span></button></td>
+            <td data-label="Portée">{group.shared ? `${group.documents.length} clubs` : group.documents[0].scope === "club" ? clubs.find((club) => club.id === group.documents[0].club_id)?.name ?? "Club" : "Plateforme"}</td>
+            <td data-label="État"><span className={group.documents.every((doc) => doc.active) ? styles.activeBadge : styles.inactiveBadge}>{group.documents.every((doc) => doc.active) ? "Actif" : group.documents.some((doc) => doc.active) ? "Mixte" : "Inactif"}</span></td>
+          </tr>)}</tbody></table></div> : <p className={styles.emptyState}>{groups.length ? "Aucun modèle ne correspond à cette recherche." : "Aucun modèle pour le moment."}</p>}
+        {fixtures.length > 0 && <details><summary>{fixtures.length} documents de test masqués</summary>
+          <div className={styles.fixtureList}>{fixtures.map((item) => <button key={item.id} type="button" disabled={busy} onClick={() => setSelected(item.id)}>{item.document_key}</button>)}</div>
+        </details>}
       </div>
       <div className={`${styles.panel} ${styles.editorPanel}`}>
         {!document ? <p>Sélectionne un document.</p> : <>
-          <h2>{document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · règle {ruleStatusLabel(document.applicability.status)}</p>
+          <h2>{selectedGroup?.label ?? document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · règle {ruleStatusLabel(document.applicability.status)}</p>
+          {selectedGroup?.shared && <div className={styles.clubSwitcher}><label>Club concerné <select disabled={busy || editorDirty} value={selected} onChange={(event) => setSelected(event.target.value)}>{selectedGroup.documents.map((item) => <option key={item.id} value={item.id}>{clubs.find((club) => club.id === item.club_id)?.name ?? item.document_key}</option>)}</select></label>
+            <p>Le texte peut être enregistré pour tous les clubs. La règle, l’approbation et la publication se contrôlent ensuite pour chaque club.</p>
+            {editorDirty && <><p role="status">Enregistre ou annule tes modifications avant de changer de club.</p><button type="button" disabled={busy} onClick={() => {
+              setForm(draft?.translations?.[locale] ?? {}); setSummary(draft?.change_summary ?? "");
+              setVariables(draft?.allowed_variables ?? []); setRuleNote(""); setEditorDirty(false);
+            }}>Annuler les modifications</button></>}
+            {!sharedTextAligned && <p role="status">Les brouillons de ce modèle diffèrent entre clubs. Vérifie-les avant une sauvegarde commune.</p>}
+          </div>}
           <fieldset className={styles.fieldset}><legend>Variables du modèle</legend>
             <p>Les valeurs viennent des profils et du club au moment de l’affichage. Modifier cette liste relance la revue des quatre langues.</p>
             {(["child_name", "club_name", "user_name"] as const).map((name) => <label key={name} style={{ marginRight: 16 }}>
-              <input disabled={busy} type="checkbox" checked={variables.includes(name)} onChange={(event) => setVariables((current) => event.target.checked
-                ? [...current, name] : current.filter((item) => item !== name))} /> {name}</label>)}
+              <input disabled={busy} type="checkbox" checked={variables.includes(name)} onChange={(event) => { setEditorDirty(true); setVariables((current) => event.target.checked
+                ? [...current, name] : current.filter((item) => item !== name)); }} /> {name}</label>)}
             <div className={styles.actionRow}><button disabled={busy || !draft || JSON.stringify([...variables].sort()) === JSON.stringify([...(draft?.allowed_variables ?? [])].sort())}
               onClick={() => mutate({ operation: "save_variables", document_id: selected, expected_revision: draft?.source_revision,
                 variables })}>Enregistrer les variables</button></div>
           </fieldset>
           <div className={styles.languageTabs} role="tablist" aria-label="Langues">{langs.map((l) => <button disabled={busy} role="tab" aria-selected={l === locale} key={l} onClick={() => setLocale(l)}>{l.toUpperCase()} · {translationStatusLabel(draft?.translations?.[l]?.status)}</button>)}</div>
-          <label style={{ display: "block", marginTop: 16 }}>Titre<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.title ?? ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
-          <label style={{ display: "block", marginTop: 12 }}>Texte<textarea disabled={busy} style={{ display: "block", width: "100%", minHeight: 240 }} value={form.body ?? ""} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
-          <label style={{ display: "block", marginTop: 12 }}>Libellé de validation<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.action_label ?? ""} onChange={(e) => setForm({ ...form, action_label: e.target.value })} /></label>
-          <div className={styles.actionRow}><button className={styles.primaryButton} disabled={busy} onClick={() => mutate({ operation: "save_translation", document_id: selected, locale, ...form, expected_revision: draft?.source_revision })}>Enregistrer la langue</button>
+          <label style={{ display: "block", marginTop: 16 }}>Titre<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.title ?? ""} onChange={(e) => { setEditorDirty(true); setForm({ ...form, title: e.target.value }); }} /></label>
+          <label style={{ display: "block", marginTop: 12 }}>Texte<textarea disabled={busy} style={{ display: "block", width: "100%", minHeight: 240 }} value={form.body ?? ""} onChange={(e) => { setEditorDirty(true); setForm({ ...form, body: e.target.value }); }} /></label>
+          <label style={{ display: "block", marginTop: 12 }}>Libellé de validation<input disabled={busy} style={{ display: "block", width: "100%" }} value={form.action_label ?? ""} onChange={(e) => { setEditorDirty(true); setForm({ ...form, action_label: e.target.value }); }} /></label>
+          <div className={styles.actionRow}><button className={styles.primaryButton} disabled={busy || Boolean(selectedGroup?.shared && !sharedTextAligned)} onClick={() => mutate({ operation: "save_translation", document_id: selected, locale, ...form, expected_revision: draft?.source_revision,
+            ...(selectedGroup?.shared ? { group_purpose: selectedGroup.key, expected_drafts: sharedExpectedDrafts } : {}) })}>{selectedGroup?.shared ? `Enregistrer dans ${selectedGroup.documents.length} clubs` : "Enregistrer la langue"}</button>
           <button disabled={busy || unsavedTranslationChanges || !draft?.translations?.[locale]} onClick={() => mutate({ operation: "approve_translation", document_id: selected, locale, expected_revision: draft?.source_revision, expected_translation: draft?.translations?.[locale] })}>Approuver</button>
           {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await fetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
           <details><summary>Aperçu utilisateur</summary><h3>{form.title}</h3><p style={{ whiteSpace: "pre-wrap" }}>{form.body}</p><button disabled>{form.action_label}</button></details>
           <details><summary>Règle d’applicabilité (revue juridique)</summary>
             <p>Indiquer la juridiction, la base, l’âge/capacité, la qualité du représentant et la fonction concernée dans une configuration relue. Aucune règle universelle n’est préremplie.</p>
             <label>Règle <select disabled={busy} value={ruleType} onChange={(e) => setRuleType(e.target.value)}><option value="manual_review_required">À implémenter après revue</option><option value="all_members">Tous les membres actifs de l’audience</option></select></label>
-            <textarea disabled={busy} aria-label="Justification de la revue juridique" placeholder="Référence et justification de la revue juridique" value={ruleNote} onChange={(e) => setRuleNote(e.target.value)} style={{ width: "100%" }} />
+            <textarea disabled={busy} aria-label="Justification de la revue juridique" placeholder="Référence et justification de la revue juridique" value={ruleNote} onChange={(e) => { setEditorDirty(true); setRuleNote(e.target.value); }} style={{ width: "100%" }} />
             <button disabled={busy || ruleNote.trim().length < 20} onClick={() => mutate({ operation: "review_rule", document_id: selected, note: ruleNote,
               configuration: { status: "approved", rule: ruleType, rationale: ruleNote } })}>Enregistrer la revue</button>
           </details>
-          <h3>Publication</h3><label>Résumé des changements<textarea disabled={busy} style={{ display: "block", width: "100%" }} value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
+          <h3>Publication</h3><label>Résumé des changements<textarea disabled={busy} style={{ display: "block", width: "100%" }} value={summary} onChange={(e) => { setEditorDirty(true); setSummary(e.target.value); }} /></label>
           <button disabled={busy} onClick={() => mutate({ operation: "summary", document_id: selected, summary })}>Enregistrer le résumé</button>
           <details><summary>Comparer et publier</summary>
             <p>Version à créer : {previous ? previous.version_number + 1 : 1}. Statut : {document.active ? "actif" : "inactif"}. La publication ne change pas ce statut.</p>

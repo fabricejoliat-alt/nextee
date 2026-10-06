@@ -8,7 +8,9 @@ function route() {
  const db=createClient('https://test.invalid','fixture-key',{auth:{persistSession:false},global:{fetch:async(input,init)=>{
    const url=new URL(String(input));const method=init?.method??'GET';const body=init?.body?JSON.parse(String(init.body)):{};
    requests.push({url,method,body});
-   const result=url.pathname.endsWith('legal_documents')?{id:'fixture',active:false,required_locales:['fr','en','de','it']}:
+   const result=url.pathname.endsWith('legal_documents')?{id:'fixture',document_key:'activitee_autorisation_parentale_sion',purpose_key:'service.parent_authorization',scope:'club',active:false,required_locales:['fr','en','de','it']}:
+     url.pathname.endsWith('save_legal_draft_text_checked')?{fixture:4}:
+     url.pathname.endsWith('approve_legal_draft_translation_checked')?true:
      method==='GET'?{document_id:'fixture',source_revision:3,translations:{fr:translation}}:[{document_id:'fixture'}];
    return Response.json(result);
  }}});
@@ -17,24 +19,33 @@ function route() {
  });
  return {requests,post:(body:object)=>handler.POST(new Request('http://test.invalid/api/admin/legal',{method:'POST',body:JSON.stringify({document_id:'fixture',locale:'fr',...body})}))};
 }
-test('saving text serializes the JSON concurrency filter for real PostgREST request construction',async()=>{
+test('saving text sends the exact draft snapshot in the RPC body rather than a long URL filter',async()=>{
  const r=route();const response=await r.post({operation:'save_translation',expected_revision:3,title:'Revised',body:'Fixture v2',action_label:'Test'});
- assert.equal(response.status,200);const write=r.requests.find(r=>r.method==='PATCH')!;
- const filter=write.url.searchParams.get('translations')!;assert.deepEqual(JSON.parse(filter.slice(3)),{fr:translation});
- assert.equal((write.body.translations as {fr:{status:string}}).fr.status,'needs_review');
+ assert.equal(response.status,200);const write=r.requests.find(r=>r.url.pathname.endsWith('save_legal_draft_text_checked'))!;
+ assert.equal(write.method,'POST');assert.equal(write.url.searchParams.has('translations'),false);
+ assert.deepEqual(write.body.p_expected,{fixture:{source_revision:3,translations:{fr:translation}}});
+ assert.equal(write.body.p_group_purpose,null);
 });
 test('approval rejects text modified since the reviewer opened it and performs no write',async()=>{
  const r=route();const response=await r.post({operation:'approve_translation',expected_revision:3,expected_translation:{...translation,body:'An earlier text'}});
- assert.equal(response.status,409);assert.equal(r.requests.filter(r=>r.method==='PATCH').length,0);
+ assert.equal(response.status,409);assert.equal(r.requests.filter(r=>r.url.pathname.endsWith('approve_legal_draft_translation_checked')).length,0);
 });
 test('approval without a reviewed snapshot is denied for an old client',async()=>{
  const r=route();assert.equal((await r.post({operation:'approve_translation'})).status,409);
- assert.equal(r.requests.filter(r=>r.method==='PATCH').length,0);
+ assert.equal(r.requests.filter(r=>r.url.pathname.endsWith('approve_legal_draft_translation_checked')).length,0);
 });
 test('approval records exactly the reviewed text and preserves optimistic concurrency',async()=>{
  const r=route();const response=await r.post({operation:'approve_translation',expected_revision:3,expected_translation:translation});
- assert.equal(response.status,200);const write=r.requests.find(r=>r.method==='PATCH')!;
- assert.deepEqual(JSON.parse(write.url.searchParams.get('translations')!.slice(3)),{fr:translation});
- assert.equal((write.body.translations as {fr:{body:string;approved_by:string}}).fr.body,translation.body);
- assert.equal((write.body.translations as {fr:{approved_by:string}}).fr.approved_by,'admin');
+ assert.equal(response.status,200);const write=r.requests.find(r=>r.url.pathname.endsWith('approve_legal_draft_translation_checked'))!;
+ assert.equal(write.method,'POST');assert.equal(write.url.searchParams.has('translations'),false);
+ assert.deepEqual(write.body.p_expected,translation);
+ assert.equal(write.body.p_actor,'admin');
+});
+test('shared club save carries all reviewed snapshots for one purpose',async()=>{
+ const r=route();const expected={fixture:{source_revision:3,translations:{fr:translation}},other:{source_revision:3,translations:{fr:translation}}};
+ const response=await r.post({operation:'save_translation',expected_revision:3,group_purpose:'service.parent_authorization',expected_drafts:expected,title:'Shared',body:'Fictional',action_label:'Test'});
+ assert.equal(response.status,200);
+ const write=r.requests.find(r=>r.url.pathname.endsWith('save_legal_draft_text_checked'))!;
+ assert.deepEqual(write.body.p_expected,expected);
+ assert.equal(write.body.p_group_purpose,'service.parent_authorization');
 });
