@@ -1,14 +1,14 @@
 # Testi giuridici ActiviTee — italiano
 
-Traduzione non approvata della revisione francese FR-2026-10-06-r7. Ogni blocco contiene titolo, etichetta dell'azione positiva e testo completo di una bozza canonica. I testi legati al club sono riutilizzati per Sion, Augusta e Centre de Performance Valais. I segnaposto restano invariati.
+Traduzione non approvata della revisione francese FR-2026-10-06-r8. Ogni blocco contiene titolo, etichetta dell'azione positiva e testo completo di una bozza canonica. I testi legati al club sono riutilizzati per Sion, Augusta e Centre de Performance Valais. I segnaposto restano invariati.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: Condizioni d'uso di ActiviTee
 Action: Accetto le condizioni d'uso di ActiviTee.
 
-1. Gestore e scopo
+1. Scopo e ambito di applicazione
 
-ActiviTee è gestita da Fabrice Joliat a titolo personale, Chemin de la Pavya 22, 1965 Savièse, Svizzera. L'applicazione aiuta i club a organizzare e seguire le attività sportive: calendario, allenamenti, competizioni, risultati, contenuti didattici, comunicazioni e documenti, secondo le funzionalità messe a disposizione dal club.
+L'applicazione aiuta i club a organizzare e seguire le attività sportive: calendario, allenamenti, competizioni, risultati, contenuti didattici, comunicazioni e documenti, secondo le funzionalità messe a disposizione dal club.
 
 Le presenti condizioni disciplinano l'uso personale del servizio. Sono distinte dal contratto commerciale tra ActiviTee e il club, dal regolamento del club e dalle regole proprie delle attività sportive. Il contratto del club disciplina in particolare la licenza annuale e la relativa fatturazione; le presenti condizioni disciplinano l'accesso e l'uso da parte delle persone alle quali è assegnato un account. Eventuali regole specifiche di un'organizzazione sportiva sono presentate nel contesto pertinente.
 
@@ -65,6 +65,10 @@ Una nuova versione delle condizioni viene identificata e accompagnata da un riep
 10. Diritto applicabile e risoluzione delle difficoltà
 
 Le presenti condizioni sono soggette al diritto svizzero, fatte salve le disposizioni imperative applicabili. I tribunali competenti sono determinati dalle norme di legge. Cercare una soluzione amichevole con il club o il gestore non priva l'utente dei propri rimedi giuridici.
+
+11. Gestore
+
+ActiviTee è gestita da Fabrice Joliat a titolo personale, Chemin de la Pavya 22, 1965 Savièse, Svizzera.
 
 <!-- key:activitee_notice_donnees_personnelles -->
 Title: Informativa sulla protezione dei dati di ActiviTee

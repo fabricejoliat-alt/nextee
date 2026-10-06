@@ -1,14 +1,14 @@
 # ActiviTee legal draft translations — English
 
-Unapproved translation of the French revision FR-2026-10-06-r7. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
+Unapproved translation of the French revision FR-2026-10-06-r8. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: ActiviTee Terms of Use
 Action: I accept the ActiviTee Terms of Use.
 
-1. Operator and purpose
+1. Purpose and scope
 
-ActiviTee is operated by Fabrice Joliat in his own name, Chemin de la Pavya 22, 1965 Savièse, Switzerland. The application helps clubs organise and follow sporting activities: schedules, training, competitions, results, educational content, communications and documents, according to the features made available by the club.
+The application helps clubs organise and follow sporting activities: schedules, training, competitions, results, educational content, communications and documents, according to the features made available by the club.
 
 These terms govern personal use of the service. They are separate from the commercial contract between ActiviTee and the club, the club's rules and the rules specific to sporting activities. The club contract covers, in particular, the annual licence and its billing; these terms cover access and use by people assigned an account. Any specific rules of a sporting organisation are presented to you in the relevant context.
 
@@ -65,6 +65,10 @@ A new version of the terms is identified and accompanied by a summary of changes
 10. Applicable law and resolution of difficulties
 
 These terms are governed by Swiss law, subject to applicable mandatory provisions. The competent courts are determined by law. Seeking an amicable solution with the club or operator does not deprive the user of legal remedies.
+
+11. Operator
+
+ActiviTee is operated by Fabrice Joliat in his own name, Chemin de la Pavya 22, 1965 Savièse, Switzerland.
 
 <!-- key:activitee_notice_donnees_personnelles -->
 Title: ActiviTee Privacy Notice

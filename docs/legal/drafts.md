@@ -1,6 +1,6 @@
 # Textes juridiques FR — version de rédaction du 5 octobre 2026
 
-**Révision : FR-2026-10-06-r7.** Cette révision précise que le club paie une licence annuelle à ActiviTee et supprime, dans la rubrique « Comptes et frais », les mentions d’un prix Marketplace et d’une éventuelle offre individuelle payante. Elle conserve l’option IA limitée à la reformulation manuelle d’un texte sélectionné et le seuil ZDR de 13 ans demandé par l’utilisateur. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
+**Révision : FR-2026-10-06-r8.** Cette révision place l’identification de l’exploitant dans une rubrique finale des conditions d’utilisation. Elle conserve la licence annuelle payée par le club, l’option IA limitée à la reformulation manuelle d’un texte sélectionné et le seuil ZDR de 13 ans demandé par l’utilisateur. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
 
 ## Version de travail FR du 5 octobre — lancement suisse
 
@@ -154,9 +154,9 @@ Chaque version indique sa date et les changements apportés. Lorsqu’un nouveau
 
 ### D. Conditions d’utilisation — rédaction FR proposée
 
-#### D1. Exploitant et objet
+#### D1. Objet et portée
 
-ActiviTee est exploité par Fabrice Joliat, en nom propre, Chemin de la Pavya 22, 1965 Savièse, Suisse. L’application aide les clubs à organiser et suivre les activités sportives : planning, entraînements, compétitions, résultats, contenus pédagogiques, échanges et documents, selon les fonctions ouvertes par le club.
+L’application aide les clubs à organiser et suivre les activités sportives : planning, entraînements, compétitions, résultats, contenus pédagogiques, échanges et documents, selon les fonctions ouvertes par le club.
 
 Ces conditions encadrent l’utilisation personnelle du service. Elles sont distinctes du contrat commercial conclu entre ActiviTee et le club, du règlement du club et des règles propres aux activités sportives. Le contrat du club règle notamment la licence annuelle et sa facturation ; ces conditions règlent les accès et l’usage des personnes auxquelles un compte est attribué. Les éventuelles règles spécifiques d’une organisation sportive vous sont présentées dans le cadre concerné.
 
@@ -213,6 +213,10 @@ Une nouvelle version des conditions est identifiée et accompagnée d’un résu
 #### D10. Droit applicable et règlement des difficultés
 
 Ces conditions sont soumises au droit suisse, sous réserve des dispositions impératives applicables. Les juridictions compétentes sont déterminées par les règles légales. Une démarche auprès du club ou de l’exploitant pour rechercher une solution amiable ne prive pas l’utilisateur de ses voies de droit.
+
+#### D11. Exploitant
+
+ActiviTee est exploité par Fabrice Joliat, en nom propre, Chemin de la Pavya 22, 1965 Savièse, Suisse.
 
 **Action de présentation : J’accepte les conditions d’utilisation d’ActiviTee.** La date et la version du document doivent être visibles avec cette action et provenir de la présentation serveur.
 

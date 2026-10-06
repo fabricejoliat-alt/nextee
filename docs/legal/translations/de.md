@@ -1,14 +1,14 @@
 # ActiviTee Rechtstexte — Deutsch
 
-Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-06-r7. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
+Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-06-r8. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: Nutzungsbedingungen von ActiviTee
 Action: Ich akzeptiere die Nutzungsbedingungen von ActiviTee.
 
-1. Betreiber und Zweck
+1. Zweck und Geltungsbereich
 
-ActiviTee wird von Fabrice Joliat im eigenen Namen betrieben, Chemin de la Pavya 22, 1965 Savièse, Schweiz. Die Anwendung hilft Clubs bei der Organisation und Begleitung sportlicher Aktivitäten: Planung, Training, Wettkämpfe, Ergebnisse, Lerninhalte, Austausch und Dokumente, je nach den vom Club freigeschalteten Funktionen.
+Die Anwendung hilft Clubs bei der Organisation und Begleitung sportlicher Aktivitäten: Planung, Training, Wettkämpfe, Ergebnisse, Lerninhalte, Austausch und Dokumente, je nach den vom Club freigeschalteten Funktionen.
 
 Diese Bedingungen regeln die persönliche Nutzung des Dienstes. Sie sind vom Geschäftsvertrag zwischen ActiviTee und dem Club, den Clubregeln und den Regeln für sportliche Aktivitäten zu unterscheiden. Der Clubvertrag regelt insbesondere die Jahreslizenz und deren Rechnungsstellung; diese Bedingungen regeln den Zugang und die Nutzung durch Personen, denen ein Konto zugeteilt wurde. Allfällige besondere Regeln einer Sportorganisation werden Ihnen im jeweiligen Zusammenhang angezeigt.
 
@@ -65,6 +65,10 @@ Eine neue Fassung der Bedingungen wird gekennzeichnet und mit einer Zusammenfass
 10. Anwendbares Recht und Beilegung von Schwierigkeiten
 
 Diese Bedingungen unterstehen schweizerischem Recht, vorbehaltlich anwendbarer zwingender Bestimmungen. Die zuständigen Gerichte bestimmen sich nach den gesetzlichen Regeln. Der Versuch, mit dem Club oder Betreiber eine einvernehmliche Lösung zu finden, nimmt den Nutzerinnen und Nutzern nicht ihre Rechtsmittel.
+
+11. Betreiber
+
+ActiviTee wird von Fabrice Joliat im eigenen Namen betrieben, Chemin de la Pavya 22, 1965 Savièse, Schweiz.
 
 <!-- key:activitee_notice_donnees_personnelles -->
 Title: Datenschutzerklärung von ActiviTee

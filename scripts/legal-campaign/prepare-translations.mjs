@@ -5,7 +5,7 @@ const sourcePath = process.argv[2];
 const outputPath = process.argv[3];
 if (!sourcePath || !outputPath) throw Error('Usage: prepare-translations.mjs source-fr.json output.json');
 const source = JSON.parse(await readFile(sourcePath, 'utf8'));
-if (source.revision !== 'FR-2026-10-05-r6' || source.documents?.length !== 12) throw Error('Unexpected French source');
+if (source.revision !== 'FR-2026-10-06-r8' || source.documents?.length !== 12) throw Error('Unexpected French source');
 const canonicalKeys = source.documents.slice(0, 6).map((doc) => doc.key);
 const normalize = (body) => {
   const lines = body.trim().split('\n');
@@ -58,7 +58,7 @@ for (const doc of source.documents) {
     if (expectedDigits(text) !== expectedDigits(frText)) throw Error(`${doc.key} ${locale}: numbers differ (${expectedDigits(text)} vs ${expectedDigits(frText)})`);
     if (urls(text) !== urls(frText)) throw Error(`${doc.key} ${locale}: URLs differ`);
     if (doc.body.includes('info@activitee.golf') && (text.match(/info@activitee\.golf/g) ?? []).length !== (frText.match(/info@activitee\.golf/g) ?? []).length) throw Error(`${doc.key} ${locale}: email count differs`);
-    if (canonical.endsWith('conditions_utilisation') && [...translation.body.matchAll(/^\d+\./gm)].length !== 10) throw Error(`${doc.key} ${locale}: terms section count`);
+    if (canonical.endsWith('conditions_utilisation') && [...translation.body.matchAll(/^\d+\./gm)].length !== 11) throw Error(`${doc.key} ${locale}: terms section count`);
     if (canonical.endsWith('notice_donnees_personnelles') && [...translation.body.matchAll(/^\d+\./gm)].length !== 10) throw Error(`${doc.key} ${locale}: privacy section count`);
     if (translation.body.length < doc.body.length * 0.7) throw Error(`${doc.key} ${locale}: text unexpectedly short`);
     item.locales[locale] = { ...translation, status: 'needs_review', sha256: createHash('sha256').update(text).digest('hex') };
