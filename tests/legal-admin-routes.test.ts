@@ -49,3 +49,26 @@ test('shared club save carries all reviewed snapshots for one purpose',async()=>
  assert.deepEqual(write.body.p_expected,expected);
  assert.equal(write.body.p_group_purpose,'service.parent_authorization');
 });
+test('global activation requires a prior state and uses the service-only RPC',async()=>{
+ const r=route();
+ assert.equal((await r.post({operation:'set_enforcement',enabled:true})).status,400);
+ assert.equal(r.requests.filter(item=>item.url.pathname.endsWith('set_legal_activation')).length,0);
+ assert.equal((await r.post({operation:'set_enforcement',enabled:true,expected_enabled:false})).status,200);
+ const write=r.requests.find(item=>item.url.pathname.endsWith('set_legal_activation'))!;
+ assert.deepEqual(write.body,{p_target:'enforcement',p_document:null,p_enabled:true,
+  p_expected:false,p_expected_version:null,p_actor:'admin'});
+});
+test('document activation carries the version the Admin inspected',async()=>{
+ const r=route();
+ assert.equal((await r.post({operation:'set_document_active',enabled:true,expected_enabled:false,expected_version:'v1'})).status,200);
+ const write=r.requests.find(item=>item.url.pathname.endsWith('set_legal_activation'))!;
+ assert.equal(write.body.p_target,'document');
+ assert.equal(write.body.p_document,'fixture');
+ assert.equal(write.body.p_expected_version,'v1');
+});
+test('audience configuration cannot claim a legal review through an old operation',async()=>{
+ const r=route();
+ assert.equal((await r.post({operation:'review_rule',note:'Fictional legal review',configuration:{status:'approved'}})).status,400);
+ assert.equal((await r.post({operation:'configure_audience',expected:{status:'unapproved'}})).status,200);
+ assert.equal(r.requests.filter(item=>item.url.pathname.endsWith('review_legal_applicability')).length,0);
+});

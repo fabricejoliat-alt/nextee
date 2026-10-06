@@ -9,7 +9,8 @@ const businessApis = ["/api/player/documents", "/api/coach/events/event", "/api/
 
 function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?: boolean; actor?: string | null; invalidBearer?: boolean } = {}) {
   const cookieActor = options.actor === undefined ? "coach" : options.actor;
-  const { db } = managerDatabase({ club_members: [] });
+  const { db } = managerDatabase({ club_members: [],
+    legal_enforcement_control: [{ singleton: true, enabled: options.enabled !== false }] });
   const checked: string[] = [];
   const proxy = loadManagerModule<{ proxy: (req: unknown) => Promise<Response>; config: { matcher: string[] } }>("proxy.ts", {
     "next/server": { NextResponse: {
@@ -19,12 +20,13 @@ function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?:
     } },
     "@supabase/ssr": { createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: cookieActor ? { id: cookieActor } : null } }) } }) },
     "@supabase/supabase-js": { createClient: () => ({ ...db, auth: { getUser: async () => ({ data: { user: options.invalidBearer ? null : { id: "bearer-actor" } }, error: options.invalidBearer ? {} : null }) } }) },
-    "@/lib/server/legalRequirements": { loadMissingLegalActions: async (_db: unknown, actor: string) => {
+    "@/lib/server/legalRequirements": { loadLegalGateStatus: async (_db: unknown, actor: string) => {
       checked.push(actor);
       if (options.failure) throw new Error("Unavailable");
-      return options.missing ? [{ document_id: "fictional-terms", version_id: "v2" }] : [];
+      return { enabled: options.enabled !== false,
+        missing: options.enabled === false ? [] : options.missing ? [{ document_id: "fictional-terms", version_id: "v2" }] : [] };
     } },
-  }, { LEGAL_ENFORCEMENT_ENABLED: options.enabled === false ? "false" : "true" });
+  });
   return { checked, config: proxy.config, run: (path: string, token?: string, method = "GET") => {
     const url = new URL(path, "https://test.invalid");
     return proxy.proxy({ url: String(url), method, nextUrl: Object.assign(url, { clone: () => new URL(url) }),
@@ -55,8 +57,8 @@ test("page refusal redirects to the recovery surface; accepted requests also avo
   assert.match(granted.headers.get("cache-control") ?? "", /no-store/);
 });
 
-test("gate off does not consult legal state, and recovery remains reachable", async () => {
-  const off = proxyFixture({ enabled: false, failure: true });
+test("gate off reads its database switch and leaves business routes reachable", async () => {
+  const off = proxyFixture({ enabled: false });
   for (const path of businessApis) assert.equal((await off.run(path)).status, 200);
   assert.deepEqual(off.checked, []);
   for (const path of ["/legal/my", "/api/legal/decide", "/api/legal/data-request", "/api/auth/me",

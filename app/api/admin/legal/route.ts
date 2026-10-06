@@ -11,14 +11,17 @@ export async function GET(req: Request) {
   try {
     const db = legalDb();
     if (!await legalAdmin(req, db)) return reply({ error: "Forbidden" }, 403);
-    const [docs, drafts, versions, clubs] = await Promise.all([
+    const [docs, drafts, versions, clubs, control] = await Promise.all([
       db.from("legal_documents").select("*").order("created_at", { ascending: false }),
       db.from("legal_drafts").select("*"),
       db.from("legal_versions").select("*").order("version_number", { ascending: false }),
       db.from("clubs").select("id,name").order("name", { ascending: true }),
+      db.from("legal_enforcement_control").select("enabled,updated_at").eq("singleton", true).single(),
     ]);
-    if (docs.error || drafts.error || versions.error || clubs.error) throw new Error(docs.error?.message ?? drafts.error?.message ?? versions.error?.message ?? clubs.error?.message);
-    return reply({ documents: docs.data, drafts: drafts.data, versions: versions.data, clubs: clubs.data });
+    if (docs.error || drafts.error || versions.error || clubs.error || control.error)
+      throw new Error(docs.error?.message ?? drafts.error?.message ?? versions.error?.message ?? clubs.error?.message ?? control.error?.message);
+    return reply({ documents: docs.data, drafts: drafts.data, versions: versions.data,
+      clubs: clubs.data, enforcement_enabled: control.data.enabled });
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Unavailable" }, 503); }
 }
 
@@ -43,6 +46,16 @@ export async function POST(req: Request) {
       });
       if (created.error) return reply({ error: created.error.message }, 409);
       return reply({ id: created.data }, 201);
+    }
+    if (input.operation === "set_enforcement") {
+      if (typeof input.enabled !== "boolean" || typeof input.expected_enabled !== "boolean")
+        return reply({ error: "Expected activation state required" }, 400);
+      const changed = await db.rpc("set_legal_activation", {
+        p_target: "enforcement", p_document: null, p_enabled: input.enabled,
+        p_expected: input.expected_enabled, p_expected_version: null, p_actor: actor.id,
+      });
+      if (changed.error) return reply({ error: changed.error.message }, 409);
+      return reply({ ok: true });
     }
     const documentId = String(input.document_id ?? "");
     const doc = await db.from("legal_documents").select("id,document_key,purpose_key,scope,required_locales,active").eq("id", documentId).maybeSingle();
@@ -111,14 +124,23 @@ export async function POST(req: Request) {
       if (saved.error) throw saved.error;
       return reply({ ok: true });
     }
-    if (input.operation === "review_rule") {
-      const note = String(input.note ?? "").trim();
-      const configuration = input.configuration;
-      if (note.length < 20 || !configuration || typeof configuration !== "object" || configuration.status !== "approved")
-        return reply({ error: "Reviewed rationale and approved configuration required" }, 400);
-      const reviewed = await db.rpc("review_legal_applicability", { p_document: documentId, p_reviewer: actor.id,
-        p_configuration: configuration, p_note: note });
-      if (reviewed.error) return reply({ error: reviewed.error.message }, 409);
+    if (input.operation === "configure_audience") {
+      if (!input.expected || typeof input.expected !== "object" || Array.isArray(input.expected))
+        return reply({ error: "Expected audience required" }, 400);
+      const configured = await db.rpc("configure_legal_audience", {
+        p_document: documentId, p_expected: input.expected, p_actor: actor.id,
+      });
+      if (configured.error) return reply({ error: configured.error.message }, 409);
+      return reply({ ok: true });
+    }
+    if (input.operation === "set_document_active") {
+      if (typeof input.enabled !== "boolean" || typeof input.expected_enabled !== "boolean")
+        return reply({ error: "Expected activation state required" }, 400);
+      const changed = await db.rpc("set_legal_activation", {
+        p_target: "document", p_document: documentId, p_enabled: input.enabled,
+        p_expected: input.expected_enabled, p_expected_version: input.expected_version ?? null, p_actor: actor.id,
+      });
+      if (changed.error) return reply({ error: changed.error.message }, 409);
       return reply({ ok: true });
     }
     if (input.operation === "publish") {

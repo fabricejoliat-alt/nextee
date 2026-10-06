@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { playerConsentAllowsAccess } from "@/lib/playerConsent";
-import { loadMissingLegalActions } from "@/lib/server/legalRequirements";
+import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
 import { legalRouteKind } from "@/lib/legalRouteCoverage";
 
 export async function proxy(req: NextRequest) {
@@ -121,7 +121,7 @@ export async function proxy(req: NextRequest) {
   }
 
   const legalRoute = legalRouteKind(path);
-  if (process.env.LEGAL_ENFORCEMENT_ENABLED === "true" && legalRoute) {
+  if (legalRoute) {
     res.headers.set("Cache-Control", "private, no-store");
     const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -129,26 +129,31 @@ export async function proxy(req: NextRequest) {
     if (!url || !key) return NextResponse.json({ error: "Legal gate unavailable" },
       { status: 503, headers: { "Cache-Control": "no-store" } });
     const database = createClient(url, key, { auth: { persistSession: false } });
-    let actorId = data.user?.id ?? "";
-    if (bearerToken) {
-      const actor = await database.auth.getUser(bearerToken);
-      if (actor.error || !actor.data.user) return NextResponse.json({ error: "Invalid token" },
-        { status: 401, headers: { "Cache-Control": "no-store" } });
-      actorId = actor.data.user.id;
-    }
-    if (!actorId) return NextResponse.json({ error: "Unauthorized" },
-      { status: 401, headers: { "Cache-Control": "no-store" } });
     try {
-      const missing = await loadMissingLegalActions(database, actorId);
-      if (missing.length) {
-        if (legalRoute === "page") {
-          const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";
-          const redirect = NextResponse.redirect(destination);
-          redirect.headers.set("Cache-Control", "private, no-store");
-          return redirect;
+      const control = await database.from("legal_enforcement_control")
+        .select("enabled").eq("singleton", true).maybeSingle();
+      if (control.error || !control.data) throw new Error("Legal control unavailable");
+      if (control.data.enabled) {
+        let actorId = data.user?.id ?? "";
+        if (bearerToken) {
+          const actor = await database.auth.getUser(bearerToken);
+          if (actor.error || !actor.data.user) return NextResponse.json({ error: "Invalid token" },
+            { status: 401, headers: { "Cache-Control": "no-store" } });
+          actorId = actor.data.user.id;
         }
-        return NextResponse.json({ error: "Legal action required", code: "LEGAL_ACTION_REQUIRED", missing },
-          { status: 403, headers: { "Cache-Control": "no-store" } });
+        if (!actorId) return NextResponse.json({ error: "Unauthorized" },
+          { status: 401, headers: { "Cache-Control": "no-store" } });
+        const { missing } = await loadLegalGateStatus(database, actorId);
+        if (missing.length) {
+          if (legalRoute === "page") {
+            const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";
+            const redirect = NextResponse.redirect(destination);
+            redirect.headers.set("Cache-Control", "private, no-store");
+            return redirect;
+          }
+          return NextResponse.json({ error: "Legal action required", code: "LEGAL_ACTION_REQUIRED", missing },
+            { status: 403, headers: { "Cache-Control": "no-store" } });
+        }
       }
     } catch {
       return NextResponse.json({ error: "Legal status unavailable" },

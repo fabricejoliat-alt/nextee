@@ -1,11 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { eligibleLegalRole, findMissingLegalActions, type RequiredLegalDocument } from "@/lib/legalRequirements";
 
-export async function loadMissingLegalActions(db: SupabaseClient, actorId: string) {
-  // HTTP enforcement must fail closed while the database direct-access layer is
-  // deliberately locked off. The public legal routes do not call this helper.
+export async function loadLegalGateStatus(db: SupabaseClient, actorId: string) {
   const control = await db.from("legal_enforcement_control").select("enabled").eq("singleton", true).maybeSingle();
-  if (control.error || control.data?.enabled !== true) throw new Error("Legal direct-access gate is not ready");
+  if (control.error || !control.data) throw new Error("Legal direct-access gate is unavailable");
+  if (!control.data.enabled) return { enabled: false, missing: [] };
   const [memberships, admin, docs] = await Promise.all([
     db.from("club_members").select("club_id,role").eq("user_id", actorId).eq("is_active", true),
     db.from("app_admins").select("user_id").eq("user_id", actorId).maybeSingle(),
@@ -22,7 +21,7 @@ export async function loadMissingLegalActions(db: SupabaseClient, actorId: strin
     }
   }
   const documentIds = applicableDocs.map((doc) => doc.id);
-  if (!documentIds.length) return [];
+  if (!documentIds.length) return { enabled: true, missing: [] };
   const [versions, states] = await Promise.all([
     db.from("legal_versions").select("id,document_id,version_number").in("document_id", documentIds),
     db.from("legal_current_state").select("document_id,version_id,club_scope,decision,conflict")
@@ -41,7 +40,12 @@ export async function loadMissingLegalActions(db: SupabaseClient, actorId: strin
     const matching = await db.rpc("legal_version_matches_document", { p_document: doc.id, p_version: latest.id });
     if (matching.error || matching.data !== true) throw new Error("Published legal metadata changed");
   }
-  return findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: Boolean(admin.data),
+  const missing = findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: Boolean(admin.data),
     documents: applicableDocs as Parameters<typeof findMissingLegalActions>[0]["documents"],
     versions: versions.data ?? [], states: states.data ?? [] });
+  return { enabled: true, missing };
+}
+
+export async function loadMissingLegalActions(db: SupabaseClient, actorId: string) {
+  return (await loadLegalGateStatus(db, actorId)).missing;
 }

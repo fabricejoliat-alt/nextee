@@ -38,7 +38,6 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
   // they lead to contextual conversations, while sharing the same page design.
   const managerScope = homeHref === "/manager";
   const hideThreadNotifications = managerScope || homeHref === "/player";
-  const areaLabel = managerScope ? "Manager" : homeHref === "/coach" ? "Coach" : "Player";
   const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
@@ -46,6 +45,11 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
     if (locale === "it") return it ?? en;
     return en;
   };
+  const areaLabel = managerScope
+    ? "Manager"
+    : homeHref === "/coach"
+      ? tr("Coach", "Coach", "Trainer", "Allenatore")
+      : tr("Joueur", "Player", "Spieler", "Giocatore");
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -142,7 +146,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
 
       const data = await loadMyNotifications(uid);
       setRows(data);
-      applyPwaBadge(data.filter((r) => !hideThreadNotifications || r.notification?.kind !== "thread_message").filter((r) => !r.recipient.is_read).length);
+      const visibleUnreadCount = data.filter((r) => (!hideThreadNotifications || r.notification?.kind !== "thread_message") && !r.recipient.is_read).length;
+      applyPwaBadge(visibleUnreadCount);
+      window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: visibleUnreadCount } }));
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur de chargement.", "Loading error.", "Ladefehler.", "Errore di caricamento.")));
       setRows([]);
@@ -496,7 +502,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
     <div className={managerDesign ? campsStyles.page : "player-dashboard-bg"}>
       <div className={managerDesign ? styles.managerContent : "app-shell marketplace-page"}>
         {managerDesign ? (
-          <nav data-ui="breadcrumb" className={campsStyles.breadcrumb} aria-label="Fil d’Ariane">
+          <nav data-ui="breadcrumb" className={`${campsStyles.breadcrumb} ${playerScope ? styles.playerBreadcrumb : ""}`} aria-label={t("common.breadcrumb")}>
             <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><span>Notifications</span>
           </nav>
         ) : null}
@@ -526,7 +532,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
             <div className={managerDesign ? campsStyles.panelHeader : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div className={managerDesign ? styles.panelTitle : undefined} style={managerDesign ? undefined : { display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 950 }}>
                 {managerDesign ? <span className={styles.panelIcon}><Bell size={16} /></span> : <Bell size={16} />}
-                {managerDesign ? <div><h2>{tr("Toutes les notifications", "All notifications", "Alle Benachrichtigungen", "Tutte le notifiche")}</h2><p>{visibleRows.length} notification{visibleRows.length > 1 ? "s" : ""}, dont {unreadCount} non lue{unreadCount > 1 ? "s" : ""}.</p></div> : tr("Centre de notifications", "Notification center")}
+                {managerDesign ? <div><h2>{tr("Toutes les notifications", "All notifications", "Alle Benachrichtigungen", "Tutte le notifiche")}</h2><p>{tr(`${visibleRows.length} notification${visibleRows.length > 1 ? "s" : ""}, dont ${unreadCount} non lue${unreadCount > 1 ? "s" : ""}.`, `${visibleRows.length} notification${visibleRows.length === 1 ? "" : "s"}, ${unreadCount} unread.`, `${visibleRows.length} Benachrichtigungen, ${unreadCount} ungelesen.`, `${visibleRows.length} notifiche, ${unreadCount} non lette.`)}</p></div> : tr("Centre de notifications", "Notification center")}
               </div>
               {!managerDesign ? <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Link className="btn" href={settingsHref}>
@@ -679,7 +685,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                         {notificationBody ? (
                           <div
                             style={{
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: 600,
                               fontStyle: "italic",
                               lineHeight: 1.35,

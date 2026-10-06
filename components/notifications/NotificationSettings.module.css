@@ -1,3 +1,10 @@
+.playerBreadcrumb,
+.playerBreadcrumb a,
+.playerBreadcrumb span {
+  color: #fff !important;
+  text-shadow: 0 1px 3px rgba(15, 32, 22, .8);
+}
+
 .headerActions > * {
   box-sizing: border-box;
   height: 42px;

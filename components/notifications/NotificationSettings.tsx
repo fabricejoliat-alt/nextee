@@ -33,13 +33,17 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const managerDesign = designVariant === "management" || homeHref === "/manager";
   const managerScope = homeHref === "/manager";
   const hideThreadNotifications = managerScope || homeHref === "/player";
-  const areaLabel = managerScope ? "Manager" : homeHref === "/coach" ? "Coach" : "Player";
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
     if (locale === "de") return de ?? en;
     if (locale === "it") return it ?? en;
     return en;
   };
+  const areaLabel = managerScope
+    ? "Manager"
+    : homeHref === "/coach"
+      ? tr("Coach", "Coach", "Trainer", "Allenatore")
+      : tr("Joueur", "Player", "Spieler", "Giocatore");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,7 +148,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   if (managerDesign) {
     return (
       <main className={campsStyles.page}>
-        <nav data-ui="breadcrumb" className={campsStyles.breadcrumb} aria-label={t("common.breadcrumb")}>
+        <nav data-ui="breadcrumb" className={`${campsStyles.breadcrumb} ${homeHref === "/player" ? styles.playerBreadcrumb : ""}`} aria-label={t("common.breadcrumb")}>
           <Link href={homeHref}>{areaLabel}</Link><ChevronRight size={13} /><Link href={notificationsHref}>{t("notifications.settings.notifications")}</Link><ChevronRight size={13} /><span>{t("notifications.settings.breadcrumb")}</span>
         </nav>
 

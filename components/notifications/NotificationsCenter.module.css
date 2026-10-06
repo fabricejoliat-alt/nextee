@@ -2,6 +2,13 @@
   display: contents;
 }
 
+.playerBreadcrumb,
+.playerBreadcrumb a,
+.playerBreadcrumb span {
+  color: #fff !important;
+  text-shadow: 0 1px 3px rgba(15, 32, 22, .8);
+}
+
 .pageHeader {
   display: grid;
   gap: 14px;
@@ -81,6 +88,11 @@
   justify-content: flex-end;
 }
 
+.playerNotificationActions > * {
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .notificationItem {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -129,7 +141,7 @@
 
 .notificationDateTile span {
   color: #6b776e;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: .07em;
   line-height: 1;
@@ -149,7 +161,7 @@
   padding-top: 4px;
   border-top: 1px solid rgba(53, 72, 59, .14);
   color: #526456;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
 }

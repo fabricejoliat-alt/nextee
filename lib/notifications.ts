@@ -121,7 +121,7 @@ export async function createAppNotification(input: AppNotificationInput) {
       const pRes = await supabase.from("profiles").select("id,first_name,last_name").in("id", playerIds);
       const nameByPlayerId = new Map<string, string>();
       if (!pRes.error) {
-        (pRes.data ?? []).forEach((p: any) => {
+        (pRes.data ?? []).forEach((p: { id: string; first_name: string | null; last_name: string | null }) => {
           const name = `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || "Joueur";
           nameByPlayerId.set(String(p.id), name);
         });
@@ -167,7 +167,7 @@ export async function createAppNotification(input: AppNotificationInput) {
   return { ok: true as const, notificationId };
 }
 
-export async function getUnreadNotificationsCount(userId: string) {
+export async function getUnreadNotificationsCount(userId: string, options?: { hideThreadNotifications?: boolean }) {
   const prefs = await loadMyNotificationPreferences(userId);
   if (!prefs.receiveInApp) return 0;
 
@@ -182,8 +182,6 @@ export async function getUnreadNotificationsCount(userId: string) {
   const recipients = (res.data ?? []) as Array<{ id: number; notification_id: string }>;
   if (recipients.length === 0) return 0;
 
-  if (prefs.enabledKinds.length === 0) return recipients.length;
-
   const ids = recipients.map((r) => r.notification_id);
   const nRes = await supabase.from("notifications").select("id,kind").in("id", ids);
   if (nRes.error) throw new Error(nRes.error.message);
@@ -194,6 +192,7 @@ export async function getUnreadNotificationsCount(userId: string) {
   return recipients.reduce((count, r) => {
     const kind = kindById.get(r.notification_id);
     if (!kind) return count;
+    if (options?.hideThreadNotifications && kind === "thread_message") return count;
     return isKindEnabled(kind, prefs) ? count + 1 : count;
   }, 0);
 }
@@ -246,10 +245,7 @@ export async function loadMyNotifications(userId: string) {
 
   return recipients
     .map((recipient) => ({ recipient, notification: byId.get(recipient.notification_id) ?? null }))
-    .filter((row) => {
-      if (!row.notification) return true;
-      return isKindEnabled(row.notification.kind, prefs);
-    });
+    .filter((row) => row.notification && isKindEnabled(row.notification.kind, prefs));
 }
 
 export async function markNotificationRead(recipientId: number) {

@@ -23,7 +23,7 @@ export default function PlayerHeader() {
       const userId = authRes.data.user?.id;
       if (!userId || !mounted) return;
       try {
-        const count = await getUnreadNotificationsCount(userId);
+        const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true });
         if (!mounted) return;
         setUnreadCount(count);
         applyPwaBadge(count);
@@ -88,7 +88,7 @@ export default function PlayerHeader() {
             filter: `user_id=eq.${userId}`,
           },
           async () => {
-            const count = await getUnreadNotificationsCount(userId).catch(() => 0);
+            const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true }).catch(() => 0);
             if (cancelled) return;
             setUnreadCount(count);
             applyPwaBadge(count);
@@ -181,7 +181,7 @@ export default function PlayerHeader() {
 
             {/* RIGHT: Bell */}
             <div className="header-right header-right--icon">
-              <Link className="icon-btn icon-btn-notifications" href="/player/notifications" aria-label={t("common.notificationsSoon")}>
+              <Link className="icon-btn icon-btn-notifications" href="/player/notifications" aria-label={t("notifications.settings.notifications")}>
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
                 {unreadCount > 0 ? <span className="icon-btn-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
               </Link>

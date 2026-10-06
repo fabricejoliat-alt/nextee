@@ -16,3 +16,8 @@ test('an unpublished required document in club B does not block club A',async()=
 test('own-club unpublished required document still fails closed',async()=>{
  await assert.rejects(()=>missing([document('A')]),/no published version/);
 });
+test('database switch off leaves missing actions empty without reading user documents',async()=>{
+ const {db}=managerDatabase({legal_enforcement_control:[{singleton:true,enabled:false}],club_members:[],app_admins:[],legal_documents:[document('A')]});
+ const requirements=loadManagerModule<{loadLegalGateStatus:(db:unknown,id:string)=>Promise<{enabled:boolean;missing:unknown[]}>}>('lib/server/legalRequirements.ts',{});
+ assert.deepEqual(await requirements.loadLegalGateStatus(db,'coach-a'),{enabled:false,missing:[]});
+});

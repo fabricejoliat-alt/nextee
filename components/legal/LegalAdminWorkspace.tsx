@@ -7,7 +7,7 @@ import { legalAdminGroups } from "@/lib/legalAdminGroups";
 import styles from "./LegalAdminWorkspace.module.css";
 
 type Translation = { title?: string; body?: string; action_label?: string; status?: string; source_revision?: number };
-type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; audience_roles: string[]; action_kind: string; required: boolean; active: boolean; applicability: { status?: string; [key: string]: unknown }; required_locales: string[] };
+type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; audience_roles: string[]; action_kind: string; required: boolean; active: boolean; applicability: { status?: string; rule?: string; [key: string]: unknown }; required_locales: string[] };
 type Draft = { document_id: string; source_revision: number; change_summary: string; allowed_variables: string[]; translations: Record<string, Translation> };
 type Version = { id: string; document_id: string; version_number: number; published_at: string; snapshot: { translations?: Record<string, Translation>; change_summary?: string; [key: string]: unknown } };
 const langs = ["fr", "en", "de", "it"];
@@ -21,11 +21,7 @@ const actionLabels: Record<string, string> = {
 const translationStatusLabels: Record<string, string> = {
   needs_review: "à relire", approved: "approuvée", proposed: "proposée",
 };
-const ruleStatusLabels: Record<string, string> = {
-  approved: "approuvée", unapproved: "à valider", manual_review_required: "à valider",
-};
 const translationStatusLabel = (status?: string) => status ? translationStatusLabels[status] ?? status : "manquante";
-const ruleStatusLabel = (status?: string) => status ? ruleStatusLabels[status] ?? status : "à valider";
 
 export default function LegalAdminWorkspace() {
   const [docs, setDocs] = useState<Doc[]>([]); const [drafts, setDrafts] = useState<Draft[]>([]); const [versions, setVersions] = useState<Version[]>([]);
@@ -34,14 +30,14 @@ export default function LegalAdminWorkspace() {
   const [message, setMessage] = useState(""); const [summary, setSummary] = useState(""); const [busy, setBusy] = useState(false);
   const [variables, setVariables] = useState<string[]>([]);
   const [publicationConfirmed, setPublicationConfirmed] = useState(false);
+  const [activationConfirmed, setActivationConfirmed] = useState(false);
+  const [enforcementEnabled, setEnforcementEnabled] = useState<boolean | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const [key, setKey] = useState(""); const [kind, setKind] = useState("terms"); const [action, setAction] = useState("accept");
   const [audience, setAudience] = useState("player,parent,coach,manager");
   const [purpose, setPurpose] = useState(""); const [scope, setScope] = useState("platform");
   const [clubId, setClubId] = useState(""); const [required, setRequired] = useState(false);
   const [documentSearch, setDocumentSearch] = useState("");
-  const [ruleNote, setRuleNote] = useState("");
-  const [ruleType, setRuleType] = useState("manual_review_required");
   const [requests, setRequests] = useState<Array<{ id: string; contact_email: string; request_kind: string; status: string; created_at: string; description: string }>>([]);
   const [requestNote, setRequestNote] = useState("");
   const [decisions, setDecisions] = useState<Array<{ id: string; actor_id: string; beneficiary_id: string; decision: string; rendered_snapshot: { title?: string; body?: string; locale?: string }; decided_at: string }>>([]);
@@ -56,9 +52,11 @@ export default function LegalAdminWorkspace() {
     const response = await fetch("/api/admin/legal", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
     const data = await response.json(); if (!response.ok) throw new Error(data.error);
     setDocs(data.documents); setDrafts(data.drafts); setVersions(data.versions); setClubs(data.clubs ?? []);
+    setEnforcementEnabled(data.enforcement_enabled); setActivationConfirmed(false);
   }, []);
   useEffect(() => { load().catch((e) => setMessage(String(e))); }, [load]);
   const document = docs.find((d) => d.id === selected);
+  const audienceConfigured = document?.applicability.status === "approved" && document.applicability.rule === "all_members";
   const { groups, fixtures } = useMemo(() => legalAdminGroups(docs), [docs]);
   const filteredGroups = useMemo(() => groups.filter((group) => {
     const query = documentSearch.trim().toLocaleLowerCase("fr");
@@ -79,6 +77,11 @@ export default function LegalAdminWorkspace() {
   })) : null;
   const history = useMemo(() => versions.filter((v) => v.document_id === selected), [versions, selected]);
   const previous = history[0];
+  const requiredDocuments = docs.filter((item) => item.document_key.startsWith("activitee_") && item.required);
+  const requiredDocumentsReady = requiredDocuments.length > 0
+    && requiredDocuments.every((item) => item.active)
+    && ["terms", "privacy"].every((kind) => requiredDocuments.some((item) =>
+      item.scope === "platform" && item.kind === kind && item.active));
   const expectedPublication = document && draft ? {
     document: { document_key: document.document_key, kind: document.kind, purpose_key: document.purpose_key,
       scope: document.scope, club_id: document.club_id, audience_roles: document.audience_roles,
@@ -114,7 +117,9 @@ export default function LegalAdminWorkspace() {
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
       await load(); setMessage("Enregistré."); if (data.id) setSelected(data.id);
     } catch (error) {
-      if (payload.operation === "publish") { setPublicationConfirmed(false); await load().catch(() => undefined); }
+      if (["publish", "set_enforcement", "set_document_active"].includes(String(payload.operation))) {
+        setPublicationConfirmed(false); setActivationConfirmed(false); await load().catch(() => undefined);
+      }
       setMessage(error instanceof Error ? error.message : "Erreur");
     } finally { setBusy(false); }
   }
@@ -122,10 +127,25 @@ export default function LegalAdminWorkspace() {
     <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/admin">Administration</Link><ChevronRight size={14} aria-hidden="true" /><span>Documents juridiques</span></nav>
     <header className={styles.hero}>
       <div><span className={styles.eyebrow}>Gouvernance documentaire</span><h1>Documents juridiques</h1>
-        <p>Préparer, relire et publier les textes destinés aux utilisateurs. L’activation reste soumise à une validation juridique distincte.</p></div>
-      <span className={styles.heroBadge}><FileText size={16} aria-hidden="true" /> Registre inactif</span>
+        <p>Préparer, publier et activer les textes destinés aux utilisateurs.</p></div>
+      <span className={styles.heroBadge}><FileText size={16} aria-hidden="true" /> {enforcementEnabled === null ? "État en cours" : enforcementEnabled ? "Contrôle actif" : "Contrôle inactif"}</span>
     </header>
     {message && <p role="status" className={styles.statusMessage}>{message}</p>}
+    <section className={styles.panel}>
+      <div className={styles.sectionHeader}><div><h2>Activation du module</h2><span>{enforcementEnabled ? "Contrôle des CGU et notices actif" : "Les accès ne sont pas encore conditionnés aux documents"}</span></div></div>
+      <p>Active d’abord chaque document requis publié. Les CGU et la notice de confidentialité de la plateforme doivent être actives avant le contrôle global.</p>
+      <p>Les autorisations parentales et les consentements facultatifs sont présentés et décidés séparément.</p>
+      <p>Ce contrôle ne révoque pas les liens de fichiers déjà publics ni les traitements lancés hors des parcours utilisateur.</p>
+      {enforcementEnabled && <p>Désactiver le contrôle rend les parcours accessibles sans effacer les documents publiés ni l’historique des décisions.</p>}
+      {!enforcementEnabled && !requiredDocumentsReady && <p role="status">Documents requis actifs : {requiredDocuments.filter((item) => item.active).length}/{requiredDocuments.length}. Termine leur publication et leur activation pour débloquer ce contrôle.</p>}
+      {!enforcementEnabled && <label className={styles.activationConfirmation}><input type="checkbox" disabled={busy || !requiredDocumentsReady}
+        checked={activationConfirmed} onChange={(event) => setActivationConfirmed(event.target.checked)} />
+        Je confirme la mise en service du contrôle pour les comptes concernés.</label>}
+      <button className={enforcementEnabled ? undefined : styles.primaryButton}
+        disabled={busy || enforcementEnabled === null || (!enforcementEnabled && (!requiredDocumentsReady || !activationConfirmed))}
+        onClick={() => mutate({ operation: "set_enforcement", enabled: !enforcementEnabled, expected_enabled: enforcementEnabled })}>
+        {enforcementEnabled ? "Désactiver le contrôle" : "Activer le contrôle"}</button>
+    </section>
     <section className={styles.panel}>
       <div className={styles.sectionHeader}><div><h2>Créer un brouillon</h2><span>Nouveau document</span></div></div>
       <div className={styles.formGrid}>
@@ -158,12 +178,12 @@ export default function LegalAdminWorkspace() {
       </div>
       <div className={`${styles.panel} ${styles.editorPanel}`}>
         {!document ? <p>Sélectionne un document.</p> : <>
-          <h2>{selectedGroup?.label ?? document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · règle {ruleStatusLabel(document.applicability.status)}</p>
+          <h2>{selectedGroup?.label ?? document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · public {audienceConfigured ? "configuré" : "à configurer"}</p>
           {selectedGroup?.shared && <div className={styles.clubSwitcher}><label>Club concerné <select disabled={busy || editorDirty} value={selected} onChange={(event) => setSelected(event.target.value)}>{selectedGroup.documents.map((item) => <option key={item.id} value={item.id}>{clubs.find((club) => club.id === item.club_id)?.name ?? item.document_key}</option>)}</select></label>
-            <p>Le texte peut être enregistré pour tous les clubs. La règle, l’approbation et la publication se contrôlent ensuite pour chaque club.</p>
+            <p>Le texte peut être enregistré pour tous les clubs. Le public, l’approbation et la publication se contrôlent ensuite pour chaque club.</p>
             {editorDirty && <><p role="status">Enregistre ou annule tes modifications avant de changer de club.</p><button type="button" disabled={busy} onClick={() => {
               setForm(draft?.translations?.[locale] ?? {}); setSummary(draft?.change_summary ?? "");
-              setVariables(draft?.allowed_variables ?? []); setRuleNote(""); setEditorDirty(false);
+              setVariables(draft?.allowed_variables ?? []); setEditorDirty(false);
             }}>Annuler les modifications</button></>}
             {!sharedTextAligned && <p role="status">Les brouillons de ce modèle diffèrent entre clubs. Vérifie-les avant une sauvegarde commune.</p>}
           </div>}
@@ -185,12 +205,11 @@ export default function LegalAdminWorkspace() {
           <button disabled={busy || unsavedTranslationChanges || !draft?.translations?.[locale]} onClick={() => mutate({ operation: "approve_translation", document_id: selected, locale, expected_revision: draft?.source_revision, expected_translation: draft?.translations?.[locale] })}>Approuver</button>
           {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await fetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
           <details><summary>Aperçu utilisateur</summary><h3>{form.title}</h3><p style={{ whiteSpace: "pre-wrap" }}>{form.body}</p><button disabled>{form.action_label}</button></details>
-          <details><summary>Règle d’applicabilité (revue juridique)</summary>
-            <p>Indiquer la juridiction, la base, l’âge/capacité, la qualité du représentant et la fonction concernée dans une configuration relue. Aucune règle universelle n’est préremplie.</p>
-            <label>Règle <select disabled={busy} value={ruleType} onChange={(e) => setRuleType(e.target.value)}><option value="manual_review_required">À implémenter après revue</option><option value="all_members">Tous les membres actifs de l’audience</option></select></label>
-            <textarea disabled={busy} aria-label="Justification de la revue juridique" placeholder="Référence et justification de la revue juridique" value={ruleNote} onChange={(e) => { setEditorDirty(true); setRuleNote(e.target.value); }} style={{ width: "100%" }} />
-            <button disabled={busy || ruleNote.trim().length < 20} onClick={() => mutate({ operation: "review_rule", document_id: selected, note: ruleNote,
-              configuration: { status: "approved", rule: ruleType, rationale: ruleNote } })}>Enregistrer la revue</button>
+          <details><summary>Public concerné</summary>
+            <p>Ce document s’adresse aux membres actifs des rôles indiqués ci-dessus{document.scope === "club" ? " dans le club sélectionné" : " sur la plateforme"}. Les liens parent–enfant sont vérifiés lors de la décision.</p>
+            <button disabled={busy || document.active || audienceConfigured}
+              onClick={() => mutate({ operation: "configure_audience", document_id: selected, expected: document.applicability })}>
+              Configurer ce public</button>
           </details>
           <h3>Publication</h3><label>Résumé des changements<textarea disabled={busy} style={{ display: "block", width: "100%" }} value={summary} onChange={(e) => { setEditorDirty(true); setSummary(e.target.value); }} /></label>
           <button disabled={busy} onClick={() => mutate({ operation: "summary", document_id: selected, summary })}>Enregistrer le résumé</button>
@@ -228,10 +247,21 @@ export default function LegalAdminWorkspace() {
             {unsavedPublicationChanges && <p role="status">Enregistre les modifications affichées avant de publier.</p>}
             {!languagesReady && <p role="status">Toutes les langues requises doivent être approuvées pour la révision actuelle.</p>}
             <label style={{ display: "block", margin: "16px 0" }}><input disabled={busy} type="checkbox" checked={publicationConfirmed}
-              onChange={(event) => setPublicationConfirmed(event.target.checked)} /> J’ai relu la portée, la règle, le résumé et les textes de toutes les langues de ce brouillon.</label>
-            <button className={styles.primaryButton} disabled={busy || !publicationConfirmed || !expectedPublication || unsavedPublicationChanges || !languagesReady || !draft?.change_summary.trim() || document.applicability.status !== "approved"}
+              onChange={(event) => setPublicationConfirmed(event.target.checked)} /> J’ai vérifié le public, le résumé et les textes de toutes les langues de ce brouillon.</label>
+            <button className={styles.primaryButton} disabled={busy || !publicationConfirmed || !expectedPublication || unsavedPublicationChanges || !languagesReady || !draft?.change_summary.trim() || !audienceConfigured}
               onClick={() => mutate({ operation: "publish", document_id: selected, expected: expectedPublication })}>Publier cette version</button>
-          </details><h3>Historique</h3>{history.map((v) => <details key={v.id}><summary>Version {v.version_number} · {new Date(v.published_at).toLocaleString()}</summary><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(v.snapshot, null, 2)}</pre></details>)}
+          </details>
+          <h3>Activation du document</h3>
+          <p>Version publiée : {previous ? `v${previous.version_number}` : "aucune"}. État : {document.active ? "actif" : "inactif"}.</p>
+          {document.active && enforcementEnabled && document.required && document.document_key.startsWith("activitee_")
+            && <p>Désactive d’abord le contrôle global pour retirer un document requis.</p>}
+          <button className={document.active ? undefined : styles.primaryButton}
+            disabled={busy || (!document.active && (!previous || !audienceConfigured))
+              || (document.active && Boolean(enforcementEnabled) && document.required && document.document_key.startsWith("activitee_"))}
+            onClick={() => mutate({ operation: "set_document_active", document_id: selected,
+              enabled: !document.active, expected_enabled: document.active, expected_version: previous?.id ?? null })}>
+            {document.active ? "Désactiver ce document" : "Activer ce document"}</button>
+          <h3>Historique</h3>{history.map((v) => <details key={v.id}><summary>Version {v.version_number} · {new Date(v.published_at).toLocaleString()}</summary><pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(v.snapshot, null, 2)}</pre></details>)}
         </>}
       </div>
     </section>

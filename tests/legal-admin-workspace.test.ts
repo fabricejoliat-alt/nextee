@@ -38,7 +38,9 @@ test('Admin displays review states in French without changing stored values',asy
   elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();
   const tree=h.render();
   assert.ok(button(tree,'EN · à relire'));
-  assert.match(textContent(tree).replace(/\s+/g,' '),/Club · player · règle à valider/);
+  assert.match(textContent(tree).replace(/\s+/g,' '),/Club · player · public à configurer/);
+  assert.ok(button(tree,'Configurer ce public'));
+  assert.equal(button(tree,'Activer le contrôle').props.disabled,true);
  }finally{h.cleanup();}
 });
 test('three club copies have one model row and save one shared text request',async()=>{
