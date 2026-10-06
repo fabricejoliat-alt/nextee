@@ -1,0 +1,163 @@
+Browser tab: 762226977, Title: "Untitled query | SQL Editor | golf-juniors-app (test) | Fabrice | Supabase", URL: "https://supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql/0120cc36-cd49-4699-8294-7a6e9c946f63?schema=public".
+0 AXWebArea Untitled query | SQL Editor | golf-juniors-app (test) | Fabrice | Supabase, URL: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql/0120cc36-cd49-4699-8294-7a6e9c946f63?schema=public
+	1 container
+		137 link Description: Skip to content, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql/0120cc36-cd49-4699-8294-7a6e9c946f63?schema=public#main
+		138 container
+			139 link Description: Supabase Back to organization home, Value: supabase.com/dashboard/org/rtfzdtosqoejffnvbgsf
+			140 link Description: Fabrice PRO, Value: supabase.com/dashboard/org/rtfzdtosqoejffnvbgsf
+			141 pop up button (collapsed) Description: Show organizations, Secondary Actions: Expand
+			142 link Description: golf-juniors-app, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly
+			143 pop up button (collapsed) Description: Show organization projects, Secondary Actions: Expand
+			144 link Description: test PREVIEW, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly
+			145 pop up button (collapsed) Description: Show project branches, Secondary Actions: Expand
+			146 button
+			147 button Connect
+			148 pop up button (collapsed) Feedback, Secondary Actions: Expand
+			149 pop up button (collapsed) Search..., Secondary Actions: Expand
+				150 image
+				151 text Search...
+			152 button Help, ID: help-dropdown-button
+				153 image
+				154 text Help
+			155 button Advisor Center, ID: advisor-center-trigger
+				156 image
+				157 text Advisor Center
+			158 button SQL Editor, ID: editor-trigger
+				159 image
+				160 text SQL Editor
+			161 button AI Assistant, ID: assistant-trigger
+				162 text AI Assistant
+			163 pop up button (collapsed) ID: radix-_r_1p_, Secondary Actions: Expand
+		164 container
+			165 container
+				166 content list
+					167 link Description: Project Overview, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly
+					168 link Description: Table Editor, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/editor
+					169 link Description: SQL Editor, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql
+				170 content list
+					171 link Description: Database, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/database/schemas
+					172 link Description: Authentication, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/auth/users
+					173 link Description: Storage, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/storage/files
+					174 link Description: Edge Functions, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/functions
+					175 link Description: Compute NEW, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/compute
+					176 link Description: Realtime, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/realtime/inspector
+				177 content list
+					178 link Description: Advisors, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/advisors/security
+					179 link Description: Observability, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/observability
+					180 link Description: Logs, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/logs
+					181 link Description: Integrations, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/integrations
+				182 content list
+					183 link Description: Project Settings, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/settings/general
+			184 pop up button (collapsed) Description: Sidebar control, ID: radix-_r_29_, Secondary Actions: Expand
+		185 container
+			186 container spec-click-target
+				187 heading SQL Editor, Value: 4
+					188 text SQL Editor
+				189 container
+					190 text Search queries
+					191 text field (settable) Search queries...
+					192 pop up button (collapsed) ID: radix-_r_1s7_, Secondary Actions: Expand
+						193 image
+					194 image
+				195 pop up button (collapsed) Description: Create a new query, ID: radix-_r_1sa_, Secondary Actions: Expand
+				196 button (collapsed) SHARED, Help: Shared, Secondary Actions: Expand
+					197 image
+					198 text SHARED
+				199 button (collapsed) FAVORITES, Help: Favorites, Secondary Actions: Expand
+					200 image
+					201 text FAVORITES
+				202 button (expanded) PRIVATE, Secondary Actions: Collapse
+					203 image
+					204 text PRIVATE
+				205 outline private-snippets
+					257 container
+						258 image
+						259 text Untitled query
+				209 button (collapsed) LOGS, Help: Logs, Secondary Actions: Expand
+					210 image
+					211 text LOGS
+				212 button (expanded) REFERENCE, Help: Reference, Secondary Actions: Collapse
+					213 image
+					214 text REFERENCE
+				215 container radix-_r_1sh_
+					216 link Description: Templates, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql/templates
+					217 link Description: Examples, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/sql/examples
+				218 link Description: View running queries, Value: supabase.com/dashboard/project/wizbeuuvjibmmuxyynly/observability/connections
+			219 splitter 17.618999481201172
+			220 container
+				221 button Collapse sidebar
+					222 image
+					223 text Collapse sidebar
+				224 tab group
+					225 container
+						226 tab (selectable, settable, boolean) Untitled query, ID: radix-_r_1uk_-trigger-sql-ec043452-0620-4b42-856c-846183b39371, Value: 0
+Untitled query
+						227 button Close tab
+							228 image
+					229 container
+						230 tab (selected, settable, boolean) Untitled query, ID: radix-_r_1uk_-trigger-sql-0120cc36-cd49-4699-8294-7a6e9c946f63, Value: 1
+Untitled query
+						231 button Close tab
+							232 image
+					233 button
+						234 image
+				235 text Unsaved edits
+				262 pop up button (collapsed) Description: More actions, ID: radix-_r_1v0_, Secondary Actions: Expand
+				239 pop up button (collapsed) Description: Query source: Database, ID: radix-_r_1v8_, Secondary Actions: Expand
+				240 button Save
+				241 button Run
+				260 container
+					261 editor (settable) Description: Editor content, Value:   pg_get_functiondef('public.issue_legal_parent_challenge(uuid,uuid,text,text)'::regprocedure))>0
+union all select 'ai_verified_rep_guard_preserved', position('legal_representative_assertions' in
+  pg_get_functiondef('public.legal_actor_allowed(uuid,uuid,uuid,text)'::regprocedure))>0
+order by item;
+
+				248 splitter 50
+				249 container
+					250 tab group
+						251 tab (selected, settable, boolean) Results, Value: 1, ID: radix-_r_1vf_-trigger-results
+						252 tab (selectable, settable, boolean) Chart, Value: 0, ID: radix-_r_1vf_-trigger-chart
+						263 button 10 rows
+							264 container
+								265 text 10  row s
+						256 pop up button (collapsed) Export, ID: radix-_r_20i_, Secondary Actions: Expand
+					266 table
+						267 row item ok
+							268 cell (selectable) item
+							269 cell (selectable) ok
+						270 row activation_trigger true
+							271 cell (selectable) activation_trigger
+							272 cell (selectable) true
+						273 row ai_verified_rep_guard_preserved true
+							274 cell (selectable) ai_verified_rep_guard_preserved
+							275 cell (selectable) true
+						276 row challenge_uses_document_guard true
+							277 cell (selectable) challenge_uses_document_guard
+							278 cell (selectable) true
+						279 row decide_uses_document_guard true
+							280 cell (selectable) decide_uses_document_guard
+							281 cell (selectable) true
+						282 row decision_sync_trigger true
+							283 cell (selectable) decision_sync_trigger
+							284 cell (selectable) true
+						285 row document_guard_service_only true
+							286 cell (selectable) document_guard_service_only
+							287 cell (selectable) true
+						288 row legacy_grant_closed true
+							289 cell (selectable) legacy_grant_closed
+							290 cell (selectable) true
+						291 row linked_authority_distinct true
+							292 cell (selectable) linked_authority_distinct
+							293 cell (selectable) true
+						294 row new_version_trigger true
+							295 cell (selectable) new_version_trigger
+							296 cell (selectable) true
+						297 row present_uses_document_guard true
+							298 cell (selectable) present_uses_document_guard
+							299 cell (selectable) true
+		136 text Untitled query | SQL Editor | golf-juniors-app (test) | Fabrice | Supabase
+
+The focused UI element is 261 editor (settable) Description: Editor content, Value:   pg_get_functiondef('public.issue_legal_parent_challenge(uuid,uuid,text,text)'::regprocedure))>0
+union all select 'ai_verified_rep_guard_preserved', position('legal_representative_assertions' in
+  pg_get_functiondef('public.legal_actor_allowed(uuid,uuid,uuid,text)'::regprocedure))>0
+order by item;

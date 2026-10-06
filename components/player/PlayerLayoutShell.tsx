@@ -4,40 +4,25 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import PlayerHeader from "@/components/player/PlayerHeader";
 import PlayerMobileNav from "@/components/player/PlayerMobileNav";
-import PlayerConsentGate from "@/components/player/PlayerConsentGate";
 import PlayerConnectivityStatus from "@/components/player/PlayerConnectivityStatus";
 
 export default function PlayerLayoutShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isConsentPage = pathname === "/player/consent-required";
   const isPlayerHome = pathname === "/player";
 
   return (
     <>
-      {!isConsentPage ? <PlayerHeader /> : null}
-      {!isConsentPage ? <PlayerConnectivityStatus /> : null}
-      <PlayerConsentGate />
-      {isConsentPage ? (
-        <main className="app-shell player-shell player-shell--consent">{children}</main>
-      ) : (
-        <div className={`player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`} data-scroll-container>
-          <main className="app-shell player-shell">{children}</main>
-        </div>
-      )}
-      {!isConsentPage ? <PlayerMobileNav /> : null}
+      <PlayerHeader />
+      <PlayerConnectivityStatus />
+      <div className={`player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`} data-scroll-container>
+        <main className="app-shell player-shell">{children}</main>
+      </div>
+      <PlayerMobileNav />
 
       <style>{`
         .player-shell { padding-bottom: 0; }
-        .player-shell--consent {
-          min-height: 100vh;
-          padding-top: 0;
-          padding-bottom: 0;
-          display: grid;
-          place-items: center;
-        }
         @media (max-width: 900px) {
           .player-shell { padding-bottom: 84px; }
-          .player-shell--consent { padding-bottom: 0; }
         }
       `}</style>
     </>

@@ -1,6 +1,6 @@
 # ActiviTee Rechtstexte — Deutsch
 
-Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-06-r8. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
+Ungeprüfte Übersetzung der französischen Fassung FR-2026-10-06-r9. Jeder Block enthält Titel, Beschriftung der positiven Aktion und vollständigen Text eines kanonischen Entwurfs. Clubbezogene Texte werden für Sion, Augusta und Centre de Performance Valais wiederverwendet. Platzhalter bleiben unverändert.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: Nutzungsbedingungen von ActiviTee
@@ -201,6 +201,8 @@ Als gesetzliche Vertretung von {{child_name}} bestätige ich, zur Erlaubnis der 
 Das Konto meines Kindes wird von {{club_name}} erstellt. Das Herunterladen der Anwendung ermöglicht keine Kontoerstellung. Die Erstellung des Kontos durch den Club ersetzt meine Erlaubnis nicht.
 
 ActiviTee ermöglicht meinem Kind insbesondere, seinen Plan einzusehen, Trainings und Wettkämpfe zu verfolgen, Ergebnisse einzutragen, mit seinen Betreuungspersonen zu kommunizieren und die für die Organisation seiner Aktivität nötigen Informationen zu erhalten.
+
+Für diese Funktionen verarbeiten der Club und ActiviTee die für das Konto und die sportliche Betreuung meines Kindes erforderlichen Informationen, insbesondere seine Identität, sein Geburtsdatum, seine Clubzugehörigkeiten, seinen Plan, seine Ergebnisse, Beurteilungen, Nachrichten und die für seine Betreuung hochgeladenen Dokumente. Berechtigte Personen des Clubs und die in der Datenschutzerklärung beschriebenen technischen Dienstleister greifen entsprechend ihrer Rolle und den Erfordernissen des Dienstes darauf zu. Die Datenschutzerklärung erläutert auch die Verarbeitungsorte, die Aufbewahrungsdauer und die Ausübung der Datenschutzrechte.
 
 Ich konnte die Nutzungsbedingungen und die Datenschutzerklärung lesen, die im Anzeigeverfahren mit Datum und Fassung bezeichnet sind. Ich erlaube meinem Kind die Nutzung des Dienstes zu den so angezeigten Bedingungen, soweit meine Vertretungsbefugnis reicht. Mein Kind erhält zudem altersgerechte Informationen und kann Erklärungen verlangen.
 

@@ -141,6 +141,7 @@ export default function LoginPage() {
     <main className={styles.page}>
       <div className={styles.image} aria-hidden="true" />
       <div className={styles.shell}>
+        <div className={styles.contentStack}>
         <section className={styles.intro} aria-labelledby="welcome-title">
           <div className={`brand ${styles.brand}`} aria-label="ActiviTee"><span className="brand-nex">Activi</span><span className="brand-tee">Tee</span></div>
           <p className={styles.eyebrow}>La plateforme de gestion des sections juniors de golf</p>
@@ -192,12 +193,14 @@ export default function LoginPage() {
                   ) : null}
                 </div>
               ) : null}
-              <div style={{ marginTop: 16, fontSize: 13 }}><Link href="/legal">Documents juridiques</Link> · <Link href="/legal/request">Mes données</Link></div>
               {isLocalDev ? <div className={styles.devLink}><Link href="/dev/impersonate">Mode dev : se connecter en tant qu’un autre utilisateur</Link></div> : null}
             </form>
           </div>
-          <p className={styles.support}>Contact et support : info@activitee.golf</p>
         </section>
+        </div>
+        <footer className={styles.footer}>
+          <nav aria-label="Informations ActiviTee"><Link href="/legal">Documents juridiques</Link><span aria-hidden="true">·</span><Link href="/legal/request">Mes données</Link><span aria-hidden="true">·</span><Link href="/contact">Contact</Link></nav>
+        </footer>
       </div>
     </main>
   );

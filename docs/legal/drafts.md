@@ -1,6 +1,6 @@
 # Textes juridiques FR — version de rédaction du 5 octobre 2026
 
-**Révision : FR-2026-10-06-r8.** Cette révision place l’identification de l’exploitant dans une rubrique finale des conditions d’utilisation. Elle conserve la licence annuelle payée par le club, l’option IA limitée à la reformulation manuelle d’un texte sélectionné et le seuil ZDR de 13 ans demandé par l’utilisateur. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
+**Révision : FR-2026-10-06-r9.** Cette révision précise les données et accès concernés dans l’autorisation parentale. Elle conserve l’identification de l’exploitant en fin des conditions d’utilisation, la licence annuelle payée par le club, l’option IA limitée à la reformulation manuelle d’un texte sélectionné et le seuil ZDR de 13 ans demandé par l’utilisateur. La rédaction est préparée pour revue humaine, sans publication ni certification juridique. Les prérequis sont regroupés à la fin. Aucune décision juridique, transmission au prestataire ou activation n’est réalisée par ce fichier.
 
 ## Version de travail FR du 5 octobre — lancement suisse
 
@@ -19,6 +19,8 @@ En qualité de représentant légal de {{child_name}}, je confirme être habilit
 Le compte de mon enfant est créé par {{club_name}}. Le téléchargement de l’application ne permet pas de créer un compte. La création du compte par le club ne remplace pas mon autorisation.
 
 ActiviTee permet notamment à mon enfant de consulter son planning, de suivre ses entraînements et compétitions, d’enregistrer ses résultats, de communiquer avec son encadrement et de recevoir les informations utiles à l’organisation de son activité.
+
+Pour ces fonctions, le club et ActiviTee traitent les informations nécessaires au compte et au suivi sportif de mon enfant, notamment son identité, sa date de naissance, ses rattachements au club, son planning, ses résultats, ses évaluations, ses messages et les documents déposés pour son accompagnement. Les personnes habilitées du club et les prestataires techniques décrits dans la notice sur les données personnelles y accèdent selon leur rôle et les besoins du service. La notice précise aussi les lieux de traitement, les durées de conservation et la manière d’exercer les droits relatifs aux données.
 
 J’ai pu consulter les conditions d’utilisation et la notice sur les données personnelles, identifiées par leur date et leur version dans le parcours de présentation. J’autorise l’utilisation du service par mon enfant dans les conditions ainsi présentées, dans la mesure de mon pouvoir de représentation. Mon enfant reçoit aussi une information adaptée à son âge et peut demander des explications.
 

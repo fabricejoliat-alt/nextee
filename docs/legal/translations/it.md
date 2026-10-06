@@ -1,6 +1,6 @@
 # Testi giuridici ActiviTee — italiano
 
-Traduzione non approvata della revisione francese FR-2026-10-06-r8. Ogni blocco contiene titolo, etichetta dell'azione positiva e testo completo di una bozza canonica. I testi legati al club sono riutilizzati per Sion, Augusta e Centre de Performance Valais. I segnaposto restano invariati.
+Traduzione non approvata della revisione francese FR-2026-10-06-r9. Ogni blocco contiene titolo, etichetta dell'azione positiva e testo completo di una bozza canonica. I testi legati al club sono riutilizzati per Sion, Augusta e Centre de Performance Valais. I segnaposto restano invariati.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: Condizioni d'uso di ActiviTee
@@ -201,6 +201,8 @@ In qualità di rappresentante legale di {{child_name}}, confermo di essere autor
 L'account di mio figlio viene creato da {{club_name}}. Scaricare l'applicazione non consente di creare un account. La creazione dell'account da parte del club non sostituisce la mia autorizzazione.
 
 ActiviTee consente in particolare a mio figlio di consultare il calendario, seguire allenamenti e competizioni, registrare i risultati, comunicare con chi lo segue e ricevere le informazioni utili all'organizzazione della sua attività.
+
+Per queste funzioni, il club e ActiviTee trattano le informazioni necessarie all'account e al percorso sportivo di mio figlio, tra cui l'identità, la data di nascita, le appartenenze ai club, il calendario, i risultati, le valutazioni, i messaggi e i documenti caricati per accompagnarlo. Il personale autorizzato del club e i fornitori tecnici descritti nell'informativa sulla protezione dei dati vi accedono in base al proprio ruolo e alle esigenze del servizio. L'informativa precisa anche i luoghi del trattamento, i tempi di conservazione e le modalità per esercitare i diritti relativi ai dati.
 
 Ho potuto consultare le condizioni d'uso e l'informativa sulla protezione dei dati, identificate dalla data e dalla versione nel percorso di presentazione. Autorizzo mio figlio a usare il servizio alle condizioni così presentate, nei limiti dei miei poteri di rappresentanza. Mio figlio riceve anche informazioni adatte alla sua età e può chiedere spiegazioni.
 

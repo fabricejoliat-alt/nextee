@@ -12,6 +12,7 @@ type GuardApiPayload = {
   isSuperAdmin?: unknown;
   membership?: { role?: unknown } | null;
   parentHasChildren?: unknown;
+  pendingChildren?: unknown;
   viewerRole?: unknown;
   player?: { pending?: unknown } | null;
 };
@@ -163,7 +164,6 @@ export default function RoleGuard({
 
         const role = membership.role as "player" | "coach" | "manager" | "parent";
         const currentPath = window.location.pathname;
-        const consentPage = "/player/consent-required";
 
         if (role === "parent" && json.parentHasChildren === false) {
           redirect("/no-access");
@@ -184,7 +184,7 @@ export default function RoleGuard({
           }
           if (!consentResponse.ok) {
             if (consentResponse.status === 403 && consentJson.code === "PLAYER_CONSENT_REQUIRED") {
-              redirect(consentPage);
+              redirect("/legal/my");
               return;
             }
             throw new Error(String(consentJson.error ?? `Consentement indisponible (${consentResponse.status}).`));
@@ -192,14 +192,11 @@ export default function RoleGuard({
 
           const consentPending =
             role === "player" && consentJson.viewerRole === "player" && Boolean(consentJson.player?.pending);
+          const parentHasPendingChild = role === "parent" && consentJson.viewerRole === "parent"
+            && Array.isArray(consentJson.pendingChildren) && consentJson.pendingChildren.length > 0;
 
-          if (consentPending && currentPath !== consentPage) {
-            redirect(consentPage);
-            return;
-          }
-
-          if (!consentPending && currentPath === consentPage) {
-            redirect("/player");
+          if (consentPending || parentHasPendingChild) {
+            redirect("/legal/my");
             return;
           }
         }

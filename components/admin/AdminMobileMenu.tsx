@@ -12,6 +12,7 @@ const NAV: NavItem[] = [
   { href: "/admin/users", label: "Managers" },
   { href: "/admin/organizations", label: "Organisations" },
   { href: "/admin/news", label: "Actualités ActiviTee" },
+  { href: "/admin/settings/contact", label: "Contact" },
   { href: "/admin/translations", label: "Traductions" },
   { href: "/admin/notifications", label: "Notifications" },
 ];

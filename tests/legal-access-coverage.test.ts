@@ -7,9 +7,15 @@ import { loadManagerModule, managerDatabase } from "./helpers/managerRouteHarnes
 const businessApis = ["/api/player/documents", "/api/coach/events/event", "/api/manager/events/create",
   "/api/parent/children", "/api/messages/threads", "/api/rules/overview", "/api/etiquette/overview", "/api/profile/custom-fields"];
 
-function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?: boolean; actor?: string | null; invalidBearer?: boolean } = {}) {
+function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?: boolean; actor?: string | null; invalidBearer?: boolean;
+  playerConsent?: string; parentChildConsent?: string; parentCanEdit?: boolean } = {}) {
   const cookieActor = options.actor === undefined ? "coach" : options.actor;
-  const { db } = managerDatabase({ club_members: [],
+  const { db } = managerDatabase({ club_members: [
+    ...(options.playerConsent ? [{ user_id: "player", club_id: "A", role: "player", is_active: true, player_consent_status: options.playerConsent }] : []),
+    ...(options.parentChildConsent ? [{ user_id: "parent", club_id: "A", role: "parent", is_active: true },
+      { user_id: "child", club_id: "A", role: "player", is_active: true, player_consent_status: options.parentChildConsent }] : []),
+  ], player_guardians: options.parentChildConsent ? [{ guardian_user_id: "parent", player_id: "child", relation: "father", can_view: true,
+    can_edit: options.parentCanEdit !== false }] : [],
     legal_enforcement_control: [{ singleton: true, enabled: options.enabled !== false }] });
   const checked: string[] = [];
   const proxy = loadManagerModule<{ proxy: (req: unknown) => Promise<Response>; config: { matcher: string[] } }>("proxy.ts", {
@@ -55,6 +61,28 @@ test("page refusal redirects to the recovery surface; accepted requests also avo
   const granted = await proxyFixture().run("/api/rules/overview", "fixture-token");
   assert.equal(granted.status, 200);
   assert.match(granted.headers.get("cache-control") ?? "", /no-store/);
+});
+
+test("a junior awaiting parental consent reaches the unified legal page while direct business APIs stay closed", async () => {
+  const fixture = proxyFixture({ actor: "player", playerConsent: "pending", enabled: false });
+  const page = await fixture.run("/player");
+  assert.equal(page.status, 307);
+  assert.equal(page.headers.get("location"), "https://test.invalid/legal/my");
+  const api = await fixture.run("/api/player/documents");
+  assert.equal(api.status, 403);
+  assert.equal((await api.json()).code, "PLAYER_CONSENT_REQUIRED");
+});
+
+test("a parent with an editable child awaiting consent reaches /legal/my and cannot use parent APIs yet", async () => {
+  const fixture = proxyFixture({ actor: "parent", parentChildConsent: "pending", enabled: false });
+  const page = await fixture.run("/player");
+  assert.equal(page.status, 307);
+  assert.equal(page.headers.get("location"), "https://test.invalid/legal/my");
+  const api = await fixture.run("/api/parent/children");
+  assert.equal(api.status, 403);
+  assert.equal((await api.json()).code, "PARENT_CHILD_CONSENT_REQUIRED");
+  const readOnly = proxyFixture({ actor: "parent", parentChildConsent: "pending", parentCanEdit: false, enabled: false });
+  assert.equal((await readOnly.run("/player")).status, 200);
 });
 
 test("gate off reads its database switch and leaves business routes reachable", async () => {

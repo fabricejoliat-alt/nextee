@@ -19,6 +19,10 @@ export async function GET(req: Request) {
         membership.club_id === doc.club_id && membership.role === role));
     const visible = (docs.data ?? []).filter((doc) => Boolean(eligibleRole(doc)));
     const ids = visible.map((d) => d.id);
+    const clubIds = [...new Set(visible.map((d) => d.club_id).filter((id): id is string => Boolean(id)))];
+    const clubs = clubIds.length ? await db.from("clubs").select("id,name").in("id", clubIds) : { data: [], error: null };
+    if (clubs.error) throw clubs.error;
+    const clubNames = new Map((clubs.data ?? []).map((club) => [club.id, club.name]));
     const versions = ids.length ? await db.from("legal_versions").select("id,document_id,version_number,published_at,snapshot")
       .in("document_id", ids).order("version_number", { ascending: false }) : { data: [], error: null };
     if (versions.error) throw versions.error;
@@ -32,7 +36,8 @@ export async function GET(req: Request) {
       .eq("actor_id", user.id).eq("beneficiary_id", user.id).eq("source", "user_flow").in("document_id", rewriteIds)
       .order("decided_at", { ascending: false }) : { data: [], error: null };
     if (ownChoices.error) throw ownChoices.error;
-    return NextResponse.json({ documents: visible.map((d) => ({ ...d, eligible_role: eligibleRole(d) ?? null, version: current.get(d.id) ?? null,
+    return NextResponse.json({ documents: visible.map((d) => ({ ...d, club_name: d.club_id ? clubNames.get(d.club_id) ?? null : null,
+      eligible_role: eligibleRole(d) ?? null, version: current.get(d.id) ?? null,
       own_choice: (ownChoices.data ?? []).find((s) => s.document_id === d.id && s.club_id === d.club_id) ?? null,
       state: (state.data ?? []).find((s) => s.document_id === d.id && s.club_scope === d.club_id) ?? null })) }, { headers: legalNoStore });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unavailable" }, { status: 503, headers: legalNoStore }); }

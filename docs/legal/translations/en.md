@@ -1,6 +1,6 @@
 # ActiviTee legal draft translations — English
 
-Unapproved translation of the French revision FR-2026-10-06-r8. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
+Unapproved translation of the French revision FR-2026-10-06-r9. Each block contains the title, positive action label and complete text of one canonical draft. Club scoped texts are reused for Sion, Augusta and Centre de Performance Valais. Placeholders must remain unchanged.
 
 <!-- key:activitee_conditions_utilisation -->
 Title: ActiviTee Terms of Use
@@ -201,6 +201,8 @@ As the legal representative of {{child_name}}, I confirm that I am entitled to a
 My child's account is created by {{club_name}}. Downloading the application does not allow an account to be created. The club's creation of the account does not replace my authorisation.
 
 ActiviTee allows my child, in particular, to see their schedule, follow training and competitions, record results, communicate with their coaching team and receive information needed to organise their activity.
+
+For these features, the club and ActiviTee process the information needed for my child's account and sporting follow-up, including their identity, date of birth, club memberships, schedule, results, assessments, messages and documents uploaded for their support. Authorised club staff and the technical providers described in the Privacy Notice access this information according to their roles and the needs of the service. The notice also explains where data is processed, how long it is kept and how to exercise data protection rights.
 
 I have been able to read the Terms of Use and Privacy Notice, identified by date and version in the presentation process. I authorise my child's use of the service under the terms presented, to the extent of my authority as a representative. My child also receives information suited to their age and may ask for explanations.
 

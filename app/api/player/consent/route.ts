@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { resolvePlayerConsentStatus } from "@/lib/playerConsent";
-import { mapPlayerTransactionError } from "@/lib/playerTransactionErrors";
 import {
   bearerTokenFromRequest,
   playerAccessErrorStatus,
@@ -101,7 +100,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         viewerRole: "parent",
         children,
-        pendingChildren: children.filter((c) => c.pending && c.canEdit).map((c) => c.playerId),
+        pendingChildren: children.filter((c) => c.pending && c.canEdit && statusesByPlayer.has(c.playerId)).map((c) => c.playerId),
       });
     }
 
@@ -151,42 +150,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const caller = await requirePlayerActor(bearerTokenFromRequest(req));
-    const { supabaseAdmin, actorUserId: userId } = caller;
+    void caller;
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "").trim();
 
     if (action === "grant") {
-      const playerId = String(body?.playerId ?? "").trim();
-      const confirmed = body?.confirmed === true;
-      if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
-      if (!confirmed) return NextResponse.json({ error: "Consent confirmation required" }, { status: 400 });
-
-      const access = await resolvePlayerAccessContext({
-        supabaseAdmin,
-        actorUserId: userId,
-        actorRoles: caller.actorRoles,
-        guardianLinks: caller.guardianLinks,
-        requestedPlayerId: playerId,
-        mode: "consent",
-      });
-      if (!access.isGuardianContext) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-      const signer = await supabaseAdmin.from("profiles").select("first_name,last_name").eq("id", userId).maybeSingle();
-      if (signer.error) return NextResponse.json({ error: signer.error.message }, { status: 400 });
-
-      const signerName = `${signer.data?.first_name ?? ""} ${signer.data?.last_name ?? ""}`.trim() || null;
-      const consent = await supabaseAdmin.rpc("grant_player_consent_transactional", {
-        p_player_id: playerId,
-        p_guardian_user_id: userId,
-        p_signer_name: signerName,
-        p_consent_version: "activitee-v1",
-      });
-      if (consent.error) {
-        const mapped = mapPlayerTransactionError(consent.error, "Impossible d’enregistrer le consentement.");
-        return NextResponse.json({ error: mapped.error }, { status: mapped.status });
-      }
-
-      return NextResponse.json({ ok: true, consentStatus: "granted", transaction: consent.data });
+      return NextResponse.json({ error: "L’autorisation se donne désormais sur le document complet dans votre espace juridique.",
+        code: "VERSIONED_PARENT_AUTHORIZATION_REQUIRED", redirectTo: "/legal/my" },
+        { status: 409, headers: { "Cache-Control": "no-store" } });
     }
 
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });

@@ -78,6 +78,7 @@ export default function LegalAdminWorkspace() {
   const history = useMemo(() => versions.filter((v) => v.document_id === selected), [versions, selected]);
   const previous = history[0];
   const requiredDocuments = docs.filter((item) => item.document_key.startsWith("activitee_") && item.required);
+  const missingRequiredDocuments = requiredDocuments.filter((item) => !item.active);
   const requiredDocumentsReady = requiredDocuments.length > 0
     && requiredDocuments.every((item) => item.active)
     && ["terms", "privacy"].every((kind) => requiredDocuments.some((item) =>
@@ -138,6 +139,23 @@ export default function LegalAdminWorkspace() {
       <p>Ce contrôle ne révoque pas les liens de fichiers déjà publics ni les traitements lancés hors des parcours utilisateur.</p>
       {enforcementEnabled && <p>Désactiver le contrôle rend les parcours accessibles sans effacer les documents publiés ni l’historique des décisions.</p>}
       {!enforcementEnabled && !requiredDocumentsReady && <p role="status">Documents requis actifs : {requiredDocuments.filter((item) => item.active).length}/{requiredDocuments.length}. Termine leur publication et leur activation pour débloquer ce contrôle.</p>}
+      {!enforcementEnabled && missingRequiredDocuments.length > 0 && <ul className={styles.missingDocuments}>
+        {missingRequiredDocuments.map((item) => {
+          const itemDraft = drafts.find((entry) => entry.document_id === item.id);
+          const languagesPending = item.required_locales.filter((language) => {
+            const translation = itemDraft?.translations?.[language];
+            return translation?.status !== "approved" || translation.source_revision !== itemDraft?.source_revision;
+          });
+          const steps = [
+            languagesPending.length ? `${languagesPending.length} langue${languagesPending.length > 1 ? "s" : ""} à approuver` : null,
+            item.applicability.status !== "approved" || item.applicability.rule !== "all_members" ? "public à configurer" : null,
+            !versions.some((version) => version.document_id === item.id) ? "version à publier" : null,
+            "document à activer",
+          ].filter(Boolean).join(" · ");
+          const clubName = item.club_id ? clubs.find((club) => club.id === item.club_id)?.name ?? item.club_id : "plateforme";
+          return <li key={item.id}><strong>{kindLabels[item.kind] ?? item.kind} — {clubName}</strong><span>{steps}</span></li>;
+        })}
+      </ul>}
       {!enforcementEnabled && <label className={styles.activationConfirmation}><input type="checkbox" disabled={busy || !requiredDocumentsReady}
         checked={activationConfirmed} onChange={(event) => setActivationConfirmed(event.target.checked)} />
         Je confirme la mise en service du contrôle pour les comptes concernés.</label>}

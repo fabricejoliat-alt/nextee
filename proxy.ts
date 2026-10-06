@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { playerConsentAllowsAccess } from "@/lib/playerConsent";
+import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
 import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
+import { pendingEditableParentChildren } from "@/lib/server/parentConsentRequirements";
 import { legalRouteKind } from "@/lib/legalRouteCoverage";
 
 export async function proxy(req: NextRequest) {
@@ -41,7 +43,8 @@ export async function proxy(req: NextRequest) {
   const requiresPlayerConsent =
     (isPlayerPage && !isConsentPage) ||
     (path.startsWith("/api/player/") && !isConsentEndpoint) ||
-    path.startsWith("/api/messages/");
+    ["/api/parent/", "/api/messages/", "/api/rules/", "/api/etiquette/"].some((prefix) => path.startsWith(prefix)) ||
+    path === "/api/profile/custom-fields";
 
   if (requiresPlayerConsent) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -73,9 +76,8 @@ export async function proxy(req: NextRequest) {
     if (userId) {
       const membershipsRes = await supabaseAdmin
         .from("club_members")
-        .select("player_consent_status")
+        .select("role,player_consent_status")
         .eq("user_id", userId)
-        .eq("role", "player")
         .eq("is_active", true);
 
       if (membershipsRes.error) {
@@ -85,21 +87,49 @@ export async function proxy(req: NextRequest) {
         );
       }
 
-      const playerMemberships = membershipsRes.data ?? [];
+      const memberships = membershipsRes.data ?? [];
+      const playerMemberships = memberships.filter((row) => row.role === "player");
       if (
         playerMemberships.length > 0 &&
         !playerConsentAllowsAccess(playerMemberships.map((row) => row.player_consent_status))
       ) {
         if (isPlayerPage) {
           const url = req.nextUrl.clone();
-          url.pathname = "/player/consent-required";
+          url.pathname = "/legal/my";
           url.search = "";
-          return NextResponse.redirect(url);
+          const redirect = NextResponse.redirect(url);
+          redirect.headers.set("Cache-Control", "private, no-store");
+          return redirect;
         }
         return NextResponse.json(
           { error: "Player consent required", code: "PLAYER_CONSENT_REQUIRED" },
           { status: 403, headers: { "Cache-Control": "no-store" } }
         );
+      }
+
+      if (selectPrimaryApplicationRole(memberships.map((row) => row.role)) === "parent") {
+        const guardianLinks = await supabaseAdmin.from("player_guardians")
+          .select("player_id,can_view,can_edit").eq("guardian_user_id", userId);
+        if (guardianLinks.error) return NextResponse.json({ error: "Unable to verify parent consent" },
+          { status: 503, headers: { "Cache-Control": "no-store" } });
+        try {
+          const pendingChildren = await pendingEditableParentChildren(supabaseAdmin,
+            (guardianLinks.data ?? []).map((link) => ({ playerId: String(link.player_id ?? ""), canView: link.can_view,
+              canEdit: link.can_edit, isPrimary: false, createdAt: null })), userId);
+          if (pendingChildren.length) {
+            if (isPlayerPage) {
+              const url = req.nextUrl.clone(); url.pathname = "/legal/my"; url.search = "";
+              const redirect = NextResponse.redirect(url);
+              redirect.headers.set("Cache-Control", "private, no-store");
+              return redirect;
+            }
+            return NextResponse.json({ error: "Parent authorization required", code: "PARENT_CHILD_CONSENT_REQUIRED" },
+              { status: 403, headers: { "Cache-Control": "no-store" } });
+          }
+        } catch {
+          return NextResponse.json({ error: "Unable to verify parent consent" },
+            { status: 503, headers: { "Cache-Control": "no-store" } });
+        }
       }
     }
   }
