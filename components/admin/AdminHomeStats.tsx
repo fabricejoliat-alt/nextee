@@ -17,16 +17,21 @@ export default function AdminHomeStats() {
   async function loadStats() {
     setLoading(true); setError(null);
     try {
-      const [organizations, managers, translations] = await Promise.all([
+      const [organizations, managers] = await Promise.all([
         supabase.from("organizations").select("id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }).eq("app_role", "manager"),
-        supabase.from("app_translations").select("key", { count: "exact", head: true }).in("locale", ["en", "de", "it"]),
       ]);
       if (organizations.error) throw new Error(organizations.error.message);
       if (managers.error) throw new Error(managers.error.message);
-      const referenceTranslationCount = Object.keys(messages.fr).length * 3;
-      const savedTranslations = translations.error ? 0 : translations.count ?? 0;
-      setStats({ organizations: organizations.count ?? 0, managers: managers.count ?? 0, missingTranslations: Math.max(0, referenceTranslationCount - savedTranslations) });
+      // The database table contains optional admin overrides, not the application's
+      // built-in translations. Counting its rows made an empty override table look
+      // like every EN/DE/IT string was missing (3,195 × 3 = 9,585).
+      const referenceKeys = Object.keys(messages.fr);
+      const missingTranslations = (['en', 'de', 'it'] as const).reduce((total, locale) => {
+        const localeMessages = messages[locale];
+        return total + referenceKeys.filter((key) => !String(localeMessages[key] ?? '').trim()).length;
+      }, 0);
+      setStats({ organizations: organizations.count ?? 0, managers: managers.count ?? 0, missingTranslations });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de chargement"); }
     finally { setLoading(false); }
   }
